@@ -1,11 +1,14 @@
-//! Three-way comparison of two Boards against their base, producing the automatic
-//! operations of a Merge and the Conflicts a Member must decide.
+//! Merges between a Branch and its parent: the three-way comparison that produces the
+//! automatic operations and the Conflicts a Member must decide, and planning, deciding
+//! and applying a Merge on a Workspace.
 
 use crate::board::{Board, Entity, Op};
-use crate::ids::EntityId;
+use crate::ids::{BatchId, BranchId, EntityId, MemberId};
 use crate::schema::{EntityKind, FieldClass, Fields, Value, field_class};
+use crate::workspace::{Branch, Moment, Origin, SyncPoint, Workspace, WsError};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use thiserror::Error;
 
 /// One of the two Branches taking part in a Merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +51,196 @@ impl Conflict {
                 entity: *entity,
                 field: None,
             },
+        }
+    }
+}
+
+/// How a Member decided one Conflict.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Decision {
+    TakeSource,
+    TakeTarget,
+    /// A hand-written value; only for field Conflicts.
+    Custom(Value),
+}
+
+/// One Decision per Conflict.
+pub type Decisions = BTreeMap<ConflictKey, Decision>;
+
+/// A Merge as reviewed: the heads it was planned against, what happens automatically,
+/// and what a Member must decide.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MergePlan {
+    pub source: Moment,
+    pub target: Moment,
+    pub auto: Vec<Op>,
+    pub conflicts: Vec<Conflict>,
+}
+
+/// Why a Merge could not be planned or applied.
+#[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
+pub enum MergeError {
+    #[error("a merge is only allowed between a branch and its direct parent")]
+    NotParentAndChild,
+    #[error("a branch has changed since the merge was planned; plan it again")]
+    Stale,
+    #[error("conflicts without a decision: {0:?}")]
+    Undecided(Vec<ConflictKey>),
+    #[error("a decision matches no conflict: {0:?}")]
+    UnknownConflict(ConflictKey),
+    #[error("a hand-written value is not allowed for edit vs delete: {0:?}")]
+    CustomNotAllowed(ConflictKey),
+    #[error(transparent)]
+    Ws(#[from] WsError),
+}
+
+/// Operations for the decided Conflicts, to apply to `target` after the automatic ones.
+pub fn resolve(
+    source: &Board,
+    target: &Board,
+    conflicts: &[Conflict],
+    decisions: &Decisions,
+) -> Result<Vec<Op>, MergeError> {
+    let keys: BTreeSet<ConflictKey> = conflicts.iter().map(Conflict::key).collect();
+    if let Some(key) = decisions.keys().find(|k| !keys.contains(*k)) {
+        return Err(MergeError::UnknownConflict(key.clone()));
+    }
+    let mut decided = Vec::new();
+    let mut undecided = Vec::new();
+    for conflict in conflicts {
+        match decisions.get(&conflict.key()) {
+            Some(decision) => decided.push((conflict, decision)),
+            None => undecided.push(conflict.key()),
+        }
+    }
+    if !undecided.is_empty() {
+        return Err(MergeError::Undecided(undecided));
+    }
+
+    let mut ops = Vec::new();
+    for (conflict, decision) in decided {
+        match (conflict, decision) {
+            (_, Decision::TakeTarget) => {}
+            (
+                Conflict::Field {
+                    entity,
+                    field,
+                    source: value,
+                    ..
+                },
+                Decision::TakeSource,
+            )
+            | (Conflict::Field { entity, field, .. }, Decision::Custom(value)) => {
+                ops.push(set(*entity, field, value));
+            }
+            (Conflict::EditVsDelete { .. }, Decision::Custom(_)) => {
+                return Err(MergeError::CustomNotAllowed(conflict.key()));
+            }
+            (
+                Conflict::EditVsDelete {
+                    entity,
+                    deleted_on: Side::Source,
+                },
+                Decision::TakeSource,
+            ) => ops.push(Op::Delete { entity: *entity }),
+            (
+                Conflict::EditVsDelete {
+                    entity,
+                    deleted_on: Side::Target,
+                },
+                Decision::TakeSource,
+            ) => {
+                ops.push(Op::Undelete { entity: *entity });
+                if let (Some(s), Some(t)) = (source.get(*entity), target.get(*entity)) {
+                    for name in field_names(&s.fields, &t.fields) {
+                        if !is_layout(s.kind, name) && s.get(name) != t.get(name) {
+                            ops.push(set(*entity, name, s.get(name)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(ops)
+}
+
+impl Workspace {
+    /// Compares `source` and `target` against the most recent moment contained in both.
+    pub fn plan_merge(&self, source: BranchId, target: BranchId) -> Result<MergePlan, MergeError> {
+        let child = self.child_of_pair(source, target)?;
+        let base = child
+            .sync_points()
+            .last()
+            .map(|point| point.base)
+            .or(child.parent())
+            .ok_or(MergeError::NotParentAndChild)?;
+        let (source, target) = (self.head(source)?, self.head(target)?);
+        let (auto, conflicts) = three_way(
+            &self.board_at(base)?,
+            &self.board_at(source)?,
+            &self.board_at(target)?,
+        );
+        Ok(MergePlan {
+            source,
+            target,
+            auto,
+            conflicts,
+        })
+    }
+
+    /// Applies a planned Merge as one batch on the target and records where the two
+    /// Branches now meet. Returns the target's new head.
+    pub fn apply_merge(
+        &mut self,
+        plan: &MergePlan,
+        decisions: &Decisions,
+        author: MemberId,
+        at: i64,
+    ) -> Result<Moment, MergeError> {
+        let child = self
+            .child_of_pair(plan.source.branch, plan.target.branch)?
+            .id();
+        if self.head(plan.source.branch)? != plan.source
+            || self.head(plan.target.branch)? != plan.target
+        {
+            return Err(MergeError::Stale);
+        }
+        let decided = resolve(
+            &self.board_at(plan.source)?,
+            &self.board_at(plan.target)?,
+            &plan.conflicts,
+            decisions,
+        )?;
+        let ops = [plan.auto.clone(), decided].concat();
+        let landed = if ops.is_empty() {
+            plan.target
+        } else {
+            let origin = Origin::Merge {
+                batch: BatchId::new(),
+                source: plan.source,
+            };
+            self.append_batch(plan.target.branch, author, at, ops, origin)?
+        };
+        self.push_sync_point(
+            child,
+            SyncPoint {
+                base: plan.source,
+                landed: Some(landed),
+            },
+        );
+        Ok(landed)
+    }
+
+    /// Of two Branches, the one whose parent is the other.
+    fn child_of_pair(&self, a: BranchId, b: BranchId) -> Result<&Branch, MergeError> {
+        let branch_a = self.branch(a).ok_or(WsError::UnknownBranch(a))?;
+        let branch_b = self.branch(b).ok_or(WsError::UnknownBranch(b))?;
+        if branch_a.parent().map(|m| m.branch) == Some(b) {
+            Ok(branch_a)
+        } else if branch_b.parent().map(|m| m.branch) == Some(a) {
+            Ok(branch_b)
+        } else {
+            Err(MergeError::NotParentAndChild)
         }
     }
 }

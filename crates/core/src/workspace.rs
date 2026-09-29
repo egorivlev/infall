@@ -272,6 +272,9 @@ impl Workspace {
     }
 
     /// Appends the Changes that return `branch` to its Board at `to_seq`. Returns the new head.
+    ///
+    /// Merges that landed on `branch` after `to_seq` are undone by this, so their sync
+    /// points are forgotten: merging the same source again brings its work back.
     pub fn restore(
         &mut self,
         branch: BranchId,
@@ -285,14 +288,29 @@ impl Workspace {
             seq: to_seq,
         })?;
         let ops = diff_ops(&self.board_at(head)?, &target);
-        if ops.is_empty() {
-            return Ok(head);
-        }
-        let origin = Origin::Restore {
-            batch: BatchId::new(),
-            to_seq,
+        let head = if ops.is_empty() {
+            head
+        } else {
+            let origin = Origin::Restore {
+                batch: BatchId::new(),
+                to_seq,
+            };
+            self.append_batch(branch, author, at, ops, origin)?
         };
-        self.append_batch(branch, author, at, ops, origin)
+        for b in self.branches.values_mut() {
+            b.sync_points.retain(|sp| {
+                !sp.landed
+                    .is_some_and(|landed| landed.branch == branch && landed.seq > to_seq)
+            });
+        }
+        Ok(head)
+    }
+
+    /// Records that `point.base` is now contained in both `child` and its parent.
+    pub(crate) fn push_sync_point(&mut self, child: BranchId, point: SyncPoint) {
+        if let Some(b) = self.branches.get_mut(&child) {
+            b.sync_points.push(point);
+        }
     }
 
     /// Appends `ops` to `branch` as Changes with `origin`; if any op is rejected, nothing is appended.
