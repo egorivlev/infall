@@ -46,7 +46,9 @@ Restoring a Branch to an earlier moment on that same Branch appends the Changes 
 
 A Merge brings a **source** Branch into a **target** Branch. In v1 a Merge is only allowed between a Branch and its direct parent, in either direction.
 
-It is a three-way comparison of source and target against a **base**: the Board at the most recent moment known to be contained in both — the fork moment, or the source moment of the most recent Merge between the two Branches in either direction.
+It is a three-way comparison of source and target against a **base**: the Board at the most recent moment known to be contained in both — the fork moment, or the source moment of the most recent Merge between the two Branches, in either direction, that is still remembered.
+
+A Merge between two Branches stops being remembered when a Restore on the Branch it landed on goes back to a moment before it landed. Every later Merge between those same two Branches is forgotten with it, because each was computed on top of the one undone. Forgetting only ever moves the base earlier, which can raise a Conflict again but never loses work.
 
 Per entity that exists in the base (b = base, s = source, t = target):
 
@@ -78,6 +80,6 @@ Entities that exist only on source are created automatically with source's field
 
 Each Conflict is decided by a Member: take source, take target, or (field Conflicts only) a hand-written value. For edit vs delete, "take source" means end up as source has it (deleted, or live with source's content fields) and "take target" means leave target as it is.
 
-A Merge cannot be applied until every Conflict has a decision. It is applied as one batch of Changes on the target, marked as a Merge. If the target or source has gained Changes since the Merge was planned, applying is refused and the Merge must be planned again.
+A Merge cannot be applied until every Conflict has a decision. It is applied as one batch of Changes on the target, marked as a Merge. If the target or source has gained Changes since the Merge was planned, or the base is no longer the one it was planned against, applying is refused and the Merge must be planned again.
 
 Undoing a Merge is a Restore to the moment before it. After such a Restore, merging the same source again must bring its work back.
