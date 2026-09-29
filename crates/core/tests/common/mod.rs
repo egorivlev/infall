@@ -43,6 +43,11 @@ pub fn set(entity: EntityId, field: &str, value: Value) -> Op {
     }
 }
 
+/// Arbitrary seeds for `scribble`.
+pub fn bytes() -> impl proptest::strategy::Strategy<Value = Vec<u8>> {
+    proptest::collection::vec(proptest::num::u8::ANY, 0..90)
+}
+
 /// Turns arbitrary bytes into operations and applies the valid ones; returns the ops that were accepted.
 ///
 /// The seed is read three bytes at a time as (action, pick, payload). The action (mod 6) chooses:
