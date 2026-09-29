@@ -1,6 +1,7 @@
 //! Branches, Changes and Checkpoints: the history of a Board.
 
 use crate::board::{ApplyError, Board, Op};
+use crate::diff::diff_ops;
 use crate::ids::{BatchId, BranchId, ChangeId, MemberId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -268,6 +269,30 @@ impl Workspace {
             .unwrap_or_default();
         list.sort_by(|a, b| (a.moment.seq, &a.name).cmp(&(b.moment.seq, &b.name)));
         list
+    }
+
+    /// Appends the Changes that return `branch` to its Board at `to_seq`. Returns the new head.
+    pub fn restore(
+        &mut self,
+        branch: BranchId,
+        to_seq: u64,
+        author: MemberId,
+        at: i64,
+    ) -> Result<Moment, WsError> {
+        let head = self.head(branch)?;
+        let target = self.board_at(Moment {
+            branch,
+            seq: to_seq,
+        })?;
+        let ops = diff_ops(&self.board_at(head)?, &target);
+        if ops.is_empty() {
+            return Ok(head);
+        }
+        let origin = Origin::Restore {
+            batch: BatchId::new(),
+            to_seq,
+        };
+        self.append_batch(branch, author, at, ops, origin)
     }
 
     /// Appends `ops` to `branch` as Changes with `origin`; if any op is rejected, nothing is appended.
