@@ -53,6 +53,8 @@ pub struct Branch {
     id: BranchId,
     name: String,
     parent: Option<Moment>,
+    created_by: Option<MemberId>,
+    created_at: Option<i64>,
     changes: Vec<Change>,
     sync_points: Vec<SyncPoint>,
     checkpoints: Vec<Checkpoint>,
@@ -70,6 +72,16 @@ impl Branch {
     /// The moment this Branch was forked from; `None` only for main.
     pub fn parent(&self) -> Option<Moment> {
         self.parent
+    }
+
+    /// Who forked this Branch; `None` for main.
+    pub fn created_by(&self) -> Option<MemberId> {
+        self.created_by
+    }
+
+    /// When this Branch was forked; `None` for main.
+    pub fn created_at(&self) -> Option<i64> {
+        self.created_at
     }
 
     pub fn changes(&self) -> &[Change] {
@@ -110,6 +122,8 @@ impl Workspace {
             id,
             name: "main".to_string(),
             parent: None,
+            created_by: None,
+            created_at: None,
             changes: Vec::new(),
             sync_points: Vec::new(),
             checkpoints: Vec::new(),
@@ -181,8 +195,8 @@ impl Workspace {
         &mut self,
         name: &str,
         from: Moment,
-        _author: MemberId,
-        _at: i64,
+        author: MemberId,
+        at: i64,
     ) -> Result<BranchId, WsError> {
         let name = name.trim();
         if name.is_empty() {
@@ -199,6 +213,8 @@ impl Workspace {
                 id,
                 name: name.to_string(),
                 parent: Some(from),
+                created_by: Some(author),
+                created_at: Some(at),
                 changes: Vec::new(),
                 sync_points: vec![SyncPoint {
                     base: from,

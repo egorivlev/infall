@@ -74,6 +74,12 @@ fn a_fork_starts_from_its_parent_moment_and_then_diverges() {
         }]
     );
     assert_eq!(branch.name(), "try-QEC");
+    assert_eq!(
+        (branch.created_by(), branch.created_at()),
+        (Some(me), Some(3))
+    );
+    let m = ws.branch(main).unwrap();
+    assert_eq!((m.created_by(), m.created_at()), (None, None));
     assert_eq!(ws.branch_by_name("try-QEC").unwrap().id(), b);
     assert_eq!(ws.branch(main).unwrap().parent(), None);
     assert_eq!(ws.branches().count(), 2);
@@ -212,6 +218,8 @@ fn a_workspace_round_trips_through_json() {
     let json = serde_json::to_string(&ws).unwrap();
     let back: Workspace = serde_json::from_str(&json).unwrap();
     assert_eq!(back, ws);
+    let fb = back.branch(b).unwrap();
+    assert_eq!((fb.created_by(), fb.created_at()), (Some(me), Some(2)));
     assert_eq!(
         back.board_at(back.head(b).unwrap()).unwrap(),
         ws.board_at(ws.head(b).unwrap()).unwrap()
