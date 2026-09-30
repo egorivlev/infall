@@ -64,8 +64,76 @@ pub enum Decision {
     Custom(Value),
 }
 
-/// One Decision per Conflict.
-pub type Decisions = BTreeMap<ConflictKey, Decision>;
+/// One Decision per Conflict, ordered by key.
+///
+/// Serialized as a list of `[ConflictKey, Decision]` pairs, because JSON object keys must
+/// be strings; a list that names the same Conflict twice is rejected.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "Vec<(ConflictKey, Decision)>",
+    into = "Vec<(ConflictKey, Decision)>"
+)]
+pub struct Decisions(BTreeMap<ConflictKey, Decision>);
+
+impl Decisions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records `decision` for `key`, returning the Decision it replaces.
+    pub fn insert(&mut self, key: ConflictKey, decision: Decision) -> Option<Decision> {
+        self.0.insert(key, decision)
+    }
+
+    pub fn get(&self, key: &ConflictKey) -> Option<&Decision> {
+        self.0.get(key)
+    }
+
+    /// Decisions in key order.
+    pub fn iter(&self) -> impl Iterator<Item = (&ConflictKey, &Decision)> {
+        self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl FromIterator<(ConflictKey, Decision)> for Decisions {
+    fn from_iter<I: IntoIterator<Item = (ConflictKey, Decision)>>(iter: I) -> Self {
+        Decisions(iter.into_iter().collect())
+    }
+}
+
+/// Why a serialized list of Decisions was rejected.
+#[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
+#[error("more than one decision for {0:?}")]
+pub struct RepeatedDecision(pub ConflictKey);
+
+impl TryFrom<Vec<(ConflictKey, Decision)>> for Decisions {
+    type Error = RepeatedDecision;
+
+    fn try_from(list: Vec<(ConflictKey, Decision)>) -> Result<Self, Self::Error> {
+        let mut decisions = Decisions::new();
+        for (key, decision) in list {
+            if decisions.0.contains_key(&key) {
+                return Err(RepeatedDecision(key));
+            }
+            decisions.0.insert(key, decision);
+        }
+        Ok(decisions)
+    }
+}
+
+impl From<Decisions> for Vec<(ConflictKey, Decision)> {
+    fn from(decisions: Decisions) -> Self {
+        decisions.0.into_iter().collect()
+    }
+}
 
 /// A Merge as reviewed: the heads and base it was planned against, what happens
 /// automatically, and what a Member must decide.
@@ -104,7 +172,7 @@ pub fn resolve(
     decisions: &Decisions,
 ) -> Result<Vec<Op>, MergeError> {
     let keys: BTreeSet<ConflictKey> = conflicts.iter().map(Conflict::key).collect();
-    if let Some(key) = decisions.keys().find(|k| !keys.contains(*k)) {
+    if let Some((key, _)) = decisions.iter().find(|(k, _)| !keys.contains(*k)) {
         return Err(MergeError::UnknownConflict(key.clone()));
     }
     let mut decided = Vec::new();
@@ -203,13 +271,15 @@ impl Workspace {
         {
             return Err(MergeError::Stale);
         }
-        let decided = resolve(
-            &self.board_at(plan.source)?,
-            &self.board_at(plan.target)?,
-            &plan.conflicts,
-            decisions,
-        )?;
-        let ops = [plan.auto.clone(), decided].concat();
+        // The plan may have travelled through a client: apply only what the Branches give now.
+        let source = self.board_at(plan.source)?;
+        let target = self.board_at(plan.target)?;
+        let (auto, conflicts) = three_way(&self.board_at(plan.base)?, &source, &target);
+        if auto != plan.auto || conflicts != plan.conflicts {
+            return Err(MergeError::Stale);
+        }
+        let decided = resolve(&source, &target, &conflicts, decisions)?;
+        let ops = [auto, decided].concat();
         let landed = if ops.is_empty() {
             plan.target
         } else {
@@ -237,7 +307,9 @@ impl Workspace {
             .sync_points()
             .last()
             .map(|point| point.base)
-            // Unreachable: `fork` seeds a sync point and Restore never removes it.
+            // Unreachable for Workspaces built through this API (`fork` seeds a sync point
+            // and Restore never removes it), but reachable from a deserialized Workspace with
+            // an empty sync list, where the fork moment is the right base.
             .or(child.parent())
             .ok_or(MergeError::NotParentAndChild)
     }

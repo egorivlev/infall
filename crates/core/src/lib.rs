@@ -11,7 +11,8 @@ pub use board::{ApplyError, Board, Entity, Op};
 pub use diff::diff_ops;
 pub use ids::{BatchId, BranchId, ChangeId, EntityId, MemberId};
 pub use merge::{
-    Conflict, ConflictKey, Decision, Decisions, MergeError, MergePlan, Side, resolve, three_way,
+    Conflict, ConflictKey, Decision, Decisions, MergeError, MergePlan, RepeatedDecision, Side,
+    resolve, three_way,
 };
 pub use schema::{EntityKind, FieldClass, Fields, SchemaError, Value, field_class, validate_field};
 pub use workspace::{Branch, Change, Checkpoint, Moment, Origin, SyncPoint, Workspace, WsError};

@@ -136,10 +136,12 @@ fn a_decided_merge_lands_as_one_batch() {
     let qec_changes = ws.branch(qec).unwrap().changes().to_vec();
     let before = change_count(&ws, main);
     let plan = ws.plan_merge(qec, main).unwrap();
-    let decisions = Decisions::from([(
+    let decisions: Decisions = [(
         title_key(&ids),
         Decision::Custom(text("Surface & toric codes (review)")),
-    )]);
+    )]
+    .into_iter()
+    .collect();
     let head = ws.apply_merge(&plan, &decisions, ids.me, 10).unwrap();
     assert_eq!(head, ws.head(main).unwrap());
 
@@ -339,7 +341,9 @@ fn an_undone_merge_comes_back_even_when_the_restore_appends_nothing() {
 fn an_invalid_hand_written_value_refuses_the_whole_merge() {
     let (mut ws, main, qec, ids) = diverged();
     let plan = ws.plan_merge(qec, main).unwrap();
-    let decisions = Decisions::from([(title_key(&ids), Decision::Custom(Value::Float(1.0)))]);
+    let decisions: Decisions = [(title_key(&ids), Decision::Custom(Value::Float(1.0)))]
+        .into_iter()
+        .collect();
     let before = ws.clone();
     assert!(matches!(
         ws.apply_merge(&plan, &decisions, ids.me, 10),
@@ -548,4 +552,88 @@ fn a_plan_goes_stale_when_the_base_changes() {
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
+}
+
+#[test]
+fn decisions_round_trip_through_json() {
+    let (_, _, _, ids) = diverged();
+    let decisions: Decisions = [
+        (title_key(&ids), Decision::Custom(text("hand written"))),
+        (entity_key(ids.vqe), Decision::TakeSource),
+        (
+            ConflictKey {
+                entity: ids.grover,
+                field: Some("x".to_string()),
+            },
+            Decision::Custom(Value::Null),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let json = serde_json::to_string(&decisions).unwrap();
+    let back: Decisions = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, decisions);
+    assert_eq!(back.len(), 3);
+    assert_eq!(
+        back.get(&title_key(&ids)),
+        Some(&Decision::Custom(text("hand written")))
+    );
+}
+
+#[test]
+fn decisions_with_a_repeated_conflict_are_rejected() {
+    let (_, _, _, ids) = diverged();
+    let one: Decisions = [(title_key(&ids), Decision::TakeSource)]
+        .into_iter()
+        .collect();
+    let json = serde_json::to_string(&one).unwrap();
+    assert_eq!(serde_json::from_str::<Decisions>(&json).unwrap(), one);
+
+    let entry = serde_json::to_value((title_key(&ids), Decision::TakeSource)).unwrap();
+    let entry_other = serde_json::to_value((title_key(&ids), Decision::TakeTarget)).unwrap();
+    let repeated = serde_json::Value::Array(vec![entry, entry_other]).to_string();
+    assert!(serde_json::from_str::<Decisions>(&repeated).is_err());
+}
+
+#[test]
+fn a_plan_with_its_conflicts_removed_is_refused() {
+    let (mut ws, main, qec, ids) = diverged();
+    let mut plan = ws.plan_merge(qec, main).unwrap();
+    assert!(!plan.conflicts.is_empty());
+    plan.conflicts.clear();
+    let before = ws.clone();
+    assert_eq!(
+        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10),
+        Err(MergeError::Stale)
+    );
+    assert_eq!(ws, before);
+}
+
+#[test]
+fn a_plan_with_altered_automatic_changes_is_refused() {
+    let (mut ws, main, qec, ids) = diverged();
+    let plan = ws.plan_merge(qec, main).unwrap();
+    let decisions = decide_all(&plan, Decision::TakeSource);
+    let before = ws.clone();
+
+    let mut dropped = plan.clone();
+    dropped
+        .auto
+        .retain(|op| *op != Op::Delete { entity: ids.grover });
+    assert_eq!(dropped.auto.len() + 1, plan.auto.len());
+    assert_eq!(
+        ws.apply_merge(&dropped, &decisions, ids.me, 10),
+        Err(MergeError::Stale)
+    );
+    assert_eq!(ws, before);
+
+    let mut added = plan.clone();
+    added.auto.push(Op::Delete { entity: ids.vqe });
+    assert_eq!(
+        ws.apply_merge(&added, &decisions, ids.me, 10),
+        Err(MergeError::Stale)
+    );
+    assert_eq!(ws, before);
+
+    ws.apply_merge(&plan, &decisions, ids.me, 10).unwrap();
 }
