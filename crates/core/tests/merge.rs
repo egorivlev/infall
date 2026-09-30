@@ -637,3 +637,148 @@ fn a_plan_with_altered_automatic_changes_is_refused() {
 
     ws.apply_merge(&plan, &decisions, ids.me, 10).unwrap();
 }
+
+/// Pins a documented limitation (spec §5 "Known limitation"): forgetting a later Merge in
+/// the chain leaves its content on both Branches with no record that they agreed, so the
+/// next Merge reverses a deliberate Undelete automatically. If this test starts failing
+/// because the limitation was removed, update the spec with it.
+#[test]
+fn known_limitation_a_forgotten_later_merge_can_reverse_an_undelete() {
+    // main: Y; fork child; child creates C; S1 child->main (lands main@2); main creates M;
+    // child deletes Y; S2 main->child (lands child@3); S3 child->main deletes Y on main.
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (y, create_y) = card("Y");
+    ws.record(main, me, 1, create_y).unwrap();
+    let child = ws.fork("child", ws.head(main).unwrap(), me, 2).unwrap();
+    ws.record(child, me, 3, card("C").1).unwrap();
+    merge(&mut ws, child, main, me, Decision::TakeSource);
+    ws.record(main, me, 4, card("M").1).unwrap();
+    ws.record(child, me, 5, Op::Delete { entity: y }).unwrap();
+    let before_s2 = ws.head(child).unwrap().seq;
+    merge(&mut ws, main, child, me, Decision::TakeSource);
+    assert!(ws.head(child).unwrap().seq > before_s2);
+    merge(&mut ws, child, main, me, Decision::TakeSource);
+    assert!(head_board(&ws, main).get(y).unwrap().deleted);
+
+    // Child Restores to before S2 landed: S2 and S3 are forgotten, Y stays deleted on both.
+    ws.restore(child, before_s2, me, 6).unwrap();
+    assert_eq!(ws.branch(child).unwrap().sync_points().len(), 2);
+    // A Member on main deliberately brings Y back.
+    ws.record(main, me, 7, Op::Undelete { entity: y }).unwrap();
+
+    let plan = ws.plan_merge(child, main).unwrap();
+    assert!(plan.conflicts.is_empty());
+    assert_eq!(plan.auto, vec![Op::Delete { entity: y }]);
+}
+
+#[test]
+fn a_workspace_with_merges_both_ways_round_trips_through_json() {
+    let (mut ws, main, qec, ids) = diverged();
+    let plan = ws.plan_merge(qec, main).unwrap();
+    assert!(!plan.conflicts.is_empty());
+    merge(&mut ws, qec, main, ids.me, Decision::TakeSource);
+    ws.checkpoint("after QEC", ws.head(main).unwrap(), ids.me, 11)
+        .unwrap();
+    ws.record(main, ids.me, 12, set(ids.vqe, "summary", text("newer")))
+        .unwrap();
+    merge(&mut ws, main, qec, ids.me, Decision::TakeSource);
+    ws.record(qec, ids.me, 13, card("After sync").1).unwrap();
+    ws.restore(qec, 2, ids.me, 14).unwrap();
+
+    let json = serde_json::to_string(&ws).unwrap();
+    let copy: Workspace = serde_json::from_str(&json).unwrap();
+    assert_eq!(copy, ws);
+    for (source, target) in [(qec, main), (main, qec)] {
+        let plan = ws.plan_merge(source, target).unwrap();
+        assert_eq!(copy.plan_merge(source, target).unwrap(), plan);
+        let plan_json = serde_json::to_string(&plan).unwrap();
+        assert_eq!(serde_json::from_str::<MergePlan>(&plan_json).unwrap(), plan);
+    }
+}
+
+#[test]
+fn a_connection_retargeted_on_both_sides_must_keep_an_endpoint() {
+    // main: A, B, C, D and A -> B; fork; main points it at C, the branch at D.
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create_a) = card("A");
+    let (b, create_b) = card("B");
+    let (c, create_c) = card("C");
+    let (d, create_d) = card("D");
+    let (link, create_link) = connect(a, b);
+    for op in [create_a, create_b, create_c, create_d, create_link] {
+        ws.record(main, me, 1, op).unwrap();
+    }
+    let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+    ws.record(main, me, 3, set(link, "to", Value::Ref(c)))
+        .unwrap();
+    ws.record(side, me, 3, set(link, "to", Value::Ref(d)))
+        .unwrap();
+    let plan = ws.plan_merge(side, main).unwrap();
+    let key = ConflictKey {
+        entity: link,
+        field: Some("to".to_string()),
+    };
+    assert_eq!(
+        plan.conflicts.iter().map(Conflict::key).collect::<Vec<_>>(),
+        vec![key.clone()]
+    );
+
+    let cleared: Decisions = [(key.clone(), Decision::Custom(Value::Null))]
+        .into_iter()
+        .collect();
+    let before = ws.clone();
+    assert_eq!(
+        ws.apply_merge(&plan, &cleared, me, 4),
+        Err(MergeError::Ws(WsError::Apply(ApplyError::MissingEndpoint(
+            link
+        ))))
+    );
+    assert_eq!(ws, before);
+
+    let source: Decisions = [(key, Decision::TakeSource)].into_iter().collect();
+    ws.apply_merge(&plan, &source, me, 4).unwrap();
+    let board = head_board(&ws, main);
+    assert_eq!(board.get(link).unwrap().get("to"), &Value::Ref(d));
+    assert!(board.is_visible(link));
+}
+
+#[test]
+fn a_connection_to_a_card_deleted_on_the_other_branch_waits_for_it() {
+    // main: A, B; fork; main draws A -> B while the branch deletes B.
+    let setup = || {
+        let (mut ws, main) = Workspace::new();
+        let me = MemberId::new();
+        let (a, create_a) = card("A");
+        let (b, create_b) = card("B");
+        ws.record(main, me, 1, create_a).unwrap();
+        ws.record(main, me, 1, create_b).unwrap();
+        let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+        let (link, create_link) = connect(a, b);
+        ws.record(main, me, 3, create_link).unwrap();
+        ws.record(side, me, 3, Op::Delete { entity: b }).unwrap();
+        (ws, main, side, me, b, link)
+    };
+
+    // The Connection arrives on the Branch that deleted B, and the reverse.
+    for into_side in [true, false] {
+        let (mut ws, main, side, me, b, link) = setup();
+        let (source, target) = if into_side {
+            (main, side)
+        } else {
+            (side, main)
+        };
+        let plan = ws.plan_merge(source, target).unwrap();
+        assert!(plan.conflicts.is_empty());
+        ws.apply_merge(&plan, &Decisions::new(), me, 4).unwrap();
+        let board = head_board(&ws, target);
+        assert!(board.get(b).unwrap().deleted);
+        assert!(board.get(link).is_some_and(|l| !l.deleted));
+        assert!(!board.is_visible(link));
+
+        ws.record(target, me, 5, Op::Undelete { entity: b })
+            .unwrap();
+        assert!(head_board(&ws, target).is_visible(link));
+    }
+}

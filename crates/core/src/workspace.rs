@@ -192,6 +192,8 @@ impl Workspace {
     }
 
     /// Creates a Branch starting from the Board at `from`.
+    ///
+    /// The name is trimmed before the empty and uniqueness checks, and stored trimmed.
     pub fn fork(
         &mut self,
         name: &str,
@@ -228,6 +230,8 @@ impl Workspace {
     }
 
     /// Names `moment`; names are unique within its Branch.
+    ///
+    /// The name is trimmed before the empty and uniqueness checks, and stored trimmed.
     pub fn checkpoint(
         &mut self,
         name: &str,
@@ -272,6 +276,9 @@ impl Workspace {
     }
 
     /// Appends the Changes that return `branch` to its Board at `to_seq`. Returns the new head.
+    ///
+    /// Entities created after `to_seq` become deleted and keep the field values they had
+    /// at the head.
     ///
     /// A Merge that landed on `branch` after `to_seq` is undone by this, so it is forgotten,
     /// together with every later Merge between the same two Branches: merging the same

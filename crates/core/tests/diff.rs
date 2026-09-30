@@ -94,8 +94,13 @@ fn scribble_produces_a_healthy_mix_of_ops() {
     let sets = count(|o| matches!(o, Op::Set { .. }));
     let deletes = count(|o| matches!(o, Op::Delete { .. }));
     let undeletes = count(|o| matches!(o, Op::Undelete { .. }));
-    eprintln!("cards={cards} links={links} sets={sets} deletes={deletes} undeletes={undeletes}");
-    assert!(cards > 5 && links > 5 && sets > 5 && deletes > 5 && undeletes > 5);
+    let counts =
+        format!("cards={cards} links={links} sets={sets} deletes={deletes} undeletes={undeletes}");
+    assert!(cards > 5, "too few Card creates: {counts}");
+    assert!(links > 5, "too few Connection creates: {counts}");
+    assert!(sets > 5, "too few Sets: {counts}");
+    assert!(deletes > 5, "too few Deletes: {counts}");
+    assert!(undeletes > 5, "too few Undeletes: {counts}");
 }
 
 proptest::proptest! {
