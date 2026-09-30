@@ -67,12 +67,14 @@ pub enum Decision {
 /// One Decision per Conflict.
 pub type Decisions = BTreeMap<ConflictKey, Decision>;
 
-/// A Merge as reviewed: the heads it was planned against, what happens automatically,
-/// and what a Member must decide.
+/// A Merge as reviewed: the heads and base it was planned against, what happens
+/// automatically, and what a Member must decide.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MergePlan {
     pub source: Moment,
     pub target: Moment,
+    /// The moment whose Board the comparison used as the base.
+    pub base: Moment,
     pub auto: Vec<Op>,
     pub conflicts: Vec<Conflict>,
 }
@@ -167,13 +169,7 @@ pub fn resolve(
 impl Workspace {
     /// Compares `source` and `target` against the most recent moment contained in both.
     pub fn plan_merge(&self, source: BranchId, target: BranchId) -> Result<MergePlan, MergeError> {
-        let child = self.child_of_pair(source, target)?;
-        let base = child
-            .sync_points()
-            .last()
-            .map(|point| point.base)
-            .or(child.parent())
-            .ok_or(MergeError::NotParentAndChild)?;
+        let base = self.merge_base(source, target)?;
         let (source, target) = (self.head(source)?, self.head(target)?);
         let (auto, conflicts) = three_way(
             &self.board_at(base)?,
@@ -183,6 +179,7 @@ impl Workspace {
         Ok(MergePlan {
             source,
             target,
+            base,
             auto,
             conflicts,
         })
@@ -202,6 +199,7 @@ impl Workspace {
             .id();
         if self.head(plan.source.branch)? != plan.source
             || self.head(plan.target.branch)? != plan.target
+            || self.merge_base(plan.source.branch, plan.target.branch)? != plan.base
         {
             return Err(MergeError::Stale);
         }
@@ -229,6 +227,19 @@ impl Workspace {
             },
         );
         Ok(landed)
+    }
+
+    /// The moment whose Board is the base for merging between `a` and `b`: the source
+    /// moment of the most recent remembered Merge between them, or the fork moment.
+    fn merge_base(&self, a: BranchId, b: BranchId) -> Result<Moment, MergeError> {
+        let child = self.child_of_pair(a, b)?;
+        child
+            .sync_points()
+            .last()
+            .map(|point| point.base)
+            // Unreachable: `fork` seeds a sync point and Restore never removes it.
+            .or(child.parent())
+            .ok_or(MergeError::NotParentAndChild)
     }
 
     /// Of two Branches, the one whose parent is the other.

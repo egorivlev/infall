@@ -91,6 +91,7 @@ fn the_review_lists_automatic_changes_and_conflicts() {
     let plan = ws.plan_merge(qec, main).unwrap();
     assert_eq!(plan.source, ws.head(qec).unwrap());
     assert_eq!(plan.target, ws.head(main).unwrap());
+    assert_eq!(Some(plan.base), ws.branch(qec).unwrap().parent());
     assert_eq!(
         plan.conflicts,
         vec![Conflict::Field {
@@ -440,4 +441,111 @@ fn a_merge_with_nothing_to_do_still_records_where_the_branches_met() {
             landed: Some(plan.target),
         })
     );
+}
+
+/// main: A (seq 1); fork side; side creates T; side merged into main (lands main@2);
+/// main sets A.summary (main@3); main merged into side (lands side@2).
+fn merged_both_ways() -> (Workspace, BranchId, BranchId, MemberId, EntityId, EntityId) {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create_a) = card("A");
+    ws.record(main, me, 1, create_a).unwrap();
+    let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+    let (t, create_t) = card("T");
+    ws.record(side, me, 3, create_t).unwrap();
+    merge(&mut ws, side, main, me, Decision::TakeSource);
+    assert_eq!(ws.head(main).unwrap().seq, 2);
+    ws.record(main, me, 4, set(a, "summary", text("main summary")))
+        .unwrap();
+    merge(&mut ws, main, side, me, Decision::TakeSource);
+    (ws, main, side, me, a, t)
+}
+
+#[test]
+fn undoing_a_merge_forgets_later_merges_between_the_same_branches() {
+    let (mut ws, main, side, me, _, t) = merged_both_ways();
+    let fork_point = ws.branch(side).unwrap().sync_points()[0].clone();
+    assert_eq!(fork_point.landed, None);
+    ws.restore(main, 1, me, 5).unwrap();
+    assert_eq!(ws.branch(side).unwrap().sync_points(), &[fork_point]);
+
+    let mut back = ws.clone();
+    let plan = back.plan_merge(side, main).unwrap();
+    assert!(plan.conflicts.is_empty());
+    back.apply_merge(&plan, &Decisions::new(), me, 6).unwrap();
+    assert!(head_board(&back, main).is_visible(t));
+
+    let plan = ws.plan_merge(main, side).unwrap();
+    assert!(!plan.auto.contains(&Op::Delete { entity: t }));
+    let decisions = decide_all(&plan, Decision::TakeTarget);
+    ws.apply_merge(&plan, &decisions, me, 6).unwrap();
+    assert!(head_board(&ws, side).is_visible(t));
+}
+
+#[test]
+fn restoring_a_branchs_own_work_keeps_the_merge_history() {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    ws.record(main, me, 1, card("A").1).unwrap();
+    let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+    ws.record(side, me, 3, card("T").1).unwrap();
+    merge(&mut ws, side, main, me, Decision::TakeSource);
+    let landed = ws.head(main).unwrap().seq;
+    ws.record(main, me, 4, card("M").1).unwrap();
+    let points = ws.branch(side).unwrap().sync_points().to_vec();
+    assert_eq!(points.len(), 2);
+
+    ws.restore(main, landed, me, 5).unwrap();
+    assert_eq!(ws.branch(side).unwrap().sync_points(), &points[..]);
+    let plan = ws.plan_merge(side, main).unwrap();
+    assert!(plan.auto.is_empty());
+    assert!(plan.conflicts.is_empty());
+}
+
+#[test]
+fn restoring_the_child_to_before_a_merge_from_the_parent_forgets_it_and_later_ones() {
+    // main: A; fork side; main sets A.summary; side creates T;
+    // main merged into side (lands side@2); side merged into main (lands main@3).
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create_a) = card("A");
+    ws.record(main, me, 1, create_a).unwrap();
+    let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+    ws.record(main, me, 3, set(a, "summary", text("main summary")))
+        .unwrap();
+    ws.record(side, me, 3, card("T").1).unwrap();
+    merge(&mut ws, main, side, me, Decision::TakeSource);
+    assert_eq!(ws.head(side).unwrap().seq, 2);
+    merge(&mut ws, side, main, me, Decision::TakeSource);
+    assert_eq!(ws.branch(side).unwrap().sync_points().len(), 3);
+    let fork_point = ws.branch(side).unwrap().sync_points()[0].clone();
+
+    ws.restore(side, 1, me, 4).unwrap();
+    assert_eq!(ws.branch(side).unwrap().sync_points(), &[fork_point]);
+    // The parent's work comes back to the child when merged again.
+    let plan = ws.plan_merge(main, side).unwrap();
+    assert!(plan.conflicts.is_empty());
+    assert!(plan.auto.contains(&set(a, "summary", text("main summary"))));
+}
+
+#[test]
+fn a_plan_goes_stale_when_the_base_changes() {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create_a) = card("A");
+    ws.record(main, me, 1, create_a).unwrap();
+    let side = ws.fork("side", ws.head(main).unwrap(), me, 2).unwrap();
+    ws.record(side, me, 3, set(a, "title", text("Q"))).unwrap();
+    merge(&mut ws, side, main, me, Decision::TakeSource);
+    ws.record(main, me, 4, set(a, "title", text("A"))).unwrap();
+    let plan = ws.plan_merge(side, main).unwrap();
+    assert!(plan.auto.is_empty());
+    assert_eq!(ws.restore(main, 1, me, 5).unwrap().seq, 3);
+
+    let before = ws.clone();
+    assert_eq!(
+        ws.apply_merge(&plan, &Decisions::new(), me, 6),
+        Err(MergeError::Stale)
+    );
+    assert_eq!(ws, before);
 }

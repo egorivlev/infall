@@ -273,8 +273,9 @@ impl Workspace {
 
     /// Appends the Changes that return `branch` to its Board at `to_seq`. Returns the new head.
     ///
-    /// Merges that landed on `branch` after `to_seq` are undone by this, so their sync
-    /// points are forgotten: merging the same source again brings its work back.
+    /// A Merge that landed on `branch` after `to_seq` is undone by this, so it is forgotten,
+    /// together with every later Merge between the same two Branches: merging the same
+    /// source again brings its work back.
     pub fn restore(
         &mut self,
         branch: BranchId,
@@ -297,11 +298,16 @@ impl Workspace {
             };
             self.append_batch(branch, author, at, ops, origin)?
         };
+        // Each Branch's sync points form a chain, each Merge computed on top of the one
+        // before: forgetting one forgets every later one too. The fork point never lands.
         for b in self.branches.values_mut() {
-            b.sync_points.retain(|sp| {
-                !sp.landed
+            let undone = b.sync_points.iter().position(|sp| {
+                sp.landed
                     .is_some_and(|landed| landed.branch == branch && landed.seq > to_seq)
             });
+            if let Some(first) = undone {
+                b.sync_points.truncate(first);
+            }
         }
         Ok(head)
     }
