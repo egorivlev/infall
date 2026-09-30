@@ -782,3 +782,34 @@ fn a_connection_to_a_card_deleted_on_the_other_branch_waits_for_it() {
         assert!(head_board(&ws, target).is_visible(link));
     }
 }
+
+/// Pins a documented limitation (spec §5 "Known limitation"): a Merge whose undoing Restore
+/// is itself undone stays forgotten, so a Card that reached the child only through that
+/// Merge is on both Branches with no record that they agreed, and the next Merge reverses a
+/// deliberate Delete automatically. If this test starts failing because the limitation was
+/// removed, update the spec with it.
+#[test]
+fn known_limitation_a_merge_restored_past_and_back_can_reverse_a_delete() {
+    // main: P0; fork child; main creates P1; main->child brings P1 (lands child@1).
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    ws.record(main, me, 1, card("P0").1).unwrap();
+    let child = ws.fork("child", ws.head(main).unwrap(), me, 2).unwrap();
+    let (p1, create_p1) = card("P1");
+    ws.record(main, me, 3, create_p1).unwrap();
+    merge(&mut ws, main, child, me, Decision::TakeSource);
+    let landed = ws.head(child).unwrap().seq;
+    assert_eq!(landed, 1);
+
+    // Back to before it landed, then forward to just after: content back, sync point not.
+    ws.restore(child, 0, me, 4).unwrap();
+    ws.restore(child, landed, me, 5).unwrap();
+    assert!(head_board(&ws, child).is_visible(p1));
+    assert_eq!(ws.branch(child).unwrap().sync_points().len(), 1);
+    // Main deliberately deletes P1.
+    ws.record(main, me, 6, Op::Delete { entity: p1 }).unwrap();
+
+    let plan = ws.plan_merge(child, main).unwrap();
+    assert!(plan.conflicts.is_empty());
+    assert_eq!(plan.auto, vec![Op::Undelete { entity: p1 }]);
+}
