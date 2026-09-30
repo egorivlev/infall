@@ -48,7 +48,11 @@ A Merge brings a **source** Branch into a **target** Branch. In v1 a Merge is on
 
 It is a three-way comparison of source and target against a **base**: the Board at the most recent moment known to be contained in both — the fork moment, or the source moment of the most recent Merge between the two Branches, in either direction, that is still remembered.
 
-A Merge between two Branches stops being remembered when a Restore on the Branch it landed on goes back to a moment before it landed. Every later Merge between those same two Branches is forgotten with it, because each was computed on top of the one undone. Forgetting only ever moves the base earlier, which can raise a Conflict again but never loses work.
+A Merge between two Branches stops being remembered when a Restore on the Branch it landed on goes back to a moment before it landed. Every later Merge between those same two Branches is forgotten with it, because each was computed on top of the one undone. Forgetting moves the base earlier. Usually that only means a Conflict is raised again.
+
+**Known limitation.** A Merge that was forgotten without itself being undone (a later one in the chain, or one whose undoing Restore was then undone) leaves its content on both Branches with no record that they agreed. If one Branch then deliberately Deletes or Undeletes an entity, the next Merge between the two can reverse that automatically instead of leaving it alone. The reversal is always listed among the Merge's automatic changes, leaves a tombstone, and can be undone; it is never hidden. Removing this limitation means remembering forgotten Merges again when a Restore returns past them, and is not part of v1.
+
+The automatic changes and Conflicts applied are always the ones computed from the Branches as they are at that instant; a plan that does not match them is refused.
 
 Per entity that exists in the base (b = base, s = source, t = target):
 
