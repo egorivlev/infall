@@ -264,6 +264,41 @@ impl Workspace {
         Ok(())
     }
 
+    /// Trims `name` and checks it could be given to a Checkpoint on `branch`:
+    /// not empty and not already used there. Changes nothing.
+    pub(crate) fn checkpoint_name(&self, branch: BranchId, name: &str) -> Result<String, WsError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(WsError::EmptyName);
+        }
+        let b = self
+            .branches
+            .get(&branch)
+            .ok_or(WsError::UnknownBranch(branch))?;
+        if b.checkpoints.iter().any(|c| c.name == name) {
+            return Err(WsError::NameTaken(name.to_string()));
+        }
+        Ok(name.to_string())
+    }
+
+    /// Adds a Checkpoint whose `name` has passed `checkpoint_name` for `moment.branch`.
+    pub(crate) fn push_checkpoint(
+        &mut self,
+        name: String,
+        moment: Moment,
+        author: MemberId,
+        at: i64,
+    ) {
+        if let Some(b) = self.branches.get_mut(&moment.branch) {
+            b.checkpoints.push(Checkpoint {
+                name,
+                moment,
+                author,
+                at,
+            });
+        }
+    }
+
     /// The Branch's Checkpoints ordered by moment, then name.
     pub fn checkpoints(&self, branch: BranchId) -> Vec<&Checkpoint> {
         let mut list: Vec<&Checkpoint> = self

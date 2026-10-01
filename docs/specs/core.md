@@ -8,11 +8,12 @@ Research Content on a Board is a set of entities. Each has a stable id, a kind, 
 
 | Kind | Content fields | Layout fields |
 |---|---|---|
-| Card | `title` Text, `summary` Text, `status` Text, `color` Text | `x`, `y`, `w`, `h` Float |
+| Card | `title` Text, `summary` Text, `status` Text | `x`, `y`, `w`, `h` Float |
 | Frame | `title` Text | `x`, `y`, `w`, `h` Float |
-| Connection | `from` Ref, `to` Ref, `label` Text | — |
+| Connection | `from` Ref, `to` Ref, `label` Text, `kind` Text | — |
 
 - `status` is one of `idea`, `reading`, `understood`, `open_question`, `dead_end`.
+- `kind` is one of `related`, `directed`, `contradicts`; unset means `related`.
 - Any field may be `Null`; `Null` and "never set" are the same thing.
 - Floats must be finite.
 - A Connection's `from` and `to` must refer to Cards that exist on the Board (live or deleted) and are required at creation. A Connection is **visible** only while both its Cards are live; deleting a Card does not delete its Connections.
@@ -85,5 +86,7 @@ Entities that exist only on source are created automatically with source's field
 Each Conflict is decided by a Member: take source, take target, or (field Conflicts only) a hand-written value. For edit vs delete, "take source" means end up as source has it (deleted, or live with source's content fields) and "take target" means leave target as it is.
 
 A Merge cannot be applied until every Conflict has a decision. It is applied as one batch of Changes on the target, marked as a Merge. If the target or source has gained Changes since the Merge was planned, or the base is no longer the one it was planned against, applying is refused and the Merge must be planned again.
+
+A Merge may be given a Checkpoint name. The Checkpoint is then placed on the target at the moment just before the Merge's Changes, so the way back has a name. If that name is empty or already used on the target, the Merge is refused and nothing changes.
 
 Undoing a Merge is a Restore to the moment before it. After such a Restore, merging the same source again must bring its work back.

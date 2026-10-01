@@ -13,7 +13,7 @@ struct Ids {
 
 /// main: "Surface codes", "Grover search", "VQE notes"; fork try-QEC from main's head; then
 /// main: title -> "Surface codes (review)", Grover x -> 300, VQE summary -> "main summary";
-/// try-QEC: title -> "Surface & toric codes", Delete Grover, VQE color -> "blue", create "QEC thresholds".
+/// try-QEC: title -> "Surface & toric codes", Delete Grover, VQE status -> "reading", create "QEC thresholds".
 fn diverged() -> (Workspace, BranchId, BranchId, Ids) {
     let (mut ws, main) = Workspace::new();
     let me = MemberId::new();
@@ -35,7 +35,7 @@ fn diverged() -> (Workspace, BranchId, BranchId, Ids) {
     for op in [
         set(surface, "title", text("Surface & toric codes")),
         Op::Delete { entity: grover },
-        set(vqe, "color", text("blue")),
+        set(vqe, "status", text("reading")),
         create_thresholds,
     ] {
         ws.record(qec, me, 4, op).unwrap();
@@ -82,7 +82,7 @@ fn change_count(ws: &Workspace, branch: BranchId) -> usize {
 fn merge(ws: &mut Workspace, source: BranchId, target: BranchId, me: MemberId, decision: Decision) {
     let plan = ws.plan_merge(source, target).unwrap();
     let decisions = decide_all(&plan, decision);
-    ws.apply_merge(&plan, &decisions, me, 10).unwrap();
+    ws.apply_merge(&plan, &decisions, me, 10, None).unwrap();
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn the_review_lists_automatic_changes_and_conflicts() {
                 kind: EntityKind::Card,
                 fields,
             },
-            set(ids.vqe, "color", text("blue")),
+            set(ids.vqe, "status", text("reading")),
             Op::Delete { entity: ids.grover },
         ]
     );
@@ -124,7 +124,7 @@ fn applying_needs_every_conflict_decided() {
     let plan = ws.plan_merge(qec, main).unwrap();
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10),
+        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10, None),
         Err(MergeError::Undecided(vec![title_key(&ids)]))
     );
     assert_eq!(ws, before);
@@ -142,7 +142,7 @@ fn a_decided_merge_lands_as_one_batch() {
     )]
     .into_iter()
     .collect();
-    let head = ws.apply_merge(&plan, &decisions, ids.me, 10).unwrap();
+    let head = ws.apply_merge(&plan, &decisions, ids.me, 10, None).unwrap();
     assert_eq!(head, ws.head(main).unwrap());
 
     let board = head_board(&ws, main);
@@ -153,7 +153,7 @@ fn a_decided_merge_lands_as_one_batch() {
     );
     let vqe = board.get(ids.vqe).unwrap();
     assert_eq!(vqe.get("summary"), &text("main summary"));
-    assert_eq!(vqe.get("color"), &text("blue"));
+    assert_eq!(vqe.get("status"), &text("reading"));
     assert!(board.get(ids.grover).unwrap().deleted);
     assert!(board.is_visible(ids.thresholds));
 
@@ -265,7 +265,7 @@ fn a_plan_goes_stale_when_the_target_moves() {
     ws.record(main, ids.me, 9, create_late).unwrap();
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &decisions, ids.me, 10),
+        ws.apply_merge(&plan, &decisions, ids.me, 10, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
@@ -278,7 +278,7 @@ fn a_plan_goes_stale_when_the_target_moves() {
         .unwrap();
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &decisions, ids.me, 10),
+        ws.apply_merge(&plan, &decisions, ids.me, 10, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
@@ -294,6 +294,7 @@ fn an_undone_merge_can_be_merged_again() {
         &decide_all(&first, Decision::TakeSource),
         ids.me,
         10,
+        None,
     )
     .unwrap();
     ws.restore(main, before, ids.me, 11).unwrap();
@@ -307,12 +308,13 @@ fn an_undone_merge_can_be_merged_again() {
         &decide_all(&again, Decision::TakeSource),
         ids.me,
         12,
+        None,
     )
     .unwrap();
     let board = head_board(&ws, main);
     assert!(board.is_visible(ids.thresholds));
     assert!(board.get(ids.grover).unwrap().deleted);
-    assert_eq!(board.get(ids.vqe).unwrap().get("color"), &text("blue"));
+    assert_eq!(board.get(ids.vqe).unwrap().get("status"), &text("reading"));
     assert_eq!(
         board.get(ids.surface).unwrap().get("title"),
         &text("Surface & toric codes")
@@ -346,7 +348,7 @@ fn an_invalid_hand_written_value_refuses_the_whole_merge() {
         .collect();
     let before = ws.clone();
     assert!(matches!(
-        ws.apply_merge(&plan, &decisions, ids.me, 10),
+        ws.apply_merge(&plan, &decisions, ids.me, 10, None),
         Err(MergeError::Ws(WsError::Apply(ApplyError::Schema(_))))
     ));
     assert_eq!(change_count(&ws, main), change_count(&before, main));
@@ -368,14 +370,14 @@ fn decisions_must_match_the_conflicts() {
     let mut extra = decide_all(&plan, Decision::TakeSource);
     extra.insert(entity_key(ids.thresholds), Decision::TakeSource);
     assert_eq!(
-        ws.apply_merge(&plan, &extra, ids.me, 10),
+        ws.apply_merge(&plan, &extra, ids.me, 10, None),
         Err(MergeError::UnknownConflict(entity_key(ids.thresholds)))
     );
 
     let mut custom = decide_all(&plan, Decision::TakeSource);
     custom.insert(entity_key(ids.vqe), Decision::Custom(text("whatever")));
     assert_eq!(
-        ws.apply_merge(&plan, &custom, ids.me, 10),
+        ws.apply_merge(&plan, &custom, ids.me, 10, None),
         Err(MergeError::CustomNotAllowed(entity_key(ids.vqe)))
     );
 }
@@ -420,7 +422,7 @@ fn edit_versus_delete_goes_whichever_way_is_decided() {
         if !deleted {
             // Live with exactly the branch's content fields.
             assert_eq!(vqe.get("title"), &text("VQE (qec)"));
-            assert_eq!(vqe.get("color"), &text("blue"));
+            assert_eq!(vqe.get("status"), &text("reading"));
             assert_eq!(vqe.get("summary"), &Value::Null);
         }
     }
@@ -435,7 +437,9 @@ fn a_merge_with_nothing_to_do_still_records_where_the_branches_met() {
     ws.record(main, me, 3, card("B").1).unwrap();
     let plan = ws.plan_merge(side, main).unwrap();
     assert!(plan.auto.is_empty() && plan.conflicts.is_empty());
-    let head = ws.apply_merge(&plan, &Decisions::new(), me, 4).unwrap();
+    let head = ws
+        .apply_merge(&plan, &Decisions::new(), me, 4, None)
+        .unwrap();
     assert_eq!(head, plan.target);
     assert_eq!(change_count(&ws, main), 2);
     assert_eq!(
@@ -476,13 +480,14 @@ fn undoing_a_merge_forgets_later_merges_between_the_same_branches() {
     let mut back = ws.clone();
     let plan = back.plan_merge(side, main).unwrap();
     assert!(plan.conflicts.is_empty());
-    back.apply_merge(&plan, &Decisions::new(), me, 6).unwrap();
+    back.apply_merge(&plan, &Decisions::new(), me, 6, None)
+        .unwrap();
     assert!(head_board(&back, main).is_visible(t));
 
     let plan = ws.plan_merge(main, side).unwrap();
     assert!(!plan.auto.contains(&Op::Delete { entity: t }));
     let decisions = decide_all(&plan, Decision::TakeTarget);
-    ws.apply_merge(&plan, &decisions, me, 6).unwrap();
+    ws.apply_merge(&plan, &decisions, me, 6, None).unwrap();
     assert!(head_board(&ws, side).is_visible(t));
 }
 
@@ -548,7 +553,7 @@ fn a_plan_goes_stale_when_the_base_changes() {
 
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &Decisions::new(), me, 6),
+        ws.apply_merge(&plan, &Decisions::new(), me, 6, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
@@ -603,7 +608,7 @@ fn a_plan_with_its_conflicts_removed_is_refused() {
     plan.conflicts.clear();
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10),
+        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
@@ -622,7 +627,7 @@ fn a_plan_with_altered_automatic_changes_is_refused() {
         .retain(|op| *op != Op::Delete { entity: ids.grover });
     assert_eq!(dropped.auto.len() + 1, plan.auto.len());
     assert_eq!(
-        ws.apply_merge(&dropped, &decisions, ids.me, 10),
+        ws.apply_merge(&dropped, &decisions, ids.me, 10, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
@@ -630,12 +635,12 @@ fn a_plan_with_altered_automatic_changes_is_refused() {
     let mut added = plan.clone();
     added.auto.push(Op::Delete { entity: ids.vqe });
     assert_eq!(
-        ws.apply_merge(&added, &decisions, ids.me, 10),
+        ws.apply_merge(&added, &decisions, ids.me, 10, None),
         Err(MergeError::Stale)
     );
     assert_eq!(ws, before);
 
-    ws.apply_merge(&plan, &decisions, ids.me, 10).unwrap();
+    ws.apply_merge(&plan, &decisions, ids.me, 10, None).unwrap();
 }
 
 /// Pins a documented limitation (spec §5 "Known limitation"): forgetting a later Merge in
@@ -730,7 +735,7 @@ fn a_connection_retargeted_on_both_sides_must_keep_an_endpoint() {
         .collect();
     let before = ws.clone();
     assert_eq!(
-        ws.apply_merge(&plan, &cleared, me, 4),
+        ws.apply_merge(&plan, &cleared, me, 4, None),
         Err(MergeError::Ws(WsError::Apply(ApplyError::MissingEndpoint(
             link
         ))))
@@ -738,7 +743,7 @@ fn a_connection_retargeted_on_both_sides_must_keep_an_endpoint() {
     assert_eq!(ws, before);
 
     let source: Decisions = [(key, Decision::TakeSource)].into_iter().collect();
-    ws.apply_merge(&plan, &source, me, 4).unwrap();
+    ws.apply_merge(&plan, &source, me, 4, None).unwrap();
     let board = head_board(&ws, main);
     assert_eq!(board.get(link).unwrap().get("to"), &Value::Ref(d));
     assert!(board.is_visible(link));
@@ -771,7 +776,8 @@ fn a_connection_to_a_card_deleted_on_the_other_branch_waits_for_it() {
         };
         let plan = ws.plan_merge(source, target).unwrap();
         assert!(plan.conflicts.is_empty());
-        ws.apply_merge(&plan, &Decisions::new(), me, 4).unwrap();
+        ws.apply_merge(&plan, &Decisions::new(), me, 4, None)
+            .unwrap();
         let board = head_board(&ws, target);
         assert!(board.get(b).unwrap().deleted);
         assert!(board.get(link).is_some_and(|l| !l.deleted));
@@ -812,4 +818,103 @@ fn known_limitation_a_merge_restored_past_and_back_can_reverse_a_delete() {
     let plan = ws.plan_merge(child, main).unwrap();
     assert!(plan.conflicts.is_empty());
     assert_eq!(plan.auto, vec![Op::Undelete { entity: p1 }]);
+}
+
+#[test]
+fn a_named_merge_places_a_checkpoint_at_the_moment_before_it() {
+    let (mut ws, main, qec, ids) = diverged();
+    let pre = ws.head(main).unwrap();
+    let pre_board = head_board(&ws, main);
+    let plan = ws.plan_merge(qec, main).unwrap();
+    let decisions = decide_all(&plan, Decision::TakeSource);
+    let head = ws
+        .apply_merge(&plan, &decisions, ids.me, 10, Some("  before QEC  "))
+        .unwrap();
+    assert!(head.seq > pre.seq);
+
+    let checkpoints = ws.checkpoints(main);
+    assert_eq!(checkpoints.len(), 1);
+    assert_eq!(checkpoints[0].name, "before QEC");
+    assert_eq!(checkpoints[0].moment, pre);
+    assert_eq!(checkpoints[0].author, ids.me);
+    assert_eq!(checkpoints[0].at, 10);
+    assert!(ws.checkpoints(qec).is_empty());
+
+    // Restore keeps Cards created by the Merge as deleted ones; everything else is as before.
+    ws.restore(main, pre.seq, ids.me, 11).unwrap();
+    let restored = head_board(&ws, main);
+    for (id, entity) in pre_board.entities() {
+        assert_eq!(restored.get(id), Some(entity));
+    }
+    assert!(!restored.is_visible(ids.thresholds));
+    assert_eq!(
+        restored
+            .entities()
+            .filter(|(id, _)| restored.is_visible(*id))
+            .count(),
+        pre_board
+            .entities()
+            .filter(|(id, _)| pre_board.is_visible(*id))
+            .count()
+    );
+}
+
+#[test]
+fn a_taken_checkpoint_name_refuses_the_whole_merge() {
+    let (mut ws, main, qec, ids) = diverged();
+    ws.checkpoint("before QEC", ws.head(main).unwrap(), ids.me, 5)
+        .unwrap();
+    let plan = ws.plan_merge(qec, main).unwrap();
+    let decisions = decide_all(&plan, Decision::TakeSource);
+    let before = ws.clone();
+    assert_eq!(
+        ws.apply_merge(&plan, &decisions, ids.me, 10, Some(" before QEC ")),
+        Err(MergeError::Ws(WsError::NameTaken("before QEC".to_string())))
+    );
+    assert_eq!(ws, before);
+}
+
+#[test]
+fn an_empty_checkpoint_name_refuses_the_whole_merge() {
+    let (mut ws, main, qec, ids) = diverged();
+    let plan = ws.plan_merge(qec, main).unwrap();
+    let decisions = decide_all(&plan, Decision::TakeSource);
+    let before = ws.clone();
+    for name in ["", "   "] {
+        assert_eq!(
+            ws.apply_merge(&plan, &decisions, ids.me, 10, Some(name)),
+            Err(MergeError::Ws(WsError::EmptyName))
+        );
+        assert_eq!(ws, before);
+    }
+}
+
+#[test]
+fn a_failed_merge_creates_no_checkpoint() {
+    let (mut ws, main, qec, ids) = diverged();
+    let plan = ws.plan_merge(qec, main).unwrap();
+    let before = ws.clone();
+    assert_eq!(
+        ws.apply_merge(&plan, &Decisions::new(), ids.me, 10, Some("safe")),
+        Err(MergeError::Undecided(vec![title_key(&ids)]))
+    );
+    assert_eq!(ws, before);
+    assert!(ws.checkpoints(main).is_empty());
+}
+
+#[test]
+fn a_named_merge_with_nothing_to_do_still_creates_the_checkpoint() {
+    let (mut ws, main, _qec, ids) = diverged();
+    let child = ws.fork("idle", ws.head(main).unwrap(), ids.me, 20).unwrap();
+    let head = ws.head(main).unwrap();
+    let plan = ws.plan_merge(child, main).unwrap();
+    assert!(plan.auto.is_empty() && plan.conflicts.is_empty());
+    let landed = ws
+        .apply_merge(&plan, &Decisions::new(), ids.me, 21, Some("noop"))
+        .unwrap();
+    assert_eq!(landed, head);
+    let checkpoints = ws.checkpoints(main);
+    assert_eq!(checkpoints.len(), 1);
+    assert_eq!(checkpoints[0].moment, head);
+    assert_eq!(checkpoints[0].at, 21);
 }

@@ -43,7 +43,7 @@ An external reference — a paper, preprint, or web page — identified by its U
 _Avoid_: Link, article, reference, citation
 
 **Connection**:
-A relation between two cards, drawn as a line on the board, optionally labelled with what the relation is.
+A relation between two Cards, drawn as a line on the Board. It is one of three kinds — related, directed, or contradicts — and may carry a free-text label saying what the relation is.
 _Avoid_: Link, edge, arrow
 
 **Suggestion**:
@@ -75,6 +75,10 @@ _Avoid_: Commit, edit, revision
 A name a team member gives to a moment in a Branch's history so it can be found again.
 _Avoid_: Commit, tag, snapshot, save
 
+**Activity**:
+One Member's consecutive Changes on a Branch made close together in time, shown as a single entry when reading history. A way of reading the history, not something recorded.
+_Avoid_: Session, edit, burst
+
 **Restore**:
 Returning a Branch to how it was at an earlier moment by adding new Changes that undo the later ones. History is never erased, so a Restore can itself be undone.
 _Avoid_: Revert, rollback, reset
@@ -82,7 +86,7 @@ _Avoid_: Revert, rollback, reset
 ### Outside versioning
 
 **To-do**:
-A task owned by one Member, visible to all Members, and assignable by any Member. A fact about real-world work, so it is the same on every Branch. May point at one Card, and outlives that Card if it is removed.
+A task owned by one Member, visible to all Members, and assignable by any Member; only its owner marks it done. A fact about real-world work, so it is the same on every Branch. May point at one Card, and outlives that Card if it is removed.
 _Avoid_: Task, ticket
 
 **Conversation**:
@@ -90,7 +94,7 @@ A Member's private exchange with an AI about what they are looking at. Not Resea
 _Avoid_: Chat, thread, session
 
 **Pin**:
-To copy part of a Conversation into a Page, where it becomes Research Content marked as AI-generated with who pinned it, which model, and when.
+To copy part of a Conversation into a Page, where it becomes Research Content marked as AI-generated with who pinned it, which model, and when. Pinned text is shown as not reviewed until a Member marks it reviewed.
 _Avoid_: Share, save, export
 
 ### People
@@ -104,5 +108,5 @@ A Member who additionally invites and removes people and manages the server. Has
 _Avoid_: Owner, superuser
 
 **Guest**:
-An outsider invited for a limited time who can read Research Content and nothing else.
+An outsider invited for a limited time who can read the Research Content of the main Branch and nothing else — no history, no other Branches.
 _Avoid_: Viewer, visitor, reader

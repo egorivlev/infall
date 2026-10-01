@@ -255,12 +255,17 @@ impl Workspace {
 
     /// Applies a planned Merge as one batch on the target and records where the two
     /// Branches now meet. Returns the target's new head.
+    ///
+    /// With `checkpoint: Some(name)`, a Checkpoint of that name is placed on the target at
+    /// its head just before the Merge's Changes. An empty or already used name refuses the
+    /// Merge; nothing is changed on any failure.
     pub fn apply_merge(
         &mut self,
         plan: &MergePlan,
         decisions: &Decisions,
         author: MemberId,
         at: i64,
+        checkpoint: Option<&str>,
     ) -> Result<Moment, MergeError> {
         let child = self
             .child_of_pair(plan.source.branch, plan.target.branch)?
@@ -280,6 +285,10 @@ impl Workspace {
         }
         let decided = resolve(&source, &target, &conflicts, decisions)?;
         let ops = [auto, decided].concat();
+        // Everything that can be refused is checked before anything is changed.
+        let checkpoint = checkpoint
+            .map(|name| self.checkpoint_name(plan.target.branch, name))
+            .transpose()?;
         let landed = if ops.is_empty() {
             plan.target
         } else {
@@ -289,6 +298,9 @@ impl Workspace {
             };
             self.append_batch(plan.target.branch, author, at, ops, origin)?
         };
+        if let Some(name) = checkpoint {
+            self.push_checkpoint(name, plan.target, author, at);
+        }
         self.push_sync_point(
             child,
             SyncPoint {

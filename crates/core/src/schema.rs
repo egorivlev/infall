@@ -43,7 +43,12 @@ pub enum SchemaError {
     NotFinite { field: String },
     #[error("invalid status `{0}`")]
     BadStatus(String),
+    #[error("invalid connection kind `{0}`")]
+    BadKind(String),
 }
+
+/// Kinds a Connection may have; unset means `related`.
+const KINDS: [&str; 3] = ["related", "directed", "contradicts"];
 
 /// Statuses a Card may have.
 const STATUSES: [&str; 5] = ["idea", "reading", "understood", "open_question", "dead_end"];
@@ -59,11 +64,11 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
     use EntityKind::*;
     use FieldClass::*;
     match (kind, field) {
-        (Card, "title" | "summary" | "status" | "color") => Some((Content, Type::Text)),
+        (Card, "title" | "summary" | "status") => Some((Content, Type::Text)),
         (Frame, "title") => Some((Content, Type::Text)),
         (Card | Frame, "x" | "y" | "w" | "h") => Some((Layout, Type::Float)),
         (Connection, "from" | "to") => Some((Content, Type::Ref)),
-        (Connection, "label") => Some((Content, Type::Text)),
+        (Connection, "label" | "kind") => Some((Content, Type::Text)),
         _ => None,
     }
 }
@@ -97,6 +102,11 @@ pub fn validate_field(kind: EntityKind, field: &str, value: &Value) -> Result<()
         (Value::Text(s), Type::Text) => {
             if kind == EntityKind::Card && field == "status" && !STATUSES.contains(&s.as_str()) {
                 Err(SchemaError::BadStatus(s.clone()))
+            } else if kind == EntityKind::Connection
+                && field == "kind"
+                && !KINDS.contains(&s.as_str())
+            {
+                Err(SchemaError::BadKind(s.clone()))
             } else {
                 Ok(())
             }

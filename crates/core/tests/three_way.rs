@@ -461,3 +461,32 @@ proptest::proptest! {
         proptest::prop_assert_eq!(keys, sorted);
     }
 }
+
+#[test]
+fn connection_kind_changed_both_ways_is_a_field_conflict() {
+    let (a, create_a) = card("A");
+    let (b, create_b) = card("B");
+    let (link, create_link) = connect(a, b);
+    let mut base = Board::new();
+    for op in [create_a, create_b, create_link] {
+        base.apply(&op).unwrap();
+    }
+    let (mut source, mut target) = (base.clone(), base.clone());
+    source.apply(&set(link, "kind", text("directed"))).unwrap();
+    target
+        .apply(&set(link, "kind", text("contradicts")))
+        .unwrap();
+
+    let (auto, conflicts) = three_way(&base, &source, &target);
+    assert!(auto.is_empty());
+    assert_eq!(
+        conflicts,
+        vec![Conflict::Field {
+            entity: link,
+            field: "kind".to_string(),
+            base: Value::Null,
+            source: text("directed"),
+            target: text("contradicts"),
+        }]
+    );
+}
