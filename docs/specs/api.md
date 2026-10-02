@@ -10,6 +10,9 @@ Binary `qoop-server` (crate `crates/server`). Subcommands:
 
 - `serve` (default) — run the HTTP server.
 - `create-admin --email <e> --name <n>` — create the first Admin. Password is read from the env var `QOOP_ADMIN_PASSWORD` if set, otherwise prompted on the terminal without echo. Refuses if that email exists.
+- `reset-password --email <e>` — set a new password for an existing account (same password input as above) and delete all of that account's sessions. The only way back in if an Admin forgets theirs; it needs shell access to the machine, which is the point.
+
+`serve` shuts down gracefully on SIGTERM and SIGINT: it stops accepting connections, lets in-flight requests finish (so a database write is never cut off), and exits within a few seconds.
 
 Environment:
 
@@ -23,7 +26,7 @@ Environment:
 
 ## 2. Storage
 
-SQLite (`rusqlite`, bundled). Tables: `members`, `sessions`, `invites`, and `workspace` — a single row holding the whole core `Workspace` as JSON, rewritten inside a transaction on every successful mutation before the response is sent. The `Workspace` lives in memory behind one lock; the database is read once at start. (Whole-snapshot storage is an M1 simplification; it sits behind a small storage trait so it can be replaced.)
+SQLite (`rusqlite`, bundled). Tables: `members`, `sessions`, `invites`, and `workspace` — a single row holding the whole core `Workspace` as JSON, rewritten inside a transaction on every successful mutation before the response is sent. The `Workspace` lives in memory behind one lock; the database is read once at start. The database runs in WAL mode with `synchronous=FULL`; the schema is created on first start and its version kept in `PRAGMA user_version`, so a newer binary can migrate an older file in place. (Whole-snapshot storage is an M1 simplification; it sits behind a small storage trait so it can be replaced.)
 
 ## 3. People and sessions
 
@@ -89,6 +92,9 @@ Fields per kind (see core.md §1): Card `title`, `summary`, `status` (`idea` | `
 ## 6. HTTP endpoints
 
 All under `/api`. All require a session except where marked *public*.
+
+### Health
+`GET /api/health` *public* → `200 { "ok": true }` once the database has been opened. Reveals nothing else.
 
 ### Auth
 | Method, path | Body | 200 response |

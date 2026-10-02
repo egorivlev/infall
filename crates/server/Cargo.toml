@@ -1,0 +1,34 @@
+[package]
+name = "qoop-server"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "qoop-server"
+path = "src/main.rs"
+
+[dependencies]
+argon2 = "0.6.0"
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+base64 = "0.23.1"
+clap = { version = "4.6.9", features = ["derive", "env"] }
+futures-util = "0.3.34"
+qoop-core = { path = "../core" }
+rand = "0.10.4"
+rpassword = "7.5.5"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["full"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["fs"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.29.3", features = ["v4", "serde"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tempfile = "3.27.0"
+tokio-tungstenite = "0.30.0"

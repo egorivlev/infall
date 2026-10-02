@@ -1,0 +1,12 @@
+# /etc/systemd/system/qoop-backup.timer
+[Unit]
+Description=Daily Qoop backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+# If the machine was off at 03:30, run once when it comes back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

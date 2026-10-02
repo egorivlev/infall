@@ -225,3 +225,73 @@ fn a_workspace_round_trips_through_json() {
         ws.board_at(ws.head(b).unwrap()).unwrap()
     );
 }
+
+#[test]
+fn record_all_applies_every_op_in_order_as_edits() {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create) = card("A");
+    let head = ws
+        .record_all(
+            main,
+            me,
+            7,
+            vec![
+                create,
+                set(a, "title", text("A2")),
+                set(a, "summary", text("s")),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        head,
+        Moment {
+            branch: main,
+            seq: 3
+        }
+    );
+    let changes = ws.branch(main).unwrap().changes();
+    assert!(
+        changes
+            .iter()
+            .all(|c| c.author == me && c.at == 7 && c.origin == Origin::Edit)
+    );
+    assert!(matches!(changes[1].op, Op::Set { ref field, .. } if field == "title"));
+    assert_eq!(title_at(&ws, head, a), Some(text("A2")));
+}
+
+#[test]
+fn record_all_records_nothing_when_any_op_is_rejected() {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    let (a, create) = card("A");
+    ws.record(main, me, 1, create.clone()).unwrap();
+    let before = ws.clone();
+    let (_, other) = card("B");
+    let bad = ws.record_all(main, me, 2, vec![other, create]);
+    assert!(matches!(
+        bad,
+        Err(WsError::Apply(ApplyError::AlreadyExists(id))) if id == a
+    ));
+    assert_eq!(ws, before);
+}
+
+#[test]
+fn record_all_with_no_ops_returns_the_head_and_records_nothing() {
+    let (mut ws, main) = Workspace::new();
+    let me = MemberId::new();
+    ws.record(main, me, 1, card("A").1).unwrap();
+    let before = ws.clone();
+    assert_eq!(
+        ws.record_all(main, me, 2, Vec::new()).unwrap(),
+        Moment {
+            branch: main,
+            seq: 1
+        }
+    );
+    assert_eq!(ws, before);
+    assert!(matches!(
+        ws.record_all(BranchId::new(), me, 2, Vec::new()),
+        Err(WsError::UnknownBranch(_))
+    ));
+}

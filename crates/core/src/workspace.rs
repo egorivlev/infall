@@ -191,6 +191,22 @@ impl Workspace {
         self.append_batch(branch, author, at, vec![op], Origin::Edit)
     }
 
+    /// Records `ops` as one all-or-nothing batch of edits at the head of `branch`. Returns the
+    /// new head. If any op is rejected, nothing is recorded; an empty `ops` records nothing
+    /// and returns the current head.
+    pub fn record_all(
+        &mut self,
+        branch: BranchId,
+        author: MemberId,
+        at: i64,
+        ops: Vec<Op>,
+    ) -> Result<Moment, WsError> {
+        if ops.is_empty() {
+            return self.head(branch);
+        }
+        self.append_batch(branch, author, at, ops, Origin::Edit)
+    }
+
     /// Creates a Branch starting from the Board at `from`.
     ///
     /// The name is trimmed before the empty and uniqueness checks, and stored trimmed.

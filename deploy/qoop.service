@@ -1,0 +1,46 @@
+# /etc/systemd/system/qoop.service
+# Runs the Qoop server as an unprivileged user that can write only to /var/lib/qoop.
+[Unit]
+Description=Qoop research workspace server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qoop
+Group=qoop
+WorkingDirectory=/opt/qoop
+EnvironmentFile=/etc/qoop/qoop.env
+ExecStart=/opt/qoop/qoop-server serve
+Restart=on-failure
+RestartSec=3
+# Give the server time to finish a database write after SIGTERM.
+TimeoutStopSec=30
+# Files the server creates (the database) are private to the qoop user.
+UMask=0077
+
+# --- Sandboxing: if the server is ever compromised, this limits the damage. ---
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/qoop
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

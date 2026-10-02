@@ -1,0 +1,24 @@
+# /etc/caddy/Caddyfile
+# Replace qoop.example.org with your domain. Caddy gets and renews the HTTPS
+# certificate by itself; ports 80 and 443 must be reachable for that.
+qoop.example.org {
+	# WebSockets (live updates) work through reverse_proxy with no extra
+	# settings; the Origin header is passed through for the server's own check.
+	reverse_proxy 127.0.0.1:8787
+
+	encode zstd gzip
+
+	# Browsers will refuse plain HTTP for this domain for a year.
+	# Do not add "preload" unless you understand what it commits you to.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Same limit as the server (1 MB); reject oversized bodies at the edge.
+	request_body {
+		max_size 1MB
+	}
+
+	# The server already sets Content-Security-Policy, nosniff and
+	# Referrer-Policy; they are deliberately not repeated here.
+	# Access logging is off by default, which keeps invite links
+	# (/invite/<token>) out of log files. Do not enable it without need.
+}

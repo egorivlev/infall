@@ -66,3 +66,14 @@ export const ops: {
 - `readOnly` is true for Guests; `board.submit` then rejects without sending.
 - A 401 from any call flips the session to `signed_out`.
 - All coordinates are Board units (px at 100% zoom). Positions and sizes are rounded to whole numbers by the op builders.
+
+## Notes from the implementation
+
+- `board.open()` resolves once the Board is loaded and the socket is created; `status` stays `'loading'` until the server confirms the subscription, so `cards` can already be populated while `status` is `'loading'`. If opening fails the promise rejects and `status` is `'error'` with `error` set.
+- When the session becomes `signed_out` the Board closes itself (`'idle'`). `board.close()` rejects pending submits with `ApiError{code:'closed'}`.
+- `board.submit` rejects locally, without a request: Guest → 403 `forbidden`; Board not open → 400 `board_not_open`; more than 200 ops → 400; an op invalid against the current view → 409 `rejected`. An empty array resolves at once. A network failure rejects with `status 0, code 'network'`.
+- `session.refresh()` never throws. `logout()` flips to `signed_out` only if the request succeeds.
+- `useMembers()` is empty until `members.reload()` is called (the Board layer calls it when it meets an unknown presence id).
+- Items and arrays in `useBoard()` keep their identity unless they changed, so `React.memo` on Card/Frame/Connection components works.
+- A Frame without `w`/`h` on the wire gets 0; always create Frames with a size.
+- The op builders throw `RangeError` on NaN or Infinity.
