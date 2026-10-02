@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./qoop-theme.css"></helmet>
+<div style="border:1px solid var(--q-line);border-radius:6px;background:var(--q-surface);overflow:hidden;font-family:'IBM Plex Sans',sans-serif;color:var(--q-ink);">
+  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px 8px 12px;border-bottom:1px solid var(--q-line-soft);">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--q-ink-2)" stroke-width="1.2" stroke-linejoin="round"><path d="M3.5 2.3 L9.6 6 L3.5 9.7 Z"></path></svg>
+    <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-2);">Run</span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink);">policy_cartpole.py</span>
+    <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);white-space:nowrap;">py 3.11 · pennylane 0.38</span>
+    <span style="flex:1;"></span>
+    <sc-if value="{{ isBrowser }}" hint-placeholder-val="{{ false }}">
+      <span style="font-size:11.5px;color:var(--q-ink-3);white-space:nowrap;">Desktop app only</span>
+    </sc-if>
+    <button onClick="{{ run }}" disabled="{{ disabled }}" title="{{ runTitle }}" style="white-space:nowrap;display:flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:4px;border:1px solid {{ btnBorder }};background:{{ btnBg }};color:{{ btnColor }};font:500 12px 'IBM Plex Sans',sans-serif;cursor:{{ btnCursor }};">
+      <svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor"><path d="M1 0.8 L8.4 5 L1 9.2 Z"></path></svg>{{ runLabel }}
+    </button>
+  </div>
+  <sc-if value="{{ isBrowser }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px;background:var(--q-sunken);border-bottom:1px solid var(--q-line-soft);font-size:12.5px;line-height:1.45;color:var(--q-ink-2);">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--q-ink-2)" stroke-width="1.2" style="flex:none;margin-top:1px;"><rect x="1.5" y="2" width="11" height="8" rx="1"></rect><path d="M4.5 12.5 H9.5 M7 10 V12.5"></path></svg>
+      <span>Code can only run in the Qoop desktop app. You're in the browser — the captured output from the last run is shown below.</span>
+    </div>
+  </sc-if>
+  <sc-if value="{{ needsReview }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;gap:10px;align-items:center;padding:9px 12px;background:color-mix(in oklch, var(--q-st-question) 11%, var(--q-surface));border-bottom:1px solid color-mix(in oklch, var(--q-st-question) 40%, var(--q-line-soft));font-size:12.5px;line-height:1.45;">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="var(--q-st-question)" stroke-width="1.3" style="flex:none;"><path d="M7.5 1.5 L14 13 H1 Z"></path><path d="M7.5 6 V9"></path><circle cx="7.5" cy="11" r="0.5" fill="var(--q-st-question)"></circle></svg>
+      <span style="flex:1;color:var(--q-ink);"><b style="font-weight:600;">Code written by Jonas Weber</b><span style="color:var(--q-ink-2);"> · 2 lines changed 18 Nov. Review before running — it will run on your machine.</span></span>
+      <button onClick="{{ markReviewed }}" style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--q-st-question);background:transparent;color:var(--q-ink);font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;white-space:nowrap;">I've reviewed it</button>
+    </div>
+  </sc-if>
+  <div style="display:grid;grid-template-columns:34px 1fr;background:var(--q-sunken);font:12px/1.62 'IBM Plex Mono',monospace;padding:8px 0;overflow-x:auto;opacity:{{ codeOpacity }};">
+    <sc-for list="{{ lines }}" as="l" hint-placeholder-count="12">
+      <span style="text-align:right;padding-right:10px;color:var(--q-ink-3);opacity:.7;user-select:none;box-shadow:inset 2px 0 0 {{ l.mark }};">{{ l.n }}</span>
+      <span style="white-space:pre;padding-right:12px;background:{{ l.bg }};"><span style="color:{{ l.kc }};">{{ l.code }}</span><span style="color:var(--q-ink-3);font-style:italic;">{{ l.cmt }}</span></span>
+    </sc-for>
+  </div>
+  <div style="padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--q-line-soft);">
+    <div style="display:flex;align-items:baseline;gap:10px;">
+      <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Output</span>
+      <span style="font-size:12px;color:var(--q-ink-2);">{{ outTitle }}</span><span style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--q-ink-3);"><span style="width:14px;height:2px;background:var(--q-accent);"></span>mean of 3 seeds<span style="width:14px;height:1px;background:var(--q-ink-3);margin-left:6px;"></span>seeds</span>
+      <span style="flex:1;"></span>
+      <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ outMeta }}</span>
+    </div>
+    <div style="position:relative;">{{ plot }}</div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--q-ink-2);">
+      <span style="width:16px;height:16px;border-radius:50%;background:{{ byBg }};color:oklch(0.2 0.02 255);font:600 8px 'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center;">{{ byI }}</span>
+      <span>{{ lastRun }}</span>
+      <span style="flex:1;"></span>
+      <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ dur }}</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:680,&quot;height&quot;:640},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;browser&quot;,&quot;review&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const RUN_CODE = [
+  ['import pennylane as qml', ''], ['from qoop_rl import CartPole, reinforce, plot_rewards', ''], ['', ''],
+  ['dev = qml.device("default.qubit", wires=4)', ''], ['', ''],
+  ['@qml.qnode(dev, interface="torch")', ''], ['def policy(s, lam, theta):', ''],
+  ['    for l in range(3):', '                     # L = 3 re-uploading layers'],
+  ['        for w in range(4):', ''], ['            qml.RX(lam[l, w] * s[w], wires=w)', '  # trainable input scaling'],
+  ['        qml.StronglyEntanglingLayers(theta[l:l+1], wires=range(4))', ''],
+  ['    return [qml.expval(qml.PauliZ(0) @ qml.PauliZ(1)),', ''],
+  ['            qml.expval(qml.PauliZ(2) @ qml.PauliZ(3))]', ''], ['', ''],
+  ['rewards = reinforce(policy, CartPole(), episodes=500,', ''],
+  ['                    lr=0.01, seeds=[7, 11, 23])', ''],
+  ['plot_rewards(rewards, window=20, solved=195)', ''],
+];
+function runSeries(seed) {
+  let x = seed * 9301 + 49297; const rnd = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  const out = []; let v = 18;
+  for (let t = 0; t <= 500; t += 5) { const target = 22 + 158 * (1 - Math.exp(-t / (110 + seed * 4))); v += (target - v) * 0.35 + (rnd() - 0.5) * 34; out.push([t, Math.max(8, Math.min(200, v))]); }
+  return out;
+}
+const RUN_S = [runSeries(7), runSeries(11), runSeries(23)];
+class Component extends DCLogic {
+  state = { reviewed: false, running: false, ep: 0, ran: false };
+  run = () => {
+    if (this.state.running) return;
+    this.setState({ running: true, ep: 0 });
+    const t0 = Date.now();
+    const tick = () => { const ep = Math.min(500, Math.round((Date.now() - t0) / 6)); this.setState({ ep }); if (ep < 500) this.raf = requestAnimationFrame(tick); else this.setState({ running: false, ran: true }); };
+    this.raf = requestAnimationFrame(tick);
+  };
+  componentWillUnmount() { cancelAnimationFrame(this.raf); }
+  plot(upto) {
+    const h = React.createElement, W = 600, H = 150, L = 34, B = 20, T = 6, R = 6;
+    const X = t => L + (t / 500) * (W - L - R), Y = v => T + (1 - v / 225) * (H - T - B);
+    const kids = [];
+    [0, 50, 100, 150, 200].forEach(v => { kids.push(h('line', { key: 'g' + v, x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: 'var(--q-line-soft)', strokeWidth: 1 })); kids.push(h('text', { key: 't' + v, x: L - 6, y: Y(v) + 3.5, textAnchor: 'end', fontSize: 9.5, fill: 'var(--q-ink-3)', fontFamily: 'IBM Plex Mono' }, v)); });
+    [0, 100, 200, 300, 400, 500].forEach(t => kids.push(h('text', { key: 'x' + t, x: X(t), y: H - 5, textAnchor: 'middle', fontSize: 9.5, fill: 'var(--q-ink-3)', fontFamily: 'IBM Plex Mono' }, t)));
+    kids.push(h('line', { key: 'sol', x1: L, x2: W - R, y1: Y(195), y2: Y(195), stroke: 'var(--q-st-understood)', strokeDasharray: '4 4', strokeWidth: 1 }));
+    kids.push(h('text', { key: 'solt', x: W - R - 2, y: Y(195) + 12, textAnchor: 'end', fontSize: 9.5, fill: 'var(--q-st-understood)', fontFamily: 'IBM Plex Mono' }, 'solved = 195'));
+    const cut = s => s.filter(p => p[0] <= upto);
+    RUN_S.forEach((s, i) => kids.push(h('polyline', { key: 's' + i, points: cut(s).map(p => X(p[0]) + ',' + Y(p[1])).join(' '), fill: 'none', stroke: 'var(--q-ink-3)', strokeOpacity: 0.45, strokeWidth: 1 })));
+    const mean = RUN_S[0].map((p, k) => [p[0], (RUN_S[0][k][1] + RUN_S[1][k][1] + RUN_S[2][k][1]) / 3]);
+    kids.push(h('polyline', { key: 'm', points: cut(mean).map(p => X(p[0]) + ',' + Y(p[1])).join(' '), fill: 'none', stroke: 'var(--q-accent)', strokeWidth: 1.8 }));
+    return h('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: { display: 'block' } }, ...kids);
+  }
+  renderVals() {
+    const st = this.props.state || 'desktop';
+    const review = st === 'review' && !this.state.reviewed;
+    const browser = st === 'browser';
+    const disabled = browser || review || this.state.running;
+    const { running, ep, ran } = this.state;
+    return {
+      isBrowser: browser, needsReview: review, disabled,
+      run: this.run, markReviewed: () => this.setState({ reviewed: true }),
+      runLabel: running ? `Running… ${ep}/500` : 'Run',
+      runTitle: browser ? 'Running code needs the desktop app' : review ? 'Review the code first' : 'Run on this machine',
+      btnBg: disabled && !running ? 'transparent' : 'var(--q-accent)', btnColor: disabled && !running ? 'var(--q-ink-3)' : 'var(--q-accent-ink)',
+      btnBorder: disabled && !running ? 'var(--q-line)' : 'var(--q-accent)', btnCursor: disabled ? 'not-allowed' : 'pointer',
+      codeOpacity: 1,
+      lines: RUN_CODE.map((l, i) => { const ch = st === 'review' && (i === 9 || i === 15); return { n: i + 1, code: l[0], cmt: l[1], kc: 'var(--q-ink)', mark: ch ? 'var(--q-st-question)' : 'transparent', bg: ch ? 'color-mix(in oklch, var(--q-st-question) 10%, transparent)' : 'transparent' }; }),
+      plot: this.plot(running ? ep : 500),
+      outTitle: running ? 'live' : 'captured · reward curve',
+      outMeta: 'mean reward, last 50 ep: 176.4 ± 9.1',
+      byI: ran ? 'ML' : 'AR', byBg: ran ? 'oklch(0.78 0.08 160)' : 'oklch(0.76 0.08 35)',
+      lastRun: ran ? 'Last run by you, 22 Nov, just now · current code' : st === 'review' ? 'Last run by Ana, 12 Nov, 14:02 · code changed since' : 'Last run by Ana, 12 Nov, 14:02 · current code',
+      dur: ran ? '3.0 s' : '6 min 41 s · desktop · M2 Pro',
+    };
+  }
+}
+</script>
+</body>
+</html>

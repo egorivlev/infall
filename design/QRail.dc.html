@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./qoop-theme.css"></helmet>
+<div style="width:224px;height:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--q-chrome);border-right:1px solid var(--q-chrome-line);color:var(--q-ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;">
+  <div style="display:flex;flex-direction:column;gap:1px;padding:10px 8px;">
+    <sc-for list="{{ nav }}" as="n" hint-placeholder-count="4">
+      <div style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px;border-radius:5px;background:{{ n.bg }};color:{{ n.color }};font-weight:{{ n.weight }};cursor:pointer;">
+        <span style="width:14px;display:flex;justify-content:center;font:13px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ n.glyph }}</span>
+        <span style="flex:1;">{{ n.label }}</span>
+        <span style="font:500 11px 'IBM Plex Mono',monospace;min-width:18px;text-align:center;padding:1px 5px;border-radius:9px;color:{{ n.cColor }};background:{{ n.cBg }};">{{ n.count }}</span>
+      </div>
+    </sc-for>
+  </div>
+  <div style="height:1px;background:var(--q-chrome-line);margin:0 12px;"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px;">
+    <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Frames</span>
+    <sc-if value="{{ notGuest }}" hint-placeholder-val="{{ true }}"><span style="color:var(--q-ink-3);font-size:15px;line-height:1;">+</span></sc-if>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:1px;padding:0 8px;">
+    <sc-for list="{{ frames }}" as="f" hint-placeholder-count="4">
+      <div title="Jump to Frame" style="display:flex;align-items:center;gap:10px;height:28px;padding:0 8px;border-radius:5px;color:var(--q-ink-2);cursor:pointer;" style-hover="background:var(--q-hover);color:var(--q-ink);">
+        <span style="width:10px;height:8px;border:1.2px solid var(--q-ink-3);border-radius:2px;flex:none;"></span>
+        <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.name }}</span>
+        <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ f.n }}</span>
+      </div>
+    </sc-for>
+  </div>
+  <div style="flex:1;"></div>
+  <div style="padding:12px 16px;border-top:1px solid var(--q-chrome-line);display:flex;flex-direction:column;gap:4px;font:11px/1.4 'IBM Plex Mono',monospace;color:var(--q-ink-3);">
+    <div style="display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--q-st-understood);"></span><span>Synced · 14:06</span></div>
+    <div>qoop.qec-lab.local</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:224,&quot;height&quot;:700},&quot;active&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;board&quot;,&quot;todos&quot;,&quot;suggestions&quot;,&quot;sources&quot;],&quot;default&quot;:&quot;board&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;guest&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;large&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const a = this.props.active || 'board';
+    const guest = !!this.props.guest;
+    let nav = [
+      { id: 'board', glyph: '▦', label: 'Board', count: '' },
+      { id: 'todos', glyph: '☐', label: 'To-dos', count: '4' },
+      { id: 'suggestions', glyph: '◇', label: 'Suggestions', count: '6', hot: true },
+      { id: 'sources', glyph: '❘❘', label: 'Sources', count: '31' },
+    ];
+    if (guest) nav = nav.filter(n => n.id === 'board' || n.id === 'sources');
+    nav = nav.map(n => {
+      const on = n.id === a;
+      return { ...n, bg: on ? 'var(--q-hover)' : 'transparent', color: on ? 'var(--q-ink)' : 'var(--q-ink-2)', weight: on ? 500 : 400,
+        cColor: n.hot ? 'var(--q-accent-ink)' : 'var(--q-ink-3)', cBg: n.hot ? 'var(--q-accent)' : 'transparent' };
+    });
+    const frames = this.props.large
+      ? [['Surface codes', 15], ['Decoders', 15], ['Variational circuits', 15], ['Barren plateaus', 15], ['QRL on CartPole', 15], ['Grover & amplitude amp.', 15], ['Noise models', 15], ['Reading group', 15]]
+      : [['Surface codes', 9], ['Variational circuits', 8], ['QRL on CartPole', 4], ['Unframed', 4]];
+    return { nav, notGuest: !guest, frames: frames.map(([name, n]) => ({ name, n })) };
+  }
+}
+</script>
+</body>
+</html>

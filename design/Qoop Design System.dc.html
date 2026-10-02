@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<script src="./qoop-math.js"></script>
+</helmet>
+<div data-theme="dark" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-direction:column;gap:64px;font-family:'IBM Plex Sans',sans-serif;max-width:1500px;">
+  <div style="display:flex;flex-direction:column;gap:12px;max-width:900px;">
+    <span style="font:500 11px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--q-ink-3);">Qoop · design system v0.1</span>
+    <span style="font:600 40px/1.1 'Source Serif 4',serif;letter-spacing:-0.01em;">A quiet instrument for four people thinking hard.</span>
+    <span style="font:17px/1.6 'Source Serif 4',serif;color:var(--q-ink-2);text-wrap:pretty;">Chrome is IBM Plex Sans, set small and dense. Pages read like a typeset paper in Source Serif 4 with KaTeX. Code and data are Plex Mono. One cool accent for action; status is always a shape plus a word; the Branch you’re on is never a secret.</span>
+    <div style="display:flex;flex-wrap:wrap;gap:6px 16px;font:12px 'IBM Plex Mono',monospace;"><a href="Qoop Board.dc.html">1 · 2 · 4 · 5 Board, chrome, AI, Suggestions →</a><a href="Qoop Page.dc.html">3 Page →</a><a href="Qoop Team.dc.html">6 · 7 · 8 To-dos, History, Branches →</a><a href="Qoop Merge.dc.html">9 Merge review →</a><a href="Qoop Access.dc.html">10 · 11 Guest, Login, Settings →</a></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px;">
+    <span style="font:600 22px 'Source Serif 4',serif;">Colour tokens</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+        <div data-theme="{{ th.id }}" style="background:var(--q-canvas);color:var(--q-ink);border:1px solid var(--q-line);border-radius:8px;padding:22px;display:flex;flex-direction:column;gap:16px;">
+          <div style="display:flex;align-items:baseline;gap:10px;"><span style="font-weight:600;">{{ th.name }}</span><span style="font-size:12px;color:var(--q-ink-3);">{{ th.note }}</span></div>
+          <sc-for list="{{ groups }}" as="g">
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">{{ g.name }}</span>
+              <div style="display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:8px;">
+                <sc-for list="{{ g.tokens }}" as="t">
+                  <div style="display:flex;flex-direction:column;gap:5px;">
+                    <span style="height:34px;border-radius:4px;background:var({{ t.v }});border:1px solid var(--q-line-soft);"></span>
+                    <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink);">{{ t.v }}</span>
+                    <span style="font-size:11px;color:var(--q-ink-3);">{{ t.use }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <span style="font:600 22px 'Source Serif 4',serif;">Type</span>
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-page);padding:24px 28px;display:flex;flex-direction:column;gap:14px;">
+        <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Page reading · Source Serif 4</span>
+        <div style="display:grid;grid-template-columns:110px 1fr;gap:12px 16px;align-items:baseline;">
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">30 / 600 / 1.18</span><span style="font:600 30px/1.18 'Source Serif 4',serif;">Surface code basics</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">19 / 600 / 1.3</span><span style="font:600 19px/1.3 'Source Serif 4',serif;">Threshold under circuit-level noise</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">16 / 400 / 1.64</span><span style="font:16px/1.64 'Source Serif 4',serif;text-wrap:pretty;">A distance-<q-math tex="d"></q-math> code corrects up to <q-math tex="\lfloor (d-1)/2\rfloor"></q-math> errors; Grover’s algorithm needs about <q-math tex="\frac{\pi}{4}\sqrt{N}"></q-math> oracle calls.</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">display math</span><q-math display="" tex="\frac{\partial \langle H\rangle}{\partial\theta_j}=\tfrac12\Big[\langle H\rangle_{\theta_j+\pi/2}-\langle H\rangle_{\theta_j-\pi/2}\Big]"></q-math>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">13.5 italic</span><span style="font:italic 13.5px/1.4 'Source Serif 4',serif;color:var(--q-ink-2);">Figure 2. Logical error rate vs physical error rate, d = 3…9.</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px;padding-top:44px;">
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-surface);padding:20px 24px;display:flex;flex-direction:column;gap:12px;">
+        <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Interface · IBM Plex Sans</span>
+        <div style="display:grid;grid-template-columns:110px 1fr;gap:10px 16px;align-items:baseline;">
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">15 / 600</span><span style="font-size:15px;font-weight:600;">Merge try-QEC into main</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">13 / 400 body</span><span style="font-size:13px;">Accept this Source and create a To-do.</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">12 / 400 meta</span><span style="font-size:12px;color:var(--q-ink-3);">Last run by Ana, 12 Nov, 14:02</span>
+          <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">10 mono caps</span><span style="font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-2);">Open question</span>
+        </div>
+      </div>
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-surface);padding:20px 24px;display:flex;flex-direction:column;gap:12px;">
+        <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Code &amp; data · IBM Plex Mono</span>
+        <div style="padding:10px 12px;border-radius:5px;background:var(--q-sunken);font:12px/1.62 'IBM Plex Mono',monospace;white-space:pre;">grover = qml.GroverOperator(wires=range(5))<br><span style="color:var(--q-ink-3);font-style:italic;"># ⌊π/4 · √32⌋ = 4 iterations</span></div>
+        <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">arXiv:1803.11173 · p_L = 3.2e-4 · 22 Nov 14:06</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <span style="font:600 22px 'Source Serif 4',serif;">Spacing &amp; radii</span>
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-surface);padding:20px 24px;display:flex;flex-direction:column;gap:10px;">
+        <sc-for list="{{ spaces }}" as="s">
+          <div style="display:grid;grid-template-columns:40px 1fr 1fr;gap:12px;align-items:center;font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">
+            <span style="color:var(--q-ink);">{{ s.n }}</span><span style="height:10px;width:{{ s.n }}px;background:var(--q-accent);border-radius:1px;"></span><span>{{ s.use }}</span>
+          </div>
+        </sc-for>
+        <div style="display:flex;gap:16px;margin-top:8px;font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">
+          <span style="display:flex;flex-direction:column;gap:6px;align-items:center;"><span style="width:48px;height:32px;border:1px solid var(--q-ink-2);border-radius:3px;"></span>3 chips</span>
+          <span style="display:flex;flex-direction:column;gap:6px;align-items:center;"><span style="width:48px;height:32px;border:1px solid var(--q-ink-2);border-radius:5px;"></span>5 Cards, buttons</span>
+          <span style="display:flex;flex-direction:column;gap:6px;align-items:center;"><span style="width:48px;height:32px;border:1px solid var(--q-ink-2);border-radius:8px;"></span>8 Frames, panels</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <span style="font:600 22px 'Source Serif 4',serif;">Status — shape + word, never colour alone</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <sc-for list="{{ themes }}" as="th">
+          <div data-theme="{{ th.id }}" style="background:var(--q-canvas);color:var(--q-ink);border:1px solid var(--q-line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+            <sc-for list="{{ statuses }}" as="s">
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                <span style="display:flex;align-items:center;gap:7px;color:var({{ s.v }});font:500 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;">{{ s.glyph }}{{ s.label }}</span>
+                <span style="font-size:11.5px;color:var(--q-ink-3);padding-left:19px;">{{ s.use }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px;">
+    <span style="font:600 22px 'Source Serif 4',serif;">Cards</span>
+    <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;padding:28px;border:1px solid var(--q-line-soft);border-radius:8px;background-color:var(--q-canvas);background-image:radial-gradient(var(--q-grid) 1px, transparent 1.3px);background-size:17px 17px;">
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="width:224px;height:132px;box-sizing:border-box;border-radius:5px;background:var(--q-raised);border:1px solid var(--q-line-soft);padding:9px 11px 8px;display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:6px;height:14px;"><span style="display:flex;align-items:center;gap:5px;color:var(--q-st-understood);font:500 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;"><svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.8" fill="currentColor"></circle></svg>Understood</span><span style="flex:1;"></span>
+            <span style="display:flex;align-items:center;gap:7px;color:var(--q-ink-3);font:10.5px 'IBM Plex Mono',monospace;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1"><circle cx="6" cy="6" r="4.6"></circle><ellipse cx="6" cy="6" rx="4.6" ry="1.7"></ellipse></svg><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M3.5 2.3 L9.6 6 L3.5 9.7 Z"></path></svg><span style="display:flex;align-items:center;gap:2px;"><svg width="11" height="12" viewBox="0 0 11 12" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1.5 1.5 H7.5 L9.5 3.5 V10.5 H1.5 Z M3.3 5 H7.7 M3.3 7.3 H7.7"></path></svg>1</span></span></div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;">Grover search</div>
+          <div style="font-size:11.5px;line-height:1.38;color:var(--q-ink-2);">O(√N) oracle calls; overshoots past ⌊π/4 · √N⌋ iterations.</div>
+          <div style="flex:1;"></div>
+          <div style="display:flex;align-items:center;gap:6px;font:10.5px 'IBM Plex Mono',monospace;color:var(--q-ink-2);"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1" y="1" width="9" height="9" rx="1.5"></rect></svg>2 To-do<span style="flex:1;"></span><span style="height:15px;min-width:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 8.5px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:oklch(0.76 0.08 35);">AR</span><span style="height:15px;min-width:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 8.5px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:oklch(0.78 0.08 160);">ML</span></div>
+        </div>
+        <span style="font-size:12px;color:var(--q-ink-3);max-width:224px;line-height:1.45;">Face: status · Page contents (Visual, Run, Sources n) · title · 2-line summary · open To-dos with owners.</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="width:224px;height:132px;box-sizing:border-box;border-radius:5px;background:repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklch, var(--q-st-dead) 9%, transparent) 7px 8px), color-mix(in oklch, var(--q-st-dead) 5%, var(--q-raised));border:1px solid color-mix(in oklch, var(--q-st-dead) 45%, var(--q-line-soft));padding:9px 11px 8px;display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:6px;height:14px;"><span style="display:flex;align-items:center;gap:5px;color:var(--q-st-dead);font:500 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.2 5 H7.4 M8.4 1.8 V8.2"></path></svg>Dead end · kept</span></div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;">Grover for policy search</div>
+          <div style="font:italic 12.5px/1.38 'Source Serif 4',serif;color:var(--q-ink-2);">Why: no oracle for “good policy” without evaluating it.</div>
+        </div>
+        <span style="font-size:12px;color:var(--q-ink-3);max-width:224px;line-height:1.45;">Dead end: archival hatch, warm stone, serif “Why:” line. Reads as a kept specimen, not an error — no red, no strike.</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="width:224px;height:132px;box-sizing:border-box;border-radius:5px;background:var(--q-raised);border:1px solid var(--q-accent);box-shadow:0 0 0 2px var(--q-accent-soft), var(--q-shadow);padding:9px 11px 8px;display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:6px;height:14px;"><span style="display:flex;align-items:center;gap:5px;color:var(--q-st-question);font:500 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="5" r="3.8"></circle><path d="M3.8 4 C3.8 2.7 6.2 2.7 6.2 4 C6.2 5 5 5 5 6" stroke-width="1.1"></path><circle cx="5" cy="7.4" r="0.6" fill="currentColor" stroke="none"></circle></svg>Open question</span></div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;">Barren plateaus</div>
+          <div style="font-size:11.5px;line-height:1.38;color:var(--q-ink-2);">Gradient variance vanishes exponentially in n for global costs.</div>
+        </div>
+        <span style="font-size:12px;color:var(--q-ink-3);max-width:224px;line-height:1.45;">Selected: accent border + soft ring. Sets the AI scope chip.</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:10px;align-items:flex-end;">
+          <div style="width:112px;height:66px;box-sizing:border-box;border-radius:4px;background:var(--q-raised);border:1px solid var(--q-line-soft);padding:7px 8px;display:flex;flex-direction:column;gap:5px;"><span style="display:flex;align-items:center;gap:4px;color:var(--q-st-reading);font:500 8px/1 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;"><svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="5" r="3.8"></circle><path d="M5 1.2 A3.8 3.8 0 0 1 5 8.8 Z" fill="currentColor" stroke="none"></path></svg>Reading</span><span style="font-size:10.5px;font-weight:600;line-height:1.2;">MWPM decoder</span></div>
+          <div style="width:50px;height:30px;box-sizing:border-box;border-radius:3px;background:color-mix(in oklch, var(--q-st-reading) 26%, var(--q-raised));padding:4px;color:var(--q-st-reading);"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="5" r="3.8"></circle><path d="M5 1.2 A3.8 3.8 0 0 1 5 8.8 Z" fill="currentColor" stroke="none"></path></svg></div>
+        </div>
+        <span style="font-size:12px;color:var(--q-ink-3);max-width:224px;line-height:1.45;">Semantic zoom: below 55% titles only; below 30% a status-tinted tile carrying the shape.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <span style="font:600 22px 'Source Serif 4',serif;">Connections</span>
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-canvas);padding:16px 22px;display:flex;flex-direction:column;gap:2px;">
+        <sc-for list="{{ conns }}" as="c">
+          <div style="display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:center;height:44px;">
+            <div style="position:relative;height:24px;">{{ c.svg }}<sc-if value="{{ c.label }}"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);white-space:nowrap;font:500 10.5px/1 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:3px;background:var(--q-canvas);border:1px {{ c.bs }} {{ c.bc }};color:{{ c.lc }};">{{ c.label }}</span></sc-if></div>
+            <span style="font-size:12.5px;color:var(--q-ink-2);"><b style="color:var(--q-ink);font-weight:600;">{{ c.name }}</b> — {{ c.use }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <span style="font:600 22px 'Source Serif 4',serif;">Controls &amp; marks</span>
+      <div style="border:1px solid var(--q-line-soft);border-radius:8px;background:var(--q-surface);padding:20px 22px;display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <span style="height:30px;padding:0 12px;display:flex;align-items:center;border-radius:5px;background:var(--q-accent);color:var(--q-accent-ink);font-weight:500;font-size:13px;">Accept</span>
+          <span style="height:30px;padding:0 12px;display:flex;align-items:center;border-radius:5px;border:1px solid var(--q-line);font-size:13px;">Reject</span>
+          <span style="height:30px;padding:0 12px;display:flex;align-items:center;border-radius:5px;border:1px solid var(--q-line);color:var(--q-ink-3);font-size:13px;">Merge · 3 left</span>
+          <span style="height:30px;padding:0 12px;display:flex;align-items:center;border-radius:5px;border:1px solid var(--q-line);color:var(--q-danger);font-size:13px;">Remove</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <span style="display:flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--q-accent);font-size:12px;background:var(--q-accent-soft);"><span style="color:var(--q-ink-3);">Card:</span>Surface codes</span>
+          <span style="display:flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--q-line);font-size:12px;"><span style="color:var(--q-ink-3);">Board:</span>main</span>
+          <span style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;padding:4px 5px;border-radius:3px;border:1px solid var(--q-ink-3);color:var(--q-ink-2);">AI-GENERATED</span>
+          <span style="display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:4px;border:1px solid var(--q-st-question);font-size:12px;"><b style="font-weight:600;">Guest</b><span style="color:var(--q-ink-2);">— access until 30 Nov</span></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <span style="font:600 12px 'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;border:1px solid var(--q-ink-2);">main</span>
+          <span style="font:600 12px 'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;border:1px solid var(--q-branch);color:var(--q-branch);background:color-mix(in oklch, var(--q-branch) 12%, transparent);">try-QEC</span>
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1 L13 7 L7 13 L1 7 Z" fill="var(--q-raised)" stroke="var(--q-ink)" stroke-width="1.3"></path></svg><span style="font-size:12px;color:var(--q-ink-2);">Checkpoint</span>
+          <span style="padding:0 4px;background:var(--q-ins);font:14px 'Source Serif 4',serif;">added</span><span style="padding:0 4px;background:var(--q-del);text-decoration:line-through;font:14px 'Source Serif 4',serif;">removed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px;">
+    <span style="font:600 22px 'Source Serif 4',serif;">Branch awareness</span>
+    <span style="font-size:13px;color:var(--q-ink-2);max-width:760px;line-height:1.55;">On any Branch other than main the chrome takes a violet tint, a 2px rule runs across the top, the switcher pill is outlined in the Branch colour with its origin, and the canvas carries a “You are on try-QEC” chip.</span>
+    <div style="display:flex;flex-direction:column;gap:12px;width:1300px;">
+      <div data-branch="main" style="border:1px solid var(--q-line);border-radius:4px;overflow:visible;position:relative;z-index:2;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div data-branch="try-QEC" style="border:1px solid var(--q-line);border-radius:4px;overflow:visible;position:relative;z-index:1;"><dc-import name="QTopBar" branch="try-QEC" hint-size="100%,44px"></dc-import></div>
+      <div data-theme="light" style="display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--q-sunken);border-radius:6px;">
+        <div data-branch="main" style="border:1px solid var(--q-line);border-radius:4px;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+        <div data-branch="try-QEC" style="border:1px solid var(--q-line);border-radius:4px;"><dc-import name="QTopBar" branch="try-QEC" hint-size="100%,44px"></dc-import></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  glyph(st) {
+    const h = React.createElement; const p = { width: 12, height: 12, viewBox: '0 0 10 10', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, style: { flex: 'none' } };
+    if (st === 'idea') return h('svg', p, h('path', { d: 'M5 1.2 L8.8 5 L5 8.8 L1.2 5 Z' }));
+    if (st === 'reading') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8 }), h('path', { d: 'M5 1.2 A3.8 3.8 0 0 1 5 8.8 Z', fill: 'currentColor', stroke: 'none' }));
+    if (st === 'understood') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8, fill: 'currentColor' }));
+    if (st === 'question') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8 }), h('path', { d: 'M3.8 4 C3.8 2.7 6.2 2.7 6.2 4 C6.2 5 5 5 5 6', strokeWidth: 1.1 }), h('circle', { cx: 5, cy: 7.4, r: 0.6, fill: 'currentColor', stroke: 'none' }));
+    return h('svg', p, h('path', { d: 'M1.2 5 H7.4 M8.4 1.8 V8.2' }));
+  }
+  line(o) {
+    const h = React.createElement;
+    const mk = (id, d, rx) => h('marker', { id, viewBox: '0 0 10 10', refX: rx, refY: 5, markerWidth: 8, markerHeight: 8, orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse' }, h('path', { d, fill: 'none', stroke: o.stroke, strokeWidth: 1.5 }));
+    return h('svg', { width: 260, height: 24, style: { position: 'absolute', inset: 0 } },
+      h('defs', null, mk('ds' + o.k + 'a', 'M1 1.5 L9 5 L1 8.5', 9), mk('ds' + o.k + 'b', 'M5 0.5 V9.5', 5)),
+      h('path', { d: 'M4 12 C90 4 170 20 256 12', fill: 'none', stroke: o.stroke, strokeWidth: o.w, strokeDasharray: o.dash, strokeOpacity: o.op,
+        markerEnd: o.arrow ? `url(#ds${o.k}a)` : o.bar ? `url(#ds${o.k}b)` : null, markerStart: o.bar ? `url(#ds${o.k}b)` : null }));
+  }
+  renderVals() {
+    const T = (v, use) => ({ v, use });
+    const st = [['idea', 'Idea', '--q-st-idea', 'Not yet read into'], ['reading', 'Reading', '--q-st-reading', 'Someone is working through it'], ['understood', 'Understood', '--q-st-understood', 'Settled; safe to build on'], ['question', 'Open question', '--q-st-question', 'Needs thought or an experiment'], ['dead', 'Dead end · kept', '--q-st-dead', 'Tried, ruled out, kept with a why']];
+    const conns = [
+      { k: 1, name: 'Relates', use: 'plain, undirected, 1.2px ink-3', stroke: 'var(--q-ink-3)', w: 1.2, op: 0.7 },
+      { k: 2, name: 'Labelled', use: 'short mono label on the curve', stroke: 'var(--q-ink-3)', w: 1.2, op: 0.7, label: 'compare' },
+      { k: 3, name: 'Directional', use: 'builds on, uses, motivates — open arrow', stroke: 'var(--q-ink-3)', w: 1.2, op: 0.9, arrow: true, label: 'builds on' },
+      { k: 4, name: 'Contradicts', use: 'bar caps at both ends', stroke: 'var(--q-ink-3)', w: 1.2, op: 0.9, bar: true, label: 'contradicts' },
+      { k: 5, name: 'Suggested', use: 'dashed accent; not on the Board until accepted', stroke: 'var(--q-accent)', w: 1.8, dash: '7 5', op: 1, label: 'Suggested · may explain', bs: 'dashed', bc: 'var(--q-accent)', lc: 'var(--q-accent)' },
+      { k: 6, name: 'Highlighted', use: 'touches the selected Card', stroke: 'var(--q-ink-2)', w: 1.2, op: 1 },
+    ].map(c => ({ ...c, svg: this.line(c), bs: c.bs || 'solid', bc: c.bc || 'var(--q-line-soft)', lc: c.lc || 'var(--q-ink-2)', label: c.label || '' }));
+    return {
+      themes: [{ id: 'dark', name: 'Dark', note: 'default' }, { id: 'light', name: 'Light', note: 'warm paper' }],
+      groups: [
+        { name: 'Surfaces', tokens: [T('--q-sunken', 'desk, inputs'), T('--q-canvas', 'Board'), T('--q-surface', 'chrome, panels'), T('--q-raised', 'Cards, menus'), T('--q-page', 'Page paper')] },
+        { name: 'Ink & lines', tokens: [T('--q-ink', 'primary text'), T('--q-ink-2', 'secondary'), T('--q-ink-3', 'meta, icons'), T('--q-line', 'borders'), T('--q-line-soft', 'dividers')] },
+        { name: 'Status', tokens: st.map(s => T(s[2], s[1])) },
+        { name: 'Signal', tokens: [T('--q-accent', 'action, selection'), T('--q-branch', 'non-main Branch'), T('--q-ins', 'diff added'), T('--q-del', 'diff removed'), T('--q-danger', 'destructive only')] },
+      ],
+      statuses: st.map(s => ({ glyph: this.glyph(s[0]), label: s[1], v: s[2], use: s[3] })),
+      spaces: [[4, 'icon ↔ label'], [8, 'chip padding, list gaps'], [12, 'Card padding, control gaps'], [16, 'panel padding'], [24, 'section gaps'], [32, 'page gutters'], [48, 'Frame padding (world)']].map(([n, use]) => ({ n, use })),
+      conns,
+    };
+  }
+}
+</script>
+</body>
+</html>

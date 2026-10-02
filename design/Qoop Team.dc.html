@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<script src="./qoop-math.js"></script>
+</helmet>
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
+
+  <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
+    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — To-dos, History, Branches</span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 6, 7, 8 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Merge.dc.html">Merge</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
+  </div>
+
+  <div id="6a" data-screen-label="6a To-dos" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">6a</span><span style="font-size:15px;font-weight:600;">To-dos — one list per Member, visible to the team</span><span style="font-size:13px;color:var(--q-ink-3);">Tick your own; others’ are read-only but you can assign to them.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="todos" hint-size="224px,100%"></dc-import></div>
+      <div style="display:flex;flex-direction:column;min-height:0;background:var(--q-canvas);">
+        <div style="display:flex;align-items:baseline;gap:14px;padding:22px 28px 16px;">
+          <span style="font:600 22px 'Source Serif 4',serif;">To-dos</span>
+          <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">13 open · 4 Members</span>
+          <span style="flex:1;"></span>
+          <div style="display:flex;gap:4px;font-size:12.5px;">
+            <span style="padding:4px 10px;border-radius:4px;background:var(--q-hover);">Open</span>
+            <span style="padding:4px 10px;border-radius:4px;color:var(--q-ink-2);">Done</span>
+            <span style="padding:4px 10px;border-radius:4px;color:var(--q-ink-2);">All</span>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(4, minmax(0,1fr));gap:14px;padding:0 28px 28px;">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;min-height:0;border:1px solid {{ col.border }};border-radius:6px;background:var(--q-surface);">
+              <div style="display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--q-line-soft);">
+                <span style="width:24px;height:24px;border-radius:50%;background:{{ col.bg }};color:oklch(0.2 0.02 255);font:600 10px 'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center;">{{ col.i }}</span>
+                <span style="font-weight:600;">{{ col.name }}</span>
+                <span style="font-size:12px;color:var(--q-ink-3);">{{ col.role }}</span>
+                <span style="flex:1;"></span>
+                <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ col.open }} open</span>
+              </div>
+              <div style="flex:1;overflow:auto;display:flex;flex-direction:column;">
+                <sc-for list="{{ col.items }}" as="t" hint-placeholder-count="3">
+                  <div style="display:grid;grid-template-columns:18px 1fr;gap:4px 8px;padding:11px 14px;border-bottom:1px solid var(--q-line-soft);opacity:{{ t.op }};">
+                    <button onClick="{{ t.toggle }}" title="{{ t.tip }}" style="width:15px;height:15px;margin-top:2px;padding:0;border-radius:3px;border:1.3px solid {{ t.boxBorder }};background:{{ t.boxBg }};color:var(--q-accent-ink);font-size:10px;line-height:1;cursor:{{ t.cursor }};display:flex;align-items:center;justify-content:center;">{{ t.mark }}</button>
+                    <span style="font-size:13px;line-height:1.4;text-decoration:{{ t.strike }};text-wrap:pretty;">{{ t.text }}</span>
+                    <span></span>
+                    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-start;">
+                      <sc-if value="{{ t.refCard }}"><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px solid var(--q-line-soft);font-size:11.5px;color:var(--q-ink-2);"><span style="color:var(--q-ink-3);">Card:</span>{{ t.card }}</span></sc-if>
+                      <sc-if value="{{ t.refBranch }}"><a href="Qoop Board.dc.html#2a" title="Opens try-QEC and selects the Card" style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px solid var(--q-branch);background:color-mix(in oklch, var(--q-branch) 10%, transparent);font-size:11.5px;color:var(--q-ink);text-decoration:none;"><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--q-branch);">⑂ try-QEC</span><span style="color:var(--q-ink-3);">Card:</span>{{ t.card }}<span style="color:var(--q-branch);">↗</span></a></sc-if>
+                      <sc-if value="{{ t.refGone }}"><span title="The To-do is kept; the Card it pointed to was removed." style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px dashed var(--q-line);font-size:11.5px;color:var(--q-ink-3);"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="8" height="8" rx="1"></rect><path d="M3 3 L7 7 M7 3 L3 7"></path></svg>Card removed<span style="text-decoration:line-through;">{{ t.card }}</span></span><span style="font-size:11px;color:var(--q-ink-3);">by Jonas on main, 18 Nov · Restore from History</span></sc-if>
+                      <sc-if value="{{ t.hasBy }}"><span style="font-size:11px;color:var(--q-ink-3);">{{ t.by }}</span></sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="padding:10px 12px;border-top:1px solid var(--q-line-soft);">
+                <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:4px;border:1px solid var(--q-line-soft);background:var(--q-sunken);font-size:12.5px;color:var(--q-ink-3);">
+                  <span style="font-size:14px;">+</span><span>{{ col.add }}</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="7a" data-screen-label="7a History timeline" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">7a</span><span style="font-size:15px;font-weight:600;">History — scrub main’s Changes; the Board previews that moment</span><span style="font-size:13px;color:var(--q-ink-3);">Drag across the timeline.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr 286px;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" history="{{ true }}" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;grid-row:2 / 4;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;">
+        <dc-import name="QBoardCanvas" upto="{{ upto }}" interactive="{{ false }}" hud="{{ false }}" pad="{{ 30 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import>
+        <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 2px var(--q-st-reading);"></div>
+        <div style="position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:6px 8px 6px 12px;border-radius:5px;background:var(--q-raised);border:1px solid var(--q-st-reading);box-shadow:var(--q-shadow);font-size:12.5px;white-space:nowrap;">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="var(--q-st-reading)" stroke-width="1.3" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="5"></circle><path d="M6.5 3.5 V6.5 L8.6 7.8"></path></svg>
+          <span>Previewing <b style="font-family:'IBM Plex Mono',monospace;font-weight:600;">main</b> at <b style="font-weight:600;">{{ when }}</b></span>
+          <span style="color:var(--q-ink-3);">read-only</span>
+          <button onClick="{{ toNow }}" style="height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--q-line);background:transparent;color:var(--q-ink);font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;">Back to now</button>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--q-line);background:var(--q-surface);display:grid;grid-template-columns:1fr 340px;min-height:0;">
+        <div style="padding:14px 20px 12px 20px;display:flex;flex-direction:column;gap:6px;min-width:0;">
+          <div style="display:flex;align-items:baseline;gap:12px;">
+            <span style="font-weight:600;">History of main</span>
+            <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">18 Activities · 76 Changes · 4 Checkpoints</span>
+          </div>
+          <div style="display:grid;grid-template-columns:44px 1fr;gap:0 8px;">
+            <span></span>
+            <div style="position:relative;height:42px;">
+              <sc-for list="{{ checkpoints }}" as="k" hint-placeholder-count="4">
+                <div style="position:absolute;left:{{ k.x }}%;bottom:0;transform:translateX(-7px);display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+                  <span style="font-size:11.5px;color:var(--q-ink);white-space:nowrap;">{{ k.name }}</span>
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1 L13 7 L7 13 L1 7 Z" fill="var(--q-raised)" stroke="var(--q-ink)" stroke-width="1.3"></path></svg>
+                </div>
+              </sc-for>
+            </div>
+            <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="4">
+              <span style="height:26px;display:flex;align-items:center;gap:6px;font:600 10px 'IBM Plex Sans',sans-serif;"><span style="width:20px;height:20px;border-radius:50%;background:{{ ln.bg }};color:oklch(0.2 0.02 255);display:flex;align-items:center;justify-content:center;">{{ ln.i }}</span></span>
+              <div style="position:relative;height:26px;border-top:1px solid var(--q-line-soft);">
+                <sc-for list="{{ ln.groups }}" as="g">
+                  <span title="{{ g.tip }}" style="position:absolute;left:{{ g.x }}%;top:7px;width:{{ g.w }}px;height:12px;border-radius:2px;background:{{ g.bg }};outline:{{ g.outline }};"></span>
+                </sc-for>
+              </div>
+            </sc-for>
+            <span></span>
+            <div style="position:relative;height:20px;border-top:1px solid var(--q-line-soft);font:10.5px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">
+              <sc-for list="{{ days }}" as="d"><span style="position:absolute;left:{{ d.x }}%;top:5px;transform:translateX(-50%);">{{ d.label }}</span></sc-for>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:44px 1fr;gap:0 8px;margin-top:-178px;height:178px;pointer-events:none;">
+            <span></span>
+            <div style="position:relative;">
+              <div style="position:absolute;left:{{ pos }}%;top:0;bottom:-4px;width:2px;margin-left:-1px;background:var(--q-st-reading);"></div>
+              <div style="position:absolute;left:{{ pos }}%;top:-8px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--q-st-reading);box-shadow:0 0 0 3px var(--q-surface);"></div>
+              <input type="range" min="0" max="1000" value="{{ slider }}" onInput="{{ onScrub }}" style="position:absolute;left:-8px;right:-8px;top:-10px;bottom:0;width:calc(100% + 16px);height:100%;margin:0;opacity:0;cursor:ew-resize;pointer-events:auto;">
+            </div>
+          </div>
+        </div>
+        <div style="border-left:1px solid var(--q-line-soft);padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:22px;height:22px;border-radius:50%;background:{{ sel.bg }};color:oklch(0.2 0.02 255);font:600 9px 'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center;">{{ sel.i }}</span>
+            <span style="font-weight:600;">{{ sel.name }}</span>
+            <span style="font:11.5px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ sel.when }}</span>
+          </div>
+          <div style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ sel.n }} Changes in this Activity</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--q-ink-2);">
+            <sc-for list="{{ sel.ch }}" as="c"><span>· {{ c }}</span></sc-for>
+          </div>
+          <div style="flex:1;"></div>
+          <button style="height:30px;border-radius:5px;border:1px solid var(--q-ink-2);background:transparent;color:var(--q-ink);font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;">Restore main to here</button>
+          <div style="font-size:11.5px;line-height:1.45;color:var(--q-ink-3);text-wrap:pretty;">Restoring adds new Changes that bring the Board back to this moment. Nothing is deleted — undo it from History at any time.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="8a" data-screen-label="8a Branches" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">8a</span><span style="font-size:15px;font-weight:600;">Branches — how they diverged, create, compare, Merge</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="display:grid;grid-template-columns:1fr 380px;min-height:0;">
+        <div style="padding:24px 28px;display:flex;flex-direction:column;gap:20px;min-width:0;">
+          <div style="display:flex;align-items:baseline;gap:14px;"><span style="font:600 22px 'Source Serif 4',serif;">Branches</span><span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">3 open · 1 merged</span></div>
+          <div style="border:1px solid var(--q-line-soft);border-radius:6px;background:var(--q-surface);padding:16px 18px 10px;">
+            <svg viewBox="0 0 950 236" width="100%" style="display:block;font-family:'IBM Plex Mono',monospace;">
+              <g stroke="var(--q-line-soft)" stroke-width="1"><line x1="20" y1="214" x2="840" y2="214"></line></g>
+              <g font-size="10.5" fill="var(--q-ink-3)"><text x="20" y="228">3 Nov</text><text x="234" y="228">8 Nov</text><text x="452" y="228">14 Nov</text><text x="634" y="228">19 Nov</text><text x="800" y="228">22 Nov</text></g>
+              <line x1="20" y1="50" x2="820" y2="50" stroke="var(--q-ink-2)" stroke-width="2.5"></line>
+              <path d="M200 50 C230 50 230 104 260 104 L300 104 C330 104 330 50 360 50" fill="none" stroke="var(--q-ink-3)" stroke-width="1.6" stroke-dasharray="1 0"></path>
+              <text x="230" y="124" font-size="11" fill="var(--q-ink-3)">mei/threshold-fit · merged 11 Nov</text>
+              <path d="M470 50 C500 50 500 120 530 120 L820 120" fill="none" stroke="var(--q-branch)" stroke-width="2.5"></path>
+              <path d="M680 50 C700 50 700 172 720 172 L820 172" fill="none" stroke="var(--q-branch)" stroke-width="2" stroke-opacity=".75"></path>
+              <g fill="var(--q-ink-2)"><circle cx="90" cy="50" r="3"></circle><circle cx="150" cy="50" r="3"></circle><circle cx="410" cy="50" r="3"></circle><circle cx="590" cy="50" r="3"></circle><circle cx="760" cy="50" r="3"></circle></g>
+              <g fill="var(--q-branch)"><circle cx="560" cy="120" r="3"></circle><circle cx="620" cy="120" r="3"></circle><circle cx="700" cy="120" r="3"></circle><circle cx="780" cy="120" r="3"></circle><circle cx="750" cy="172" r="3"></circle></g>
+              <g fill="var(--q-raised)" stroke="var(--q-ink)" stroke-width="1.4"><path d="M30 43 L37 50 L30 57 L23 50 Z"></path><path d="M240 43 L247 50 L240 57 L233 50 Z"></path><path d="M470 43 L477 50 L470 57 L463 50 Z"></path><path d="M680 43 L687 50 L680 57 L673 50 Z"></path></g>
+              <g font-size="10.5" fill="var(--q-ink-2)" font-family="IBM Plex Sans"><text x="30" y="30" text-anchor="middle">Kick-off</text><text x="240" y="30" text-anchor="middle">Threshold plot v1</text><text x="470" y="30" text-anchor="middle">Reading group 14 Nov</text><text x="680" y="30" text-anchor="middle">Before decoder rewrite</text></g>
+              <circle cx="820" cy="50" r="5" fill="var(--q-canvas)" stroke="var(--q-ink)" stroke-width="2"></circle>
+              <circle cx="820" cy="120" r="5" fill="var(--q-canvas)" stroke="var(--q-branch)" stroke-width="2"></circle>
+              <circle cx="820" cy="172" r="5" fill="var(--q-canvas)" stroke="var(--q-branch)" stroke-width="2"></circle>
+              <text x="832" y="54" font-size="12" font-weight="600" fill="var(--q-ink)">main</text>
+              <text x="832" y="124" font-size="12" font-weight="600" fill="var(--q-branch)">try-QEC</text>
+              <text x="832" y="176" font-size="12" font-weight="600" fill="var(--q-branch)">ana/cartpole-lr</text>
+            </svg>
+          </div>
+          <div style="border:1px solid var(--q-line-soft);border-radius:6px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.3fr 1.6fr 0.9fr 1fr 220px;gap:12px;padding:8px 14px;background:var(--q-surface);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);"><span>Branch</span><span>Started from</span><span>Members</span><span>vs main</span><span></span></div>
+            <sc-for list="{{ branches }}" as="b" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:1.3fr 1.6fr 0.9fr 1fr 220px;gap:12px;align-items:center;padding:11px 14px;border-top:1px solid var(--q-line-soft);font-size:13px;">
+                <span style="font:600 13px 'IBM Plex Mono',monospace;color:{{ b.color }};">{{ b.name }}</span>
+                <span style="color:var(--q-ink-2);font-size:12.5px;">{{ b.from }}</span>
+                <span style="color:var(--q-ink-2);font-size:12.5px;">{{ b.members }}</span>
+                <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">{{ b.diff }}</span>
+                <span style="display:flex;gap:6px;justify-content:flex-end;">
+                  <sc-if value="{{ b.notMain }}">
+                    <span style="height:26px;padding:0 10px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-line);font-size:12px;">Compare</span>
+                    <a href="Qoop Merge.dc.html" style="height:26px;padding:0 10px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);font-size:12px;color:var(--q-ink);text-decoration:none;white-space:nowrap;">Merge into main…</a>
+                  </sc-if>
+                  <sc-if value="{{ b.isMain }}"><span style="font-size:12px;color:var(--q-ink-3);">default Branch</span></sc-if>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="border-left:1px solid var(--q-line-soft);background:var(--q-surface);padding:24px 22px;display:flex;flex-direction:column;gap:16px;">
+          <span style="font:600 17px 'Source Serif 4',serif;">New Branch</span>
+          <span style="font-size:12.5px;line-height:1.5;color:var(--q-ink-2);text-wrap:pretty;">A Branch is a full copy of the Board — Cards, Pages, Connections. Work on it stays there until you Merge.</span>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--q-ink-2);">Name
+            <input value="{{ bname }}" onInput="{{ setBname }}" style="height:32px;padding:0 10px;border-radius:4px;border:1px solid var(--q-line);background:var(--q-sunken);color:var(--q-ink);font:13px 'IBM Plex Mono',monospace;outline:none;">
+          </label>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+            <span style="font-size:12px;color:var(--q-ink-2);">Start from</span>
+            <label onClick="{{ fromNow }}" style="display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:5px;border:1px solid {{ nowBorder }};cursor:pointer;">
+              <span style="width:14px;height:14px;margin-top:1px;border-radius:50%;border:1.4px solid {{ nowBorder }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;"><span style="width:6px;height:6px;border-radius:50%;background:{{ nowDot }};"></span></span>
+              <span style="display:flex;flex-direction:column;gap:2px;"><span>Now</span><span style="font-size:12px;color:var(--q-ink-3);">main as of 22 Nov, 14:06</span></span>
+            </label>
+            <label onClick="{{ fromCp }}" style="display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:5px;border:1px solid {{ cpBorder }};cursor:pointer;">
+              <span style="width:14px;height:14px;margin-top:1px;border-radius:50%;border:1.4px solid {{ cpBorder }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;"><span style="width:6px;height:6px;border-radius:50%;background:{{ cpDot }};"></span></span>
+              <span style="display:flex;flex-direction:column;gap:6px;flex:1;"><span>A Checkpoint</span>
+                <select style="height:28px;border-radius:4px;border:1px solid var(--q-line);background:var(--q-sunken);color:var(--q-ink);font:12.5px 'IBM Plex Sans',sans-serif;"><option>◆ Before decoder rewrite · 19 Nov</option><option>◆ Reading group 14 Nov</option><option>◆ Threshold plot v1 · 9 Nov</option><option>◆ Kick-off · 3 Nov</option></select>
+              </span>
+            </label>
+          </div>
+          <button style="height:32px;border-radius:5px;border:0;background:var(--q-accent);color:var(--q-accent-ink);font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer;">Create Branch and switch to it</button>
+          <div style="height:1px;background:var(--q-line-soft);margin:6px 0;"></div>
+          <span style="font:600 15px 'Source Serif 4',serif;">Compare and Merge</span>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:5px;border:1px solid var(--q-line-soft);background:var(--q-raised);font-size:12.5px;">
+            <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;"><span style="color:var(--q-branch);font-weight:600;">try-QEC</span><span style="color:var(--q-ink-3);">→</span><span style="font-weight:600;">main</span></div>
+            <div style="color:var(--q-ink-2);line-height:1.5;">14 Changes ahead, 5 behind. 9 merge automatically; 5 Conflicts need a decision.</div>
+            <a href="Qoop Merge.dc.html" style="align-self:flex-start;height:28px;padding:0 12px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);color:var(--q-ink);text-decoration:none;font-weight:500;">Review Merge →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const MEM = { ML: ['Mei Lin', 'oklch(0.78 0.08 160)'], AR: ['Ana Ruiz', 'oklch(0.76 0.08 35)'], JW: ['Jonas Weber', 'oklch(0.76 0.08 240)'], EV: ['Elena Varga', 'oklch(0.80 0.08 85)'] };
+const DAY0 = 3, DAYS = 19.6;
+const GROUPS = [
+  ['EV', 3.4, '3 Nov, 10:00', 4, ['Created Frames Surface codes, Variational circuits', 'Added Card Surface code basics']],
+  ['AR', 3.65, '3 Nov, 15:20', 6, ['Created Frame QRL on CartPole', 'Added 3 Cards']],
+  ['ML', 5.45, '5 Nov, 11:05', 5, ['Added Toric code & anyons, MWPM decoder', 'Connection: builds on']],
+  ['JW', 6.7, '6 Nov, 16:40', 3, ['Added Threshold ≈ 1%', 'Sources: Fowler et al. 2012']],
+  ['ML', 8.4, '8 Nov, 09:30', 7, ['Run on Logical error rate vs d', 'Added Lattice surgery CNOT']],
+  ['EV', 9.6, '9 Nov, 14:00', 2, ['Checkpoint “Threshold plot v1”', 'Status: Threshold → understood']],
+  ['AR', 10.55, '10 Nov, 13:10', 4, ['Added VQE for H₂, Hardware-efficient ansatz']],
+  ['JW', 11.4, '11 Nov, 10:20', 3, ['Added Union-find decoder, Neural decoders?']],
+  ['AR', 12.6, '12 Nov, 14:00–14:40', 6, ['Changed Page QRL on CartPole', 'Ran Run block (3 seeds)', 'Added Data re-uploading']],
+  ['ML', 13.7, '13 Nov, 17:45', 3, ['Added Barren plateaus, Parameter-shift rule']],
+  ['EV', 14.45, '14 Nov, 11:00', 5, ['Checkpoint “Reading group 14 Nov”', 'Added Nielsen & Chuang, ch. 10']],
+  ['JW', 16.4, '16 Nov, 09:15', 4, ['Status: Color codes instead → dead end', 'Added Layerwise training']],
+  ['AR', 17.6, '17 Nov, 15:30', 3, ['Added Trainable input scaling, QAOA MaxCut']],
+  ['ML', 18.4, '18 Nov, 10:00', 4, ['Added Noise-induced plateaus', 'Removed Card Shadow tomography notes']],
+  ['EV', 19.7, '19 Nov, 16:20', 2, ['Checkpoint “Before decoder rewrite”', 'Added Classical shadows for gradients']],
+  ['AR', 20.5, '20 Nov, 12:00', 5, ['Added Reward plateaus at ~180', 'Added Grover search, Grover for policy search']],
+  ['ML', 21.75, '21 Nov, 18:10', 3, ['Added Bloch sphere intuition']],
+  ['JW', 22.4, '22 Nov, 09:40', 2, ['Changed Page Union-find decoder']],
+];
+const px = d => ((d - DAY0) / DAYS) * 100;
+class Component extends DCLogic {
+  state = { done: { 4: true }, slider: 512, from: 'now', bname: 'try-union-find' };
+  renderVals() {
+    const T = (text, kind, card, by) => ({ text, kind, card, by });
+    const data = [
+      ['ML', 'Member (you)', [T('Read Wang et al. 2021 on noise-induced plateaus', 'card', 'Noise-induced plateaus', 'Assigned by Ana · 20 Nov'), T('Re-run CartPole with 5 seeds and an lr sweep', 'card', 'QRL on CartPole', ''), T('Benchmark union-find against MWPM at d = 5', 'branch', 'Union-find decoder', ''), T('Fit Λ for d = 3…9 and add error bars', 'card', 'Logical error rate vs d', 'Assigned by Elena · 14 Nov'), T('Write up shadow-tomography sample counts', 'gone', 'Shadow tomography notes', '')]],
+      ['AR', 'Member', [T('Try trainable β in the softmax readout', 'card', 'QRL on CartPole', 'Assigned by Mei · 14 Nov'), T('Layerwise training: grow from 2 to 6 layers', 'card', 'Layerwise training', ''), T('Read Nielsen & Chuang §10.5', 'card', 'Nielsen & Chuang, ch. 10', 'Assigned by Elena · 14 Nov')]],
+      ['JW', 'Member', [T('Port union-find decoder into the Stim pipeline', 'branch', 'Union-find decoder', ''), T('MWPM weights from our measured noise model', 'card', 'MWPM decoder', ''), T('Read Nielsen & Chuang §10.5', 'card', 'Nielsen & Chuang, ch. 10', 'Assigned by Elena · 14 Nov')]],
+      ['EV', 'Admin', [T('Check the expressivity argument with Ana', 'card', 'Reward plateaus at ~180', ''), T('Review the Barren plateaus Page before Friday', 'card', 'Barren plateaus', ''), T('Lead reading group on §10.5', 'card', 'Nielsen & Chuang, ch. 10', '')]],
+    ];
+    const cols = data.map(([id, role, items]) => {
+      const mine = id === 'ML';
+      const its = items.map((t, k) => {
+        const d = mine && !!this.state.done[k];
+        return { ...t, refCard: t.kind === 'card', refBranch: t.kind === 'branch', refGone: t.kind === 'gone', hasBy: !!t.by,
+          mark: d ? '✓' : '', boxBg: d ? 'var(--q-accent)' : 'transparent', boxBorder: d ? 'var(--q-accent)' : mine ? 'var(--q-ink-2)' : 'var(--q-line)',
+          cursor: mine ? 'pointer' : 'not-allowed', tip: mine ? 'Mark done' : `Only ${MEM[id][0].split(' ')[0]} can tick this`, op: d ? 0.55 : 1, strike: d ? 'line-through' : 'none',
+          toggle: () => { if (mine) this.setState(s => ({ done: { ...s.done, [k]: !s.done[k] } })); } };
+      });
+      return { i: id, name: mine ? 'Mei Lin' : MEM[id][0], role, bg: MEM[id][1], items: its, open: its.filter(t => t.mark === '').length,
+        border: mine ? 'var(--q-line)' : 'var(--q-line-soft)', add: mine ? 'Add a To-do…' : `Assign to ${MEM[id][0].split(' ')[0]}…` };
+    });
+    const pos = this.state.slider / 10;
+    const dayAt = DAY0 + (pos / 100) * DAYS;
+    let gi = 0; GROUPS.forEach((g, i) => { if (g[1] <= dayAt) gi = i; });
+    const g = GROUPS[gi];
+    const lanes = ['EV', 'AR', 'JW', 'ML'].map(id => ({ i: id, bg: MEM[id][1], groups: GROUPS.map((x, k) => ({ x, k })).filter(o => o.x[0] === id).map(({ x, k }) => ({
+      x: px(x[1]), w: 4 + x[3] * 3, bg: k <= gi ? MEM[id][1] : 'var(--q-line)', outline: k === gi ? '2px solid var(--q-st-reading)' : 'none', tip: `${MEM[id][0]} · ${x[2]} · ${x[3]} Changes` })) }));
+    const now = pos >= 99.5;
+    return {
+      theme: this.props.theme || 'dark', cols,
+      pos, slider: this.state.slider, onScrub: e => this.setState({ slider: +e.target.value }), toNow: () => this.setState({ slider: 1000 }),
+      upto: Math.min(25, Math.round(2 + (gi + 1) * 23 / GROUPS.length)), when: now ? 'now' : g[2],
+      lanes, checkpoints: [[3.4, 'Kick-off'], [9.6, 'Threshold plot v1'], [14.45, 'Reading group 14 Nov'], [19.7, 'Before decoder rewrite']].map(([d, name]) => ({ x: px(d), name })),
+      days: [3, 6, 9, 12, 15, 18, 21].map(d => ({ x: px(d), label: d + ' Nov' })),
+      sel: { i: g[0], bg: MEM[g[0]][1], name: MEM[g[0]][0], when: g[2], n: g[3], ch: g[4] },
+      branches: [
+        { name: 'main', color: 'var(--q-ink)', from: '—', members: 'Elena, Ana', diff: '—', isMain: true, notMain: false },
+        { name: 'try-QEC', color: 'var(--q-branch)', from: '◆ Reading group 14 Nov', members: 'Mei, Jonas', diff: '+14 / −5', isMain: false, notMain: true },
+        { name: 'ana/cartpole-lr', color: 'var(--q-branch)', from: 'Now, 19 Nov', members: 'Ana', diff: '+3 / −2', isMain: false, notMain: true },
+      ],
+      bname: this.state.bname, setBname: e => this.setState({ bname: e.target.value }),
+      fromNow: () => this.setState({ from: 'now' }), fromCp: () => this.setState({ from: 'cp' }),
+      nowBorder: this.state.from === 'now' ? 'var(--q-accent)' : 'var(--q-line)', nowDot: this.state.from === 'now' ? 'var(--q-accent)' : 'transparent',
+      cpBorder: this.state.from === 'cp' ? 'var(--q-accent)' : 'var(--q-line)', cpDot: this.state.from === 'cp' ? 'var(--q-accent)' : 'transparent',
+    };
+  }
+}
+</script>
+</body>
+</html>

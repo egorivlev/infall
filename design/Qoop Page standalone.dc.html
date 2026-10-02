@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ext-resource-dependency" content="./QTopBar.dc.html" data-resource-id="./QTopBar.dc.html">
+<meta name="ext-resource-dependency" content="./QRail.dc.html" data-resource-id="./QRail.dc.html">
+<meta name="ext-resource-dependency" content="./QBoardCanvas.dc.html" data-resource-id="./QBoardCanvas.dc.html">
+<meta name="ext-resource-dependency" content="./QPage.dc.html" data-resource-id="./QPage.dc.html">
+<meta name="ext-resource-dependency" content="./QRunBlock.dc.html" data-resource-id="./QRunBlock.dc.html">
+<meta name="ext-resource-dependency" content="./qoop-theme.css" data-resource-id="./qoop-theme.css">
+<meta name="ext-resource-dependency" content="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap" data-resource-id="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap">
+<meta name="ext-resource-dependency" content="./qoop-math.js" data-resource-id="qoopMath">
+<meta name="ext-resource-dependency" content="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" data-resource-id="katexJs">
+<meta name="ext-resource-dependency" content="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" data-resource-id="katexCss">
+
+<script src="./support.js"></script>
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#0f1216"><svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg"><rect width="1200" height="800" fill="#0f1216"/><circle cx="600" cy="400" r="150" fill="none" stroke="#e9ecf1" stroke-width="22"/><circle cx="660" cy="340" r="38" fill="#5fd3d0"/><path d="M706 506 L790 590" stroke="#e9ecf1" stroke-width="22" stroke-linecap="round"/></svg></template>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<script>(function(){var s=document.createElement('script');s.src=(window.__resources&&window.__resources.qoopMath)||'./qoop-math.js';document.head.appendChild(s);})();</script>
+</helmet>
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;align-items:flex-start;font-family:'IBM Plex Sans',sans-serif;">
+
+  <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
+    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — Card opened into its Page</span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screen 3 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Team.dc.html">To-dos, History, Branches</a> · <a href="Qoop Merge.dc.html">Merge</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
+  </div>
+
+  <div id="3a" data-screen-label="3a Page over Board" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">3a</span><span style="font-size:15px;font-weight:600;">Page as a side panel — Board stays live behind it</span><span style="font-size:13px;color:var(--q-ink-3);">Scroll the panel; the Bloch sphere sliders and Run button work.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;">
+        <dc-import name="QBoardCanvas" highlight="17" zoom="{{ 0.7 }}" cx="{{ 843 }}" cy="{{ 781 }}" hud="{{ false }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import>
+        <div style="position:absolute;top:0;right:0;bottom:0;width:760px;border-left:1px solid var(--q-line);box-shadow:-20px 0 40px oklch(0 0 0 / .25);"><dc-import name="QPage" mode="edit" run="desktop" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="3c" data-screen-label="3c Page soft lock" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">3c</span><span style="font-size:15px;font-weight:600;">Soft lock — Ana is editing this Page</span><span style="font-size:13px;color:var(--q-ink-3);">Read, run and status stay available; the Page body is read-only until she’s done.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;">
+        <dc-import name="QBoardCanvas" highlight="17" zoom="{{ 0.7 }}" cx="{{ 843 }}" cy="{{ 781 }}" hud="{{ false }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import>
+        <div style="position:absolute;top:0;right:0;bottom:0;width:760px;border-left:1px solid var(--q-line);box-shadow:-20px 0 40px oklch(0 0 0 / .25);"><dc-import name="QPage" mode="locked" run="desktop" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="3b" data-screen-label="3b Run block states" style="display:flex;flex-direction:column;gap:12px;width:2000px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">3b</span><span style="font-size:15px;font-weight:600;">Run block — three states</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3, 640px);gap:40px;align-items:start;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:13px;color:var(--q-ink-2);"><b style="color:var(--q-ink);font-weight:600;">Desktop app — runnable.</b> Click Run to see live output replace the capture.</div>
+        <div style="background:var(--q-page);padding:20px;border-radius:6px;border:1px solid var(--q-line-soft);"><dc-import name="QRunBlock" state="desktop" hint-size="100%,560px"></dc-import></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:13px;color:var(--q-ink-2);"><b style="color:var(--q-ink);font-weight:600;">Browser — disabled.</b> Captured output from the last run stays visible.</div>
+        <div style="background:var(--q-page);padding:20px;border-radius:6px;border:1px solid var(--q-line-soft);"><dc-import name="QRunBlock" state="browser" hint-size="100%,600px"></dc-import></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:13px;color:var(--q-ink-2);"><b style="color:var(--q-ink);font-weight:600;">Someone else’s code — review first.</b> Changed lines are marked; Run unlocks after review.</div>
+        <div style="background:var(--q-page);padding:20px;border-radius:6px;border:1px solid var(--q-line-soft);"><dc-import name="QRunBlock" state="review" hint-size="100%,600px"></dc-import></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="3d" data-screen-label="3d Page full length" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">3d</span><span style="font-size:15px;font-weight:600;">The same Page, full length</span><span style="font-size:13px;color:var(--q-ink-3);">Text with inline and display LaTeX, image, Visual, Run, Pinned AI, Sources.</span></div>
+    <div style="width:760px;border:1px solid var(--q-line);border-radius:4px;overflow:hidden;"><dc-import name="QPage" mode="edit" run="desktop" full="{{ true }}" hint-size="760px,2400px"></dc-import></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme || 'dark' }; }
+}
+</script>
+</body>
+</html>

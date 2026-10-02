@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./qoop-theme.css"></helmet>
+<div ref="{{ setRoot }}" onMouseDown="{{ onDown }}" style="position:absolute;inset:0;overflow:hidden;background-color:var(--q-canvas);background-image:radial-gradient(var(--q-grid) 1px, transparent 1.3px);background-size:{{ grid }}px {{ grid }}px;background-position:{{ tx }}px {{ ty }}px;cursor:{{ cursor }};user-select:none;font-family:'IBM Plex Sans',sans-serif;color:var(--q-ink);">
+  <div style="position:absolute;left:0;top:0;transform-origin:0 0;transform:{{ transform }};">
+    <sc-for list="{{ frames }}" as="f" hint-placeholder-count="3">
+      <div style="position:absolute;left:{{ f.x }}px;top:{{ f.y }}px;width:{{ f.w }}px;height:{{ f.h }}px;box-sizing:border-box;border:{{ f.bw }}px solid var(--q-line-soft);border-radius:{{ f.r }}px;background:color-mix(in oklch, var(--q-canvas) 55%, var(--q-surface));">
+        <div style="position:absolute;left:20px;bottom:100%;margin-bottom:{{ f.mb }}px;display:flex;align-items:baseline;gap:10px;white-space:nowrap;font-size:{{ f.fs }}px;line-height:1;">
+          <span style="font-weight:600;color:var(--q-ink);">{{ f.name }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:0.75em;color:var(--q-ink-3);">{{ f.count }}</span>
+        </div>
+      </div>
+    </sc-for>
+    {{ edges }}
+    <sc-for list="{{ labels }}" as="l" hint-placeholder-count="0">
+      <div style="position:absolute;left:{{ l.x }}px;top:{{ l.y }}px;transform:translate(-50%,-50%);white-space:nowrap;font:500 10.5px/1 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:3px;background:var(--q-canvas);border:1px {{ l.bs }} {{ l.bc }};color:{{ l.color }};">{{ l.text }}</div>
+    </sc-for>
+    <sc-for list="{{ cards }}" as="c" hint-placeholder-count="12">
+      <div onClick="{{ c.onClick }}" style="position:absolute;left:{{ c.x }}px;top:{{ c.y }}px;width:224px;height:132px;box-sizing:border-box;border-radius:5px;background:{{ c.bg }};border:1px solid {{ c.border }};box-shadow:{{ c.shadow }};overflow:hidden;cursor:pointer;">
+        <sc-if value="{{ c.full }}" hint-placeholder-val="{{ true }}">
+          <div style="height:100%;box-sizing:border-box;padding:9px 11px 8px;display:flex;flex-direction:column;gap:5px;">
+            <div style="display:flex;align-items:center;gap:6px;height:14px;">
+              <span style="display:flex;align-items:center;gap:5px;color:{{ c.stColor }};font:500 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;">{{ c.glyph }}<span>{{ c.stLabel }}</span></span>
+              <span style="flex:1;"></span>
+              <span style="display:flex;align-items:center;gap:7px;color:var(--q-ink-3);font:10.5px 'IBM Plex Mono',monospace;">
+                <sc-if value="{{ c.vis }}"><span title="Page has a Visual" style="display:flex;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1"><circle cx="6" cy="6" r="4.6"></circle><ellipse cx="6" cy="6" rx="4.6" ry="1.7"></ellipse></svg></span></sc-if>
+                <sc-if value="{{ c.run }}"><span title="Page has a Run" style="display:flex;"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M3.5 2.3 L9.6 6 L3.5 9.7 Z"></path></svg></span></sc-if>
+                <sc-if value="{{ c.src }}"><span title="Sources" style="display:flex;align-items:center;gap:2px;"><svg width="11" height="12" viewBox="0 0 11 12" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1.5 1.5 H7.5 L9.5 3.5 V10.5 H1.5 Z M3.3 5 H7.7 M3.3 7.3 H7.7"></path></svg>{{ c.src }}</span></sc-if>
+              </span>
+            </div>
+            <div style="font-size:13px;font-weight:600;line-height:1.3;color:var(--q-ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ c.title }}</div>
+            <div style="font-family:{{ c.sumFont }};font-style:{{ c.sumStyle }};font-size:{{ c.sumSize }}px;line-height:1.38;color:var(--q-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ c.sum }}</div>
+            <div style="flex:1;"></div>
+            <sc-if value="{{ c.hasTodo }}">
+              <div style="display:flex;align-items:center;gap:6px;font:10.5px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1" y="1" width="9" height="9" rx="1.5"></rect></svg>
+                <span>{{ c.todoN }} To-do</span>
+                <span style="flex:1;"></span>
+                <span style="display:flex;gap:2px;">
+                  <sc-for list="{{ c.who }}" as="w"><span style="height:15px;min-width:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 8.5px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:{{ w.bg }};">{{ w.i }}</span></sc-for>
+                </span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{ c.compact }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;box-sizing:border-box;padding:12px 14px;display:flex;flex-direction:column;gap:10px;">
+            <span style="display:flex;align-items:center;gap:7px;color:{{ c.stColor }};font:500 13px/1 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;">{{ c.glyph }}<span>{{ c.stShort }}</span></span>
+            <div style="font-size:19px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">{{ c.title }}</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ c.tile }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;box-sizing:border-box;padding:14px 16px;display:flex;flex-direction:column;justify-content:space-between;color:{{ c.stColor }};">
+            {{ c.glyph }}
+            <div style="font-size:24px;font-weight:600;line-height:1.15;color:var(--q-ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ c.title }}</div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+  <sc-if value="{{ hud }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;right:14px;bottom:14px;display:flex;align-items:center;gap:2px;padding:3px;border-radius:6px;background:var(--q-surface);border:1px solid var(--q-line-soft);font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">
+      <button onClick="{{ zoomOut }}" style="width:26px;height:24px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer;">−</button>
+      <span style="min-width:44px;text-align:center;color:var(--q-ink);">{{ pct }}</span>
+      <button onClick="{{ zoomIn }}" style="width:26px;height:24px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer;">+</button>
+      <span style="width:1px;height:16px;background:var(--q-line-soft);margin:0 3px;"></span>
+      <button onClick="{{ fit }}" style="height:24px;padding:0 8px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;cursor:pointer;">Fit</button>
+    </div>
+    <div style="position:absolute;left:14px;bottom:14px;display:flex;align-items:center;gap:8px;white-space:nowrap;font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">
+      <sc-if value="{{ notMain }}"><span style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;border:1px solid var(--q-branch);color:var(--q-branch);background:color-mix(in oklch, var(--q-branch) 10%, var(--q-canvas));">⑂ You are on try-QEC</span></sc-if>
+      <span>{{ counts }}</span>
+      <span>·</span>
+      <span>{{ modeLabel }}</span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1216,&quot;height&quot;:856},&quot;dataset&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;main&quot;,&quot;large&quot;],&quot;default&quot;:&quot;main&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;zoom&quot;:{&quot;editor&quot;:&quot;float&quot;,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;},&quot;cx&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:800,&quot;tsType&quot;:&quot;number&quot;},&quot;cy&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:560,&quot;tsType&quot;:&quot;number&quot;},&quot;interactive&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;highlight&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;suggestion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;upto&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:999,&quot;tsType&quot;:&quot;number&quot;},&quot;guest&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;branch&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;main&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hud&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;pad&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:60,&quot;tsType&quot;:&quot;number&quot;}}">
+const QW = 224, QH = 132, QCX = 244, QCY = 160;
+const QST = {
+  idea: ['Idea', 'Idea', '--q-st-idea'], reading: ['Reading', 'Reading', '--q-st-reading'], understood: ['Understood', 'Understood', '--q-st-understood'],
+  question: ['Open question', 'Question', '--q-st-question'], dead: ['Dead end · kept', 'Dead end', '--q-st-dead'],
+};
+const QMEM = { AR: 'oklch(0.76 0.08 35)', JW: 'oklch(0.76 0.08 240)', ML: 'oklch(0.78 0.08 160)', EV: 'oklch(0.80 0.08 85)' };
+function qFrame(id, name, x, y, cols, rows) { return { id, name, x, y, cols, rows, w: 20 + cols * QCX, h: 52 + rows * QCY }; }
+function qBuildMain() {
+  const F = { sc: qFrame('sc', 'Surface codes', 40, 70, 3, 3), vc: qFrame('vc', 'Variational circuits', 860, 70, 3, 3), qrl: qFrame('qrl', 'QRL on CartPole', 40, 690, 3, 2) };
+  const loose = [[880, 742], [1124, 742], [880, 902], [1124, 902]];
+  const raw = [
+    ['sc', 'Surface code basics', 'Stabilizers on a 2D lattice; distance d corrects ⌊(d−1)/2⌋ errors.', 'understood', 0, 0, 3, 1, 'ML'],
+    ['sc', 'Toric code & anyons', 'Logical operators as non-contractible loops; e and m anyons braid.', 'understood', 0, 0, 2],
+    ['sc', 'MWPM decoder', 'Match syndrome defects at minimum total weight. Blossom V.', 'reading', 0, 1, 2, 2, 'JW,ML'],
+    ['sc', 'Threshold ≈ 1% (circuit noise)', 'Check the Fowler et al. figure against our own noise model.', 'understood', 0, 1, 1],
+    ['sc', 'Lattice surgery CNOT', 'Merge and split patches instead of braiding defects.', 'reading', 0, 0, 2, 1, 'AR'],
+    ['sc', 'Union-find decoder', 'Almost-linear time; compare with MWPM at d = 5.', 'idea', 0, 0, 0, 1, 'JW'],
+    ['sc', 'Neural decoders?', 'Can a small transformer beat MWPM for d ≤ 7 on our syndromes?', 'question', 0, 0, 1],
+    ['sc', 'Color codes instead', 'Why: transversal Cliffords don’t offset weight-6 stabilizers for our scope.', 'dead', 0, 0, 2],
+    ['sc', 'Logical error rate vs d', 'Fit p_L ≈ A (p/p_th)^((d+1)/2) to Stim runs, d = 3…9.', 'understood', 1, 1, 1, 1, 'ML'],
+    ['vc', 'VQE for H₂', 'STO-3G, UCCSD ansatz on 4 qubits; reaches chemical accuracy.', 'understood', 0, 1, 2],
+    ['vc', 'Hardware-efficient ansatz', 'RY–CZ layers. Cheap, but trainability degrades with depth.', 'reading', 0, 0, 1],
+    ['vc', 'Barren plateaus', 'Gradient variance vanishes exponentially in n for global costs.', 'question', 0, 0, 3, 2, 'EV,AR'],
+    ['vc', 'Parameter-shift rule', '∂⟨H⟩/∂θ from two circuits evaluated at θ ± π/2.', 'understood', 1, 0, 1],
+    ['vc', 'Layerwise training', 'Grow the circuit one layer at a time to avoid plateaus.', 'idea', 0, 0, 0, 1, 'AR'],
+    ['vc', 'QAOA MaxCut, p = 1', 'Ring of 8 nodes; approximation ratio 0.69 on the simulator.', 'reading', 1, 1, 1],
+    ['vc', 'Noise-induced plateaus', 'Local Pauli noise flattens the landscape regardless of ansatz.', 'reading', 0, 0, 1],
+    ['vc', 'Classical shadows for gradients', 'Why: sample cost only beat parameter-shift for n > 40.', 'dead', 0, 1, 1],
+    ['qrl', 'QRL on CartPole', 'PQC policy, data re-uploading, REINFORCE on 4 qubits.', 'question', 1, 1, 3, 2, 'AR,ML'],
+    ['qrl', 'Data re-uploading', 'Repeat the encoding between trainable layers to raise expressivity.', 'understood', 1, 0, 1],
+    ['qrl', 'Trainable input scaling', 'Scale each input sᵢ by a learned λᵢ before encoding.', 'reading', 0, 0, 1, 1, 'AR'],
+    ['qrl', 'Reward plateaus at ~180', 'Three seeds stall below 195. Expressivity or learning rate?', 'question', 0, 1, 0, 1, 'EV'],
+    [0, 'Grover search', 'O(√N) oracle calls; overshoots past ⌊π/4 · √N⌋ iterations.', 'understood', 1, 1, 1],
+    [1, 'Grover for policy search', 'Why: no oracle for “good policy” without evaluating it.', 'dead', 0, 0, 1],
+    [2, 'Bloch sphere intuition', 'Single-qubit states as points; gates as rotations.', 'understood', 1, 0, 0],
+    [3, 'Nielsen & Chuang, ch. 10', 'Reading group: stabilizer formalism, §10.5.', 'reading', 0, 0, 1, 3, 'AR,JW,ML'],
+  ];
+  const slots = { sc: 0, vc: 0, qrl: 0 };
+  const cards = raw.map((r, i) => {
+    let x, y;
+    if (typeof r[0] === 'string') { const f = F[r[0]]; const k = slots[r[0]]++; x = f.x + 20 + (k % f.cols) * QCX; y = f.y + 52 + Math.floor(k / f.cols) * QCY; }
+    else { [x, y] = loose[r[0]]; }
+    return { i, x, y, title: r[1], sum: r[2], st: r[3], vis: !!r[4], run: !!r[5], src: r[6] || 0, todoN: r[7] || 0, who: r[8] ? r[8].split(',') : [] };
+  });
+  const frames = Object.values(F).map(f => ({ ...f, count: cards.filter((c, i) => raw[i][0] === f.id).length + ' Cards' }));
+  const edges = [[0, 1, 'builds on', 1], [0, 2], [2, 5, 'compare'], [6, 2, 'alternative to'], [3, 8, 'builds on', 1], [2, 3], [0, 4, 'builds on', 1], [7, 0, 'alternative to'],
+    [9, 10], [10, 11, 'motivates', 1], [11, 13], [15, 11, 'builds on', 1], [12, 9, 'used by', 1], [16, 12, 'alternative to'],
+    [17, 18, 'uses', 1], [17, 19, 'uses', 1], [17, 20], [20, 18, 'contradicts', 2], [22, 21, 'contradicts', 2], [23, 18], [24, 0]];
+  return { frames, cards, edges, sug: [15, 20, 'may explain'] };
+}
+function qBuildLarge() {
+  const pools = [
+    'Surface codes|Stabilizer basics|Rotated layout|Boundary types|Logical X, Z|Twist defects|Code distance|Hook errors|Leakage|Measurement order|Patch rotation|Y-basis readout|Magic state injection|Distillation 15→1|Code deformation',
+    'Decoders|MWPM|Union-find|Belief propagation|BP+OSD|Neural decoder|Sliding window|Correlated matching|Real-time budget|Syndrome compression|Weights from noise|Erasure decoding|Lookup tables d=3|Decoder latency|Soft information',
+    'Variational circuits|VQE for H₂|UCCSD|Hardware-efficient|Parameter-shift|SPSA|Natural gradient|QAOA p=1|QAOA p=3|Warm starts|Symmetry-preserving|ADAPT-VQE|Shot budgets|Measurement grouping|Error mitigation',
+    'Barren plateaus|Global vs local cost|Noise-induced|Layerwise training|Identity init|Entanglement-induced|Lie algebra rank|Correlated params|Gradient variance|Expressivity|Classical shadows|Warm-start transfer|Cost concentration|Overparametrization|Trainability bounds',
+    'QRL on CartPole|Data re-uploading|Input scaling|Policy gradient|Softmax readout|Reward ~180|Q-learning PQC|Target networks|Replay buffer|Seeds & variance|Learning rate sweep|Observable choice|Frozen Lake|Episode length|Baseline subtraction',
+    'Grover & amplitude amp.|Grover search|Oracle design|Diffusion operator|Iteration count|Fixed-point search|Amplitude estimation|Quantum counting|Unknown M|Policy search|Oblivious AA|Phase oracles|Multi-target|Depth on hardware|Lower bounds',
+    'Noise models|Depolarizing|Amplitude damping|Pauli twirling|Biased noise|Crosstalk|Readout error|Leakage model|Circuit-level noise|Stim setup|Idle errors|T1/T2 data|Coherent errors|Non-Markovian|Noise tailoring',
+    'Reading group|N&C ch. 10|Preskill notes|Gottesman thesis|Fowler 2012|Dennis 2002|McClean 2018|Cerezo 2021|Jerbi 2021|Skolik 2022|Kitaev 2003|Terhal review|Bravyi–Kitaev|Aaronson–Gottesman|Delfosse 2021',
+  ];
+  const sts = ['understood', 'reading', 'idea', 'understood', 'question', 'reading', 'understood', 'dead', 'reading', 'idea', 'understood', 'question'];
+  const frames = [], cards = [];
+  let i = 0;
+  pools.forEach((p, fi) => {
+    const t = p.split('|'); const f = qFrame('f' + fi, t[0], 40 + (fi % 4) * 1400, 140 + Math.floor(fi / 4) * 720, 5, 3);
+    frames.push({ ...f, count: '15 Cards' });
+    t.slice(0, 15).forEach((title, k) => {
+      const s = sts[(k * 7 + fi * 5) % sts.length];
+      cards.push({ i: i++, x: f.x + 20 + (k % 5) * QCX, y: f.y + 52 + Math.floor(k / 5) * QCY, title, sum: '', st: s, vis: k % 4 === 1, run: k % 5 === 2, src: (k + fi) % 4, todoN: (k * 3 + fi) % 7 === 0 ? 1 : 0, who: (k * 3 + fi) % 7 === 0 ? ['ML'] : [] });
+    });
+  });
+  const edges = [];
+  for (let f = 0; f < 8; f++) { const b = f * 15; edges.push([b, b + 1], [b, b + 5], [b + 1, b + 2], [b + 5, b + 6], [b + 6, b + 11], [b + 2, b + 8], [b + 7, b + 12]); }
+  edges.push([1 * 15 + 1, 0], [3 * 15 + 2, 2 * 15 + 3], [4 * 15 + 1, 2 * 15], [5 * 15 + 9, 4 * 15 + 3], [7 * 15 + 4, 0 * 15 + 6], [6 * 15 + 8, 1 * 15 + 4]);
+  return { frames, cards, edges, sug: null };
+}
+const QDATA = { main: qBuildMain(), large: qBuildLarge() };
+function qGlyph(st, size) {
+  const h = React.createElement;
+  const p = { width: size, height: size, viewBox: '0 0 10 10', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, style: { flex: 'none', display: 'block' } };
+  if (st === 'idea') return h('svg', p, h('path', { d: 'M5 1.2 L8.8 5 L5 8.8 L1.2 5 Z' }));
+  if (st === 'reading') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8 }), h('path', { d: 'M5 1.2 A3.8 3.8 0 0 1 5 8.8 Z', fill: 'currentColor', stroke: 'none' }));
+  if (st === 'understood') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8, fill: 'currentColor' }));
+  if (st === 'question') return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8 }), h('path', { d: 'M3.8 4 C3.8 2.7 6.2 2.7 6.2 4 C6.2 5 5 5 5 6', strokeWidth: 1.1 }), h('circle', { cx: 5, cy: 7.4, r: 0.6, fill: 'currentColor', stroke: 'none' }));
+  return h('svg', p, h('path', { d: 'M1.2 5 H7.4 M8.4 1.8 V8.2' }));
+}
+function qRoute(a, b) {
+  const ax = a.x + QW / 2, ay = a.y + QH / 2, bx = b.x + QW / 2, by = b.y + QH / 2, dx = bx - ax, dy = by - ay;
+  let p1, p2, c1, c2;
+  if (Math.abs(dx) * 0.62 > Math.abs(dy)) {
+    const s = Math.sign(dx); p1 = [ax + s * QW / 2, ay]; p2 = [bx - s * QW / 2, by];
+    const k = Math.max(30, Math.abs(p2[0] - p1[0]) / 2); c1 = [p1[0] + s * k, p1[1]]; c2 = [p2[0] - s * k, p2[1]];
+  } else {
+    const s = Math.sign(dy) || 1; p1 = [ax, ay + s * QH / 2]; p2 = [bx, by - s * QH / 2];
+    const k = Math.max(24, Math.abs(p2[1] - p1[1]) / 2); c1 = [p1[0], p1[1] + s * k]; c2 = [p2[0], p2[1] - s * k];
+  }
+  return { d: `M${p1} C${c1} ${c2} ${p2}`, mx: (p1[0] + 3 * c1[0] + 3 * c2[0] + p2[0]) / 8, my: (p1[1] + 3 * c1[1] + 3 * c2[1] + p2[1]) / 8 };
+}
+class Component extends DCLogic {
+  state = { z: 0.6, tx: 0, ty: 0, sel: null, ready: false };
+  data() { return QDATA[this.props.dataset === 'large' ? 'large' : 'main']; }
+  bbox() {
+    const d = this.data(); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    d.frames.forEach(f => { x0 = Math.min(x0, f.x); y0 = Math.min(y0, f.y - 40); x1 = Math.max(x1, f.x + f.w); y1 = Math.max(y1, f.y + f.h); });
+    d.cards.forEach(c => { x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y); x1 = Math.max(x1, c.x + QW); y1 = Math.max(y1, c.y + QH); });
+    return { x0, y0, x1, y1 };
+  }
+  fitView = () => {
+    const el = this.root; if (!el) return;
+    const W = el.clientWidth, H = el.clientHeight; if (!W) return;
+    if (this.props.zoom) { const z = this.props.zoom; this.setState({ z, tx: W / 2 - (this.props.cx || 800) * z, ty: H / 2 - (this.props.cy || 560) * z, ready: true }); return; }
+    const b = this.bbox(), pad = this.props.pad ?? 60;
+    const z = Math.min((W - pad * 2) / (b.x1 - b.x0), (H - pad * 2 - 30) / (b.y1 - b.y0));
+    this.setState({ z, tx: (W - (b.x1 - b.x0) * z) / 2 - b.x0 * z, ty: (H - 30 - (b.y1 - b.y0) * z) / 2 - b.y0 * z, ready: true });
+  };
+  zoomAt(f, mx, my) {
+    this.setState(s => { const z = Math.min(2, Math.max(0.1, s.z * f)); return { z, tx: mx - (mx - s.tx) * z / s.z, ty: my - (my - s.ty) * z / s.z }; });
+  }
+  setRoot = (el) => {
+    if (!el || el === this.root) return;
+    this.root = el;
+    el.addEventListener('wheel', (e) => {
+      if (this.props.interactive === false) return;
+      e.preventDefault(); e.stopPropagation();
+      const r = el.getBoundingClientRect(); const sc = r.width / el.clientWidth || 1;
+      this.zoomAt(Math.exp(-e.deltaY * 0.0016), (e.clientX - r.left) / sc, (e.clientY - r.top) / sc);
+    }, { passive: false });
+    requestAnimationFrame(this.fitView);
+    setTimeout(this.fitView, 400);
+  };
+  onDown = (e) => {
+    if (this.props.interactive === false || e.button !== 0 || e.target.closest('button')) return;
+    e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY, tx = this.state.tx, ty = this.state.ty;
+    const sc = this.root.getBoundingClientRect().width / this.root.clientWidth || 1;
+    this.moved = false; this.dragging = true;
+    const mv = (ev) => { const dx = (ev.clientX - sx) / sc, dy = (ev.clientY - sy) / sc; if (Math.abs(dx) + Math.abs(dy) > 3) this.moved = true; this.setState({ tx: tx + dx, ty: ty + dy }); };
+    const up = () => { this.dragging = false; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); this.forceUpdate(); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+    this.forceUpdate();
+  };
+  renderVals() {
+    const h = React.createElement;
+    const d = this.data(); const { z, tx, ty } = this.state;
+    const mode = z < 0.3 ? 'tile' : z < 0.55 ? 'compact' : 'full';
+    const upto = this.props.upto ?? 999;
+    const hl = new Set(String(this.props.highlight || '').split(',').filter(Boolean).map(Number));
+    if (this.state.sel != null) hl.add(this.state.sel);
+    const guest = !!this.props.guest;
+    const vis = d.cards.filter(c => c.i < upto);
+    const cards = vis.map(c => {
+      const st = QST[c.st]; const col = `var(${st[2]})`; const sel = hl.has(c.i); const dead = c.st === 'dead';
+      let bg = 'var(--q-raised)';
+      if (mode === 'tile') bg = `color-mix(in oklch, ${col} 26%, var(--q-raised))`;
+      else if (dead) bg = `repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklch, ${col} 9%, transparent) 7px 8px), color-mix(in oklch, ${col} 5%, var(--q-raised))`;
+      return {
+        ...c, full: mode === 'full', compact: mode === 'compact', tile: mode === 'tile',
+        stLabel: st[0], stShort: st[1], stColor: col, glyph: qGlyph(c.st, mode === 'tile' ? 40 : mode === 'compact' ? 14 : 10),
+        bg, border: sel ? 'var(--q-accent)' : dead ? `color-mix(in oklch, ${col} 45%, var(--q-line-soft))` : 'var(--q-line-soft)',
+        shadow: sel ? '0 0 0 2px var(--q-accent-soft), var(--q-shadow)' : '0 1px 0 oklch(0 0 0 / .12)',
+        sumFont: dead ? "'Source Serif 4', serif" : "'IBM Plex Sans', sans-serif", sumStyle: dead ? 'italic' : 'normal', sumSize: dead ? 12.5 : 11.5,
+        hasTodo: c.todoN > 0 && !guest, who: c.who.map(i => ({ i, bg: QMEM[i] })),
+        onClick: () => { if (!this.moved) this.setState({ sel: this.state.sel === c.i ? null : c.i }); },
+      };
+    });
+    const ids = new Set(vis.map(c => c.i));
+    const paths = [], labels = [];
+    const add = (e, sug) => {
+      const [a, b, label, kind] = e; if (!ids.has(a) || !ids.has(b)) return;
+      const r = qRoute(d.cards[a], d.cards[b]);
+      const touch = hl.has(a) || hl.has(b);
+      const stroke = sug ? 'var(--q-accent)' : touch ? 'var(--q-ink-2)' : 'var(--q-ink-3)';
+      paths.push(h('path', { key: paths.length, d: r.d, fill: 'none', stroke, strokeOpacity: sug || touch ? 1 : 0.6, strokeWidth: sug ? 1.8 : 1.2, vectorEffect: 'non-scaling-stroke', strokeDasharray: sug ? '7 5' : null,
+        markerEnd: kind === 1 ? 'url(#qArr)' : kind === 2 ? 'url(#qBar)' : null, markerStart: kind === 2 ? 'url(#qBar)' : null }));
+      if (label && mode !== 'tile') labels.push({ x: r.mx, y: r.my, text: sug ? 'Suggested · ' + label : label, bs: sug ? 'dashed' : 'solid', bc: sug ? 'var(--q-accent)' : 'var(--q-line-soft)', color: sug ? 'var(--q-accent)' : 'var(--q-ink-2)' });
+    };
+    d.edges.forEach(e => add(e, false));
+    if (this.props.suggestion && d.sug) add(d.sug, true);
+    const mk = (id, child) => h('marker', { id, viewBox: '0 0 10 10', refX: id === 'qArr' ? 9 : 5, refY: 5, markerWidth: 8, markerHeight: 8, orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse' }, child);
+    const edges = h('svg', { width: 10, height: 10, style: { position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' } },
+      h('defs', null, mk('qArr', h('path', { d: 'M1 1.5 L9 5 L1 8.5', fill: 'none', stroke: 'var(--q-ink-3)', strokeWidth: 1.4 })), mk('qBar', h('path', { d: 'M5 0.5 V9.5', stroke: 'var(--q-ink-3)', strokeWidth: 1.6 }))), ...paths);
+    const tile = mode === 'tile';
+    const frames = d.frames.map(f => ({ ...f, fs: tile ? 64 : mode === 'compact' ? 26 : 15, mb: tile ? 20 : 10, bw: tile ? 3 : 1, r: tile ? 14 : 8 }));
+    const W = this.root ? this.root.clientWidth : 1000, H = this.root ? this.root.clientHeight : 800;
+    return {
+      setRoot: this.setRoot, onDown: this.onDown, frames, cards, labels, edges,
+      transform: `translate(${tx}px, ${ty}px) scale(${z})`, tx, ty, grid: Math.max(6, 24 * z),
+      cursor: this.props.interactive === false ? 'default' : this.dragging ? 'grabbing' : 'grab',
+      hud: this.props.hud !== false, pct: Math.round(z * 100) + '%',
+      zoomIn: () => this.zoomAt(1.25, W / 2, H / 2), zoomOut: () => this.zoomAt(0.8, W / 2, H / 2), fit: () => { const zz = this.props.zoom; this.props.zoom ? this.fitView() : this.fitView(); },
+      notMain: this.props.branch && this.props.branch !== 'main',
+      counts: `${vis.length} Cards · ${d.frames.length} Frames`,
+      modeLabel: tile ? 'zoomed out — status only' : mode === 'compact' ? 'titles' : 'full Cards',
+    };
+  }
+}
+</script>
+</body>
+</html>

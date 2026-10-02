@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<script src="./qoop-math.js"></script>
+</helmet>
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
+  <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
+    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — Merge review</span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screen 9 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Team.dc.html">To-dos, History, Branches</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
+  </div>
+
+  <div id="9a" data-screen-label="9a Merge review" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">9a</span><span style="font-size:15px;font-weight:600;">Merge try-QEC into main</span><span style="font-size:13px;color:var(--q-ink-3);">Live: decide the 3 open Conflicts and the Merge button enables. Scroll inside the screen.</span></div>
+    <div data-branch="try-QEC" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:1fr;grid-template-rows:44px auto 1fr;background:var(--q-canvas);">
+      <div style="position:relative;z-index:5;"><dc-import name="QTopBar" branch="try-QEC" hint-size="100%,44px"></dc-import></div>
+      <div style="display:flex;align-items:center;gap:20px;padding:16px 28px;border-bottom:1px solid var(--q-line);background:var(--q-surface);">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:10px;font:600 22px 'Source Serif 4',serif;">Merge
+            <span style="font:600 15px 'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;border:1px solid var(--q-branch);color:var(--q-branch);background:color-mix(in oklch, var(--q-branch) 12%, transparent);">try-QEC</span> into
+            <span style="font:600 15px 'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;border:1px solid var(--q-ink-2);color:var(--q-ink);">main</span>
+          </div>
+          <span style="font-size:12.5px;color:var(--q-ink-3);">Started by Mei Lin · 22 Nov, 14:10 · main doesn’t change until you press Merge. A Checkpoint is created on main first.</span>
+        </div>
+        <span style="flex:1;"></span>
+        <div style="display:flex;flex-direction:column;gap:6px;width:220px;">
+          <span style="font-size:13px;"><b style="font-weight:600;">{{ decided }} of 5</b> Conflicts decided</span>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:3px;">
+            <sc-for list="{{ conflicts }}" as="c"><span style="height:5px;border-radius:1px;background:{{ c.barBg }};"></span></sc-for>
+          </div>
+        </div>
+        <button style="height:34px;padding:0 14px;border-radius:5px;border:1px solid var(--q-line);background:transparent;color:var(--q-ink);font:500 13px 'IBM Plex Sans',sans-serif;">Cancel</button>
+        <button onClick="{{ doMerge }}" disabled="{{ mergeDisabled }}" title="{{ mergeTitle }}" style="height:34px;padding:0 16px;border-radius:5px;border:1px solid {{ mergeBorder }};background:{{ mergeBg }};color:{{ mergeColor }};font:600 13px 'IBM Plex Sans',sans-serif;cursor:{{ mergeCursor }};white-space:nowrap;">{{ mergeLabel }}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:268px 1fr;min-height:0;">
+        <div style="border-right:1px solid var(--q-line-soft);background:var(--q-surface);padding:14px 10px;display:flex;flex-direction:column;gap:2px;overflow:auto;">
+          <div style="padding:4px 8px 8px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Review</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:5px;font-size:13px;color:var(--q-ink-2);"><span style="color:var(--q-st-understood);">✓</span><span style="flex:1;">Merges automatically</span><span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">9</span></div>
+          <div style="padding:14px 8px 8px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Conflicts</div>
+          <sc-for list="{{ conflicts }}" as="c" hint-placeholder-count="5">
+            <a href="#{{ c.anchor }}" style="display:grid;grid-template-columns:18px 1fr;gap:2px 10px;padding:8px;border-radius:5px;color:var(--q-ink);text-decoration:none;background:{{ c.navBg }};">
+              <span style="width:14px;height:14px;margin-top:1px;border-radius:50%;border:1.3px solid {{ c.dotBorder }};background:{{ c.dotBg }};color:var(--q-accent-ink);font-size:9px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">{{ c.mark }}</span>
+              <span style="font-size:13px;line-height:1.35;">{{ c.short }}</span>
+              <span></span>
+              <span style="font-size:11.5px;color:var(--q-ink-3);">{{ c.navState }}</span>
+            </a>
+          </sc-for>
+        </div>
+        <div style="overflow:auto;min-height:0;">
+          <div style="max-width:960px;margin:0 auto;padding:22px 32px 60px;display:flex;flex-direction:column;gap:16px;">
+            <sc-if value="{{ merged }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px 14px;border-radius:6px;border:1px solid var(--q-st-understood);background:color-mix(in oklch, var(--q-st-understood) 10%, var(--q-canvas));font-size:13px;">✓ Merged into main at 14:22. Checkpoint “Before merging try-QEC” was created — Restore from History to undo.</div>
+            </sc-if>
+            <div style="border:1px solid var(--q-line-soft);border-radius:6px;background:var(--q-surface);">
+              <button onClick="{{ toggleAuto }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border:0;background:transparent;color:var(--q-ink);font:inherit;cursor:pointer;text-align:left;">
+                <span style="color:var(--q-ink-3);font-size:11px;width:10px;">{{ autoCaret }}</span>
+                <span style="color:var(--q-st-understood);">✓</span>
+                <span style="font-weight:600;">Merges automatically</span>
+                <span style="font-size:12.5px;color:var(--q-ink-2);">9 Changes · 3 Cards added, 4 non-overlapping Changes, 2 Connections added</span>
+              </button>
+              <sc-if value="{{ autoOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="border-top:1px solid var(--q-line-soft);padding:6px 14px 10px 46px;display:flex;flex-direction:column;">
+                  <sc-for list="{{ auto }}" as="a">
+                    <div style="display:grid;grid-template-columns:110px 1fr auto;gap:12px;padding:6px 0;font-size:12.5px;border-bottom:1px solid var(--q-line-soft);">
+                      <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ a.kind }}</span><span>{{ a.what }}</span><span style="font-size:11.5px;color:var(--q-ink-3);">{{ a.who }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:6px;border:1px solid var(--q-line-soft);font-size:12.5px;line-height:1.5;color:var(--q-ink-2);">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--q-ink-2)" stroke-width="1.2" style="flex:none;margin-top:2px;"><rect x="1.5" y="1.5" width="4.5" height="4.5"></rect><rect x="8" y="8" width="4.5" height="4.5"></rect><path d="M6 3.75 H10.25 V8 M10.25 8 L8.8 6.6 M10.25 8 L11.7 6.6"></path></svg>
+              <span><b style="font-weight:600;color:var(--q-ink);">Card positions follow main.</b> 6 Cards moved on try-QEC keep their main position and are not listed as Conflicts. The 3 new Cards arrive where they sit on try-QEC.</span>
+            </div>
+            <sc-for list="{{ conflicts }}" as="c" hint-placeholder-count="3">
+              <div id="{{ c.anchor }}" style="border:1px solid {{ c.border }};border-radius:6px;background:var(--q-surface);">
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--q-line-soft);">
+                  <span style="font:600 11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ c.num }}</span>
+                  <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;padding:3px 6px;border-radius:3px;border:1px solid var(--q-st-question);color:var(--q-st-question);">{{ c.type }}</span>
+                  <span style="font-weight:600;">{{ c.title }}</span>
+                  <span style="font-size:12.5px;color:var(--q-ink-3);">{{ c.field }}</span>
+                  <span style="flex:1;"></span>
+                  <span style="font-size:12px;color:{{ c.stateColor }};">{{ c.stateLabel }}</span>
+                </div>
+                <div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+                  <sc-if value="{{ c.isPara }}">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                      <div style="display:flex;flex-direction:column;gap:6px;">
+                        <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--q-ink-3);"><span style="font:600 12px 'IBM Plex Mono',monospace;color:var(--q-ink);">main</span>Elena · 15 Nov</div>
+                        <div style="padding:12px 14px;border-radius:5px;background:var(--q-page);border:1px solid var(--q-line-soft);font:15px/1.62 'Source Serif 4',serif;"><sc-for list="{{ c.left }}" as="t"><span style="background:{{ t.bg }};text-decoration:{{ t.deco }};border-radius:2px;">{{ t.s }}</span></sc-for></div>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:6px;">
+                        <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--q-ink-3);"><span style="font:600 12px 'IBM Plex Mono',monospace;color:var(--q-branch);">try-QEC</span>Mei · 18 Nov</div>
+                        <div style="padding:12px 14px;border-radius:5px;background:var(--q-page);border:1px solid var(--q-line-soft);font:15px/1.62 'Source Serif 4',serif;"><sc-for list="{{ c.right }}" as="t"><span style="background:{{ t.bg }};border-radius:2px;">{{ t.s }}</span></sc-for></div>
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:14px;font-size:11.5px;color:var(--q-ink-3);"><span><span style="background:var(--q-del);text-decoration:line-through;padding:0 3px;">removed</span> only on main side</span><span><span style="background:var(--q-ins);padding:0 3px;">added</span> only on try-QEC side</span></div>
+                  </sc-if>
+                  <sc-if value="{{ c.hasOpts }}">
+                    <div style="display:grid;grid-template-columns:{{ c.cols }};gap:10px;">
+                      <sc-for list="{{ c.opts }}" as="o">
+                        <button onClick="{{ o.pick }}" style="text-align:left;display:flex;flex-direction:column;gap:7px;padding:11px 12px;border-radius:5px;border:1px solid {{ o.border }};background:{{ o.bg }};color:var(--q-ink);font:inherit;cursor:pointer;box-shadow:{{ o.ring }};">
+                          <span style="display:flex;align-items:center;gap:8px;width:100%;">
+                            <span style="width:14px;height:14px;border-radius:50%;border:1.4px solid {{ o.border }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;"><span style="width:6px;height:6px;border-radius:50%;background:{{ o.dot }};"></span></span>
+                            <span style="font:600 12px 'IBM Plex Mono',monospace;color:{{ o.sideColor }};">{{ o.side }}</span>
+                            <span style="flex:1;"></span>
+                            <span style="font-size:11.5px;color:var(--q-ink-3);">{{ o.who }}</span>
+                          </span>
+                          <span style="font-size:{{ o.size }}px;line-height:1.4;font-family:{{ o.font }};color:{{ o.valColor }};display:flex;align-items:center;gap:6px;">{{ o.glyph }}{{ o.value }}</span>
+                        </button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ c.editing }}">
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                      <span style="font-size:12px;color:var(--q-ink-2);">Your value — this is what main will get</span>
+                      <textarea onInput="{{ c.onEdit }}" style="min-height:{{ c.taH }}px;padding:10px 12px;border-radius:5px;border:1px solid var(--q-accent);background:var(--q-page);color:var(--q-ink);font:{{ c.taFont }};resize:vertical;outline:none;">{{ c.editVal }}</textarea>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+function mGlyph(st) {
+  const h = React.createElement; const p = { width: 11, height: 11, viewBox: '0 0 10 10', fill: 'none', stroke: 'currentColor', strokeWidth: 1.3 };
+  if (st === 'idea') return h('svg', p, h('path', { d: 'M5 1.2 L8.8 5 L5 8.8 L1.2 5 Z' }));
+  return h('svg', p, h('circle', { cx: 5, cy: 5, r: 3.8, fill: 'currentColor' }));
+}
+const PARA_MAIN = 'Each stabilizer is measured with an ancilla qubit every round. For a distance-d patch there are d² data qubits and d² − 1 ancillas, and errors below the threshold of about 1% are suppressed exponentially in d.';
+const PARA_TRY = 'Each stabilizer is measured with an ancilla qubit every round. For a rotated distance-d patch there are d² data qubits and d² − 1 ancillas; below threshold (≈ 0.57% for MWPM under circuit-level noise) the logical error rate falls as Λ^−(d+1)/2.';
+class Component extends DCLogic {
+  state = { pick: { 1: 'b', 4: 'a' }, autoOpen: false, merged: false, edit: {} };
+  renderVals() {
+    const P = this.state.pick;
+    const set = (i, v) => this.setState(s => ({ pick: { ...s.pick, [i]: v } }));
+    const raw = [
+      { type: 'Same field', short: 'Threshold ≈ 1% · Title', title: 'Card: Threshold ≈ 1% (circuit noise)', field: 'Title changed on both',
+        opts: [['a', 'main', 'Elena · 15 Nov', 'Threshold ≈ 1% (circuit noise)'], ['b', 'try-QEC', 'Mei · 18 Nov', 'Threshold ≈ 0.57% (MWPM, circuit-level)'], ['e', 'Edit by hand', '', 'Write a combined title']], edit: 'Threshold ≈ 0.57% (MWPM, circuit-level; “~1%” commonly quoted)', small: true },
+      { type: 'Same field', short: 'Union-find decoder · Status', title: 'Card: Union-find decoder', field: 'Status changed on both',
+        opts: [['a', 'main', 'Jonas · 16 Nov', 'Idea', 'idea'], ['b', 'try-QEC', 'Mei · 19 Nov', 'Understood', 'understood']] },
+      { type: 'Edited · deleted', short: 'Neural decoders? · deleted on main', title: 'Card: Neural decoders?', field: 'Deleted on main, edited on try-QEC',
+        opts: [['a', 'main — delete', 'Jonas · 16 Nov', 'Delete the Card. Jonas: “folded into the MWPM decoder Page.”'], ['b', 'try-QEC — keep', 'Mei · 18 Nov', 'Keep the Card with try-QEC edits: new summary and 1 Source (Varsamopoulos et al. 2017).']] },
+      { type: 'Same paragraph', short: 'Surface code basics · ¶ 2', title: 'Page: Surface code basics', field: 'Paragraph 2 changed on both', para: true,
+        opts: [['a', 'Use main', '', 'Keep Elena’s paragraph'], ['b', 'Use try-QEC', '', 'Take Mei’s paragraph'], ['e', 'Edit by hand', '', 'Start from try-QEC and edit']], edit: PARA_TRY },
+      { type: 'Same field', short: 'Connection label', title: 'Connection: Threshold ≈ 1% → Logical error rate vs d', field: 'Label changed on both',
+        opts: [['a', 'main', 'Elena · 15 Nov', 'builds on'], ['b', 'try-QEC', 'Mei · 18 Nov', 'calibrates']] },
+    ];
+    const conflicts = raw.map((r, i) => {
+      const p = P[i]; const dec = !!p;
+      const pickedLabel = p ? (r.opts.find(o => o[0] === p) || [])[1] : '';
+      return {
+        ...r, num: String(i + 1).padStart(2, '0'), anchor: 'c' + (i + 1), isPara: !!r.para, hasOpts: true,
+        cols: r.opts.length === 3 ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))',
+        opts: r.opts.map(([k, side, who, value, st]) => {
+          const on = p === k; const isMain = side.startsWith('main') || side === 'Use main'; const isTry = side.startsWith('try-QEC') || side === 'Use try-QEC';
+          return { side, who, value, pick: () => set(i, k),
+            border: on ? 'var(--q-accent)' : 'var(--q-line)', bg: on ? 'var(--q-accent-soft)' : 'var(--q-raised)', dot: on ? 'var(--q-accent)' : 'transparent', ring: on ? '0 0 0 1px var(--q-accent)' : 'none',
+            sideColor: isTry ? 'var(--q-branch)' : isMain ? 'var(--q-ink)' : 'var(--q-ink-2)',
+            size: k === 'e' || r.para || i === 2 ? 13 : 15, font: k === 'e' || r.para || i === 2 ? "'IBM Plex Sans', sans-serif" : "'Source Serif 4', serif",
+            valColor: k === 'e' || r.para ? 'var(--q-ink-2)' : st ? `var(--q-st-${st})` : 'var(--q-ink)', glyph: st ? mGlyph(st) : null };
+        }),
+        editing: p === 'e', editVal: this.state.edit[i] ?? r.edit, onEdit: e => this.setState(s => ({ edit: { ...s.edit, [i]: e.target.value } })),
+        taH: r.para ? 110 : 40, taFont: r.para ? "15px/1.6 'Source Serif 4', serif" : "14px 'IBM Plex Sans', sans-serif",
+        left: [{ s: 'Each stabilizer is measured with an ancilla qubit every round. For a distance-d patch there are d² data qubits and d² − 1 ancillas' }, { s: ', and errors below the threshold of about 1% are suppressed exponentially in d.', bg: 'var(--q-del)', deco: 'line-through' }].map(t => ({ bg: 'transparent', deco: 'none', ...t })),
+        right: [{ s: 'Each stabilizer is measured with an ancilla qubit every round. For a ' }, { s: 'rotated', bg: 'var(--q-ins)' }, { s: ' distance-d patch there are d² data qubits and d² − 1 ancillas' }, { s: '; below threshold (≈ 0.57% for MWPM under circuit-level noise) the logical error rate falls as Λ^−(d+1)/2.', bg: 'var(--q-ins)' }].map(t => ({ bg: 'transparent', ...t })),
+        border: dec ? 'var(--q-line-soft)' : 'color-mix(in oklch, var(--q-st-question) 55%, var(--q-line-soft))',
+        stateLabel: dec ? '✓ Decided: ' + pickedLabel : 'Needs a decision', stateColor: dec ? 'var(--q-st-understood)' : 'var(--q-st-question)',
+        navState: dec ? 'Decided · ' + pickedLabel : 'Needs a decision', mark: dec ? '✓' : '',
+        dotBorder: dec ? 'var(--q-accent)' : 'var(--q-st-question)', dotBg: dec ? 'var(--q-accent)' : 'transparent', navBg: dec ? 'transparent' : 'color-mix(in oklch, var(--q-st-question) 7%, transparent)',
+        barBg: dec ? 'var(--q-accent)' : 'var(--q-line)',
+      };
+    });
+    const decided = conflicts.filter(c => c.mark).length; const ready = decided === 5 && !this.state.merged;
+    return {
+      theme: this.props.theme || 'dark', conflicts, decided,
+      mergeDisabled: !ready, mergeTitle: ready ? 'Merge try-QEC into main' : 'Decide all Conflicts first',
+      mergeBg: ready ? 'var(--q-accent)' : 'transparent', mergeColor: ready ? 'var(--q-accent-ink)' : 'var(--q-ink-3)', mergeBorder: ready ? 'var(--q-accent)' : 'var(--q-line)', mergeCursor: ready ? 'pointer' : 'not-allowed',
+      mergeLabel: this.state.merged ? 'Merged ✓' : ready ? 'Merge into main' : `Merge · ${5 - decided} left`,
+      doMerge: () => ready && this.setState({ merged: true }), merged: this.state.merged,
+      autoOpen: this.state.autoOpen, autoCaret: this.state.autoOpen ? '▾' : '▸', toggleAuto: () => this.setState({ autoOpen: !this.state.autoOpen }),
+      auto: [
+        ['Card added', 'Union-find vs MWPM benchmark', 'Jonas · 19 Nov'], ['Card added', 'Stim noise model (SI1000)', 'Mei · 17 Nov'], ['Card added', 'Decoder latency budget: 1 µs / round', 'Jonas · 20 Nov'],
+        ['Change', 'MWPM decoder · Page: new Run block', 'Jonas · 18 Nov'], ['Change', 'Lattice surgery CNOT · summary', 'Mei · 16 Nov'], ['Change', 'Toric code & anyons · 1 Source added', 'Mei · 15 Nov'], ['Change', 'Logical error rate vs d · Run re-captured', 'Mei · 21 Nov'],
+        ['Connection', 'Union-find decoder — MWPM decoder · alternative to', 'Mei · 19 Nov'], ['Connection', 'Stim noise model → Threshold ≈ 1% · calibrates', 'Mei · 17 Nov'],
+      ].map(([kind, what, who]) => ({ kind, what, who })),
+    };
+  }
+}
+</script>
+</body>
+</html>

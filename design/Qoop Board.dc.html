@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<script src="./qoop-math.js"></script>
+</helmet>
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
+
+  <div style="width:100%;display:flex;align-items:baseline;gap:18px;">
+    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — Board, chrome, AI sidebar, Suggestions</span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 1, 2, 4, 5 · 1440 × 900 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Team.dc.html">To-dos, History, Branches</a> · <a href="Qoop Merge.dc.html">Merge</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
+  </div>
+
+  <div id="1a" data-screen-label="1a Board main" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">1a</span><span style="font-size:15px;font-weight:600;">Board on main — 25 Cards, 3 Frames</span><span style="font-size:13px;color:var(--q-ink-3);">Drag to pan, scroll to zoom (Cards simplify below 55%, become status tiles below 30%). Click a Card to select.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" highlight="17" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+    </div>
+  </div>
+
+  <div id="1b" data-screen-label="1b Board zoomed out" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">1b</span><span style="font-size:15px;font-weight:600;">Zoomed out — 120 Cards, 8 Frames</span><span style="font-size:13px;color:var(--q-ink-3);">Semantic zoom: Frame names grow, Cards reduce to status shape + title. Status reads from shape, not only colour.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" large="{{ true }}" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" dataset="large" pad="{{ 40 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+    </div>
+  </div>
+
+  <div id="2a" data-screen-label="2a Chrome on try-QEC" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">2a</span><span style="font-size:15px;font-weight:600;">Chrome on a non-main Branch, Branch switcher open</span><span style="font-size:13px;color:var(--q-ink-3);">try-QEC tints the top bar and rail, adds a 2px Branch-colour rule and a persistent canvas chip.</span></div>
+    <div data-branch="try-QEC" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="try-QEC" switcher-open="{{ true }}" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" branch="try-QEC" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+    </div>
+  </div>
+
+  <div id="4a" data-screen-label="4a AI sidebar conversation" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">4a</span><span style="font-size:15px;font-weight:600;">AI sidebar — Conversation scoped to the selected Card</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr 376px;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" ai="{{ true }}" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" highlight="0" zoom="{{ 0.8 }}" cx="{{ 420 }}" cy="{{ 360 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+      <div style="border-left:1px solid var(--q-chrome-line);background:var(--q-surface);display:flex;flex-direction:column;min-height:0;">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--q-line-soft);">
+          <span style="font-weight:600;">AI</span>
+          <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Claude Sonnet 4.5 ▾</span>
+          <span style="flex:1;"></span>
+          <span title="New Conversation" style="color:var(--q-ink-3);font-size:16px;">+</span>
+          <span title="Collapse" style="color:var(--q-ink-3);font-size:13px;margin-left:6px;">⇥</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--q-sunken);border-bottom:1px solid var(--q-line-soft);font-size:12px;color:var(--q-ink-2);">
+          <svg width="12" height="13" viewBox="0 0 12 13" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="5.5" width="9" height="6.5" rx="1"></rect><path d="M3.5 5.5 V3.8 A2.5 2.5 0 0 1 8.5 3.8 V5.5"></path></svg>
+          <span><b style="font-weight:600;color:var(--q-ink);">Private</b> — only you can see this Conversation. Pin copies an answer into a Page.</span>
+        </div>
+        <div style="flex:1;overflow:auto;padding:14px 14px 6px;display:flex;flex-direction:column;gap:16px;">
+          <div style="align-self:flex-end;max-width:86%;padding:8px 11px;border-radius:6px;background:var(--q-hover);font-size:13px;line-height:1.5;">How fast does the logical error rate fall with distance below threshold?</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="font:15px/1.6 'Source Serif 4',serif;color:var(--q-ink);text-wrap:pretty;">Roughly geometrically. Each step <q-math tex="d\to d+2"></q-math> suppresses <q-math tex="p_L"></q-math> by a factor <q-math tex="\Lambda\approx p_{\mathrm{th} }/p"></q-math>:</div>
+            <div style="padding:6px 0;font-size:15px;"><q-math display="" tex="p_L \approx A\left(\frac{p}{p_{\mathrm{th} } }\right)^{\lfloor (d+1)/2\rfloor}"></q-math></div>
+            <div style="font:15px/1.6 'Source Serif 4',serif;color:var(--q-ink);text-wrap:pretty;">With <q-math tex="p=0.1\%"></q-math> and <q-math tex="p_{\mathrm{th} }\approx 1\%"></q-math>, going from <q-math tex="d=5"></q-math> to <q-math tex="d=7"></q-math> should buy about 10×. Your Card “Logical error rate vs d” fits <q-math tex="\Lambda = 7.8"></q-math>, a little below that.</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button onClick="{{ pin1 }}" style="white-space:nowrap;display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:4px;border:1px solid {{ pin1Border }};background:transparent;color:{{ pin1Color }};font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4.5 1.5 H7.5 L7 5 L9 7 H3 L5 5 Z M6 7 V11"></path></svg>{{ pin1Label }}
+              </button>
+              <button style="height:26px;padding:0 9px;border-radius:4px;border:0;background:transparent;color:var(--q-ink-3);font:12px 'IBM Plex Sans',sans-serif;">Copy</button>
+            </div>
+          </div>
+          <div style="align-self:flex-end;max-width:86%;padding:8px 11px;border-radius:6px;background:var(--q-hover);font-size:13px;line-height:1.5;">Is 1% the right threshold for circuit-level noise, or is that optimistic?</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="font:15px/1.6 'Source Serif 4',serif;color:var(--q-ink);text-wrap:pretty;">Slightly optimistic. Fowler et al. (2012) report about <q-math tex="0.57\%"></q-math> for circuit-level depolarizing noise with MWPM; “~1%” is the usual rounding. It also depends on the decoder — union-find sits a bit lower.</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:4px;border:1px solid var(--q-line-soft);color:var(--q-ink-3);font:500 12px 'IBM Plex Sans',sans-serif;">✓ Pinned to Page · Threshold ≈ 1%</span>
+            </div>
+          </div>
+        </div>
+        <div style="padding:10px 12px 12px;border-top:1px solid var(--q-line-soft);display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="display:flex;align-items:center;gap:6px;height:22px;padding:0 4px 0 8px;border-radius:11px;border:1px solid var(--q-accent);color:var(--q-ink);font-size:12px;background:var(--q-accent-soft);"><span style="color:var(--q-ink-3);">Card:</span> Surface code basics <span style="color:var(--q-ink-3);padding:0 4px;">✕</span></span>
+            <span style="font-size:11.5px;color:var(--q-ink-3);">follows your selection</span>
+          </div>
+          <div style="min-height:64px;padding:9px 10px;border-radius:5px;border:1px solid var(--q-line);background:var(--q-sunken);font-size:13px;color:var(--q-ink-3);display:flex;flex-direction:column;justify-content:space-between;gap:8px;">
+            <span>Ask about Card: Surface code basics…</span>
+            <span style="align-self:flex-end;font:11px 'IBM Plex Mono',monospace;">⏎ send · ⇧⏎ new line</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="4b" data-screen-label="4b AI sidebar empty" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">4b</span><span style="font-size:15px;font-weight:600;">AI sidebar — Member with no AI set up, Board scope</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr 376px;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" ai="{{ true }}" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+      <div style="border-left:1px solid var(--q-chrome-line);background:var(--q-surface);display:flex;flex-direction:column;min-height:0;">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--q-line-soft);">
+          <span style="font-weight:600;">AI</span><span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">no model</span>
+          <span style="flex:1;"></span><span style="color:var(--q-ink-3);font-size:13px;">⇥</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:0 32px;">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="var(--q-ink-3)" stroke-width="1.3"><rect x="3" y="5" width="22" height="16" rx="2"></rect><path d="M9 25 H19 M10 12 H18 M10 15.5 H15"></path></svg>
+          <div style="font:600 19px/1.3 'Source Serif 4',serif;">AI isn’t set up for you</div>
+          <div style="font-size:13px;line-height:1.55;color:var(--q-ink-2);text-wrap:pretty;">Qoop doesn’t ship a model. In the desktop app this sidebar runs on your own Claude subscription — sign in to Claude Code on this machine. In the browser, add an OpenRouter key in Member settings.</div>
+          <div style="font-size:13px;line-height:1.55;color:var(--q-ink-2);display:flex;gap:8px;"><svg width="12" height="13" viewBox="0 0 12 13" fill="none" stroke="currentColor" stroke-width="1.2" style="flex:none;margin-top:3px;"><rect x="1.5" y="5.5" width="9" height="6.5" rx="1"></rect><path d="M3.5 5.5 V3.8 A2.5 2.5 0 0 1 8.5 3.8 V5.5"></path></svg><span>Conversations are private. Other Members only see answers you Pin.</span></div>
+          <div style="display:flex;gap:8px;padding-top:4px;">
+            <a href="Qoop Access.dc.html#11b" style="display:flex;align-items:center;height:30px;padding:0 12px;border-radius:5px;background:var(--q-accent);color:var(--q-accent-ink);font-weight:500;text-decoration:none;">Open Member settings</a>
+          </div>
+        </div>
+        <div style="padding:10px 12px 12px;border-top:1px solid var(--q-line-soft);display:flex;flex-direction:column;gap:8px;opacity:.55;">
+          <span style="align-self:flex-start;display:flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--q-line);font-size:12px;"><span style="color:var(--q-ink-3);">Board:</span> main</span>
+          <div style="height:48px;padding:9px 10px;border-radius:5px;border:1px solid var(--q-line);background:var(--q-sunken);font-size:13px;color:var(--q-ink-3);box-sizing:border-box;">Add a key to ask about Board: main</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="5a" data-screen-label="5a Suggestions inbox" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">5a</span><span style="font-size:15px;font-weight:600;">Suggestions inbox</span><span style="font-size:13px;color:var(--q-ink-3);">Hover or select a Connection to preview it dashed on the Board. Accept/Reject are live; accepting a Source offers a To-do.</span></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 420px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+      <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="suggestions" hint-size="224px,100%"></dc-import></div>
+      <div style="border-right:1px solid var(--q-line-soft);background:var(--q-surface);display:flex;flex-direction:column;min-height:0;">
+        <div style="padding:14px 16px 10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--q-line-soft);">
+          <div style="display:flex;align-items:baseline;gap:10px;"><span style="font:600 17px 'Source Serif 4',serif;">Suggestions</span><span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ pendingCount }} pending</span></div>
+          <div style="font-size:12.5px;line-height:1.45;color:var(--q-ink-2);">Proposed by AI from this Board. Nothing changes until a Member accepts.</div>
+          <div style="display:flex;gap:4px;font-size:12px;">
+            <span style="padding:3px 9px;border-radius:4px;background:var(--q-hover);color:var(--q-ink);">All</span>
+            <span style="padding:3px 9px;border-radius:4px;color:var(--q-ink-2);">Sources 3</span>
+            <span style="padding:3px 9px;border-radius:4px;color:var(--q-ink-2);">Connections 3</span>
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;">
+          <sc-for list="{{ sugs }}" as="s" hint-placeholder-count="5">
+            <div onMouseEnter="{{ s.hover }}" style="padding:12px 16px;border-bottom:1px solid var(--q-line-soft);display:flex;flex-direction:column;gap:7px;background:{{ s.bg }};opacity:{{ s.op }};">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;padding:3px 5px;border-radius:3px;border:1px {{ s.kindBorder }} var(--q-ink-3);color:var(--q-ink-2);">{{ s.kind }}</span>
+                <span style="font-size:12px;color:var(--q-ink-3);">{{ s.target }}</span>
+                <span style="flex:1;"></span>
+                <sc-if value="{{ s.previewing }}"><span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-accent);">previewing on Board ↗</span></sc-if>
+              </div>
+              <div style="font:600 14.5px/1.35 'Source Serif 4',serif;color:var(--q-ink);">{{ s.title }}</div>
+              <div style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">{{ s.meta }}</div>
+              <div style="font-size:12.5px;line-height:1.5;color:var(--q-ink-2);"><span style="color:var(--q-ink-3);">Why: </span>{{ s.reason }}</div>
+              <sc-if value="{{ s.pending }}">
+                <div style="display:flex;gap:6px;padding-top:2px;">
+                  <button onClick="{{ s.accept }}" style="height:26px;padding:0 12px;border-radius:4px;border:1px solid var(--q-accent);background:var(--q-accent);color:var(--q-accent-ink);font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;">Accept</button>
+                  <button onClick="{{ s.reject }}" style="height:26px;padding:0 12px;border-radius:4px;border:1px solid var(--q-line);background:transparent;color:var(--q-ink);font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;">Reject</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ s.offerTodo }}">
+                <div style="display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:5px;border:1px solid var(--q-line-soft);background:var(--q-raised);">
+                  <div style="font-size:12.5px;color:var(--q-st-understood);">✓ Source added to Card: {{ s.cardName }}</div>
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;">
+                    <input type="checkbox" checked="{{ s.todoOn }}" onChange="{{ s.toggleTodo }}" style="accent-color:var(--q-accent);margin:0;">
+                    <span>Also create a To-do: <b style="font-weight:600;">Read this</b>, assigned to</span>
+                    <select style="height:24px;border-radius:4px;border:1px solid var(--q-line);background:var(--q-sunken);color:var(--q-ink);font:12.5px 'IBM Plex Sans',sans-serif;"><option>Ana Ruiz</option><option>Jonas Weber</option><option>Mei Lin (you)</option><option>Elena Varga</option></select>
+                  </label>
+                  <div style="display:flex;gap:6px;">
+                    <button onClick="{{ s.done }}" style="white-space:nowrap;height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--q-line);background:transparent;color:var(--q-ink);font:500 12px 'IBM Plex Sans',sans-serif;cursor:pointer;">{{ s.doneLabel }}</button>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ s.resolved }}"><div style="font:11.5px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ s.resolvedLabel }}</div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="position:relative;overflow:hidden;"><dc-import name="QBoardCanvas" suggestion="{{ showSug }}" highlight="{{ sugHl }}" zoom="{{ 0.62 }}" cx="{{ 560 }}" cy="{{ 700 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { pinned1: false, st: { 1: 'accepted' }, todo: { 1: true }, hover: 0 };
+  renderVals() {
+    const raw = [
+      { kind: 'Connection', target: 'Board: main', title: 'Noise-induced plateaus → Reward plateaus at ~180', meta: 'may explain', reason: 'Both Pages describe gradients shrinking with depth; the CartPole Run uses 3 layers under default.mixed noise.', conn: true },
+      { kind: 'Source', target: 'for Card: Noise-induced plateaus', cardName: 'Noise-induced plateaus', title: 'Noise-induced barren plateaus in variational quantum algorithms', meta: 'Wang et al. · 2021 · arXiv:2007.14384', reason: 'The Page states this result but has no Source attached.' },
+      { kind: 'Source', target: 'for Card: Barren plateaus', cardName: 'Barren plateaus', title: 'Barren plateaus in quantum neural network training landscapes', meta: 'McClean et al. · 2018 · arXiv:1803.11173', reason: 'Cited in the Page text as “McClean 18” but missing from Sources.' },
+      { kind: 'Connection', target: 'Board: main', title: 'Union-find decoder — MWPM decoder', meta: 'alternative to', reason: 'Both Pages benchmark decoders on the same d = 5 syndrome data.', conn: true },
+      { kind: 'Source', target: 'for Card: Union-find decoder', cardName: 'Union-find decoder', title: 'Almost-linear time decoding algorithm for topological codes', meta: 'Delfosse & Nickerson · 2021 · arXiv:1709.06218', reason: 'Original union-find decoder paper; the Card summary paraphrases its complexity result.' },
+      { kind: 'Connection', target: 'Board: main', title: 'Parameter-shift rule → QRL on CartPole', meta: 'used by', reason: 'The Run block computes gradients with qml.gradients.param_shift.', conn: true },
+    ];
+    const set = (i, v) => this.setState(s => ({ st: { ...s.st, [i]: v } }));
+    const sugs = raw.map((r, i) => {
+      const st = this.state.st[i] || 'pending';
+      const prev = r.conn && i === 0 && st === 'pending';
+      return {
+        ...r, pending: st === 'pending', previewing: prev, kindBorder: r.conn ? 'dashed' : 'solid',
+        bg: prev ? 'var(--q-accent-soft)' : 'transparent', op: st === 'rejected' || st === 'done' ? 0.55 : 1,
+        offerTodo: st === 'accepted' && !r.conn, todoOn: !!this.state.todo[i],
+        toggleTodo: () => this.setState(s => ({ todo: { ...s.todo, [i]: !s.todo[i] } })),
+        doneLabel: this.state.todo[i] ? 'Create To-do' : 'Done',
+        done: () => set(i, this.state.todo[i] ? 'done-todo' : 'done'),
+        resolved: st === 'rejected' || st === 'done' || st === 'done-todo' || (st === 'accepted' && r.conn),
+        resolvedLabel: st === 'rejected' ? 'Rejected by you · just now · Undo' : st === 'done-todo' ? 'Accepted · To-do “Read this” created for Ana' : 'Accepted by you · just now',
+        accept: () => set(i, 'accepted'), reject: () => set(i, 'rejected'),
+        hover: () => {},
+      };
+    });
+    const firstPending = (this.state.st[0] || 'pending') === 'pending';
+    return {
+      theme: this.props.theme || 'dark',
+      pin1: () => this.setState({ pinned1: !this.state.pinned1 }),
+      pin1Label: this.state.pinned1 ? 'Pinned to Page · Surface code basics' : 'Pin to Page',
+      pin1Border: this.state.pinned1 ? 'var(--q-line-soft)' : 'var(--q-line)', pin1Color: this.state.pinned1 ? 'var(--q-ink-3)' : 'var(--q-ink)',
+      sugs, pendingCount: sugs.filter(s => s.pending).length,
+      showSug: firstPending || this.state.st[0] === 'accepted', sugHl: firstPending ? '15,20' : '',
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+{
+  "v": 1,
+  "mode": "omelette",
+  "root": "project/",
+  "title": "Qoop Design System Overview",
+  "entry": "QRunBlock.dc.html",
+  "pages": [
+    {
+      "path": "QRunBlock.dc.html",
+      "title": "QRunBlock",
+      "kind": "component"
+    },
+    {
+      "path": "Qoop Page.html",
+      "title": "Bundled Page",
+      "kind": "plain"
+    },
+    {
+      "path": "Qoop Page standalone.dc.html",
+      "title": "Qoop Page standalone",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Design System.dc.html",
+      "title": "Qoop Design System",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Access.dc.html",
+      "title": "Qoop Access",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Merge.dc.html",
+      "title": "Qoop Merge",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Team.dc.html",
+      "title": "Qoop Team",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Page.dc.html",
+      "title": "Qoop Page",
+      "kind": "page"
+    },
+    {
+      "path": "Qoop Board.dc.html",
+      "title": "Qoop Board",
+      "kind": "page"
+    },
+    {
+      "path": "QBoardCanvas.dc.html",
+      "title": "QBoardCanvas",
+      "kind": "component"
+    },
+    {
+      "path": "QTopBar.dc.html",
+      "title": "QTopBar",
+      "kind": "component"
+    },
+    {
+      "path": "QPage.dc.html",
+      "title": "QPage",
+      "kind": "component"
+    },
+    {
+      "path": "QRail.dc.html",
+      "title": "QRail",
+      "kind": "component"
+    }
+  ],
+  "migratorVersion": "artifact-migrator (claude-design-backend 1e4e97bf9cb8)",
+  "createdAt": "2026-11-22T00:13:37.348Z",
+  "source": {
+    "v": 1,
+    "app": "claude-design",
+    "url": "https://claude.ai/design/p/5225c9d5-9712-43ff-b4b2-be35cfc0c30b",
+    "projectId": "5225c9d5-9712-43ff-b4b2-be35cfc0c30b",
+    "exportedAt": "2026-11-22T00:13:37.348Z"
+  },
+  "report": {
+    "itemsVersion": 2,
+    "pages": {
+      "total": 8,
+      "ok": 8,
+      "partial": 0,
+      "notMigrated": 0
+    },
+    "items": [],
+    "truncated": 0,
+    "truncatedLeftOut": 0
+  }
+}
