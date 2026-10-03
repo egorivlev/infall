@@ -77,3 +77,39 @@ export const ops: {
 - Items and arrays in `useBoard()` keep their identity unless they changed, so `React.memo` on Card/Frame/Connection components works.
 - A Frame without `w`/`h` on the wire gets 0; always create Frames with a size.
 - The op builders throw `RangeError` on NaN or Infinity.
+
+## M2 — Branches and History
+
+Added to `index.ts` (types `Checkpoint`, `Activity`, `BoardPreview`, `HistorySnapshot` are in `types.ts`):
+
+```ts
+// ---- Branches ----
+export function useBranches(): BranchInfo[]            // cached; [] until loaded; kept fresh by the socket's `branches` frame
+export const branches: {
+  reload(): Promise<void>
+  create(input: { name: string; from?: Moment }): Promise<BranchInfo>   // default `from`: head of the open Branch. Throws ApiError (409 name_taken, 400). Does NOT switch; call board.open(name) after
+}
+// board.open(branchName) already switches Branch: it closes the current one first. Opening an unknown name rejects with ApiError 404.
+
+// ---- History of the open Branch ----
+export function useHistory(): HistorySnapshot          // referentially stable between changes
+export const history: {
+  open(): Promise<void>                                // load Changes + Checkpoints of the Branch the Board has open; stays current as Changes and Checkpoints arrive
+  close(): void                                        // also clears the preview
+  preview(seq: number | null): void                    // synchronous once open; null = back to now. Clamped to [0, head]
+  createCheckpoint(name: string, seq?: number): Promise<Checkpoint>   // default: head. Works without history.open(). Throws ApiError (409 name_taken, 400)
+  restore(toSeq: number): Promise<void>                // throws ApiError; the resulting Changes arrive like any others
+}
+
+// pure helpers, exported for tests and the UI
+export function groupActivities(...): Activity[]       // see history.ts
+```
+
+Behaviour:
+
+- Activities: consecutive Changes by the same author with `origin: "Edit"` and no gap over 10 minutes between neighbours form one Activity. All Changes sharing a Restore or Merge batch form one Activity of that kind, whoever's neighbours they are.
+- `lines` name entities by the title they had at that moment ("Added Card Surface code basics", "Removed Card …", "Brought back Card …", "Renamed Card … → …", "Status: … → Understood", "Moved 3 Cards", "Added Frame …", "Connected A → B", "Restored to an earlier moment"). Untitled entities read "Untitled". Layout-only edits collapse into one "Moved/Resized N …" line. At most 6 lines; the last becomes "and N more" when cut.
+- `preview(seq)` is computed in the browser by replaying Changes on the Branch's Board at seq 0 (fetched once by `history.open()` via `GET …/board?at=0`); no request per scrub step.
+- When the Board switches Branch or closes, History goes back to `idle` and the preview clears.
+- While the Board is open, `useBoard().branch` is the current `BranchInfo` including `checkpoints`.
+- Guests: `history.*` and `branches.create` reject with 403 `forbidden` without sending; `useBranches()` stays `[]`.

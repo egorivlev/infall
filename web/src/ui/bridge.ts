@@ -26,3 +26,16 @@ export const boardBridge = {
     useBoardRequest.setState({ request: { type: 'create-card', nonce: ++nonce } })
   },
 }
+
+
+// ---- M2: the History panel. The top bar toggles it; the Board area shows it. ----
+type HistoryPanelState = { open: boolean }
+export const useHistoryPanel = create<HistoryPanelState>(() => ({ open: false }))
+export const historyPanel = {
+  toggle() {
+    useHistoryPanel.setState((s) => ({ open: !s.open }))
+  },
+  close() {
+    useHistoryPanel.setState({ open: false })
+  },
+}

@@ -1,4 +1,4 @@
-# Qoop M1 — server API contract
+# Qoop — server API contract (M1 + M2)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -157,3 +157,36 @@ Server → client:
 ## 8. Responses and headers
 
 `Content-Type: application/json` for API responses. For every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and for HTML `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'`. Request bodies over 1 MB are refused.
+
+## 9. M2 — History, Checkpoints, Restore, Branches
+
+Everything in this section is for Members and Admins only; a Guest gets `403 forbidden` (a Guest has no history and no other Branches). The one M1 exception stays: a Guest may still `GET …/changes` on `main`, because the live-update catch-up uses it.
+
+```ts
+type Checkpoint = { name: string; moment: Moment; author: string; at: number };
+```
+
+`BranchInfo` gains `checkpoints: number` (how many Checkpoints the Branch has).
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/branches/{id}/board?at={seq}` | — | same shape as the Board response, but at the moment `seq` (0 = the Branch as it was when created; for a forked Branch that is its parent's Board at the fork moment). `seq` in the response is the requested one. `400 bad_request` if `at` is past the head. Without `at`: the head, as in M1 (Guests allowed on `main` only without `at`) |
+| `GET /api/branches/{id}/checkpoints` | — | `{ checkpoints: Checkpoint[] }` ordered by moment, then name |
+| `POST /api/branches/{id}/checkpoints` | `{ name: string, seq?: number }` | `{ checkpoint: Checkpoint }` — names the moment `seq` (default: the head). `400 bad_request` for an empty name (after trimming), a name over 80 characters, or a `seq` past the head; `409 name_taken` if the Branch already has a Checkpoint with that name |
+| `POST /api/branches/{id}/restore` | `{ to_seq: number }` | `{ seq: number, changes: Change[] }` — appends the Changes that return the Branch to its Board at `to_seq` (core `restore`), authored by the caller, `origin: Restore`. `changes` may be empty when the Board already matches. `400 bad_request` if `to_seq` is past the head |
+| `POST /api/branches` | `{ name: string, from: Moment }` | `{ branch: BranchInfo }` — forks a new Branch from that moment. `400 bad_request` for an empty name, a name over 60 characters, or a moment that does not exist; `409 name_taken` |
+
+New error code: `409 name_taken`.
+
+All of these persist before responding, exactly like `POST …/ops`, and hold the same write lock so order on disk, in memory and on the wire agree.
+
+WebSocket additions (server → client):
+
+```ts
+{ type: "checkpoint", branch: string, checkpoint: Checkpoint }  // to subscribers of that Branch, sender included
+{ type: "branches", branches: BranchInfo[] }                    // the full list, to every connected Member/Admin (never Guests), whenever a Branch is created
+```
+
+A Restore is broadcast as an ordinary `changes` frame (only when it produced Changes). Clients that do not know the new frame types must ignore them.
+
+There is no deleting or renaming of Checkpoints or Branches in M2: history is append-only.

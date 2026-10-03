@@ -46,7 +46,10 @@ export type BranchInfo = {
   parent?: Moment
   created_by?: string
   created_at?: number
+  checkpoints: number
 }
+
+export type Checkpoint = { name: string; moment: Moment; author: string; at: number }
 
 export type BoardResponse = { branch: string; seq: number; entities: Record<string, Entity> }
 export type ChangesResponse = { seq: number; changes: Change[] }
@@ -56,6 +59,8 @@ export type ServerFrame =
   | { type: 'changes'; branch: string; seq: number; changes: Change[] }
   | { type: 'presence'; branch: string; members: string[] }
   | { type: 'error'; code: string; message: string }
+  | { type: 'checkpoint'; branch: string; checkpoint: Checkpoint }
+  | { type: 'branches'; branches: BranchInfo[] }
 export type ClientFrame = { type: 'subscribe'; branch: string; after: number }
 
 export const STATUSES = ['idea', 'reading', 'understood', 'open_question', 'dead_end'] as const
@@ -108,3 +113,41 @@ export type SessionSnapshot =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'signed_in'; member: Member }
+
+// ---- M2: History ----
+
+/**
+ * One Member's consecutive Changes on a Branch, made close together in time, read as one entry.
+ * A way of reading history, not something recorded. A Restore or a Merge is always its own Activity.
+ */
+export type Activity = {
+  id: string // stable: id of its first Change
+  author: string // Member id
+  kind: 'edit' | 'restore' | 'merge'
+  fromSeq: number // moment before its first Change
+  toSeq: number // moment after its last Change — "restore to here" means this
+  startedAt: number // unix ms
+  endedAt: number
+  count: number // Changes in it
+  lines: string[] // plain-word summary, at most 6, e.g. "Added Card Surface code basics", "Status: Threshold → Understood"
+  checkpoints: Checkpoint[] // Checkpoints whose moment falls in (fromSeq, toSeq]
+}
+
+/** The Board as it was at an earlier moment. Same view models as the live Board. */
+export type BoardPreview = {
+  seq: number
+  at: number | null // time of the last Change before this moment; null at seq 0
+  cards: CardVM[]
+  frames: FrameVM[]
+  connections: ConnectionVM[]
+}
+
+export type HistorySnapshot = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error?: string
+  branch?: BranchInfo
+  head: number // Changes on this Branch
+  activities: Activity[] // oldest first
+  checkpoints: Checkpoint[] // ordered by moment, then name; includes Checkpoints at seq 0
+  preview: BoardPreview | null // set by history.preview(seq)
+}
