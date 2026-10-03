@@ -69,7 +69,7 @@ describe('open', () => {
     expect(snap().status).toBe('live')
   })
   it('goes to error and rejects when the Board cannot be loaded', async () => {
-    server.branch = { id: 'other', name: 'other', seq: 0 }
+    server.branch = { id: 'other', name: 'other', seq: 0, checkpoints: 0 }
     await expect(sync.open('main')).rejects.toMatchObject({ code: 'not_found' })
     expect(snap().status).toBe('error')
     expect(snap().error).toBeTruthy()
@@ -85,7 +85,7 @@ describe('open', () => {
           } as Response)
         : inner(path, init),
     )
-    server.branch = { id: 'main', name: 'main', seq: 0 }
+    server.branch = { id: 'main', name: 'main', seq: 0, checkpoints: 0 }
     await sync.open()
     expect(snap().cards).toEqual([])
     expect(server.requests.at(-1)?.path).toBe('/api/branches/main/board')

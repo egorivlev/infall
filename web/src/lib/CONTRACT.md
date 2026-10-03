@@ -113,3 +113,19 @@ Behaviour:
 - When the Board switches Branch or closes, History goes back to `idle` and the preview clears.
 - While the Board is open, `useBoard().branch` is the current `BranchInfo` including `checkpoints`.
 - Guests: `history.*` and `branches.create` reject with 403 `forbidden` without sending; `useBranches()` stays `[]`.
+
+## Notes from the M2 implementation
+
+- `groupActivities(changes, checkpoints, baseEntities, options?)`: `changes` is the Branch's log oldest first, `baseEntities` its Board at seq 0. `options`: `gapMs` (default 10 min), `maxLines` (default 6), `startSeq` (when `changes` is only the tail of a log and `baseEntities` is the Board at that seq). The UI normally just reads `useHistory().activities`.
+- More `lines` than the contract listed: "Added and removed Card …" (created and removed within one Activity), "Disconnected A → B" / "Reconnected A → B" (a Connection removed / brought back), "Labelled A → B: text", "Removed the label of A → B", "Marked A → B as contradicts", "Edited the summary of …", "Resized 1 Frame", "Moved and resized 2 Cards and 1 Frame", "Merged from another Branch", and "No lasting changes" when an Activity's edits cancel out (so `lines` is never empty).
+- `lines` describe the net effect of an Activity (Board before it vs after it), in the order things were first touched, the Moved/Resized line last. Two renames read as one ("Renamed Card A → C"); an entity that has a line of its own is not counted in "Moved N …"; an added Card is named by the title it has when the Activity ends. Counts are always numbers ("Moved 1 Card").
+- A Restore Activity always has the single line "Restored to an earlier moment"; `count` says how many Changes it took. A Restore that changes nothing adds no Changes and so no Activity.
+- A Checkpoint does not split an Activity. Checkpoints at seq 0 are only in `useHistory().checkpoints`, never in an Activity.
+- `history.open()` needs the Board to be loaded (`board.open()` resolved); otherwise it rejects with 400 `board_not_open`, as do `createCheckpoint`, `restore`, and `branches.create` without `from`. Calling `open()` again while open is a no-op. If loading fails, `status` is `'error'` and the promise rejects; call `open()` again to retry.
+- `history.preview()` does nothing unless `status` is `'ready'`. The preview stays at its moment while new Changes arrive (`head` grows). Preview items keep their identity between scrub steps when unchanged, and the first preview reuses the live Board's item objects where they are equal.
+- Activities that did not change keep their object identity when Changes or Checkpoints arrive; only the last Activity (or the one that gained a Checkpoint) is replaced.
+- `history.restore()` and `history.createCheckpoint()` update `useBoard()` / `useHistory()` from the HTTP answer, so the UI does not need the socket to see the result. Neither waits for optimistic submits still pending.
+- `useBranches()` is filled by `board.open()`, `branches.reload()`, `branches.create()` and the `branches` frame. Entries other than the open Branch can have a stale `seq` / `checkpoints` (the server only broadcasts the list when a Branch is created); for the open Branch use `useBoard().branch`. `branches.reload()` for a Guest resolves without a request.
+- `branches.create()` sends `from.branch` as the Branch **id**, and `Checkpoint.moment.branch` / `BranchInfo.parent.branch` are treated as ids.
+- `board.open(name)` failing (404 or otherwise) leaves the Board in `'error'` with no Branch; the previous Branch is already closed. Open `main` (or the previous name) again to recover.
+- After the socket reconnects, the layer refetches the Branch list (and the Checkpoints, when History is open), since frames missed while away are not repeated.

@@ -11,7 +11,7 @@ use axum::extract::ws::{
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
-use qoop_core::{BranchId, Change, MemberId};
+use qoop_core::{BranchId, Change, Checkpoint, MemberId};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -20,8 +20,9 @@ use uuid::Uuid;
 
 use crate::app::Shared;
 use crate::auth::{SignedIn, live_session, origin_allowed};
-use crate::boards::{changes_after, may_read};
+use crate::boards::{BranchInfo, changes_after, may_read};
 use crate::error::ApiError;
+use crate::store::Role;
 
 const PING_EVERY: Duration = Duration::from_secs(30);
 const MAX_UNANSWERED_PINGS: u32 = 2;
@@ -43,6 +44,10 @@ enum Event {
         version: u64,
         frame: Utf8Bytes,
     },
+    /// A `checkpoint` frame, for the Branch's Member and Admin subscribers.
+    Checkpoint { branch: BranchId, frame: Utf8Bytes },
+    /// A `branches` frame, for every connected Member and Admin.
+    Branches { frame: Utf8Bytes },
     /// The Member's account is gone: close their connections.
     Kick { member: MemberId },
 }
@@ -83,6 +88,12 @@ fn presence_frame(branch: BranchId, members: &BTreeMap<MemberId, usize>) -> Utf8
         .into()
 }
 
+fn branches_frame(branches: &[BranchInfo]) -> Utf8Bytes {
+    json!({ "type": "branches", "branches": branches })
+        .to_string()
+        .into()
+}
+
 fn error_frame(code: &str, message: &str) -> Utf8Bytes {
     json!({ "type": "error", "code": code, "message": message })
         .to_string()
@@ -103,6 +114,22 @@ impl Hub {
         let frame = changes_frame(branch, seq, changes);
         // An error only means nobody is listening.
         let _ = st.hub.tx.send(Event::Changes { branch, seq, frame });
+    }
+
+    /// Sends one `checkpoint` frame to every Member and Admin subscribed to `branch`.
+    /// Called while the Workspace write lock is held.
+    pub fn broadcast_checkpoint(st: &Shared, branch: BranchId, checkpoint: &Checkpoint) {
+        let frame = json!({ "type": "checkpoint", "branch": branch, "checkpoint": checkpoint })
+            .to_string()
+            .into();
+        let _ = st.hub.tx.send(Event::Checkpoint { branch, frame });
+    }
+
+    /// Sends the full Branch list to every connected Member and Admin, never to Guests.
+    /// Called while the Workspace write lock is held.
+    pub fn broadcast_branches(st: &Shared, branches: &[BranchInfo]) {
+        let frame = branches_frame(branches);
+        let _ = st.hub.tx.send(Event::Branches { frame });
     }
 
     /// Closes every live connection of `member`.
@@ -277,6 +304,10 @@ impl Connection {
         let _ = sink.close().await;
     }
 
+    fn is_guest(&self) -> bool {
+        self.who.member.role == Role::Guest
+    }
+
     async fn still_signed_in(&self) -> bool {
         matches!(
             live_session(&self.st, self.who.token_hash.clone()).await,
@@ -288,6 +319,12 @@ impl Connection {
         match ev {
             Event::Kick { member } if member == self.who.id() => Err(()),
             Event::Kick { .. } => Ok(Vec::new()),
+            Event::Checkpoint { branch, frame } => match &self.sub {
+                Some(sub) if sub.branch == branch && !self.is_guest() => Ok(vec![frame]),
+                _ => Ok(Vec::new()),
+            },
+            Event::Branches { frame } if !self.is_guest() => Ok(vec![frame]),
+            Event::Branches { .. } => Ok(Vec::new()),
             Event::Changes { branch, seq, frame } => match &mut self.sub {
                 Some(sub) if sub.branch == branch && seq > sub.seq => {
                     sub.seq = seq;
@@ -326,7 +363,7 @@ impl Connection {
             let found = Uuid::parse_str(raw_branch)
                 .ok()
                 .and_then(|id| ws.branch(BranchId(id)));
-            let guest = self.who.member.role == crate::store::Role::Guest;
+            let guest = self.is_guest();
             let b = match found {
                 Some(b) if may_read(&self.who, b) => b,
                 _ if guest => {
@@ -364,16 +401,21 @@ impl Connection {
         frames
     }
 
-    /// After missing broadcast frames: send what was missed as one `changes` frame, then
-    /// the current `presence`.
+    /// After missing broadcast frames: send the Branch list (a `branches` frame may have
+    /// been among them; never to Guests), then what was missed as one `changes` frame, then
+    /// the current `presence`. Missed `checkpoint` frames are not replayed.
     async fn resync(&mut self) -> Vec<Utf8Bytes> {
-        let Some(sub) = &mut self.sub else {
-            return Vec::new();
-        };
         let mut frames = Vec::new();
+        let guest = self.is_guest();
         {
             let ws = self.st.workspace.read().await;
-            if let Some(b) = ws.branch(sub.branch) {
+            if !guest {
+                let list: Vec<BranchInfo> = ws.branches().map(|b| BranchInfo::of(&ws, b)).collect();
+                frames.push(branches_frame(&list));
+            }
+            if let Some(sub) = &mut self.sub
+                && let Some(b) = ws.branch(sub.branch)
+            {
                 let head = b.changes().len() as u64;
                 if let Some(missed) = changes_after(b, sub.seq).filter(|m| !m.is_empty()) {
                     frames.push(changes_frame(sub.branch, head, missed));
@@ -381,9 +423,11 @@ impl Connection {
                 }
             }
         }
-        let (presence, version) = self.st.hub.current_presence(sub.branch);
-        sub.presence_version = version;
-        frames.push(presence);
+        if let Some(sub) = &mut self.sub {
+            let (presence, version) = self.st.hub.current_presence(sub.branch);
+            sub.presence_version = version;
+            frames.push(presence);
+        }
         frames
     }
 }

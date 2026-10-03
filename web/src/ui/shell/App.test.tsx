@@ -19,6 +19,10 @@ vi.mock('../../lib', () => ({
   useSession: () => h.session,
   useBoard: () => h.board,
   useMembers: () => h.people,
+  useBranches: () => [],
+  useHistory: () => ({ status: 'idle', head: 0, activities: [], checkpoints: [], preview: null }),
+  branches: { reload: async () => {}, create: vi.fn() },
+  history: { open: async () => {}, close: () => {}, preview: () => {}, createCheckpoint: vi.fn(), restore: vi.fn() },
   session: { refresh: h.refresh, logout: vi.fn(), login: vi.fn(), acceptInvite: vi.fn() },
   board: { open: h.open, close: h.close },
   members: { reload: h.reload, remove: vi.fn() },
@@ -144,6 +148,7 @@ describe('App routing', () => {
     signedIn(MEMBER)
     const { unmount } = render(<App />)
     expect(h.open).toHaveBeenCalledTimes(1)
+    expect(h.open).toHaveBeenCalledWith('main')
     expect(h.reload).toHaveBeenCalledTimes(1)
     unmount()
     expect(h.close).toHaveBeenCalled()
@@ -171,7 +176,8 @@ describe('Guest', () => {
 describe('top bar and rail', () => {
   it('tints by Branch, shows presence with names and initials, and Admin-only menu entries', async () => {
     signedIn(ADMIN)
-    h.board = snapshot({ branch: { id: 'b', name: 'try-QEC', seq: 1 } })
+    go('/b/try-QEC')
+    h.board = snapshot({ branch: { id: 'b', name: 'try-QEC', seq: 1, checkpoints: 0 } })
     const user = userEvent.setup()
     const { container } = render(<App />)
     expect(container.querySelector('.q-shell')).toHaveAttribute('data-branch', 'try-QEC')

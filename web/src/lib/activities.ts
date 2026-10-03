@@ -1,0 +1,244 @@
+// Pure History logic: replaying Changes, grouping them into Activities, and wording them.
+import type { Entities } from './board-state'
+import { applyOps } from './board-state'
+import type { Activity, Change, Checkpoint, Entity, Fields, Kind, Op, Status } from './types'
+import { STATUSES } from './types'
+
+export const ACTIVITY_GAP_MS = 10 * 60 * 1000
+export const MAX_LINES = 6
+
+export type GroupOptions = {
+  gapMs?: number // longest pause between neighbouring Edits of one Activity; default 10 minutes
+  maxLines?: number // default 6
+  startSeq?: number // seq of the moment `baseEntities` describes, i.e. how many Changes precede `changes[0]`; default 0
+}
+
+const STATUS_WORDS: Record<Status, string> = {
+  idea: 'Idea',
+  reading: 'Reading',
+  understood: 'Understood',
+  open_question: 'Open question',
+  dead_end: 'Dead end',
+}
+
+const ARROW = '→'
+
+/** Applies ops in order. A server log always applies; if one op does not, it is skipped, not fatal. */
+export function replay(entities: Entities, ops: readonly Op[]): Entities {
+  if (ops.length === 0) return entities
+  const all = applyOps(entities, ops)
+  if (all.ok) return all.entities
+  let current = entities
+  for (const op of ops) {
+    const r = applyOps(current, [op])
+    if (r.ok) current = r.entities
+  }
+  return current
+}
+
+function entityOf(op: Op): string {
+  if ('Create' in op) return op.Create.entity
+  if ('Set' in op) return op.Set.entity
+  if ('Delete' in op) return op.Delete.entity
+  return op.Undelete.entity
+}
+
+function text(fields: Fields, name: string): string {
+  const v = fields[name]
+  return typeof v === 'object' && 'Text' in v ? v.Text : ''
+}
+
+function ref(fields: Fields, name: string): string {
+  const v = fields[name]
+  return typeof v === 'object' && 'Ref' in v ? v.Ref : ''
+}
+
+function sameValue(a: Fields, b: Fields, name: string): boolean {
+  return JSON.stringify(a[name] ?? null) === JSON.stringify(b[name] ?? null)
+}
+
+function titleOf(e: Entity | undefined): string {
+  const t = e ? text(e.fields, 'title').trim() : ''
+  return t === '' ? 'Untitled' : t
+}
+
+function statusOf(e: Entity): Status {
+  const s = text(e.fields, 'status')
+  return (STATUSES as readonly string[]).includes(s) ? (s as Status) : 'idea'
+}
+
+function kindOf(e: Entity): string {
+  return text(e.fields, 'kind') || 'related'
+}
+
+// "A → B" for a Connection, by the titles its two Cards have in `world`.
+function ends(e: Entity, world: Entities): string {
+  return `${titleOf(world[ref(e.fields, 'from')])} ${ARROW} ${titleOf(world[ref(e.fields, 'to')])}`
+}
+
+function named(e: Entity, world: Entities): string {
+  return e.kind === 'Connection' ? `Connection ${ends(e, world)}` : `${e.kind} ${titleOf(e)}`
+}
+
+function plural(n: number, kind: Kind): string {
+  return `${n} ${kind}${n === 1 ? '' : 's'}`
+}
+
+function cut(lines: string[], max: number): string[] {
+  if (lines.length <= max) return lines
+  const keep = Math.max(max - 1, 0)
+  return [...lines.slice(0, keep), `and ${lines.length - keep} more`]
+}
+
+/**
+ * Plain-word summary of what a run of Changes did, as the net difference between the Board before and after.
+ * Entities are named by the title they had at the end of the run (a removed one: when it was removed).
+ */
+export function describeChanges(
+  before: Entities,
+  after: Entities,
+  changes: readonly Change[],
+  maxLines = MAX_LINES,
+): string[] {
+  const touched: string[] = []
+  const seen = new Set<string>()
+  for (const c of changes) {
+    const id = entityOf(c.op)
+    if (!seen.has(id)) {
+      seen.add(id)
+      touched.push(id)
+    }
+  }
+  const lines: string[] = []
+  const laidOut: Record<Kind, number> = { Card: 0, Frame: 0, Connection: 0 }
+  let moved = false
+  let resized = false
+  for (const id of touched) {
+    const was = before[id]
+    const now = after[id]
+    if (!now) continue
+    if (!was) {
+      const what = now.kind === 'Connection' ? ends(now, after) : named(now, after)
+      if (now.deleted) lines.push(`Added and removed ${named(now, after)}`)
+      else lines.push(now.kind === 'Connection' ? `Connected ${what}` : `Added ${what}`)
+      continue
+    }
+    if (now.deleted) {
+      if (!was.deleted) {
+        lines.push(now.kind === 'Connection' ? `Disconnected ${ends(now, after)}` : `Removed ${named(now, after)}`)
+      }
+      continue
+    }
+    const start = lines.length
+    if (was.deleted) {
+      lines.push(now.kind === 'Connection' ? `Reconnected ${ends(now, after)}` : `Brought back ${named(now, after)}`)
+    }
+    if (now.kind === 'Connection') {
+      if (!sameValue(was.fields, now.fields, 'from') || !sameValue(was.fields, now.fields, 'to')) {
+        lines.push(`Reconnected ${ends(now, after)}`)
+      }
+      const label = text(now.fields, 'label').trim()
+      if (text(was.fields, 'label').trim() !== label) {
+        lines.push(label === '' ? `Removed the label of ${ends(now, after)}` : `Labelled ${ends(now, after)}: ${label}`)
+      }
+      if (kindOf(was) !== kindOf(now)) lines.push(`Marked ${ends(now, after)} as ${kindOf(now)}`)
+    } else {
+      if (titleOf(was) !== titleOf(now)) lines.push(`Renamed ${now.kind} ${titleOf(was)} ${ARROW} ${titleOf(now)}`)
+      if (now.kind === 'Card') {
+        if (statusOf(was) !== statusOf(now)) lines.push(`Status: ${titleOf(now)} ${ARROW} ${STATUS_WORDS[statusOf(now)]}`)
+        if (text(was.fields, 'summary') !== text(now.fields, 'summary')) {
+          lines.push(`Edited the summary of ${titleOf(now)}`)
+        }
+      }
+    }
+    if (lines.length > start) continue
+    const position = !sameValue(was.fields, now.fields, 'x') || !sameValue(was.fields, now.fields, 'y')
+    const size = !sameValue(was.fields, now.fields, 'w') || !sameValue(was.fields, now.fields, 'h')
+    if (position || size) {
+      laidOut[now.kind]++
+      moved = moved || position
+      resized = resized || size
+    }
+  }
+  const counts = (['Card', 'Frame', 'Connection'] as const).filter((k) => laidOut[k] > 0).map((k) => plural(laidOut[k], k))
+  if (counts.length > 0) {
+    const verb = moved && resized ? 'Moved and resized' : resized ? 'Resized' : 'Moved'
+    lines.push(`${verb} ${counts.join(' and ')}`)
+  }
+  if (lines.length === 0) lines.push('No lasting changes')
+  return cut(lines, maxLines)
+}
+
+type RunKind = Activity['kind']
+
+function batchOf(c: Change): { kind: RunKind; batch: string | null } {
+  if (c.origin === 'Edit') return { kind: 'edit', batch: null }
+  if ('Restore' in c.origin) return { kind: 'restore', batch: c.origin.Restore.batch }
+  return { kind: 'merge', batch: c.origin.Merge.batch }
+}
+
+/**
+ * Reads a Branch's Changes as Activities, oldest first.
+ *
+ * - Consecutive `Edit` Changes by one author with no pause over `gapMs` between neighbours are one Activity.
+ * - Consecutive Changes of one Restore (or Merge) batch are one Activity of that kind, whatever surrounds them.
+ * - `baseEntities` is the Board before `changes[0]` (the Branch at seq 0 unless `startSeq` says otherwise);
+ *   it is replayed along the way so that `lines` use the titles of that moment.
+ * - `checkpoints` are attached to the Activity whose `(fromSeq, toSeq]` holds their moment.
+ */
+export function groupActivities(
+  changes: readonly Change[],
+  checkpoints: readonly Checkpoint[],
+  baseEntities: Entities,
+  options: GroupOptions = {},
+): Activity[] {
+  const gapMs = options.gapMs ?? ACTIVITY_GAP_MS
+  const maxLines = options.maxLines ?? MAX_LINES
+  const startSeq = options.startSeq ?? 0
+  const out: Activity[] = []
+  let world = baseEntities
+  let i = 0
+  while (i < changes.length) {
+    const first = changes[i]!
+    const head = batchOf(first)
+    let j = i + 1
+    while (j < changes.length) {
+      const c = changes[j]!
+      const b = batchOf(c)
+      if (b.kind !== head.kind) break
+      if (head.kind === 'edit') {
+        if (c.author !== first.author || c.at - changes[j - 1]!.at > gapMs) break
+      } else if (b.batch !== head.batch) break
+      j++
+    }
+    const run = changes.slice(i, j)
+    const before = world
+    world = replay(world, run.map((c) => c.op))
+    const fromSeq = startSeq + i
+    const toSeq = startSeq + j
+    const lines =
+      head.kind === 'restore'
+        ? ['Restored to an earlier moment']
+        : head.kind === 'merge'
+          ? ['Merged from another Branch']
+          : describeChanges(before, world, run, maxLines)
+    out.push({
+      id: first.id,
+      author: first.author,
+      kind: head.kind,
+      fromSeq,
+      toSeq,
+      startedAt: first.at,
+      endedAt: run[run.length - 1]!.at,
+      count: run.length,
+      lines,
+      checkpoints: checkpoints.filter((c) => c.moment.seq > fromSeq && c.moment.seq <= toSeq).sort(byMoment),
+    })
+    i = j
+  }
+  return out
+}
+
+export function byMoment(a: Checkpoint, b: Checkpoint): number {
+  return a.moment.seq - b.moment.seq || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+}

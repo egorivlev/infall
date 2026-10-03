@@ -40,3 +40,12 @@ export function describeError(e: unknown): string {
 export function describeLookupError(e: unknown): string {
   return isInviteGone(e) ? INVALID_INVITE : describeError(e)
 }
+
+/** The server's error code, or '' when the failure carries none. */
+export function errorCode(e: unknown): string {
+  return read(e).code
+}
+/** The HTTP status of a failure, or -1. */
+export function errorStatus(e: unknown): number {
+  return read(e).status
+}

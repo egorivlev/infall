@@ -4,6 +4,7 @@ import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import type { Entities, SnapshotParts } from './board-state'
 import { applyOps, toSnapshotParts } from './board-state'
+import { branchesStore, setBranches } from './branches-store'
 import { ApiError, request } from './http'
 import { membersStore, members as membersApi } from './people'
 import { sessionStore } from './session-store'
@@ -14,6 +15,7 @@ import type {
   BranchInfo,
   Change,
   ChangesResponse,
+  Checkpoint,
   ClientFrame,
   Member,
   Op,
@@ -45,6 +47,16 @@ type Batch = {
 }
 
 type Applied = 'applied' | 'stale' | 'gap' | 'bad'
+
+/**
+ * What the Board layer tells History (internal, not part of the UI surface).
+ * `changes`: Changes the server confirmed, each exactly once and in order; `seq` is the head after them, so
+ * `seq - changes.length` is the head before. An empty list with a higher `seq` means the Board was refetched
+ * and the Changes in between were never seen here.
+ */
+export type SyncEvent =
+  | { type: 'changes'; seq: number; changes: Change[] }
+  | { type: 'checkpoint'; checkpoint: Checkpoint }
 
 const MAX_OPS = 200
 const BACKOFF_START = 1000
@@ -109,6 +121,13 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   let gapAgain = false
   let unsubscribe: (() => void)[] = []
   const reloadTried = new Set<string>()
+  const checkpointNames = new Set<string>() // Checkpoints of the open Branch met so far, for counting each once
+  const listeners = new Set<(e: SyncEvent) => void>()
+  let wasLive = false // the socket has been subscribed at least once since open()
+
+  function emit(e: SyncEvent) {
+    for (const fn of [...listeners]) fn(e)
+  }
 
   const readOnly = () => {
     const s = sessionStore.getState()
@@ -141,6 +160,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
 
   function rebuild() {
     if (dirty) recomputeView()
+    if (branch && branch.seq !== seq) branch = { ...branch, seq }
     presence = resolvePresence()
     const next: BoardSnapshot = {
       status,
@@ -212,6 +232,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     seq = endSeq
     markEcho(fresh)
     prune()
+    emit({ type: 'changes', seq, changes: fresh })
     return 'applied'
   }
 
@@ -219,11 +240,42 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     const b = await request<BoardResponse>('GET', `${base()}/board`)
     if (g !== gen) return
     if (b.seq >= seq) {
+      const jumped = b.seq > seq
       confirmed = b.entities
       seq = b.seq
       prune()
       rebuild()
+      if (jumped) emit({ type: 'changes', seq, changes: [] })
     }
+  }
+
+  // ---- Branch info ----
+
+  // Takes the newest facts about the open Branch from the Branch list. Checkpoints only ever grow.
+  function adoptBranchInfo() {
+    if (!branch) return
+    const fresh = branchesStore.getState().branches.find((b) => b.id === branchId)
+    if (!fresh) return
+    const next: BranchInfo = { ...fresh, seq, checkpoints: Math.max(fresh.checkpoints ?? 0, branch.checkpoints) }
+    if (JSON.stringify(next) !== JSON.stringify(branch)) branch = next
+  }
+
+  async function refreshBranches(g: number): Promise<void> {
+    const list = await request<{ branches: BranchInfo[] }>('GET', '/api/branches')
+    if (g !== gen) return
+    setBranches(list.branches) // the store subscription adopts it
+  }
+
+  // Counts Checkpoints of the open Branch, each name once, and tells History about the new ones.
+  // `full` means `list` is every Checkpoint the Branch had when it was fetched.
+  function noteCheckpoints(list: readonly Checkpoint[], full: boolean) {
+    if (!branch) return
+    const fresh = list.filter((c) => !checkpointNames.has(c.name))
+    fresh.forEach((c) => checkpointNames.add(c.name))
+    const count = full ? Math.max(branch.checkpoints, checkpointNames.size) : branch.checkpoints + fresh.length
+    if (count !== branch.checkpoints) branch = { ...branch, checkpoints: count }
+    rebuild()
+    if (!full) for (const c of fresh) emit({ type: 'checkpoint', checkpoint: c })
   }
 
   function catchUp(): Promise<void> {
@@ -305,6 +357,9 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         status = 'live'
         error = undefined
         if (f.seq < seq) void reload(gen).catch(() => {})
+        // Frames about Branches and Checkpoints sent while we were away are not repeated: ask again.
+        if (wasLive && !readOnly()) void refreshBranches(gen).catch(() => {})
+        wasLive = true
         rebuild()
         break
       case 'changes':
@@ -329,6 +384,14 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         stopSocket()
         rebuild()
         break
+      case 'checkpoint':
+        if (f.branch === branchId || f.branch === branch?.name) noteCheckpoints([f.checkpoint], false)
+        break
+      case 'branches':
+        setBranches(f.branches)
+        break
+      default:
+        break // a frame type this build does not know
     }
   }
 
@@ -403,6 +466,8 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     catching = null
     gapAgain = false
     reloadTried.clear()
+    checkpointNames.clear()
+    wasLive = false
     dirty = true
   }
 
@@ -426,23 +491,29 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         if (s.status === 'signed_out') close()
         else rebuild()
       }),
+      branchesStore.subscribe(() => {
+        adoptBranchInfo()
+        rebuild()
+      }),
     ]
     try {
       let info: BranchInfo | undefined
       try {
         const list = await request<{ branches: BranchInfo[] }>('GET', '/api/branches')
+        if (g !== gen) return
+        setBranches(list.branches)
         info = list.branches.find((b) => b.name === branchName) ?? list.branches.find((b) => b.id === branchName)
         if (!info) throw new ApiError(404, 'not_found', `No Branch named ${branchName}.`)
       } catch (e) {
         // Some roles may not be allowed to list Branches; fall back to the name as the id.
         if (!(e instanceof ApiError) || (e.status !== 403 && e.code !== 'forbidden')) throw e
-        info = { id: branchName, name: branchName, seq: 0 }
+        info = { id: branchName, name: branchName, seq: 0, checkpoints: 0 }
       }
       if (g !== gen) return
       branchId = info.id
       const b = await request<BoardResponse>('GET', `${base()}/board`)
       if (g !== gen) return
-      branch = info
+      branch = { ...info, checkpoints: info.checkpoints ?? 0 }
       confirmed = b.entities
       seq = b.seq
       loaded = true
@@ -473,10 +544,35 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     })
   }
 
-  return { store, open, close, submit }
+  // ---- for History and Branches (internal) ----
+
+  // The Branch that is loaded now, and a token that stops being valid when the Board closes or switches.
+  function target(): { id: string; seq: number; token: number } | null {
+    return loaded ? { id: branchId, seq, token: gen } : null
+  }
+
+  // Changes the server confirmed by another route (a Restore answered over HTTP). `seq` is the head after them.
+  function confirm(token: number, endSeq: number, changes: Change[]) {
+    if (token === gen && loaded) onChanges({ seq: endSeq, changes })
+  }
+
+  function checkpoints(token: number, list: readonly Checkpoint[], full: boolean) {
+    if (token === gen && loaded) noteCheckpoints(list, full)
+  }
+
+  function listen(fn: (e: SyncEvent) => void): () => void {
+    listeners.add(fn)
+    return () => {
+      listeners.delete(fn)
+    }
+  }
+
+  return { store, open, close, submit, internal: { target, confirm, checkpoints, listen } }
 }
 
-const sync = createBoardSync()
+export type BoardSync = ReturnType<typeof createBoardSync>
+
+export const sync = createBoardSync()
 
 export const board = { open: sync.open, close: sync.close, submit: sync.submit }
 

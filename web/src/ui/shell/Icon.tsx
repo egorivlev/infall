@@ -12,6 +12,8 @@ export type IconName =
   | 'user'
   | 'chevron'
   | 'frame'
+  | 'checkpoint'
+  | 'history'
 
 const PATHS: Record<IconName, ReactNode> = {
   board: (
@@ -65,6 +67,18 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   chevron: <path d="M3 5 L7 9 L11 5" />,
   frame: <rect x="1.5" y="3" width="11" height="8" rx="1.5" />,
+  checkpoint: (
+    <>
+      <path d="M7 1.5 L12.5 7 L7 12.5 L1.5 7 Z" />
+      <circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  history: (
+    <>
+      <circle cx="7" cy="7" r="5.4" />
+      <path d="M7 3.8 V7 L9.2 8.4" />
+    </>
+  ),
 }
 
 export function Icon({ name, size = 14 }: { name: IconName; size?: number }) {

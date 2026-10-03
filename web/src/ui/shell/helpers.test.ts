@@ -1,28 +1,83 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CardVM, FrameVM } from '../../lib'
-import { endOfLocalDay, formatShortDate, todayYmd } from './dates'
+import { branchMeta, orderBranches, parentName } from './branchMeta'
+import { endOfLocalDay, formatDateTime, formatShortDate, formatTime, todayYmd } from './dates'
 import { describeError, describeLookupError, GENERIC_ERROR, INVALID_INVITE, isInviteGone } from './errorMessages'
 import { frameCounts } from './frameCounts'
 import { initials } from './initials'
-import { navigate, parseRoute, subscribeRoute } from './router'
+import { boardPath, branchPath, navigate, parseRoute, rememberBranch, subscribeRoute } from './router'
 import { searchCards } from './searchCards'
 import { applyTheme, getThemePref, nextThemePref, readThemePref, resetThemeCache, resolveTheme, setThemePref, THEME_KEY } from './theme'
 
 describe('parseRoute', () => {
-  it('maps the three paths', () => {
-    expect(parseRoute('/')).toEqual({ name: 'board' })
+  const main = { name: 'board', branch: 'main' }
+  it('maps the fixed paths', () => {
+    expect(parseRoute('/')).toEqual(main)
     expect(parseRoute('/members')).toEqual({ name: 'members' })
     expect(parseRoute('/members/')).toEqual({ name: 'members' })
+    expect(parseRoute('/branches')).toEqual({ name: 'branches' })
+    expect(parseRoute('/branches/')).toEqual({ name: 'branches' })
     expect(parseRoute('/invite/abc123')).toEqual({ name: 'invite', token: 'abc123' })
   })
   it('decodes the token and ignores query and hash', () => {
     expect(parseRoute('/invite/a%2Bb?x=1#y')).toEqual({ name: 'invite', token: 'a+b' })
     expect(parseRoute('/invite/%E0%A4%A')).toEqual({ name: 'invite', token: '%E0%A4%A' })
   })
-  it('falls back to the Board for anything else', () => {
-    expect(parseRoute('/invite')).toEqual({ name: 'board' })
-    expect(parseRoute('/invite/a/b')).toEqual({ name: 'board' })
-    expect(parseRoute('/nope')).toEqual({ name: 'board' })
+  it('falls back to the Board of main for anything else', () => {
+    expect(parseRoute('/invite')).toEqual(main)
+    expect(parseRoute('/invite/a/b')).toEqual(main)
+    expect(parseRoute('/nope')).toEqual(main)
+    expect(parseRoute('/b')).toEqual(main)
+    expect(parseRoute('/b/')).toEqual(main)
+    expect(parseRoute('/branches/x')).toEqual(main)
+  })
+  it('reads the Branch name from /b/<name>, with "/" and spaces in it', () => {
+    expect(parseRoute('/b/try-QEC')).toEqual({ name: 'board', branch: 'try-QEC' })
+    expect(parseRoute('/b/ana%2Fcartpole-lr')).toEqual({ name: 'board', branch: 'ana/cartpole-lr' })
+    expect(parseRoute('/b/ana/cartpole-lr')).toEqual({ name: 'board', branch: 'ana/cartpole-lr' })
+    expect(parseRoute('/b/decoder%20rewrite%20v2?x=1#y')).toEqual({ name: 'board', branch: 'decoder rewrite v2' })
+    expect(parseRoute('/b/try-QEC/')).toEqual({ name: 'board', branch: 'try-QEC' })
+    expect(parseRoute('/b/100%25%20sure%3F')).toEqual({ name: 'board', branch: '100% sure?' })
+    expect(parseRoute('/b/%E0%A4%A')).toEqual({ name: 'board', branch: '%E0%A4%A' })
+    expect(parseRoute('/b/main')).toEqual(main)
+  })
+})
+
+describe('branchPath', () => {
+  it('is / for main and /b/<encoded name> otherwise, and round-trips through parseRoute', () => {
+    expect(branchPath('main')).toBe('/')
+    expect(branchPath('try-QEC')).toBe('/b/try-QEC')
+    expect(branchPath('ana/cartpole-lr')).toBe('/b/ana%2Fcartpole-lr')
+    expect(branchPath('decoder rewrite v2')).toBe('/b/decoder%20rewrite%20v2')
+    for (const name of ['ana/cartpole-lr', 'decoder rewrite v2', '100% sure?', 'a#b', 'ünïcode/ß']) {
+      expect(parseRoute(branchPath(name))).toEqual({ name: 'board', branch: name })
+    }
+  })
+  it('remembers the Branch the Board last showed', () => {
+    expect(boardPath()).toBe('/')
+    rememberBranch('ana/cartpole-lr')
+    expect(boardPath()).toBe('/b/ana%2Fcartpole-lr')
+    rememberBranch('main')
+    expect(boardPath()).toBe('/')
+  })
+})
+
+describe('branchMeta', () => {
+  const now = new Date(2026, 10, 22)
+  const main = { id: 'b0', name: 'main', seq: 40, checkpoints: 2 }
+  const qec = { id: 'b1', name: 'try-QEC', seq: 14, checkpoints: 0, parent: { branch: 'b0', seq: 30 }, created_by: 'm', created_at: new Date(2026, 10, 14, 10, 2).getTime() }
+  const orphan = { id: 'b2', name: 'x', seq: 0, checkpoints: 0, parent: { branch: 'gone', seq: 1 } }
+  const people = [{ id: 'm', name: 'Mei Lin', role: 'member' as const, color: '#000' }]
+  it('describes main, and a Branch by parent, creator first name and date', () => {
+    expect(branchMeta(main, [main, qec], people, now)).toBe('default Branch')
+    expect(branchMeta(qec, [main, qec], people, now)).toBe('from main · Mei · 14 Nov')
+    expect(branchMeta(qec, [main, qec], [], now)).toBe('from main · 14 Nov')
+    expect(branchMeta(orphan, [main, orphan], people, now)).toBe('')
+    expect(parentName(qec, [main, qec])).toBe('main')
+    expect(parentName(orphan, [main])).toBe('')
+  })
+  it('lists main first and keeps the rest in order', () => {
+    expect(orderBranches([qec, orphan, main]).map((b) => b.name)).toEqual(['main', 'try-QEC', 'x'])
   })
 })
 
@@ -125,6 +180,13 @@ describe('dates', () => {
     expect(formatShortDate(new Date(2026, 10, 30).getTime(), now)).toBe('30 Nov')
     expect(formatShortDate(new Date(2027, 0, 5).getTime(), now)).toBe('5 Jan 2027')
     expect(todayYmd(new Date(2026, 0, 5))).toBe('2026-01-05')
+  })
+  it('formats local time and date-time', () => {
+    const now = new Date(2026, 10, 22)
+    const at = new Date(2026, 10, 14, 9, 5).getTime()
+    expect(formatTime(at)).toBe('09:05')
+    expect(formatDateTime(at, now)).toBe('14 Nov, 09:05')
+    expect(formatDateTime(new Date(2025, 0, 5, 14, 6).getTime(), now)).toBe('5 Jan 2025, 14:06')
   })
 })
 

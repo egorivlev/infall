@@ -1,13 +1,16 @@
 import type { Member } from '../../lib'
 import { AccountMenu } from './AccountMenu'
+import { BranchSwitcher } from './BranchSwitcher'
+import { CheckpointButton } from './CheckpointButton'
 import { GuestBadge } from './GuestBadge'
-import { Icon } from './Icon'
+import { HistoryButton } from './HistoryButton'
 import { Logo } from './Logo'
 import { Presence } from './Presence'
 import { SearchBox } from './SearchBox'
 import { ThemeToggle } from './ThemeToggle'
 
-export function TopBar({ member, branch }: { member: Member; branch: string }) {
+/** `available` is false while the Branch in the URL does not exist: there is nothing to name or to read History of. */
+export function TopBar({ member, branch, available }: { member: Member; branch: string; available: boolean }) {
   const guest = member.role === 'guest'
   return (
     <header className="q-topbar">
@@ -21,10 +24,14 @@ export function TopBar({ member, branch }: { member: Member; branch: string }) {
           <span className="q-branch__note">read-only</span>
         </div>
       ) : (
-        <div className="q-branch">
-          <Icon name="branch" />
-          <span className="q-caps">Branch</span>
-          <span className="q-branch__name">{branch}</span>
+        <div className="q-topbar__branch">
+          <BranchSwitcher branch={branch} />
+          {available && (
+            <>
+              <CheckpointButton key={branch} />
+              <HistoryButton />
+            </>
+          )}
         </div>
       )}
       <div className="q-topbar__search">

@@ -23,3 +23,14 @@ export function formatShortDate(ms: number, now: Date = new Date()): string {
   const base = `${d.getDate()} ${MONTHS[d.getMonth()]}`
   return d.getFullYear() === now.getFullYear() ? base : `${base} ${d.getFullYear()}`
 }
+
+/** "14:06", local time. */
+export function formatTime(ms: number): string {
+  const d = new Date(ms)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** "22 Nov, 14:06". */
+export function formatDateTime(ms: number, now: Date = new Date()): string {
+  return `${formatShortDate(ms, now)}, ${formatTime(ms)}`
+}

@@ -22,7 +22,7 @@ use crate::config::Config;
 use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
-use crate::{Clock, boards, people};
+use crate::{Clock, boards, history, people};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -92,7 +92,15 @@ pub fn router(st: Shared) -> Router {
             get(people::list_invites).post(people::create_invite),
         )
         .route("/invites/{id}", delete(people::delete_invite))
-        .route("/branches", get(boards::list_branches))
+        .route(
+            "/branches",
+            get(boards::list_branches).post(history::create_branch),
+        )
+        .route(
+            "/branches/{id}/checkpoints",
+            get(history::list_checkpoints).post(history::create_checkpoint),
+        )
+        .route("/branches/{id}/restore", post(history::restore))
         .route("/branches/{id}/board", get(boards::get_board))
         .route("/branches/{id}/changes", get(boards::get_changes))
         .route("/branches/{id}/ops", post(boards::post_ops))

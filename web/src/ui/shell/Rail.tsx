@@ -4,11 +4,12 @@ import { boardBridge } from '../bridge'
 import { frameCounts } from './frameCounts'
 import { Icon } from './Icon'
 import { Link } from './Link'
-import type { Route } from './router'
+import { branchPath } from './router'
+import type { ShellView } from './Shell'
 import { SyncStatus } from './SyncStatus'
 import { useOnBoard } from './useOnBoard'
 
-export function Rail({ member, route }: { member: Member; route: Route['name'] }) {
+export function Rail({ member, route, branch }: { member: Member; route: ShellView; branch: string }) {
   const { frames, cards, readOnly, status } = useBoard()
   const counts = frameCounts(frames, cards)
   const onBoard = useOnBoard()
@@ -16,10 +17,16 @@ export function Rail({ member, route }: { member: Member; route: Route['name'] }
   return (
     <aside className="q-rail">
       <nav aria-label="Main" className="q-rail__nav">
-        <Link href="/" className="q-rail__item" aria-current={route === 'board' ? 'page' : undefined}>
+        <Link href={branchPath(branch)} className="q-rail__item" aria-current={route === 'board' ? 'page' : undefined}>
           <Icon name="board" />
           <span>Board</span>
         </Link>
+        {member.role !== 'guest' && (
+          <Link href="/branches" className="q-rail__item" aria-current={route === 'branches' ? 'page' : undefined}>
+            <Icon name="branch" />
+            <span>Branches</span>
+          </Link>
+        )}
         {member.role === 'admin' && (
           <Link href="/members" className="q-rail__item" aria-current={route === 'members' ? 'page' : undefined}>
             <Icon name="members" />

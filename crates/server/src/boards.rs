@@ -19,7 +19,7 @@ use crate::store::Role;
 pub const MAX_OPS: usize = 200;
 
 #[derive(Serialize)]
-struct BranchInfo {
+pub struct BranchInfo {
     id: BranchId,
     name: String,
     seq: u64,
@@ -29,10 +29,12 @@ struct BranchInfo {
     created_by: Option<qoop_core::MemberId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<i64>,
+    /// How many Checkpoints the Branch has.
+    checkpoints: usize,
 }
 
-impl From<&Branch> for BranchInfo {
-    fn from(b: &Branch) -> BranchInfo {
+impl BranchInfo {
+    pub fn of(ws: &Workspace, b: &Branch) -> BranchInfo {
         BranchInfo {
             id: b.id(),
             name: b.name().to_string(),
@@ -40,6 +42,7 @@ impl From<&Branch> for BranchInfo {
             parent: b.parent(),
             created_by: b.created_by(),
             created_at: b.created_at(),
+            checkpoints: ws.checkpoints(b.id()).len(),
         }
     }
 }
@@ -79,7 +82,7 @@ pub async fn list_branches(State(st): State<Shared>, who: SignedIn) -> Json<Valu
     let list: Vec<BranchInfo> = ws
         .branches()
         .filter(|b| may_read(&who, b))
-        .map(BranchInfo::from)
+        .map(|b| BranchInfo::of(&ws, b))
         .collect();
     Json(json!({ "branches": list }))
 }
@@ -91,18 +94,40 @@ struct BoardView {
     entities: BTreeMap<EntityId, Entity>,
 }
 
+#[derive(Deserialize)]
+pub struct BoardQuery {
+    at: Option<u64>,
+}
+
+/// The Board at the head, or at the moment `at` (Members and Admins only).
 pub async fn get_board(
     State(st): State<Shared>,
     who: SignedIn,
     Path(id): Path<String>,
+    ApiQuery(q): ApiQuery<BoardQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    if q.at.is_some() && who.member.role == Role::Guest {
+        return Err(ApiError::Forbidden("Guests cannot read History."));
+    }
     let ws = st.workspace.read().await;
     let branch = readable_branch(&ws, &who, &id)?;
     let head = ws.head(branch.id()).map_err(ApiError::internal)?;
-    let board = ws.board_at(head).map_err(ApiError::internal)?;
+    let moment = match q.at {
+        Some(seq) if seq > head.seq => {
+            return Err(ApiError::BadRequest(
+                "`at` is past the head of this Branch.".to_string(),
+            ));
+        }
+        Some(seq) => Moment {
+            branch: head.branch,
+            seq,
+        },
+        None => head,
+    };
+    let board = ws.board_at(moment).map_err(ApiError::internal)?;
     let view = BoardView {
-        branch: head.branch,
-        seq: head.seq,
+        branch: moment.branch,
+        seq: moment.seq,
         entities: board.entities().map(|(id, e)| (id, e.clone())).collect(),
     };
     serde_json::to_value(view)

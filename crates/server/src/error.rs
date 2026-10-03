@@ -31,6 +31,9 @@ pub enum ApiError {
     Rejected(Value),
     #[error("email taken")]
     EmailTaken,
+    /// A Checkpoint or Branch name that is already in use.
+    #[error("name taken")]
+    NameTaken,
     #[error("invite expired")]
     InviteExpired,
     #[error("too many attempts")]
@@ -79,6 +82,11 @@ impl ApiError {
                 StatusCode::CONFLICT,
                 "email_taken",
                 "An account with that email already exists.".into(),
+            ),
+            NameTaken => (
+                StatusCode::CONFLICT,
+                "name_taken",
+                "That name is already in use.".into(),
             ),
             InviteExpired => (
                 StatusCode::GONE,

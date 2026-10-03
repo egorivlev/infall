@@ -524,3 +524,32 @@ async fn a_failed_persist_leaves_memory_unchanged_and_hides_the_cause() {
         .await;
     assert_eq!(board.body["seq"], 0);
 }
+
+#[tokio::test]
+async fn a_failed_persist_leaves_history_unchanged() {
+    let app = TestApp::with_store(Arc::new(FailingStore(MemoryStore::new())));
+    let admin = app.admin().await;
+    let main = app.main_branch(&admin).await;
+    for (path, body) in [
+        (
+            format!("/api/branches/{main}/checkpoints"),
+            json!({ "name": "v1" }),
+        ),
+        (
+            format!("/api/branches/{main}/restore"),
+            json!({ "to_seq": 0 }),
+        ),
+        (
+            "/api/branches".to_string(),
+            json!({ "name": "side", "from": { "branch": main, "seq": 0 } }),
+        ),
+    ] {
+        let res = app.post(&path, Some(&admin), body).await;
+        assert_eq!(res.status, StatusCode::INTERNAL_SERVER_ERROR, "{path}");
+        assert_eq!(res.code(), "internal");
+        assert!(!res.text.contains("secret"), "{}", res.text);
+    }
+    let branches = app.get("/api/branches", Some(&admin)).await;
+    assert_eq!(branches.body["branches"].as_array().unwrap().len(), 1);
+    assert_eq!(branches.body["branches"][0]["checkpoints"], 0);
+}

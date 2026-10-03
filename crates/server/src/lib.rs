@@ -8,6 +8,7 @@ pub mod auth;
 pub mod boards;
 pub mod config;
 pub mod error;
+pub mod history;
 pub mod live;
 pub mod people;
 pub mod store;

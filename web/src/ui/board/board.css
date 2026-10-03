@@ -488,3 +488,46 @@
   color: var(--q-ink-3);
   pointer-events: none;
 }
+
+/* ---- M2: the Board area splits when the History panel is open (Board above, History below) ---- */
+.qb-area { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+.qb-area__canvas { position: relative; flex: 1; min-height: 0; }
+
+/* ---- M2: previewing an earlier moment from History ---- */
+.qb-board.is-preview .react-flow { filter: saturate(.7); }
+.qb-board.is-preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--q-st-reading);
+}
+.qb-preview {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 12;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px 5px 12px;
+  border-radius: var(--q-r);
+  border: 1px solid var(--q-st-reading);
+  background: var(--q-raised);
+  box-shadow: var(--q-shadow);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.qb-preview > svg { flex: none; color: var(--q-st-reading); }
+.qb-preview__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.qb-preview__text b { font-weight: 600; }
+.qb-preview__chip {
+  padding: 2px 6px;
+  border-radius: var(--q-r-chip);
+  border: 1px solid var(--q-line-soft);
+  font: 500 10.5px var(--q-mono);
+  color: var(--q-ink-2);
+}

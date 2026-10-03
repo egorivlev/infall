@@ -12,9 +12,10 @@ import {
   useViewportStore,
 } from '@xyflow/react'
 import type { EdgeChangeset, NodeChangeset, OnConnectEnd, OnNodeDrag } from '@xyflow/react'
-import { CARD_H, CARD_W, newId, ops, useBoard } from '../../lib'
-import type { BoardSnapshot, CardVM, FrameVM, Kind, Op } from '../../lib'
-import { useBoardRequest } from '../bridge'
+import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory } from '../../lib'
+import type { CardVM, ConnectionVM, FrameVM, Kind, Op } from '../../lib'
+import { useBoardRequest, useHistoryPanel } from '../bridge'
+import { HistoryPanel } from '../history'
 import { EmptyState, ErrorNote, LoadingNote } from './BoardMessage'
 import { ConnectionPopover } from './ConnectionPopover'
 import { ConnectionEdge } from './edges/ConnectionEdge'
@@ -32,6 +33,7 @@ import {
 } from './geometry'
 import type { Rect } from './geometry'
 import { Inspector } from './Inspector'
+import { PreviewBanner } from './PreviewBanner'
 import { CardNode } from './nodes/CardNode'
 import { FrameNode } from './nodes/FrameNode'
 import { Toast } from './Toast'
@@ -58,15 +60,38 @@ const ARIA_LABELS = {
   'edge.a11yDescription.default': 'A Connection between two Cards.',
   'handle.ariaLabel': 'Drag to connect to another Card',
 }
+const backToNow = () => history.preview(null)
 const TYPING = 'input, textarea, select, [contenteditable="true"], .qb-inspector, .qb-popover, .qb-status-menu, .qb-toasts'
 
-/** The Board: fills its positioned parent. The shell opens/closes the Board; this only reads and submits. */
+/**
+ * The Board area: fills its positioned parent. The shell opens/closes the Board; this only reads and submits.
+ * While the History panel is open the area splits: the Board above, History below.
+ */
 export function BoardView() {
+  const historyOpen = useHistoryPanel((s) => s.open)
+  const isGuest = useBoard().readOnly // Guests have no History
+  const areaRef = useRef<HTMLDivElement>(null)
+  const focusBoard = useCallback(() => {
+    areaRef.current?.querySelector<HTMLElement>('.qb-board')?.focus({ preventScroll: true })
+  }, [])
   return (
-    <ReactFlowProvider>
-      <BoardCanvas />
-    </ReactFlowProvider>
+    <div className="qb-area" ref={areaRef}>
+      <div className="qb-area__canvas">
+        <ReactFlowProvider>
+          <BoardCanvas />
+        </ReactFlowProvider>
+      </div>
+      {historyOpen && !isGuest && <HistoryPanel onClose={focusBoard} />}
+    </div>
   )
+}
+
+/** What the Board is showing: the live Board, or an earlier moment from History. */
+type View = {
+  cards: CardVM[]
+  frames: FrameVM[]
+  connections: ConnectionVM[]
+  readOnly: boolean
 }
 
 function useLatest<T>(value: T) {
@@ -77,7 +102,7 @@ function useLatest<T>(value: T) {
   return ref
 }
 
-function kindOf(s: BoardSnapshot, id: string): Kind | null {
+function kindOf(s: View, id: string): Kind | null {
   if (s.cards.some((c) => c.id === id)) return 'Card'
   if (s.frames.some((f) => f.id === id)) return 'Frame'
   if (s.connections.some((c) => c.id === id)) return 'Connection'
@@ -93,10 +118,20 @@ function BoardCanvas() {
   const raised = useBoardUi((s) => s.statusMenu ?? s.editing?.id ?? null)
   const hasSize = useViewportStore((s) => s.width > 0 && s.height > 0)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const latest = useLatest(snap)
-  const { readOnly } = snap
+
+  // While History previews an earlier moment, the Board shows that moment instead, fully read-only.
+  const preview = useHistory().preview
+  const previewing = preview !== null
+  const { cards, frames, connections } = preview ?? snap
+  const readOnly = snap.readOnly || previewing
+  const view = useMemo<View>(() => ({ cards, frames, connections, readOnly }), [cards, frames, connections, readOnly])
+  const latest = useLatest(view)
 
   useLayoutEffect(() => ui.setReadOnly(readOnly), [readOnly])
+  // Entering the preview drops the selection and anything in progress; the viewport stays where it is.
+  useLayoutEffect(() => {
+    if (previewing) ui.reset()
+  }, [previewing])
   useEffect(
     () => () => {
       ui.reset()
@@ -105,25 +140,25 @@ function BoardCanvas() {
     [],
   )
 
-  const cardsById = useMemo(() => new Map(snap.cards.map((c) => [c.id, c])), [snap.cards])
-  const framesById = useMemo(() => new Map(snap.frames.map((f) => [f.id, f])), [snap.frames])
-  const counts = useMemo(() => frameMembers(snap.frames, snap.cards), [snap.frames, snap.cards])
+  const cardsById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards])
+  const framesById = useMemo(() => new Map(frames.map((f) => [f.id, f])), [frames])
+  const counts = useMemo(() => frameMembers(frames, cards), [frames, cards])
 
   // Someone else deleted what this person had selected or was editing: let it go quietly.
   useEffect(() => {
-    const conns = new Set(snap.connections.map((c) => c.id))
+    const conns = new Set(connections.map((c) => c.id))
     ui.prune((id) => cardsById.has(id) || framesById.has(id) || conns.has(id))
-  }, [cardsById, framesById, snap.connections])
+  }, [cardsById, framesById, connections])
 
   const [buildNodes] = useState(createNodeBuilder)
   const [buildEdges] = useState(createEdgeBuilder)
   const nodes = useMemo(
-    () => buildNodes({ cards: snap.cards, frames: snap.frames, counts, selected, transient, raised, readOnly }),
-    [buildNodes, snap.cards, snap.frames, counts, selected, transient, raised, readOnly],
+    () => buildNodes({ cards, frames, counts, selected, transient, raised, readOnly }),
+    [buildNodes, cards, frames, counts, selected, transient, raised, readOnly],
   )
   const edges = useMemo(
-    () => buildEdges(snap.connections, cardsById, selected),
-    [buildEdges, snap.connections, cardsById, selected],
+    () => buildEdges(connections, cardsById, selected),
+    [buildEdges, connections, cardsById, selected],
   )
 
   // ---- viewport ----
@@ -153,11 +188,11 @@ function BoardCanvas() {
   const fitted = useRef(false)
   useEffect(() => {
     if (fitted.current || !hasSize) return
-    if (snap.cards.length || snap.frames.length) {
+    if (cards.length || frames.length) {
       fitted.current = true
       fit(false)
     }
-  }, [hasSize, snap.cards, snap.frames, fit])
+  }, [hasSize, cards, frames, fit])
 
   const reveal = useCallback(
     (r: Rect, minZoom = 0) => {
@@ -381,12 +416,12 @@ function BoardCanvas() {
 
   // ---- derived overlays ----
   const only = selected.size === 1 ? [...selected][0] : undefined
-  const inspected = only ? cardsById.get(only) : undefined
-  const selectedConn = only && !readOnly ? snap.connections.find((c) => c.id === only) : undefined
-  const isEmpty = snap.cards.length === 0 && snap.frames.length === 0
-  const loading = isEmpty && (snap.status === 'idle' || snap.status === 'loading')
-  const failed = isEmpty && snap.status === 'error'
-  const empty = isEmpty && (snap.status === 'live' || snap.status === 'reconnecting')
+  const inspected = only && !previewing ? cardsById.get(only) : undefined
+  const selectedConn = only && !readOnly ? connections.find((c) => c.id === only) : undefined
+  const isEmpty = cards.length === 0 && frames.length === 0
+  const loading = isEmpty && !previewing && (snap.status === 'idle' || snap.status === 'loading')
+  const failed = isEmpty && !previewing && snap.status === 'error'
+  const empty = isEmpty && (previewing || snap.status === 'live' || snap.status === 'reconnecting')
 
   const selectCard = useCallback(
     (id: string) => {
@@ -400,7 +435,7 @@ function BoardCanvas() {
   return (
     <div
       ref={wrapRef}
-      className={`qb-board${readOnly ? ' is-readonly' : ''}${inspected ? ' has-inspector' : ''}`}
+      className={`qb-board${readOnly ? ' is-readonly' : ''}${previewing ? ' is-preview' : ''}${inspected ? ' has-inspector' : ''}`}
       data-testid="board"
       role="region"
       aria-label="Board"
@@ -438,7 +473,7 @@ function BoardCanvas() {
         nodesFocusable
         edgesFocusable={false}
         edgesReconnectable={false}
-        elementsSelectable
+        elementsSelectable={!previewing}
         disableKeyboardA11y
         autoPanOnNodeFocus={false}
         nodeDragThreshold={2}
@@ -451,7 +486,8 @@ function BoardCanvas() {
       </ReactFlow>
 
       <Toolbar readOnly={readOnly} onAddCard={addCardAtCentre} onAddFrame={addFrameAtCentre} />
-      <ZoomHud cards={snap.cards.length} frames={snap.frames.length} onFit={() => fit(true)} />
+      <ZoomHud cards={cards.length} frames={frames.length} onFit={() => fit(true)} />
+      {preview && <PreviewBanner branch={snap.branch?.name ?? 'main'} at={preview.at} onBack={backToNow} />}
 
       {loading && <LoadingNote />}
       {failed && <ErrorNote detail={snap.error} />}
@@ -470,7 +506,7 @@ function BoardCanvas() {
         <Inspector
           key={inspected.id}
           card={inspected}
-          connections={snap.connections}
+          connections={connections}
           cards={cardsById}
           readOnly={readOnly}
           onSelectCard={selectCard}
