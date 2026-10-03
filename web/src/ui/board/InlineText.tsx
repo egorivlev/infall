@@ -23,6 +23,9 @@ export function InlineText({ initial, confirm, label, placeholder, className, on
   const finished = useRef(false)
 
   useLayoutEffect(() => {
+    // Effects run twice under StrictMode in development; the cleanup below must not
+    // leave the editor permanently "finished" after the simulated unmount.
+    finished.current = false
     const el = ref.current
     if (el) {
       el.focus({ preventScroll: true })

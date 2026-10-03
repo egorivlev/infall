@@ -135,7 +135,7 @@ export function InviteForm({ onCreated }: { onCreated: () => void }) {
           />
         )}
         <button type="submit" className="q-btn q-btn--primary q-btn--lg q-access__submit" aria-disabled={busy} aria-busy={busy}>
-          {busy ? 'Sending invite…' : 'Send invite'}
+          {busy ? 'Creating invite…' : 'Create invite'}
         </button>
         {formError && (
           <p className="q-error" role="alert">

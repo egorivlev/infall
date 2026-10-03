@@ -46,7 +46,6 @@ import { ZoomHud } from './ZoomHud'
 
 const nodeTypes = { card: CardNode, frame: FrameNode }
 const edgeTypes = { connection: ConnectionEdge }
-const PRO_OPTIONS = { hideAttribution: true } // MIT licence; no paid plan required
 const MULTI_KEYS = ['Shift', 'Meta', 'Control']
 const ZOOM_KEYS = ['Meta', 'Control']
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 }
@@ -446,7 +445,6 @@ function BoardCanvas() {
         zIndexMode="basic"
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
-        proOptions={PRO_OPTIONS}
         ariaLabelConfig={ARIA_LABELS}
       >
         <Background gap={24} size={1.6} color="var(--q-grid)" />
