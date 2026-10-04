@@ -181,7 +181,7 @@ describe('top bar and rail', () => {
     const user = userEvent.setup()
     const { container } = render(<App />)
     expect(container.querySelector('.q-shell')).toHaveAttribute('data-branch', 'try-QEC')
-    expect(screen.getByText('On try-QEC')).toBeInTheDocument()
+    expect(screen.getByTitle('On try-QEC')).toHaveTextContent('On try-QEC')
     expect(screen.getByTitle('Mei Lin')).toHaveTextContent('ML')
     await user.click(screen.getByRole('button', { name: /Elena Varga/ }))
     const menu = screen.getByRole('menu')

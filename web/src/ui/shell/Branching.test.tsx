@@ -116,7 +116,7 @@ describe('Branch routes', () => {
     expect(opened()).toEqual(['ana/cartpole lr'])
     expect(container.querySelector('.q-shell')).toHaveAttribute('data-branch', 'ana/cartpole lr')
     expect(screen.getByRole('button', { name: 'Branch ana/cartpole lr' })).toBeInTheDocument()
-    expect(screen.getByText('On ana/cartpole lr')).toBeInTheDocument()
+    expect(screen.getByTitle('On ana/cartpole lr')).toBeInTheDocument()
     expect(h.calls.branchesReload).toBe(1)
   })
 
