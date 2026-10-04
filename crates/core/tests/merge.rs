@@ -643,12 +643,10 @@ fn a_plan_with_altered_automatic_changes_is_refused() {
     ws.apply_merge(&plan, &decisions, ids.me, 10, None).unwrap();
 }
 
-/// Pins a documented limitation (spec §5 "Known limitation"): forgetting a later Merge in
-/// the chain leaves its content on both Branches with no record that they agreed, so the
-/// next Merge reverses a deliberate Undelete automatically. If this test starts failing
-/// because the limitation was removed, update the spec with it.
+/// Forgetting a later Merge in the chain leaves its content on both Branches with no record
+/// that they agreed. The next Merge must not reverse a deliberate Undelete on its own: it asks.
 #[test]
-fn known_limitation_a_forgotten_later_merge_can_reverse_an_undelete() {
+fn a_forgotten_later_merge_asks_before_reversing_an_undelete() {
     // main: Y; fork child; child creates C; S1 child->main (lands main@2); main creates M;
     // child deletes Y; S2 main->child (lands child@3); S3 child->main deletes Y on main.
     let (mut ws, main) = Workspace::new();
@@ -673,8 +671,21 @@ fn known_limitation_a_forgotten_later_merge_can_reverse_an_undelete() {
     ws.record(main, me, 7, Op::Undelete { entity: y }).unwrap();
 
     let plan = ws.plan_merge(child, main).unwrap();
-    assert!(plan.conflicts.is_empty());
-    assert_eq!(plan.auto, vec![Op::Delete { entity: y }]);
+    assert!(plan.auto.is_empty());
+    assert_eq!(
+        plan.conflicts,
+        vec![Conflict::EditVsDelete {
+            entity: y,
+            deleted_on: Side::Source
+        }]
+    );
+    let mut keep = ws.clone();
+    keep.apply_merge(&plan, &decide_all(&plan, Decision::TakeTarget), me, 8, None)
+        .unwrap();
+    assert!(head_board(&keep, main).is_visible(y));
+    ws.apply_merge(&plan, &decide_all(&plan, Decision::TakeSource), me, 8, None)
+        .unwrap();
+    assert!(head_board(&ws, main).get(y).unwrap().deleted);
 }
 
 #[test]
@@ -789,13 +800,10 @@ fn a_connection_to_a_card_deleted_on_the_other_branch_waits_for_it() {
     }
 }
 
-/// Pins a documented limitation (spec §5 "Known limitation"): a Merge whose undoing Restore
-/// is itself undone stays forgotten, so a Card that reached the child only through that
-/// Merge is on both Branches with no record that they agreed, and the next Merge reverses a
-/// deliberate Delete automatically. If this test starts failing because the limitation was
-/// removed, update the spec with it.
+/// A Merge whose undoing Restore is itself undone stays forgotten. The next Merge must not
+/// reverse a deliberate Delete on its own: it asks.
 #[test]
-fn known_limitation_a_merge_restored_past_and_back_can_reverse_a_delete() {
+fn a_merge_restored_past_and_back_asks_before_reversing_a_delete() {
     // main: P0; fork child; main creates P1; main->child brings P1 (lands child@1).
     let (mut ws, main) = Workspace::new();
     let me = MemberId::new();
@@ -816,8 +824,21 @@ fn known_limitation_a_merge_restored_past_and_back_can_reverse_a_delete() {
     ws.record(main, me, 6, Op::Delete { entity: p1 }).unwrap();
 
     let plan = ws.plan_merge(child, main).unwrap();
-    assert!(plan.conflicts.is_empty());
-    assert_eq!(plan.auto, vec![Op::Undelete { entity: p1 }]);
+    assert!(plan.auto.is_empty());
+    assert_eq!(
+        plan.conflicts,
+        vec![Conflict::EditVsDelete {
+            entity: p1,
+            deleted_on: Side::Target
+        }]
+    );
+    let mut keep = ws.clone();
+    keep.apply_merge(&plan, &decide_all(&plan, Decision::TakeTarget), me, 7, None)
+        .unwrap();
+    assert!(head_board(&keep, main).get(p1).unwrap().deleted);
+    ws.apply_merge(&plan, &decide_all(&plan, Decision::TakeSource), me, 7, None)
+        .unwrap();
+    assert!(head_board(&ws, main).is_visible(p1));
 }
 
 #[test]

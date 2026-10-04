@@ -36,7 +36,9 @@ pub enum Conflict {
         source: Value,
         target: Value,
     },
-    /// One side deleted the entity while the other changed one of its Content fields.
+    /// One side deleted the entity while the other changed one of its Content fields, or
+    /// the Merge would reverse a Delete or Undelete a Member made by hand on the target
+    /// since the Branches last agreed. The entity is deleted on `deleted_on`, live on the other.
     EditVsDelete { entity: EntityId, deleted_on: Side },
 }
 
@@ -239,11 +241,7 @@ impl Workspace {
     pub fn plan_merge(&self, source: BranchId, target: BranchId) -> Result<MergePlan, MergeError> {
         let base = self.merge_base(source, target)?;
         let (source, target) = (self.head(source)?, self.head(target)?);
-        let (auto, conflicts) = three_way(
-            &self.board_at(base)?,
-            &self.board_at(source)?,
-            &self.board_at(target)?,
-        );
+        let (auto, conflicts) = self.compare(base, source, target)?;
         Ok(MergePlan {
             source,
             target,
@@ -251,6 +249,94 @@ impl Workspace {
             auto,
             conflicts,
         })
+    }
+
+    /// The three-way comparison for a Merge of `source` into `target`, with one addition
+    /// the Boards alone cannot give: an automatic Delete or Undelete of an entity whose
+    /// deleted state a Member changed by hand on the target since the two Branches last
+    /// agreed becomes a Conflict, so a Merge never silently reverses a deliberate act.
+    fn compare(
+        &self,
+        base: Moment,
+        source: Moment,
+        target: Moment,
+    ) -> Result<(Vec<Op>, Vec<Conflict>), MergeError> {
+        let target_board = self.board_at(target)?;
+        let (mut auto, mut conflicts) = three_way(
+            &self.board_at(base)?,
+            &self.board_at(source)?,
+            &target_board,
+        );
+        let by_hand = self.flipped_by_hand(source.branch, target)?;
+        if by_hand.is_empty() {
+            return Ok((auto, conflicts));
+        }
+        let mut escalated: BTreeMap<EntityId, Side> = BTreeMap::new();
+        for op in &auto {
+            match op {
+                // An entity only on source arrives as Create (+ Delete): not a reversal.
+                Op::Delete { entity }
+                    if by_hand.contains(entity) && target_board.get(*entity).is_some() =>
+                {
+                    escalated.insert(*entity, Side::Source);
+                }
+                Op::Undelete { entity } if by_hand.contains(entity) => {
+                    escalated.insert(*entity, Side::Target);
+                }
+                _ => {}
+            }
+        }
+        if escalated.is_empty() {
+            return Ok((auto, conflicts));
+        }
+        auto.retain(|op| match op {
+            Op::Delete { entity } | Op::Undelete { entity } | Op::Set { entity, .. } => {
+                !escalated.contains_key(entity)
+            }
+            Op::Create { .. } => true,
+        });
+        conflicts.extend(
+            escalated
+                .into_iter()
+                .map(|(entity, deleted_on)| Conflict::EditVsDelete { entity, deleted_on }),
+        );
+        conflicts.sort_by_cached_key(Conflict::key);
+        Ok((auto, conflicts))
+    }
+
+    /// Entities a Member deleted or brought back by hand (an edit, not a Restore or a
+    /// Merge) on `target`'s Branch since it last agreed with `other`.
+    fn flipped_by_hand(
+        &self,
+        other: BranchId,
+        target: Moment,
+    ) -> Result<BTreeSet<EntityId>, MergeError> {
+        let child = self.child_of_pair(other, target.branch)?;
+        let since = match child.sync_points().last() {
+            Some(point) => match point.landed {
+                Some(landed) if landed.branch == target.branch => landed.seq,
+                _ if point.base.branch == target.branch => point.base.seq,
+                // The fork point, seen from the child: its own history starts there.
+                _ => 0,
+            },
+            None => 0,
+        };
+        let branch = self
+            .branch(target.branch)
+            .ok_or(WsError::UnknownBranch(target.branch))?;
+        let from = usize::try_from(since).unwrap_or(usize::MAX);
+        let to = usize::try_from(target.seq).unwrap_or(usize::MAX);
+        Ok(branch
+            .changes()
+            .get(from.min(to)..to.min(branch.changes().len()))
+            .unwrap_or_default()
+            .iter()
+            .filter(|change| change.origin == Origin::Edit)
+            .filter_map(|change| match &change.op {
+                Op::Delete { entity } | Op::Undelete { entity } => Some(*entity),
+                _ => None,
+            })
+            .collect())
     }
 
     /// Applies a planned Merge as one batch on the target and records where the two
@@ -279,7 +365,7 @@ impl Workspace {
         // The plan may have travelled through a client: apply only what the Branches give now.
         let source = self.board_at(plan.source)?;
         let target = self.board_at(plan.target)?;
-        let (auto, conflicts) = three_way(&self.board_at(plan.base)?, &source, &target);
+        let (auto, conflicts) = self.compare(plan.base, plan.source, plan.target)?;
         if auto != plan.auto || conflicts != plan.conflicts {
             return Err(MergeError::Stale);
         }
