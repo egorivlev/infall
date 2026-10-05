@@ -20,6 +20,30 @@ pub enum EntityKind {
     Card,
     Frame,
     Connection,
+    /// One block of a Card's Page.
+    Block,
+    /// An external reference: a paper, preprint or web page.
+    Source,
+    /// A Source attached to a Card.
+    Attachment,
+}
+
+impl EntityKind {
+    /// Whether entities of this kind refer to other entities, so must be created after them.
+    pub fn has_refs(self) -> bool {
+        !ref_fields(self).is_empty()
+    }
+}
+
+/// The fields of `kind` that must refer to an existing entity, with the kind they refer to.
+/// All of them are required at creation and can never be cleared.
+pub fn ref_fields(kind: EntityKind) -> &'static [(&'static str, EntityKind)] {
+    match kind {
+        EntityKind::Connection => &[("from", EntityKind::Card), ("to", EntityKind::Card)],
+        EntityKind::Block => &[("card", EntityKind::Card)],
+        EntityKind::Attachment => &[("card", EntityKind::Card), ("source", EntityKind::Source)],
+        EntityKind::Card | EntityKind::Frame | EntityKind::Source => &[],
+    }
 }
 
 /// Named fields of an entity, ordered by name.
@@ -45,7 +69,12 @@ pub enum SchemaError {
     BadStatus(String),
     #[error("invalid connection kind `{0}`")]
     BadKind(String),
+    #[error("invalid block type `{0}`")]
+    BadBlockType(String),
 }
+
+/// Types a Block may have.
+const BLOCK_TYPES: [&str; 1] = ["text"];
 
 /// Kinds a Connection may have; unset means `related`.
 const KINDS: [&str; 3] = ["related", "directed", "contradicts"];
@@ -69,6 +98,14 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
         (Card | Frame, "x" | "y" | "w" | "h") => Some((Layout, Type::Float)),
         (Connection, "from" | "to") => Some((Content, Type::Ref)),
         (Connection, "label" | "kind") => Some((Content, Type::Text)),
+        (Block, "card") => Some((Content, Type::Ref)),
+        (Block, "type" | "text") => Some((Content, Type::Text)),
+        // Where a Block sits in its Page is layout: on a Merge the target's order wins.
+        (Block, "order") => Some((Layout, Type::Text)),
+        (Source, "url" | "doi" | "title" | "authors" | "year" | "note") => {
+            Some((Content, Type::Text))
+        }
+        (Attachment, "card" | "source") => Some((Content, Type::Ref)),
         _ => None,
     }
 }
@@ -107,6 +144,11 @@ pub fn validate_field(kind: EntityKind, field: &str, value: &Value) -> Result<()
                 && !KINDS.contains(&s.as_str())
             {
                 Err(SchemaError::BadKind(s.clone()))
+            } else if kind == EntityKind::Block
+                && field == "type"
+                && !BLOCK_TYPES.contains(&s.as_str())
+            {
+                Err(SchemaError::BadBlockType(s.clone()))
             } else {
                 Ok(())
             }

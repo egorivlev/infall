@@ -1,14 +1,14 @@
 //! Board state and the four operations that change it.
 
 use crate::ids::EntityId;
-use crate::schema::{EntityKind, Fields, SchemaError, Value, validate_field};
+use crate::schema::{EntityKind, Fields, SchemaError, Value, ref_fields, validate_field};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
 static NULL: Value = Value::Null;
 
-/// A Card, Frame or Connection on the Board.
+/// A Card, Frame, Connection, Page Block, Source or Attachment on the Board.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
     pub kind: EntityKind,
@@ -55,9 +55,12 @@ pub enum ApplyError {
     Deleted(EntityId),
     #[error("entity {0:?} is not deleted")]
     NotDeleted(EntityId),
-    #[error("connection {0:?} is missing an endpoint")]
+    /// A required reference (a Connection's `from`/`to`, a Block's `card`, an Attachment's
+    /// `card`/`source`) is unset or not a reference.
+    #[error("entity {0:?} is missing a required reference")]
     MissingEndpoint(EntityId),
-    #[error("endpoint {0:?} is not an existing Card")]
+    /// A reference points at something that does not exist or is of the wrong kind.
+    #[error("{0:?} is not an existing entity of the kind referred to")]
     BadEndpoint(EntityId),
     #[error(transparent)]
     Schema(#[from] SchemaError),
@@ -92,12 +95,10 @@ impl Board {
                         stored.insert(name.clone(), value.clone());
                     }
                 }
-                if *kind == EntityKind::Connection {
-                    for end in ["from", "to"] {
-                        match stored.get(end) {
-                            Some(Value::Ref(card)) => self.check_card(*card)?,
-                            _ => return Err(ApplyError::MissingEndpoint(*entity)),
-                        }
+                for (end, target) in ref_fields(*kind) {
+                    match stored.get(*end) {
+                        Some(Value::Ref(id)) => self.check_ref(*id, *target)?,
+                        _ => return Err(ApplyError::MissingEndpoint(*entity)),
                     }
                 }
                 self.entities.insert(
@@ -116,9 +117,10 @@ impl Board {
             } => {
                 let e = self.live(*entity)?;
                 validate_field(e.kind, field, value)?;
-                if e.kind == EntityKind::Connection && (field == "from" || field == "to") {
+                if let Some((_, target)) = ref_fields(e.kind).iter().find(|(name, _)| name == field)
+                {
                     match value {
-                        Value::Ref(card) => self.check_card(*card)?,
+                        Value::Ref(id) => self.check_ref(*id, *target)?,
                         _ => return Err(ApplyError::MissingEndpoint(*entity)),
                     }
                 }
@@ -153,9 +155,9 @@ impl Board {
         }
     }
 
-    fn check_card(&self, id: EntityId) -> Result<(), ApplyError> {
+    fn check_ref(&self, id: EntityId, kind: EntityKind) -> Result<(), ApplyError> {
         match self.entities.get(&id) {
-            Some(e) if e.kind == EntityKind::Card => Ok(()),
+            Some(e) if e.kind == kind => Ok(()),
             _ => Err(ApplyError::BadEndpoint(id)),
         }
     }
@@ -169,7 +171,8 @@ impl Board {
         self.entities.iter().map(|(id, e)| (*id, e))
     }
 
-    /// Live, and for a Connection, both endpoints live.
+    /// Live, and everything it refers to is live (a Connection's Cards, a Block's Card,
+    /// an Attachment's Card and Source).
     pub fn is_visible(&self, id: EntityId) -> bool {
         let Some(e) = self.entities.get(&id) else {
             return false;
@@ -177,13 +180,10 @@ impl Board {
         if e.deleted {
             return false;
         }
-        if e.kind == EntityKind::Connection {
-            return ["from", "to"].iter().all(|end| match e.get(end) {
-                Value::Ref(card) => self.entities.get(card).is_some_and(|c| !c.deleted),
-                _ => false,
-            });
-        }
-        true
+        ref_fields(e.kind).iter().all(|(end, _)| match e.get(end) {
+            Value::Ref(id) => self.entities.get(id).is_some_and(|c| !c.deleted),
+            _ => false,
+        })
     }
 
     /// Equal sets of live entities with equal kind and fields; tombstones are ignored.

@@ -2,12 +2,12 @@
 
 use crate::board::{Board, Entity, Op};
 use crate::ids::EntityId;
-use crate::schema::EntityKind;
 use std::collections::BTreeSet;
 
 /// Operations that, applied in order to `from`, give a Board with the same content as `to`.
 ///
-/// Order: Creates of Cards and Frames, Creates of Connections, Undeletes, Sets, Deletes;
+/// Order: Creates of entities that refer to nothing (Cards, Frames, Sources), Creates of
+/// those that do (Connections, Blocks, Attachments), Undeletes, Sets, Deletes;
 /// within each group by entity id, then field name. An entity that is deleted in `to` and
 /// absent from `from` is Created and then Deleted. Fields are compared only for entities
 /// live in `to`.
@@ -26,7 +26,7 @@ pub fn diff_ops(from: &Board, to: &Board) -> Vec<Op> {
                     kind: target.kind,
                     fields: target.fields.clone(),
                 };
-                if target.kind == EntityKind::Connection {
+                if target.kind.has_refs() {
                     link_creates.push(create);
                 } else {
                     creates.push(create);

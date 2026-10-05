@@ -430,8 +430,8 @@ static NO_FIELDS: Fields = Fields::new();
 
 /// Automatic operations to apply to `target`, and the Conflicts a Member must decide.
 ///
-/// Operations are ordered like `diff_ops`: Creates of Cards and Frames, Creates of
-/// Connections, Undeletes, Sets, Deletes; within each group by entity id, then field name.
+/// Operations are ordered like `diff_ops`: Creates of entities that refer to nothing (Cards, Frames, Sources), Creates of
+/// those that do (Connections, Blocks, Attachments), Undeletes, Sets, Deletes; within each group by entity id, then field name.
 /// Conflicts are ordered by `key()`. An entity present on both sides but absent from
 /// `base` is compared as if `base` held it deleted with no fields.
 pub fn three_way(base: &Board, source: &Board, target: &Board) -> (Vec<Op>, Vec<Conflict>) {
@@ -450,7 +450,7 @@ pub fn three_way(base: &Board, source: &Board, target: &Board) -> (Vec<Op>, Vec<
                 kind: s.kind,
                 fields: s.fields.clone(),
             };
-            if s.kind == EntityKind::Connection {
+            if s.kind.has_refs() {
                 link_creates.push(create);
             } else {
                 creates.push(create);

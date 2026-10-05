@@ -14,5 +14,7 @@ pub use merge::{
     Conflict, ConflictKey, Decision, Decisions, MergeError, MergePlan, RepeatedDecision, Side,
     resolve, three_way,
 };
-pub use schema::{EntityKind, FieldClass, Fields, SchemaError, Value, field_class, validate_field};
+pub use schema::{
+    EntityKind, FieldClass, Fields, SchemaError, Value, field_class, ref_fields, validate_field,
+};
 pub use workspace::{Branch, Change, Checkpoint, Moment, Origin, SyncPoint, Workspace, WsError};
