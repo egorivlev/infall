@@ -2,7 +2,21 @@
 import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
-import type { BranchInfo, Change, Checkpoint, ClientFrame, Member, Moment, Op, Origin, ServerFrame } from './types'
+import type {
+  BranchInfo,
+  Change,
+  Checkpoint,
+  ClientFrame,
+  Conflict,
+  ConflictKey,
+  Decision,
+  Member,
+  MergePlan,
+  Moment,
+  Op,
+  Origin,
+  ServerFrame,
+} from './types'
 
 export const ME: Member = { id: 'me', name: 'Me', role: 'member', color: '#111' }
 export const OTHER: Member = { id: 'other', name: 'Other', role: 'member', color: '#222' }
@@ -106,7 +120,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
 }
 
 /**
- * A fake qoop server: M1 (Board, Changes, ops) and M2 (Branches, Checkpoints, Restore, Board at a moment).
+ * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
+ * M3 (Merge). It does not compute a Merge: tests script what a plan holds with `mergeScript`.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
  * unless told otherwise; `all` holds every Branch.
  */
@@ -123,6 +138,14 @@ export class FakeServer {
   actor: Member = ME // who the requests come from
   now = 0 // the `at` given to new Changes, Checkpoints and Branches
   lastPostFrame: ServerFrame | null = null
+  /** What the next plans hold. Moments come from the Branches' heads; `base` defaults to the fork moment. */
+  mergeScript: { auto: Op[]; conflicts: Conflict[]; base?: Moment } = { auto: [], conflicts: [] }
+  /** One scripted failure for the next `POST /api/merges`. */
+  mergeFail: { status: number; code: string; detail?: unknown } | null = null
+  /** When set, both Merge endpoints wait for it before answering. */
+  mergeGate: Promise<void> | null = null
+  /** Every body posted to `/api/merges`, accepted or not. */
+  mergePosts: { plan: MergePlan; decisions: [ConflictKey, Decision][]; checkpoint?: string }[] = []
   private n = 0
 
   private get main(): FakeBranch {
@@ -226,6 +249,80 @@ export class FakeServer {
     return this.commit(ops, author, key, { Restore: { batch: `batch${this.n++}`, to_seq: toSeq } })
   }
 
+  /** The plan `GET /api/merges/plan` gives now for these two Branches (ids or names), from `mergeScript`. */
+  planFor(sourceKey: string, targetKey: string): MergePlan {
+    const s = this.find(sourceKey)
+    const t = this.find(targetKey)
+    const child = s.info.parent?.branch === t.info.id ? s : t
+    return {
+      source: { branch: s.info.id, seq: s.log.length },
+      target: { branch: t.info.id, seq: t.log.length },
+      base: this.mergeScript.base ?? child.info.parent ?? { branch: t.info.id, seq: 0 },
+      auto: this.mergeScript.auto,
+      conflicts: this.mergeScript.conflicts,
+    }
+  }
+
+  private related(s: FakeBranch, t: FakeBranch): boolean {
+    return s !== t && (s.info.parent?.branch === t.info.id || t.info.parent?.branch === s.info.id)
+  }
+
+  private async mergeRoute(path: string, method: string, body: unknown) {
+    if (this.mergeGate) await this.mergeGate
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    const byId = (id: unknown) => this.all.find((b) => b.info.id === id)
+    if (method === 'GET' && path.startsWith('/api/merges/plan')) {
+      const query = new URLSearchParams(path.split('?')[1] ?? '')
+      const s = byId(query.get('source'))
+      const t = byId(query.get('target'))
+      if (!s || !t) return fail(404, 'not_found')
+      if (!this.related(s, t)) return fail(400, 'not_parent_and_child')
+      return { status: 200, body: { plan: this.planFor(s.info.id, t.info.id) } }
+    }
+    if (method !== 'POST' || path !== '/api/merges') return fail(404, 'not_found', 'no route')
+    const post = body as { plan: MergePlan; decisions: [ConflictKey, Decision][]; checkpoint?: string }
+    this.mergePosts.push(post)
+    if (this.mergeFail) {
+      const f = this.mergeFail
+      this.mergeFail = null
+      return fail(f.status, f.code, 'nope', f.detail ?? null)
+    }
+    const s = byId(post.plan?.source?.branch)
+    const t = byId(post.plan?.target?.branch)
+    if (!s || !t) return fail(404, 'not_found')
+    if (!this.related(s, t)) return fail(400, 'not_parent_and_child')
+    const plan = this.planFor(s.info.id, t.info.id)
+    if (!sameField(plan, post.plan)) return fail(409, 'stale')
+    const keyOf = (c: Conflict): ConflictKey =>
+      'Field' in c ? { entity: c.Field.entity, field: c.Field.field } : { entity: c.EditVsDelete.entity, field: null }
+    const decisions = new Map((post.decisions ?? []).map(([k, d]) => [JSON.stringify([k.entity, k.field]), d]))
+    const undecided = plan.conflicts.map(keyOf).filter((k) => !decisions.has(JSON.stringify([k.entity, k.field])))
+    if (undecided.length > 0) return fail(400, 'undecided', 'nope', undecided)
+    const name = post.checkpoint?.trim()
+    if (post.checkpoint !== undefined && (name === '' || name!.length > 80)) return fail(400, 'bad_request')
+    if (name !== undefined && t.checkpoints.some((c) => c.name === name)) return fail(409, 'name_taken')
+    const ops = [...plan.auto]
+    for (const c of plan.conflicts) {
+      const k = keyOf(c)
+      const d = decisions.get(JSON.stringify([k.entity, k.field]))!
+      if (d === 'TakeTarget') continue
+      if ('Field' in c) {
+        ops.push({ Set: { entity: k.entity, field: c.Field.field, value: d === 'TakeSource' ? c.Field.source : d.Custom } })
+      } else if (d !== 'TakeSource') {
+        return fail(400, 'bad_decision', 'nope', k)
+      } else {
+        ops.push(c.EditVsDelete.deleted_on === 'Source' ? { Delete: { entity: k.entity } } : { Undelete: { entity: k.entity } })
+      }
+    }
+    const applied = applyOps(t.entities, ops)
+    if (!applied.ok) return fail(409, 'rejected', applied.rejection.message, applied.rejection)
+    const checkpoint = name === undefined ? undefined : this.checkpoint(name, t.log.length, this.actor.id, t.info.id)
+    const origin: Origin = { Merge: { batch: `batch${this.n++}`, source: plan.source } }
+    const changes = this.commit(ops, this.actor.id, t.info.id, origin)
+    this.lastPostFrame = this.frameFor(changes, t.info.id)
+    return { status: 200, body: checkpoint ? { seq: t.log.length, changes, checkpoint } : { seq: t.log.length, changes } }
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -264,6 +361,7 @@ export class FakeServer {
       if (this.all.some((b) => b.info.name === name)) return this.respond(fail(409, 'name_taken'))
       return this.json(200, { branch: this.info(this.fork(name, from)) })
     }
+    if (path.startsWith('/api/merges')) return this.respond(await this.mergeRoute(path, method, body))
     const m = /^\/api\/branches\/([^/?]+)\/(board|changes|ops|checkpoints|restore)(?:\?(.*))?$/.exec(path)
     const b = m ? this.all.find((x) => x.info.id === decodeURIComponent(m[1]!)) : undefined
     if (!m || !b) return this.respond(fail(404, 'not_found', 'no route'))

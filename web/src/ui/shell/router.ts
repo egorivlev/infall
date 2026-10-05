@@ -3,6 +3,7 @@ export type Route =
   | { name: 'board'; branch: string }
   | { name: 'branches' }
   | { name: 'members' }
+  | { name: 'merge'; from: string; into: string }
   | { name: 'invite'; token: string }
 
 export const MAIN = 'main'
@@ -29,11 +30,32 @@ export function boardPath(): string {
   return branchPath(lastBranch)
 }
 
+/** The Merge review of `from` into `into`. Names go in the query, each encoded on its own ("/", " ", "&", "+", "#" are all safe). */
+export function mergePath(from: string, into: string): string {
+  return `/merge?from=${encodeURIComponent(from)}&into=${encodeURIComponent(into)}`
+}
+
+/** One query parameter, decoded like a path segment (a "+" is a plus, a broken escape stays as typed). */
+function queryParam(query: string, name: string): string {
+  for (const pair of query.split('&')) {
+    const eq = pair.indexOf('=')
+    if (eq > 0 && decode(pair.slice(0, eq)) === name) return decode(pair.slice(eq + 1))
+  }
+  return ''
+}
+
 const NAV_EVENT = 'qoop:navigate'
 
+/** Takes the path with its query (`/merge?from=…&into=…`); a hash is ignored. */
 export function parseRoute(pathname: string): Route {
-  const path = pathname.split(/[?#]/)[0] ?? '/'
+  const [path = '/', query = ''] = (pathname.split('#')[0] ?? '/').split('?')
   const parts = path.split('/').filter(Boolean)
+  if (parts.length === 1 && parts[0] === 'merge') {
+    const from = queryParam(query, 'from')
+    const into = queryParam(query, 'into')
+    // Without both names there is nothing to review: the Branches screen is where a Merge starts.
+    return from && into ? { name: 'merge', from, into } : { name: 'branches' }
+  }
   if (parts.length === 1 && parts[0] === 'members') return { name: 'members' }
   if (parts.length === 1 && parts[0] === 'branches') return { name: 'branches' }
   if (parts.length === 2 && parts[0] === 'invite' && parts[1]) return { name: 'invite', token: decode(parts[1]) }
@@ -45,8 +67,9 @@ export function parseRoute(pathname: string): Route {
   return { name: 'board', branch: MAIN }
 }
 
+/** Path and query: the Merge route keeps its two Branch names in the query. */
 export function currentPath(): string {
-  return window.location.pathname
+  return window.location.pathname + window.location.search
 }
 
 export function navigate(to: string, options: { replace?: boolean } = {}): void {

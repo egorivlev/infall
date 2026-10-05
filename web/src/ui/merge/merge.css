@@ -1,0 +1,128 @@
+/* Merge review (screen 9a). Tokens from ../../styles/tokens.css; spacing, radii and fonts from base.css.
+   The screen fills the work area and scrolls inside: the header is a grid row of its own, so it stays put
+   without z-index (`.q-work` is its own stacking context). */
+.q-merge { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--q-canvas); color: var(--q-ink); font-size: 13px; }
+
+/* Branch names: mono, exactly as written. */
+.q-merge-name { font-family: var(--q-mono); font-size: .95em; font-weight: 600; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; }
+.q-merge-name--branch { color: var(--q-branch); }
+.q-merge-name--chip { display: inline-block; font: 600 15px/1.3 var(--q-mono); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--q-ink-2); color: var(--q-ink); max-width: 100%; }
+.q-merge-name--chip.q-merge-name--branch { border-color: var(--q-branch); color: var(--q-branch); background: color-mix(in oklch, var(--q-branch) 12%, transparent); }
+
+/* ---- header bar ---- */
+.q-merge__head { display: flex; align-items: center; gap: 20px; padding: var(--q-s4) 28px; border-bottom: 1px solid var(--q-line); background: var(--q-surface); }
+.q-merge__intro { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.q-merge__h { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font: 600 22px/1.25 var(--q-serif); }
+.q-merge__lead { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--q-ink-3); }
+.q-merge__lead .q-merge-name { font-weight: 500; color: var(--q-ink-2); }
+.q-merge__side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 60%; }
+.q-merge__failure { margin: 0; text-align: right; }
+.q-merge__actions { display: flex; align-items: center; gap: var(--q-s3); }
+.q-merge__progress { width: 220px; display: flex; flex-direction: column; gap: 6px; margin-right: var(--q-s2); }
+.q-merge__progress b { font-weight: 600; }
+.q-merge__segments { display: grid; gap: 3px; }
+.q-merge__segment { height: 5px; border-radius: 1px; background: var(--q-line); }
+.q-merge__segment[data-decided="true"] { background: var(--q-accent); }
+.q-merge__cancel, .q-merge__go { height: 34px; }
+a.q-merge__cancel { color: var(--q-ink); }
+a.q-merge__cancel:hover { text-decoration: none; color: var(--q-ink); background: var(--q-hover); }
+.q-merge__go { padding: 0 16px; font-weight: 600; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- columns ---- */
+.q-merge__cols { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
+.q-merge__scroll { min-height: 0; overflow: auto; }
+.q-merge__main { max-width: 860px; margin: 0 auto; padding: 22px var(--q-s6) 60px; display: flex; flex-direction: column; gap: var(--q-s4); }
+
+/* ---- left column: Review ---- */
+.q-merge-nav { min-height: 0; overflow: auto; border-right: 1px solid var(--q-line-soft); background: var(--q-surface); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.q-merge-nav__label { padding: 4px 8px 8px; }
+.q-merge-nav__label--next { padding-top: 14px; }
+.q-merge-nav__auto { display: flex; align-items: center; gap: 10px; padding: var(--q-s2); color: var(--q-ink-2); }
+.q-merge-nav__grow { flex: 1; }
+.q-merge-nav__count { font: 11px var(--q-mono); color: var(--q-ink-3); }
+.q-merge-nav__none { margin: 0; padding: 4px 8px; }
+.q-merge-nav__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.q-merge-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; padding: var(--q-s2); border-radius: var(--q-r); color: var(--q-ink); text-decoration: none; background: color-mix(in oklch, var(--q-st-question) 7%, transparent); }
+.q-merge-nav__item[data-decided="true"] { background: transparent; }
+.q-merge-nav__item:hover { background: var(--q-hover); text-decoration: none; color: var(--q-ink); }
+.q-merge-nav__item:focus-visible { outline-offset: -2px; }
+.q-merge-nav__dot { width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.3px solid var(--q-st-question); color: var(--q-accent-ink); font-size: 9px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.q-merge-nav__item[data-decided="true"] .q-merge-nav__dot { border-color: var(--q-accent); background: var(--q-accent); }
+.q-merge-nav__title { line-height: 1.35; overflow-wrap: anywhere; }
+.q-merge-nav__state { grid-column: 2; font-size: 11.5px; color: var(--q-st-question); overflow-wrap: anywhere; }
+.q-merge-nav__item[data-decided="true"] .q-merge-nav__state { color: var(--q-ink-3); }
+
+/* ---- notices ---- */
+.q-merge-banner { padding: var(--q-s3) 14px; border-radius: 6px; border: 1px solid var(--q-st-understood); background: color-mix(in oklch, var(--q-st-understood) 10%, var(--q-canvas)); display: flex; flex-direction: column; gap: var(--q-s2); }
+.q-merge-banner__text { margin: 0; line-height: 1.5; }
+.q-merge-banner__links { display: flex; gap: var(--q-s4); }
+.q-merge-notice { margin: 0; padding: var(--q-s3) 14px; border-radius: 6px; border: 1px solid var(--q-st-question); background: color-mix(in oklch, var(--q-st-question) 8%, var(--q-canvas)); line-height: 1.5; }
+
+/* ---- Merges automatically ---- */
+.q-merge-auto { border: 1px solid var(--q-line-soft); border-radius: 6px; background: var(--q-surface); }
+.q-merge-auto__toggle { width: 100%; display: flex; align-items: baseline; gap: 10px; padding: var(--q-s3) 14px; border: 0; border-radius: 6px; background: transparent; color: var(--q-ink); text-align: left; cursor: pointer; }
+.q-merge-auto__toggle--static { cursor: default; }
+button.q-merge-auto__toggle:hover { background: var(--q-hover); }
+.q-merge-auto__toggle:focus-visible { outline-offset: -2px; }
+.q-merge-auto__caret { flex: none; width: 10px; font-size: 11px; color: var(--q-ink-3); }
+.q-merge-auto__check { flex: none; color: var(--q-st-understood); }
+.q-merge-auto__title { flex: none; font-weight: 600; }
+.q-merge-auto__summary { font-size: 12.5px; color: var(--q-ink-2); }
+.q-merge-auto__list { list-style: none; margin: 0; border-top: 1px solid var(--q-line-soft); padding: 6px 14px 10px 46px; display: flex; flex-direction: column; }
+.q-merge-auto__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: baseline; gap: var(--q-s3); padding: 6px 0; font-size: 12.5px; border-bottom: 1px solid var(--q-line-soft); }
+.q-merge-auto__row:last-child { border-bottom: 0; }
+.q-merge-auto__kind { font: 500 10px/1.3 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; color: var(--q-ink-3); }
+.q-merge-auto__what { overflow-wrap: anywhere; }
+
+/* ---- Card positions follow the target ---- */
+.q-merge-layout { margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--q-line-soft); font-size: 12.5px; line-height: 1.5; color: var(--q-ink-2); }
+.q-merge-layout svg { flex: none; margin-top: 2px; }
+.q-merge-layout b { font-weight: 600; color: var(--q-ink); }
+.q-merge-layout .q-merge-name { font-weight: 500; }
+.q-merge-layout b .q-merge-name { font-weight: 600; }
+
+/* ---- a Conflict ---- */
+.q-merge-conflict { scroll-margin-top: var(--q-s3); border: 1px solid color-mix(in oklch, var(--q-st-question) 55%, var(--q-line-soft)); border-radius: 6px; background: var(--q-surface); }
+.q-merge-conflict[data-decided="true"] { border-color: var(--q-line-soft); }
+.q-merge-conflict__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: var(--q-s3) 14px; border-bottom: 1px solid var(--q-line-soft); }
+.q-merge-conflict__num { font: 600 11px var(--q-mono); color: var(--q-ink-3); }
+.q-merge-conflict__type { font: 500 10px/1 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; padding: 3px 6px; border-radius: var(--q-r-chip); border: 1px solid var(--q-st-question); color: var(--q-st-question); white-space: nowrap; }
+.q-merge-conflict__title { margin: 0; font: 600 13px/1.35 var(--q-sans); min-width: 0; overflow-wrap: anywhere; border-radius: 2px; }
+.q-merge-conflict__headline { font-size: 12.5px; color: var(--q-ink-3); }
+.q-merge-conflict__state { margin-left: auto; font-size: 12px; color: var(--q-st-question); overflow-wrap: anywhere; }
+.q-merge-conflict__state--done { color: var(--q-st-understood); }
+.q-merge-conflict__body { padding: 14px; display: flex; flex-direction: column; gap: var(--q-s3); }
+
+.q-merge-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.q-merge-opts[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.q-merge-opt { min-width: 0; display: flex; flex-direction: column; gap: 7px; padding: 11px 12px; border-radius: var(--q-r); border: 1px solid var(--q-line); background: var(--q-raised); color: var(--q-ink); text-align: left; cursor: pointer; transition: background var(--q-fast) var(--q-ease), border-color var(--q-fast) var(--q-ease); }
+.q-merge-opt:hover:not([aria-disabled="true"]) { background: var(--q-hover); }
+.q-merge-opt[aria-checked="true"], .q-merge-opt[aria-checked="true"]:hover { border-color: var(--q-accent); background: var(--q-accent-soft); box-shadow: 0 0 0 1px var(--q-accent); }
+.q-merge-opt[aria-disabled="true"] { cursor: default; }
+.q-merge-opt__top { display: flex; align-items: center; gap: var(--q-s2); width: 100%; min-width: 0; }
+.q-merge-opt__dot { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1.4px solid var(--q-ink-3); display: flex; align-items: center; justify-content: center; }
+.q-merge-opt__dot::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+.q-merge-opt[aria-checked="true"] .q-merge-opt__dot { border-color: var(--q-accent); }
+.q-merge-opt[aria-checked="true"] .q-merge-opt__dot::after { background: var(--q-accent); }
+.q-merge-opt__side { min-width: 0; font: 600 12px/1.3 var(--q-mono); color: var(--q-ink); text-transform: none; overflow-wrap: anywhere; }
+.q-merge-opt__side--branch { color: var(--q-branch); }
+.q-merge-opt__side--plain { color: var(--q-ink-2); font-family: var(--q-sans); }
+.q-merge-opt__who { margin-left: auto; flex: none; max-width: 60%; font-size: 11.5px; color: var(--q-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-merge-opt__value { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.q-merge-opt__value--text { font: 15px/1.4 var(--q-serif); }
+.q-merge-opt__value--status { display: flex; align-items: center; gap: 6px; font: 15px/1.4 var(--q-serif); }
+.q-merge-opt__value--hint { color: var(--q-ink-2); }
+
+.q-merge-edit { display: flex; flex-direction: column; gap: 6px; }
+.q-merge-edit .q-merge-name { font-weight: 500; }
+.q-merge-edit__text { width: 100%; min-height: 40px; padding: 10px 12px; border-radius: var(--q-r); border: 1px solid var(--q-accent); background: var(--q-page); color: var(--q-ink); font: 14px/1.45 var(--q-sans); resize: vertical; }
+.q-merge-edit__text--long { min-height: 110px; font: 15px/1.6 var(--q-serif); }
+
+.q-merge-checkpoint { max-width: 420px; padding-top: var(--q-s2); }
+.q-merge-checkpoint .q-input:disabled { color: var(--q-ink-3); cursor: not-allowed; }
+
+/* ---- nothing to review / could not prepare ---- */
+.q-merge-message { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--q-s3); padding: var(--q-s5); text-align: center; }
+.q-merge-message__text { margin: 0; max-width: 520px; color: var(--q-ink-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.q-merge-message__text--quiet { color: var(--q-ink-3); font-size: 13px; }
+.q-merge-message__links { display: flex; align-items: center; gap: var(--q-s4); }

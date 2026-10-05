@@ -20,6 +20,7 @@ vi.mock('../../lib', () => ({
   useBoard: () => h.board,
   useMembers: () => h.people,
   useBranches: () => [],
+  mergeOptions: () => ({}),
   useHistory: () => ({ status: 'idle', head: 0, activities: [], checkpoints: [], preview: null }),
   branches: { reload: async () => {}, create: vi.fn() },
   history: { open: async () => {}, close: () => {}, preview: () => {}, createCheckpoint: vi.fn(), restore: vi.fn() },

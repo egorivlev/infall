@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { board, branches, members } from '../../lib'
 import type { Member } from '../../lib'
 import { BoardView } from '../board'
+import { MergeReview } from '../merge'
 import { Branches } from './Branches'
 import { errorStatus } from './errorMessages'
 import { Link } from './Link'
@@ -14,12 +15,13 @@ import { TopBar } from './TopBar'
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
 
-export type ShellView = 'board' | 'branches' | 'members'
+export type ShellView = 'board' | 'branches' | 'members' | 'merge'
 
 /** What this person may see for a route; anything else falls back to the Board. */
 function viewFor(route: Route, member: Member): ShellView {
   if (route.name === 'members') return member.role === 'admin' ? 'members' : 'board'
   if (route.name === 'branches') return member.role === 'guest' ? 'board' : 'branches'
+  if (route.name === 'merge') return member.role === 'guest' ? 'board' : 'merge'
   return 'board' // the invite link means nothing once signed in
 }
 
@@ -75,12 +77,15 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
   return (
     <div className="q-shell" data-branch={branch}>
       <TopBar member={member} branch={branch} available={!missing} />
-      <Rail member={member} route={view} branch={branch} />
+      {/* A Merge starts from the Branches screen, so that is where the rail points. */}
+      <Rail member={member} route={view === 'merge' ? 'branches' : view} branch={branch} />
       <main className="q-work">
         {view === 'members' ? (
           <Members me={member} />
         ) : view === 'branches' ? (
           <Branches current={branch} />
+        ) : view === 'merge' && route.name === 'merge' ? (
+          <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
         ) : missing ? (
           <div className="q-missing" role="status">
             <p className="q-missing__text">There is no Branch called “{branch}”.</p>

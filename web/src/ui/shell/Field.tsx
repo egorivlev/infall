@@ -13,11 +13,12 @@ type Props = {
   error?: string
   min?: string
   mono?: boolean
+  disabled?: boolean
   inputRef?: Ref<HTMLInputElement>
 }
 
 /** Visible label, input, optional hint (always shown), then the error. */
-export function Field({ label, name, value, onChange, onBlur, type = 'text', autoComplete, hint, error, min, mono, inputRef }: Props) {
+export function Field({ label, name, value, onChange, onBlur, type = 'text', autoComplete, hint, error, min, mono, disabled, inputRef }: Props) {
   const id = useId()
   const hintId = `${id}-hint`
   const errorId = `${id}-error`
@@ -35,6 +36,7 @@ export function Field({ label, name, value, onChange, onBlur, type = 'text', aut
         type={type}
         value={value}
         min={min}
+        disabled={disabled}
         autoComplete={autoComplete}
         aria-invalid={error ? true : undefined}
         aria-describedby={described}

@@ -22,7 +22,7 @@ use crate::config::Config;
 use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
-use crate::{Clock, boards, history, people};
+use crate::{Clock, boards, history, merges, people};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -104,6 +104,8 @@ pub fn router(st: Shared) -> Router {
         .route("/branches/{id}/board", get(boards::get_board))
         .route("/branches/{id}/changes", get(boards::get_changes))
         .route("/branches/{id}/ops", post(boards::post_ops))
+        .route("/merges/plan", get(merges::plan))
+        .route("/merges", post(merges::apply))
         .route("/ws", get(live::ws_handler))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_not_found)

@@ -146,6 +146,9 @@
 .q-branches__empty { margin: 0; padding: 12px 14px; }
 .q-branches a.q-btn:hover { text-decoration: none; color: var(--q-ink); background: var(--q-hover); }
 .q-branches a.q-btn { color: var(--q-ink); }
+/* Merge entry points: a row of small actions; a long parent name gives way instead of widening the table. */
+.q-branches__merge { margin-right: 6px; gap: 0; white-space: pre; }
+.q-branches__target { font-family: var(--q-mono); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 
 .q-newbranch { min-height: 0; overflow: auto; padding: var(--q-s5) 22px; border-left: 1px solid var(--q-line-soft); background: var(--q-surface); display: flex; flex-direction: column; gap: var(--q-s4); }
 .q-newbranch__lead { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--q-ink-2); text-wrap: pretty; }

@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { history as boardHistory, useBoard, useBranches, useHistory, useMembers } from '../../lib'
+import { history as boardHistory, mergeOptions, useBoard, useBranches, useHistory, useMembers } from '../../lib'
 import type { BranchInfo, Checkpoint } from '../../lib'
 import { useHistoryPanel } from '../bridge'
 import { orderBranches, parentName } from './branchMeta'
 import { formatDateTime } from './dates'
 import { Link } from './Link'
 import { NewBranch } from './NewBranch'
-import { branchPath, MAIN } from './router'
+import { branchPath, MAIN, mergePath } from './router'
 
 const ignore = () => {}
 
@@ -71,7 +71,10 @@ export function Branches({ current }: { current: string }) {
               </tr>
             </thead>
             <tbody>
-              {list.map((b) => (
+              {list.map((b) => {
+                // The two Merges a Branch can take part in: into the Branch it was started from, and the reverse.
+                const { intoParent, fromParent } = mergeOptions(b, list)
+                return (
                 <tr key={b.id}>
                   <th scope="row" className="q-branches__cell-name">
                     <span className={`q-branches__name${b.name === MAIN ? '' : ' q-branches__name--branch'}`}>{b.name}</span>
@@ -82,12 +85,32 @@ export function Branches({ current }: { current: string }) {
                   <td className="q-branches__num q-mono">{b.seq}</td>
                   <td className="q-table__act">
                     {b.name === MAIN && <span className="q-table__note q-branches__default">default Branch</span>}
+                    {intoParent && (
+                      <Link
+                        href={mergePath(b.name, intoParent.name)}
+                        className="q-btn q-btn--sm q-branches__merge"
+                        aria-label={`Merge ${b.name} into ${intoParent.name}…`}
+                      >
+                        Merge into <span className="q-branches__target">{intoParent.name}</span>…
+                      </Link>
+                    )}
+                    {fromParent && (
+                      <Link
+                        href={mergePath(fromParent.name, b.name)}
+                        className="q-btn q-btn--sm q-branches__merge"
+                        aria-label={`Update ${b.name} from ${fromParent.name}…`}
+                        title={`Brings the newer work on ${fromParent.name} into ${b.name}`}
+                      >
+                        Update from <span className="q-branches__target">{fromParent.name}</span>…
+                      </Link>
+                    )}
                     <Link href={branchPath(b.name)} className="q-btn q-btn--sm" aria-label={`Open ${b.name}`}>
                       Open
                     </Link>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           {list.length === 0 && <p className="q-hint q-branches__empty">Loading Branches…</p>}

@@ -13,7 +13,7 @@ export type GroupOptions = {
   startSeq?: number // seq of the moment `baseEntities` describes, i.e. how many Changes precede `changes[0]`; default 0
 }
 
-const STATUS_WORDS: Record<Status, string> = {
+export const STATUS_WORDS: Record<Status, string> = {
   idea: 'Idea',
   reading: 'Reading',
   understood: 'Understood',
@@ -57,7 +57,7 @@ function sameValue(a: Fields, b: Fields, name: string): boolean {
   return JSON.stringify(a[name] ?? null) === JSON.stringify(b[name] ?? null)
 }
 
-function titleOf(e: Entity | undefined): string {
+export function titleOf(e: Entity | undefined): string {
   const t = e ? text(e.fields, 'title').trim() : ''
   return t === '' ? 'Untitled' : t
 }
@@ -72,7 +72,7 @@ function kindOf(e: Entity): string {
 }
 
 // "A → B" for a Connection, by the titles its two Cards have in `world`.
-function ends(e: Entity, world: Entities): string {
+export function ends(e: Entity, world: Entities): string {
   return `${titleOf(world[ref(e.fields, 'from')])} ${ARROW} ${titleOf(world[ref(e.fields, 'to')])}`
 }
 

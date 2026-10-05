@@ -5,7 +5,7 @@ import { endOfLocalDay, formatDateTime, formatShortDate, formatTime, todayYmd } 
 import { describeError, describeLookupError, GENERIC_ERROR, INVALID_INVITE, isInviteGone } from './errorMessages'
 import { frameCounts } from './frameCounts'
 import { initials } from './initials'
-import { boardPath, branchPath, navigate, parseRoute, rememberBranch, subscribeRoute } from './router'
+import { boardPath, branchPath, currentPath, mergePath, navigate, parseRoute, rememberBranch, subscribeRoute } from './router'
 import { searchCards } from './searchCards'
 import { applyTheme, getThemePref, nextThemePref, readThemePref, resetThemeCache, resolveTheme, setThemePref, THEME_KEY } from './theme'
 
@@ -40,6 +40,46 @@ describe('parseRoute', () => {
     expect(parseRoute('/b/100%25%20sure%3F')).toEqual({ name: 'board', branch: '100% sure?' })
     expect(parseRoute('/b/%E0%A4%A')).toEqual({ name: 'board', branch: '%E0%A4%A' })
     expect(parseRoute('/b/main')).toEqual(main)
+  })
+})
+
+describe('mergePath', () => {
+  it('puts both Branch names in the query, each encoded', () => {
+    expect(mergePath('try-QEC', 'main')).toBe('/merge?from=try-QEC&into=main')
+    expect(mergePath('ana/cartpole lr', 'main')).toBe('/merge?from=ana%2Fcartpole%20lr&into=main')
+    expect(mergePath('main', 'R&D = 100%? #2 + more')).toBe('/merge?from=main&into=R%26D%20%3D%20100%25%3F%20%232%20%2B%20more')
+  })
+
+  it('round-trips awkward names through parseRoute', () => {
+    const names = ['try-QEC', 'ana/cartpole lr', 'R&D', 'a=b&into=main', '100% sure?', '#2', 'a+b', 'into', 'Ünïcode ≈ 1%', ' padded ', '%2F', 'x?from=y']
+    for (const from of names) {
+      for (const into of ['main', ...names]) {
+        expect(parseRoute(mergePath(from, into))).toEqual({ name: 'merge', from, into })
+      }
+    }
+  })
+
+  it('parses the Merge route by hand-typed and odd URLs too', () => {
+    expect(parseRoute('/merge?into=main&from=try-QEC')).toEqual({ name: 'merge', from: 'try-QEC', into: 'main' })
+    expect(parseRoute('/merge/?from=a&into=b#q-merge-c2')).toEqual({ name: 'merge', from: 'a', into: 'b' })
+    expect(parseRoute('/merge?x=1&from=ana/fit&into=main')).toEqual({ name: 'merge', from: 'ana/fit', into: 'main' })
+    expect(parseRoute('/merge?from=%E0%A4%A&into=main')).toEqual({ name: 'merge', from: '%E0%A4%A', into: 'main' })
+    // Names are case-sensitive and kept as written.
+    expect(parseRoute('/merge?from=Try-QEC&into=Main')).toEqual({ name: 'merge', from: 'Try-QEC', into: 'Main' })
+  })
+
+  it('falls back to the Branches screen without both names', () => {
+    expect(parseRoute('/merge')).toEqual({ name: 'branches' })
+    expect(parseRoute('/merge?from=try-QEC')).toEqual({ name: 'branches' })
+    expect(parseRoute('/merge?from=&into=main')).toEqual({ name: 'branches' })
+    expect(parseRoute('/merge/x?from=a&into=b')).toEqual({ name: 'board', branch: 'main' })
+  })
+
+  it('currentPath carries the query, so the route can be read from it', () => {
+    window.history.replaceState(null, '', mergePath('ana/cartpole lr', 'main'))
+    expect(currentPath()).toBe('/merge?from=ana%2Fcartpole%20lr&into=main')
+    expect(parseRoute(currentPath())).toEqual({ name: 'merge', from: 'ana/cartpole lr', into: 'main' })
+    window.history.replaceState(null, '', '/')
   })
 })
 

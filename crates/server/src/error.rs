@@ -34,6 +34,17 @@ pub enum ApiError {
     /// A Checkpoint or Branch name that is already in use.
     #[error("name taken")]
     NameTaken,
+    /// A Merge whose plan no longer matches the Branches.
+    #[error("stale")]
+    Stale,
+    /// Conflicts of a Merge without a Decision; the value is their keys as JSON.
+    #[error("undecided")]
+    Undecided(Value),
+    /// A Decision that cannot be used; the value is its Conflict key as JSON.
+    #[error("bad decision")]
+    BadDecision(Value),
+    #[error("not parent and child")]
+    NotParentAndChild,
     #[error("invite expired")]
     InviteExpired,
     #[error("too many attempts")]
@@ -88,6 +99,26 @@ impl ApiError {
                 "name_taken",
                 "That name is already in use.".into(),
             ),
+            Stale => (
+                StatusCode::CONFLICT,
+                "stale",
+                "A Branch has changed since this Merge was planned. Plan it again.".into(),
+            ),
+            Undecided(_) => (
+                StatusCode::BAD_REQUEST,
+                "undecided",
+                "Every Conflict needs a Decision before the Merge can be applied.".into(),
+            ),
+            BadDecision(_) => (
+                StatusCode::BAD_REQUEST,
+                "bad_decision",
+                "A Decision is repeated, matches no Conflict, or gives a hand-written value where none is allowed.".into(),
+            ),
+            NotParentAndChild => (
+                StatusCode::BAD_REQUEST,
+                "not_parent_and_child",
+                "A Merge is only possible between a Branch and its direct parent.".into(),
+            ),
             InviteExpired => (
                 StatusCode::GONE,
                 "invite_expired",
@@ -114,7 +145,7 @@ impl IntoResponse for ApiError {
         }
         let (status, code, message) = self.parts();
         let detail = match self {
-            ApiError::Rejected(v) => v,
+            ApiError::Rejected(v) | ApiError::Undecided(v) | ApiError::BadDecision(v) => v,
             _ => Value::Null,
         };
         let body = json!({ "error": { "code": code, "message": message, "detail": detail } });

@@ -10,6 +10,7 @@ pub mod config;
 pub mod error;
 pub mod history;
 pub mod live;
+pub mod merges;
 pub mod people;
 pub mod store;
 

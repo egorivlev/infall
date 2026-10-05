@@ -24,6 +24,7 @@ vi.mock('../../lib', () => ({
   useMembers: () => h.people,
   useBranches: () => h.list,
   useHistory: () => h.hist,
+  mergeOptions: () => ({}), // the Merge entry points have their own tests (Merging.test.tsx)
   session: { refresh: async () => {}, logout: async () => {}, login: async () => {}, acceptInvite: async () => {} },
   board: {
     open: (...a: unknown[]) => {
@@ -414,7 +415,7 @@ describe('Branches screen', () => {
     ])
     expect(screen.getByRole('link', { name: 'Open ana/cartpole lr' })).toHaveAttribute('href', '/b/ana%2Fcartpole%20lr')
     expect(screen.getByRole('link', { name: 'Open main' })).toHaveAttribute('href', '/')
-    expect(screen.queryByText(/Compare|Merge into|vs main/)).toBeNull()
+    expect(screen.queryByText(/Compare|Merge into|Update from|vs main/)).toBeNull() // no Merge is allowed here
   })
 
   it('marks the open Branch and opens another from its row', async () => {

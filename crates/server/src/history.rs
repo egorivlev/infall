@@ -19,7 +19,7 @@ pub const MAX_CHECKPOINT_NAME_CHARS: usize = 80;
 pub const MAX_BRANCH_NAME_CHARS: usize = 60;
 
 /// Trims `name` and checks it is 1 to `max` characters with no control characters.
-fn clean_name(name: &str, what: &str, max: usize) -> Result<String, ApiError> {
+pub(crate) fn clean_name(name: &str, what: &str, max: usize) -> Result<String, ApiError> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > max || name.chars().any(char::is_control) {
         return Err(ApiError::BadRequest(format!(
