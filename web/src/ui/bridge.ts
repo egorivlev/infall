@@ -39,3 +39,19 @@ export const historyPanel = {
     useHistoryPanel.setState({ open: false })
   },
 }
+
+
+// ---- M4: the Page panel. Anything may ask to open a Card's Page; the Board area shows it. ----
+type PagePanelState = { cardId: string | null; full: boolean }
+export const usePagePanel = create<PagePanelState>(() => ({ cardId: null, full: false }))
+export const pagePanel = {
+  open(cardId: string) {
+    usePagePanel.setState({ cardId })
+  },
+  close() {
+    usePagePanel.setState({ cardId: null, full: false })
+  },
+  toggleFull() {
+    usePagePanel.setState((s) => ({ full: !s.full }))
+  },
+}

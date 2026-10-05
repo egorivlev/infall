@@ -22,7 +22,7 @@ export type Invite = {
 }
 
 export type Value = 'Null' | { Float: number } | { Text: string } | { Ref: string }
-export type Kind = 'Card' | 'Frame' | 'Connection'
+export type Kind = 'Card' | 'Frame' | 'Connection' | 'Block' | 'Source' | 'Attachment'
 export type Fields = Record<string, Value>
 
 export type Op =
@@ -61,7 +61,11 @@ export type ServerFrame =
   | { type: 'error'; code: string; message: string }
   | { type: 'checkpoint'; branch: string; checkpoint: Checkpoint }
   | { type: 'branches'; branches: BranchInfo[] }
-export type ClientFrame = { type: 'subscribe'; branch: string; after: number }
+  | { type: 'editing'; branch: string; editors: { card: string; member: string; since: number }[] }
+  | { type: 'todos'; todos: Todo[] }
+export type ClientFrame =
+  | { type: 'subscribe'; branch: string; after: number }
+  | { type: 'editing'; card: string | null }
 
 export const STATUSES = ['idea', 'reading', 'understood', 'open_question', 'dead_end'] as const
 export type Status = (typeof STATUSES)[number]
@@ -82,6 +86,8 @@ export type CardVM = {
   y: number
   w: number // unset on the wire means CARD_W
   h: number // unset on the wire means CARD_H
+  blocks: number // visible Blocks in its Page (M4)
+  sources: number // visible Sources attached (M4)
 }
 
 export type FrameVM = { id: string; title: string; x: number; y: number; w: number; h: number }
@@ -208,4 +214,42 @@ export type MergeSnapshot = {
   checkpointName: string // default "Before merging <source>", made unique against the target's Checkpoints
   replanned: boolean // true after a Branch changed under the review and the plan was recomputed; cleared by the next decide()
   result?: { seq: number; changes: number; checkpoint?: Checkpoint } // when status is 'merged'
+}
+
+// ---- M4: Pages, Sources, To-dos ----
+
+export type BlockVM = { id: string; card: string; type: 'text'; text: string; order: string }
+
+export type SourceVM = {
+  id: string
+  url: string
+  doi: string
+  title: string
+  authors: string
+  year: string
+  note: string
+  cards: string[] // ids of live Cards it is attached to
+}
+
+/** A Source as attached to one Card. `attachment` is the Attachment entity to remove to detach. */
+export type AttachedSource = SourceVM & { attachment: string }
+
+/** Everything a Card expands into. */
+export type PageVM = {
+  card: CardVM | null // null when the Card is not live on this Board
+  blocks: BlockVM[] // ascending `order`, ties by id
+  sources: AttachedSource[] // ordered by year desc, then title
+  connections: { id: string; other: CardVM; direction: 'out' | 'in' | 'none'; kind: ConnectionKind; label: string }[]
+  editor: { member: Member | null; memberId: string; since: number } | null // someone ELSE holds the Page (soft lock); null if nobody or you
+}
+
+export type Todo = {
+  id: string
+  owner: string
+  text: string
+  done: boolean
+  done_at?: number
+  created_by: string
+  created_at: number
+  card?: { id: string; title: string; branch: string }
 }

@@ -1,4 +1,4 @@
-# Qoop — server API contract (M1–M3)
+# Qoop — server API contract (M1–M4)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -224,3 +224,46 @@ Errors of `POST /api/merges` — on any of them nothing is changed:
 | `404 not_found` | a Branch in the plan does not exist | null |
 
 The plan is not trusted: the server recomputes it under the write lock (the core does) and refuses with `stale` on any difference. Persist, then broadcast: the Merge's Changes as an ordinary `changes` frame to the target's subscribers (only if there are any), the `checkpoint` frame if one was made, and the `branches` frame to all Members/Admins (so lists show the new head).
+
+## 11. M4 — Pages, Sources, To-dos
+
+### Pages and Sources
+Research Content, so they are ordinary entities sent through `POST /api/branches/{id}/ops` and returned by the Board endpoints (core.md §1): `Kind` gains `"Block" | "Source" | "Attachment"`. Nothing new on the server for them. Sizes: a single Text value may be at most 100 000 characters (`400 bad_request` otherwise) — this applies to every Text field of every kind.
+
+### Who is editing a Page (soft lock)
+Not stored, not versioned; lives only in the live connection.
+
+Client → server: `{ type: "editing", card: string | null }` — "I am editing the Page of this Card on the Branch I am subscribed to" (null = stopped). Ignored from Guests and before `subscribe`.
+
+Server → client, to every subscriber of that Branch (Guests included), after `subscribed` and whenever it changes:
+```ts
+{ type: "editing", branch: string, editors: { card: string; member: string; since: number }[] }  // one entry per Card: whoever claimed it first and still holds it
+```
+A claim ends when that connection sends another `editing`, subscribes to another Branch, or closes; the next claimant in arrival order (if any) then becomes the holder. One connection holds at most one Card. The server does not refuse ops from non-holders — the lock is advisory, enforced by the UI.
+
+### To-dos
+Outside versioning: the same on every Branch, stored in their own table. Members and Admins only (`403 forbidden` for Guests).
+
+```ts
+type Todo = {
+  id: string;
+  owner: string;            // Member id — whose To-do it is
+  text: string;             // 1–500 characters after trimming, no control characters
+  done: boolean;
+  done_at?: number;
+  created_by: string;       // who added it (owner, or someone assigning)
+  created_at: number;
+  card?: { id: string; title: string; branch: string };  // optional pointer: entity id, the title when it was set, and the Branch id it was set on. Not validated against the Board, and kept if the Card is removed
+};
+```
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/todos` | — | `{ todos: Todo[] }` ordered by `created_at`, then id |
+| `POST /api/todos` | `{ owner: string, text: string, card?: {id, title, branch} }` | `{ todo: Todo }`. Any Member may add to any Member's list (`owner` must be an existing Member or Admin, not a Guest: `400 bad_request`) |
+| `PATCH /api/todos/{id}` | any of `{ text, done, card }` (`card: null` clears) | `{ todo: Todo }`. `done` may be changed only by the owner (`403 forbidden`); `text`/`card` by the owner or the creator |
+| `DELETE /api/todos/{id}` | — | `{}`; owner or creator only |
+
+Removing a Member (`DELETE /api/members/{id}`) deletes the To-dos they own; ones they created for others stay.
+
+After every change the server sends `{ type: "todos", todos: Todo[] }` (the full list) to every connected Member/Admin, never to Guests.

@@ -175,3 +175,47 @@ Behaviour:
 - `autoSummary` counts things, not ops: "9 Changes · 3 Cards added, 2 Connections added, 4 other Changes"; parts in this order: Cards added, Frames added, Connections added, other Changes, "N removed", "N brought back", "N moved or resized", "N added and removed". With a single part it is just that part ("3 Changes", "1 Card added", "2 moved or resized"). "Nothing to merge automatically" when the plan has no automatic ops. `result.changes` (real Changes that landed) is usually larger than these counts.
 - `nothingToMerge` is about the plan (no automatic ops, no Conflicts); `layoutKept` can still be above 0. `apply()` on such a plan is allowed and only places the Checkpoint.
 - Requests per `open()`: the Branch list, the plan, both head Boards, the target's Checkpoints, each Branch's Changes once; plus the base Board only when there is an edit-vs-delete Conflict, and a Board `?at=` only if a Branch moved between the requests. Planning again (stale, `refresh()`) fetches only Changes it does not have yet. A failure to load Changes or the base Board is not an error: authors are then absent, and edit vs delete reads "edited" without listing fields.
+
+## M4 — Pages, Sources, To-dos
+
+Added to `index.ts` (types `BlockVM`, `SourceVM`, `AttachedSource`, `PageVM`, `Todo` in `types.ts`; `CardVM` gains `blocks` and `sources` counts):
+
+```ts
+// ---- Page of a Card (on the open Branch; reflects optimistic ops like useBoard) ----
+export function usePage(cardId: string | null): PageVM      // referentially stable between changes; empty PageVM for null
+export function useSources(): SourceVM[]                    // every live Source on the open Branch, by title
+export const page: {
+  startEditing(cardId: string): void                        // claims the soft lock (socket `editing` frame); idempotent
+  stopEditing(): void
+  findSource(input: { url?: string; doi?: string }): SourceVM | undefined   // match by normalised DOI, else normalised URL
+}
+export function normalizeDoi(text: string): string          // '' if not a DOI; accepts 'doi:…', 'https://doi.org/…'; lower-cased
+export function normalizeUrl(text: string): string          // '' if not http(s); trims, drops fragment and trailing slash
+export function orderBetween(before?: string, after?: string): string   // an order key strictly between the two (either may be absent)
+
+// ---- more op builders (pure) ----
+ops.addBlock(input: { id?: string; card: string; text: string; order: string }): Op
+ops.setBlockText(block: string, text: string): Op           // '' is allowed (an empty block); use ops.remove to delete
+ops.moveBlock(block: string, order: string): Op
+ops.createSource(input: { id?: string; url?: string; doi?: string; title?: string; authors?: string; year?: string; note?: string }): Op
+ops.setSourceField(source: string, field: 'url' | 'doi' | 'title' | 'authors' | 'year' | 'note', text: string): Op
+ops.attach(input: { id?: string; card: string; source: string }): Op
+// detach = ops.remove(attachmentId); ops.remove / ops.restore work for Blocks, Sources, Attachments too
+
+// ---- To-dos (not Research Content: same on every Branch) ----
+export function useTodos(): Todo[]                          // cached; [] until loaded; kept fresh by the socket `todos` frame
+export const todos: {
+  reload(): Promise<void>
+  add(input: { owner: string; text: string; card?: { id: string; title: string; branch: string } }): Promise<Todo>
+  setDone(id: string, done: boolean): Promise<void>         // owner only (rejects 403 locally otherwise)
+  edit(id: string, patch: { text?: string; card?: { id: string; title: string; branch: string } | null }): Promise<void>
+  remove(id: string): Promise<void>
+}
+```
+
+Behaviour:
+
+- Blocks/Sources/Attachments are ordinary entities in the Board store; `useBoard()`'s `cards/frames/connections` are unchanged apart from the two counts. A Block or Attachment whose Card (or Source) is not live is not shown anywhere.
+- Soft lock: `PageVM.editor` is set while someone else holds that Card's Page. The layer re-sends the claim after a reconnect and drops it on `board.close()`/Branch switch. Guests never claim.
+- `todos.*` update the cache optimistically and roll back on failure (rejecting with ApiError). The list is loaded by `board.open()` for Members and refetched after a reconnect.
+- History and Merge texts cover the new kinds: Activities read "Edited the Page of <Card>", "Added a block to the Page of <Card>", "Removed a block from the Page of <Card>", "Reordered the Page of <Card>", "Added Source <title> to <Card>", "Removed Source <title> from <Card>", "Edited Source <title>"; in a Merge a Block `text` Conflict has `entityTitle` "Page: <Card title>", `headline` "Paragraph changed on both", `canEdit: true`, and Auto lines "Page of <Card> · N blocks"/"Source <title>". `BoardPreview` is unchanged (the Page panel is not available while previewing History).
