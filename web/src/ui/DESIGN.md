@@ -96,3 +96,26 @@ Two columns: list (fluid) and a 340px "New Branch" panel on the right.
 - **Restore**: one click, no dialog (it is undoable). While in flight the button reads "Restoring…" and is disabled. On success: scrub returns to now, and a toast "Restored <branch> to <when>." with an "Undo" action for 10 s that restores to the head seq from just before. Failure → toast with the plain message.
 - **Preview on the canvas**: while `useHistory().preview` is set, the canvas renders the preview's Cards/Frames/Connections instead of the live Board, fully read-only (no creation, drag, edit, delete, handles, toolbar, or inspector edits — selecting a Card may show the inspector read-only or nothing; simplest: no inspector), slightly desaturated (`filter: saturate(.7)` on the canvas only), with a banner centred at the top: "Previewing **<branch>** at **<when>**" + mono chip "read-only" + button "Back to now". Pan and zoom keep working and the viewport must not jump when scrubbing.
 - Loading: "Loading History…" after 150 ms. Error: plain sentence + "Try again".
+
+
+---
+
+# M3 — Merge review
+
+Design source: `design/Qoop Merge.dc.html` (screen 9a — match it), and `design/Qoop Team.dc.html` 8a for the entry points. Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M3" (`useMerge`, `merge`, `mergeOptions`). Vocabulary: Merge, Conflict, Branch, Checkpoint, Change, Restore. Never "pull request", "commit", "rebase", "resolve" as a noun, "ours/theirs".
+
+## Entry points (Branches screen)
+- Each non-main row gains actions next to "Open": "Merge into <parent>…" and "Update from <parent>…" (the reverse direction: brings the parent's newer work into this Branch). Both are links to the Merge route. Use `mergeOptions`.
+- Route: `/merge?from=<encoded source name>&into=<encoded target name>`. Not for Guests (redirect to `/`). The top bar keeps showing the last open Branch.
+
+## Screen (9a) — fills the work area, scrolls inside
+- **Header bar** (sticky): serif "Merge **<source>** into **<target>**" (source in `--q-branch` unless it is main); under it one line: "<target> doesn’t change until you press Merge. A Checkpoint is created on <target> first." Then, right-aligned: "**k of n** Conflicts decided" with n small segments (accent when decided), "Cancel" (link back to `/branches`), and the primary button: disabled "Merge · k left" with `title="Decide all Conflicts first"` until all are decided, then "Merge into <target>"; "Merging…" while applying.
+- **Left column, 240px** ("Review"): "✓ Merges automatically  N", then "Conflicts" with one anchor link per Conflict (short title, and "Needs a decision" in `--q-st-question` or "Decided · <side>"); clicking scrolls to it and moves focus to its heading.
+- **Main column** (max 860px):
+  - "Merges automatically" disclosure (`<button aria-expanded>`): summary line from `autoSummary`; expanded: one row per `AutoLine` — kind in mono caps, then what.
+  - If `layoutKept > 0`, the note: "**Card positions follow <target>.** N Cards and Frames that were moved on <source> keep their <target> position and are not listed as Conflicts."
+  - One block per Conflict: number "01", type chip ("Same field" / "Edited · deleted"), kind + title ("Card: Threshold ≈ 1%"), `headline`, and state at the right ("Needs a decision" / "✓ Decided: <target name>"). Undecided blocks have the `--q-st-question`-tinted border. Options as a radio group of large buttons (`role="radio"` in a `role="radiogroup"`, arrow keys move): one for <target> (first, as in the mock-up) and one for <source>, each with the Branch name, who/when if known (name · date), and the value (serif 15 for short text; a Status shows its glyph + word in status colour); if `canEdit`, a third "Edit by hand" which reveals a labelled textarea "Your value — this is what <target> will get", pre-filled with the source text; typing updates the choice (`{ custom }`).
+  - Checkpoint: a labelled field "Checkpoint on <target> before merging" with `checkpointName`, placed under the Conflicts; `name_taken` → inline "<target> already has a Checkpoint with that name."
+- **States**: loading "Preparing the Merge…" (after 150 ms). `nothingToMerge`: quiet message "<target> already has everything from <source>." + link back. `not_parent_and_child`: "A Branch can only be merged with the Branch it was started from." Unknown Branch: "There is no Branch called …". `replanned`: a notice at the top of the main column, `role="status"`: "A Branch changed while you were reviewing. The review was updated — check your decisions and Merge again." Other apply failures: inline plain sentence above the button area, never an alert.
+- **After merging**: the header button reads "Merged ✓" (disabled) and a success banner replaces the notice area: "✓ Merged into <target>. Checkpoint “<name>” was created — Restore to it from History to undo." with links "Open <target>" and "Back to Branches". Options become read-only.
+- Call `merge.open(from, into)` on mount/param change and `merge.close()` on unmount (StrictMode-safe).

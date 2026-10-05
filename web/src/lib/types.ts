@@ -151,3 +151,61 @@ export type HistorySnapshot = {
   checkpoints: Checkpoint[] // ordered by moment, then name; includes Checkpoints at seq 0
   preview: BoardPreview | null // set by history.preview(seq)
 }
+
+// ---- M3: Merge ----
+
+export type Side = 'Source' | 'Target'
+export type ConflictKey = { entity: string; field: string | null }
+export type Conflict =
+  | { Field: { entity: string; field: string; base: Value; source: Value; target: Value } }
+  | { EditVsDelete: { entity: string; deleted_on: Side } }
+export type Decision = 'TakeSource' | 'TakeTarget' | { Custom: Value }
+export type MergePlan = { source: Moment; target: Moment; base: Moment; auto: Op[]; conflicts: Conflict[] }
+
+/** A choice for one Conflict, as the UI makes it. `custom` only where `ConflictVM.canEdit`. */
+export type Choice = 'source' | 'target' | { custom: string }
+
+/** One side of a Conflict, ready to show. */
+export type ConflictSide = {
+  text: string // the value in plain words: the text itself, a Status label, a Card title for a Connection end, "(empty)"; for edit vs delete: "Delete the Card" / "Keep the Card with its edits: title, summary"
+  status?: Status // set when the field is a Card's status, so the UI can draw the glyph
+  author?: string // Member id who last changed it on that Branch, when known
+  at?: number // when, unix ms
+}
+
+export type ConflictVM = {
+  id: string // stable key: `${entity}:${field ?? ''}`
+  key: ConflictKey
+  type: 'field' | 'edit_vs_delete'
+  entityKind: Kind
+  entityTitle: string // "Threshold ≈ 1%"; a Connection reads "A → B"; untitled reads "Untitled"
+  field: string | null // wire field name
+  headline: string // "Title changed on both", "Status changed on both", "Deleted on main, edited on try-QEC", "Deleted on try-QEC, brought back on main"
+  source: ConflictSide
+  target: ConflictSide
+  canEdit: boolean // true for text fields (title, summary, label): a hand-written value is allowed
+  choice: Choice | null
+}
+
+/** One line of the "Merges automatically" list. */
+export type AutoLine = {
+  kind: 'Card added' | 'Frame added' | 'Connection added' | 'Change' | 'Removed' | 'Brought back'
+  what: string // "Union-find vs MWPM benchmark", "Lattice surgery CNOT · summary", "A → B · calibrates"
+}
+
+export type MergeSnapshot = {
+  status: 'idle' | 'loading' | 'ready' | 'applying' | 'merged' | 'error'
+  error?: string // plain sentence
+  errorCode?: string // 'not_parent_and_child' | 'not_found' | 'network' | …
+  source?: BranchInfo
+  target?: BranchInfo
+  auto: AutoLine[]
+  autoSummary: string // "9 Changes · 3 Cards added, 4 other Changes, 2 Connections added"; "Nothing to merge automatically"
+  layoutKept: number // entities whose position/size differs between the Branches and stays as the target has it
+  conflicts: ConflictVM[]
+  decided: number
+  nothingToMerge: boolean // no automatic Changes and no Conflicts
+  checkpointName: string // default "Before merging <source>", made unique against the target's Checkpoints
+  replanned: boolean // true after a Branch changed under the review and the plan was recomputed; cleared by the next decide()
+  result?: { seq: number; changes: number; checkpoint?: Checkpoint } // when status is 'merged'
+}

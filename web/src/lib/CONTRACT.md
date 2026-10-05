@@ -129,3 +129,29 @@ Behaviour:
 - `branches.create()` sends `from.branch` as the Branch **id**, and `Checkpoint.moment.branch` / `BranchInfo.parent.branch` are treated as ids.
 - `board.open(name)` failing (404 or otherwise) leaves the Board in `'error'` with no Branch; the previous Branch is already closed. Open `main` (or the previous name) again to recover.
 - After the socket reconnects, the layer refetches the Branch list (and the Checkpoints, when History is open), since frames missed while away are not repeated.
+
+## M3 — Merge
+
+Added to `index.ts` (types in `types.ts`: `MergeSnapshot`, `ConflictVM`, `ConflictSide`, `AutoLine`, `Choice`, plus the wire types):
+
+```ts
+export function useMerge(): MergeSnapshot              // referentially stable between changes
+export const merge: {
+  open(sourceName: string, targetName: string): Promise<void>   // plans the Merge and loads both Boards for titles; never throws — failures land in the snapshot (status 'error', errorCode)
+  close(): void
+  decide(conflictId: string, choice: Choice | null): void       // null clears
+  setCheckpointName(name: string): void
+  apply(): Promise<void>                               // rejects with ApiError if it could not be applied; see below
+  refresh(): Promise<void>                             // plan again, keeping choices that still fit
+}
+export function mergeOptions(branch: BranchInfo, all: BranchInfo[]): { intoParent?: BranchInfo; fromParent?: BranchInfo }  // the two Merges allowed for a Branch (v1: only with its direct parent)
+```
+
+Behaviour:
+
+- Independent of the open Board: it fetches by Branch name (`GET /api/branches`, `GET …/board` for both heads, `GET …/checkpoints` of the target, `GET /api/merges/plan`). Works while the Board shows any Branch.
+- `apply()` needs every Conflict decided (rejects locally with 400 `undecided` otherwise) and a non-empty Checkpoint name. On success: status `'merged'` with `result`; if the open Board is the target, its Changes arrive as usual.
+- `409 stale` from the server: the layer plans again, keeps every choice whose Conflict is unchanged (same key, same source and target values), sets `replanned: true`, status back to `'ready'`, and `apply()` rejects with the ApiError (code `stale`) so the UI can say what happened. `409 name_taken`: status back to `'ready'`, rejects.
+- A `{ custom }` choice is sent as `{ Custom: { Text } }` (empty string → `"Null"`), only where `canEdit`.
+- `autoSummary`, `AutoLine`s and all texts use titles from the source Board (the target Board for things only there). Layout-only automatic Sets are not listed as lines; they are counted in the summary as "N moved or resized".
+- Guests: `merge.open` ends in status `'error'`, errorCode `forbidden`, without a request.

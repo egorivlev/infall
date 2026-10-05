@@ -1,4 +1,4 @@
-# Qoop — server API contract (M1 + M2)
+# Qoop — server API contract (M1–M3)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -190,3 +190,37 @@ WebSocket additions (server → client):
 A Restore is broadcast as an ordinary `changes` frame (only when it produced Changes). Clients that do not know the new frame types must ignore them.
 
 There is no deleting or renaming of Checkpoints or Branches in M2: history is append-only.
+
+## 10. M3 — Merge
+
+Members and Admins only (`403 forbidden` for Guests). Shapes are the core's `serde` output (core.md §5):
+
+```ts
+type Side = "Source" | "Target";
+type ConflictKey = { entity: string; field: string | null };   // field null = edit vs delete
+type Conflict =
+  | { Field: { entity: string; field: string; base: Value; source: Value; target: Value } }
+  | { EditVsDelete: { entity: string; deleted_on: Side } };
+type Decision = "TakeSource" | "TakeTarget" | { Custom: Value };
+type Decisions = [ConflictKey, Decision][];
+type MergePlan = { source: Moment; target: Moment; base: Moment; auto: Op[]; conflicts: Conflict[] };
+```
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/merges/plan?source={branchId}&target={branchId}` | — | `{ plan: MergePlan }` — what merging `source` into `target` would do right now. Changes nothing. `404 not_found` for an unknown Branch; `400 not_parent_and_child` unless one is the other's direct parent |
+| `POST /api/merges` | `{ plan: MergePlan, decisions: Decisions, checkpoint?: string }` | `{ seq: number, changes: Change[], checkpoint?: Checkpoint }` — applies the Merge on the target as one batch authored by the caller (`origin: Merge`); `seq` is the target's new head; `changes` may be empty. With `checkpoint`, a Checkpoint of that name (same rules as §9: trimmed, 1–80 characters, no control characters) is placed on the target at the moment just before the Merge |
+
+Errors of `POST /api/merges` — on any of them nothing is changed:
+
+| Status, code | When | `detail` |
+|---|---|---|
+| `409 stale` | a Branch changed since the plan was made, or the plan does not match what the Branches give now — plan again | null |
+| `400 undecided` | Conflicts without a Decision | `ConflictKey[]` |
+| `400 bad_decision` | a Decision for no Conflict, a repeated one, or `Custom` on edit vs delete | the `ConflictKey` |
+| `400 not_parent_and_child` | | null |
+| `409 name_taken` | the Checkpoint name is used on the target | null |
+| `409 rejected` | a decided value the core refuses (e.g. a Connection left without an endpoint, a wrong value type) | the core `ApplyError` |
+| `404 not_found` | a Branch in the plan does not exist | null |
+
+The plan is not trusted: the server recomputes it under the write lock (the core does) and refuses with `stale` on any difference. Persist, then broadcast: the Merge's Changes as an ordinary `changes` frame to the target's subscribers (only if there are any), the `checkpoint` frame if one was made, and the `branches` frame to all Members/Admins (so lists show the new head).
