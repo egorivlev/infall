@@ -3,6 +3,7 @@ import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
 import type {
+  AccessToken,
   BranchInfo,
   Change,
   Checkpoint,
@@ -16,6 +17,7 @@ import type {
   Op,
   Origin,
   ServerFrame,
+  Suggestion,
   Todo,
 } from './types'
 
@@ -97,6 +99,8 @@ function fail(status: number, code: string, message = 'nope', detail: unknown = 
   return { status, body: { error: { code, message, detail } } }
 }
 
+const WEEK = 7 * 24 * 60 * 60 * 1000
+
 const sameField = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 // The ops that turn `current` into `target` (core `restore`): later entities become deleted, not absent.
@@ -122,7 +126,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
 
 /**
  * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
- * M3 (Merge), M4 (To-dos, and the frames about who edits a Page). It does not compute a Merge: tests script what a
+ * M3 (Merge), M4 (To-dos, and the frames about who edits a Page), M5 (access tokens, Suggestions — which only
+ * `suggest` makes, as the tool layer would). It does not compute a Merge: tests script what a
  * plan holds with `mergeScript`. It has no live connections either: tests hand the frames it builds to a FakeSocket.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
  * unless told otherwise; `all` holds every Branch.
@@ -156,6 +161,18 @@ export class FakeServer {
   todoGate: Promise<void> | null = null
   /** Claims on Pages in arrival order: `member` says it edits the Page of `card` on Branch `branch` (an id). */
   claims: { member: string; card: string; branch: string; since: number }[] = []
+  /** Access tokens of every Member, oldest first. */
+  tokens: (AccessToken & { member: string })[] = []
+  /** The secrets handed out by `POST /api/tokens`, in order. */
+  secrets: string[] = []
+  /** One scripted failure for the next token request that writes. */
+  tokenFail: { status: number; code: string } | null = null
+  /** Suggestions of every Branch, in the order they were made. */
+  suggestions: Suggestion[] = []
+  /** One scripted failure for the next accept / reject / reopen: e.g. `{ status: 409, code: 'already_decided' }`, `{ status: 409, code: 'rejected' }`. */
+  suggestionFail: { status: number; code: string } | null = null
+  /** When set, accept / reject / reopen wait for it before doing anything. */
+  suggestionGate: Promise<void> | null = null
   private n = 0
 
   private get main(): FakeBranch {
@@ -410,6 +427,121 @@ export class FakeServer {
     return { status: 200, body: { todo: next } }
   }
 
+  /** Adds a Suggestion as if a Member's AI had made it through the tool layer; returns it. */
+  suggest(
+    input:
+      | { card: string; source: NonNullable<Suggestion['source']>; reason?: string; model?: string }
+      | { connection: NonNullable<Suggestion['connection']>; reason?: string; model?: string },
+    author = this.actor.id,
+    key?: string,
+  ): Suggestion {
+    const s: Suggestion = {
+      id: `s${this.n++}`,
+      branch: this.find(key).info.id,
+      kind: 'connection' in input ? 'connection' : 'source',
+      reason: input.reason ?? 'Because.',
+      created_by: author,
+      created_at: this.now,
+      state: 'pending',
+    }
+    if ('connection' in input) s.connection = { ...input.connection }
+    else {
+      s.card = input.card
+      s.source = { ...input.source }
+    }
+    if (input.model !== undefined) s.model = input.model
+    this.suggestions.push(s)
+    return s
+  }
+
+  /** What `GET /api/suggestions` lists for a Branch: pending ones and those decided in the last 7 days, newest first. */
+  suggestionsOf(key?: string): Suggestion[] {
+    const branch = this.find(key).info.id
+    return this.suggestions
+      .filter((s) => s.branch === branch && (s.state === 'pending' || (s.decided_at ?? 0) > this.now - WEEK))
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => b.s.created_at - a.s.created_at || b.i - a.i)
+      .map(({ s }) => ({ ...s }))
+  }
+
+  suggestionsFrame(key?: string): ServerFrame {
+    return { type: 'suggestions', branch: this.find(key).info.id, suggestions: this.suggestionsOf(key) }
+  }
+
+  private async suggestionRoute(path: string, method: string, body: unknown) {
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    if (method === 'GET') {
+      const id = new URLSearchParams(path.split('?')[1] ?? '').get('branch')
+      if (!path.startsWith('/api/suggestions?') || !this.all.some((b) => b.info.id === id)) return fail(404, 'not_found')
+      return { status: 200, body: { suggestions: this.suggestionsOf(id!) } }
+    }
+    const m = /^\/api\/suggestions\/([^/?]+)\/(accept|reject|reopen)$/.exec(path)
+    if (method !== 'POST' || !m) return fail(404, 'not_found', 'no route')
+    if (this.suggestionGate) await this.suggestionGate
+    if (this.suggestionFail) {
+      const f = this.suggestionFail
+      this.suggestionFail = null
+      return fail(f.status, f.code)
+    }
+    const at = this.suggestions.findIndex((s) => s.id === decodeURIComponent(m[1]!))
+    const was = this.suggestions[at]
+    if (!was) return fail(404, 'not_found')
+    const what = m[2]
+    if (was.state !== (what === 'reopen' ? 'rejected' : 'pending')) return fail(409, 'already_decided')
+    if (what === 'reopen') {
+      const { decided_by: _by, decided_at: _at, ...rest } = was
+      const suggestion: Suggestion = { ...rest, state: 'pending' }
+      this.suggestions[at] = suggestion
+      return { status: 200, body: { suggestion } }
+    }
+    const decided = { decided_by: this.actor.id, decided_at: this.now }
+    if (what === 'reject') {
+      const suggestion: Suggestion = { ...was, state: 'rejected', ...decided }
+      this.suggestions[at] = suggestion
+      return { status: 200, body: { suggestion } }
+    }
+    const ops = (body as { ops?: Op[] } | undefined)?.ops
+    if (!Array.isArray(ops) || ops.length < 1 || ops.length > 20) return fail(400, 'bad_request')
+    const b = this.find(was.branch)
+    const r = applyOps(b.entities, ops)
+    if (!r.ok) return fail(409, 'rejected', r.rejection.message, r.rejection)
+    const changes = this.commit(ops, this.actor.id, was.branch)
+    this.lastPostFrame = this.frameFor(changes, was.branch)
+    const suggestion: Suggestion = { ...was, state: 'accepted', ...decided }
+    this.suggestions[at] = suggestion
+    return { status: 200, body: { suggestion, seq: b.log.length, changes } }
+  }
+
+  private tokenRoute(path: string, method: string, body: unknown) {
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    const me = this.actor.id
+    const shown = ({ member: _member, ...token }: AccessToken & { member: string }): AccessToken => token
+    if (method === 'GET' && path === '/api/tokens') {
+      return { status: 200, body: { tokens: this.tokens.filter((t) => t.member === me).map(shown) } }
+    }
+    if (this.tokenFail) {
+      const f = this.tokenFail
+      this.tokenFail = null
+      return fail(f.status, f.code)
+    }
+    if (method === 'POST' && path === '/api/tokens') {
+      const raw = (body as { name?: unknown } | undefined)?.name
+      const name = typeof raw === 'string' ? raw.trim() : ''
+      const full = this.tokens.filter((t) => t.member === me).length >= 10
+      if (name === '' || name.length > 60 || full) return fail(400, 'bad_request')
+      const token = { id: `k${this.n++}`, name, created_at: this.now, member: me }
+      const secret = 'qoop_pat_' + String(this.secrets.length).padStart(43, 'A')
+      this.tokens.push(token)
+      this.secrets.push(secret)
+      return { status: 200, body: { token: shown(token), secret } }
+    }
+    const id = decodeURIComponent(path.slice('/api/tokens/'.length))
+    const at = this.tokens.findIndex((t) => t.id === id && t.member === me)
+    if (method !== 'DELETE' || !path.startsWith('/api/tokens/') || at < 0) return fail(404, 'not_found')
+    this.tokens.splice(at, 1)
+    return { status: 200, body: {} }
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -450,6 +582,8 @@ export class FakeServer {
     }
     if (path.startsWith('/api/merges')) return this.respond(await this.mergeRoute(path, method, body))
     if (path === '/api/todos' || path.startsWith('/api/todos/')) return this.respond(await this.todoRoute(path, method, body))
+    if (path.startsWith('/api/suggestions')) return this.respond(await this.suggestionRoute(path, method, body))
+    if (path === '/api/tokens' || path.startsWith('/api/tokens/')) return this.respond(this.tokenRoute(path, method, body))
     const m = /^\/api\/branches\/([^/?]+)\/(board|changes|ops|checkpoints|restore)(?:\?(.*))?$/.exec(path)
     const b = m ? this.all.find((x) => x.info.id === decodeURIComponent(m[1]!)) : undefined
     if (!m || !b) return this.respond(fail(404, 'not_found', 'no route'))

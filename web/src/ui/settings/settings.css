@@ -1,0 +1,39 @@
+/* Settings screens: AI access. Tokens from ../../styles/tokens.css; spacing/radii from base.css; table, dialog and field looks from ../shell/access.css. */
+.q-settings { height: 100%; overflow: auto; }
+.q-settings__inner { box-sizing: border-box; width: 100%; max-width: 720px; margin: 0 auto; padding: var(--q-s6) var(--q-s5) var(--q-s7); display: flex; flex-direction: column; gap: var(--q-s5); }
+.q-settings__head { display: flex; flex-direction: column; gap: var(--q-s3); }
+.q-settings__title { margin: 0; font: 600 22px/1.25 var(--q-serif); }
+.q-settings__text { margin: 0; font-size: 13px; line-height: 1.55; color: var(--q-ink-2); text-wrap: pretty; }
+.q-settings__card { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--q-line); border-radius: var(--q-r-panel); background: var(--q-surface); }
+.q-settings__card p { margin: 0; }
+.q-settings__cardhead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--q-s2); }
+.q-settings__cardhead h2:focus-visible { outline-offset: 4px; }
+.q-settings__status:empty { display: none; }
+.q-settings__retry { display: flex; align-items: center; gap: var(--q-s3); }
+.q-settings__form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--q-s3); align-items: start; }
+.q-settings__form .q-input { height: 34px; font-size: 13px; }
+/* Level with the input: label line (12.5px × 1.5 ≈ 19px) + the field's 6px gap. */
+.q-settings__submit { height: 34px; margin-top: 25px; padding: 0 14px; font-weight: 600; white-space: nowrap; }
+.q-settings__form .q-label { line-height: 19px; }
+.q-settings__list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--q-ink); }
+.q-settings__not { color: var(--q-ink-2); }
+.q-settings__note { margin: 0; text-wrap: pretty; }
+.q-settings__code { font: 12px var(--q-mono); color: var(--q-ink); overflow-wrap: anywhere; }
+
+/* The name is the Member's own text: no caps, no tracking, whatever the column heads do. */
+.q-table .q-tokens__name { text-transform: none; letter-spacing: 0; font: 500 13px/1.4 var(--q-sans); color: var(--q-ink); padding: 10px 14px; vertical-align: middle; overflow-wrap: anywhere; }
+.q-tokens tbody tr:last-child th { border-bottom: 0; }
+
+/* One-time secret */
+.q-secret { display: flex; flex-direction: column; gap: 6px; padding-top: 14px; border-top: 1px solid var(--q-line-soft); }
+.q-secret__name { overflow-wrap: anywhere; }
+.q-secret__row { display: flex; gap: var(--q-s2); }
+.q-secret__row .q-input { min-width: 0; font-size: 12.5px; }
+.q-secret__row .q-btn { flex: none; height: 34px; }
+.q-secret__done { display: flex; justify-content: flex-end; }
+
+/* Command block: a long command scrolls inside, the page never does. */
+.q-command { display: flex; align-items: flex-start; gap: var(--q-s2); min-width: 0; padding: var(--q-s2); border: 1px solid var(--q-line); border-radius: var(--q-r); background: var(--q-sunken); }
+.q-command__code { flex: 1; min-width: 0; margin: 0; padding: 5px 4px 8px; overflow-x: auto; white-space: pre; font: 12.5px/1.5 var(--q-mono); color: var(--q-ink); border-radius: var(--q-r-chip); }
+.q-command__code code { font: inherit; }
+.q-command__copy { flex: none; background: var(--q-surface); }

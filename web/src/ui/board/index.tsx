@@ -14,9 +14,10 @@ import {
 import type { EdgeChangeset, NodeChangeset, OnConnectEnd, OnNodeDrag } from '@xyflow/react'
 import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory } from '../../lib'
 import type { CardVM, ConnectionVM, FrameVM, Kind, Op } from '../../lib'
-import { pagePanel, useBoardRequest, useHistoryPanel, usePagePanel } from '../bridge'
+import { pagePanel, suggestionsPanel, useBoardRequest, useHistoryPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { HistoryPanel } from '../history'
 import { PagePanel } from '../page'
+import { SuggestionsPanel } from '../suggestions'
 import { EmptyState, ErrorNote, LoadingNote } from './BoardMessage'
 import { ConnectionPopover } from './ConnectionPopover'
 import { ConnectionEdge } from './edges/ConnectionEdge'
@@ -25,16 +26,20 @@ import {
   FRAME_TITLE_SPACE,
   NEW_FRAME_H,
   NEW_FRAME_W,
+  boundsOf,
   centre,
   fitBounds,
   frameMembers,
   nudge,
   nudgeDelta,
   readingOrder,
+  sidePanelsFit,
+  viewToShow,
 } from './geometry'
 import type { Rect } from './geometry'
 import { Inspector } from './Inspector'
 import { PreviewBanner } from './PreviewBanner'
+import { SuggestedConnection } from './SuggestedConnection'
 import { CardNode } from './nodes/CardNode'
 import { FrameNode } from './nodes/FrameNode'
 import { Toast } from './Toast'
@@ -62,11 +67,13 @@ const ARIA_LABELS = {
   'handle.ariaLabel': 'Drag to connect to another Card',
 }
 const backToNow = () => history.preview(null)
+const NO_CARDS: ReadonlySet<string> = new Set()
 const TYPING = 'input, textarea, select, [contenteditable="true"], .qb-inspector, .qb-popover, .qb-status-menu, .qb-toasts'
 
 /**
  * The Board area: fills its positioned parent. The shell opens/closes the Board; this only reads and submits.
  * While the History panel is open the area splits: the Board above, History below.
+ * The Suggestions panel sits left of the Board, the Page panel over its right.
  */
 export function BoardView() {
   const historyOpen = useHistoryPanel((s) => s.open)
@@ -91,13 +98,39 @@ export function BoardView() {
     const node = [...nodes].find((n) => n.getAttribute('data-id') === cardId) ?? area?.querySelector<HTMLElement>('.qb-board')
     node?.focus({ preventScroll: true })
   }, [])
+
+  // Suggestions, docked left of the Board. Not for Guests, and not while History previews an earlier moment.
+  const suggestionsOpen = useSuggestionsPanel((s) => s.open)
+  const showSuggestions = suggestionsOpen && !isGuest && !previewing
+  useEffect(() => {
+    if (suggestionsOpen && (isGuest || previewing)) suggestionsPanel.close()
+  }, [suggestionsOpen, isGuest, previewing])
+  // Leaving the Board takes the previewed Connection with it (the panel itself may stay open for the way back).
+  useEffect(() => () => suggestionsPanel.preview(null), [])
+
+  // Both side panels need room for the Board between them; where there is none, the one opened last stays.
+  const sides = useRef({ suggestions: false, page: false })
+  useEffect(() => {
+    const before = sides.current
+    const now = { suggestions: showSuggestions, page: pageCard !== null }
+    sides.current = now
+    if (!now.suggestions || !now.page) return
+    const width = areaRef.current?.clientWidth ?? 0
+    if (width === 0 || sidePanelsFit(width)) return // 0: not laid out, nothing to go by
+    if (before.suggestions && !before.page) suggestionsPanel.close()
+    else pagePanel.close()
+  }, [showSuggestions, pageCard])
+
   return (
     <div className="qb-area" ref={areaRef}>
       <div className="qb-area__canvas">
-        <ReactFlowProvider>
-          <BoardCanvas />
-        </ReactFlowProvider>
-        {pageCard && !previewing && <PagePanel key={pageCard} cardId={pageCard} full={pageFull} onClose={closePage} />}
+        {showSuggestions && <SuggestionsPanel onClose={focusBoard} />}
+        <div className="qb-area__board">
+          <ReactFlowProvider>
+            <BoardCanvas />
+          </ReactFlowProvider>
+          {pageCard && !previewing && <PagePanel key={pageCard} cardId={pageCard} full={pageFull} onClose={closePage} />}
+        </div>
       </div>
       {historyOpen && !isGuest && <HistoryPanel onClose={focusBoard} />}
     </div>
@@ -125,6 +158,12 @@ function kindOf(s: View, id: string): Kind | null {
   if (s.frames.some((f) => f.id === id)) return 'Frame'
   if (s.connections.some((c) => c.id === id)) return 'Connection'
   return null
+}
+
+/** Where a Card is right now: while it is being dragged, where the drag has it. */
+function placed(card: CardVM, transient: ReadonlyMap<string, Transient>): Rect {
+  const t = transient.get(card.id)
+  return { x: t?.x ?? card.x, y: t?.y ?? card.y, w: card.w, h: card.h }
 }
 
 function BoardCanvas() {
@@ -168,11 +207,21 @@ function BoardCanvas() {
     ui.prune((id) => cardsById.has(id) || framesById.has(id) || conns.has(id))
   }, [cardsById, framesById, connections])
 
+  // ---- the Connection a Suggestion previews: drawn here, never part of the Board's Connections ----
+  const suggestion = useSuggestionsPanel((s) => (s.open ? s.preview : null))
+  const live = suggestion !== null && !readOnly && suggestion.from !== suggestion.to
+  const suggestedFrom = live ? cardsById.get(suggestion.from) : undefined
+  const suggestedTo = live ? cardsById.get(suggestion.to) : undefined
+  const suggested = useMemo(
+    () => (suggestedFrom && suggestedTo ? new Set([suggestedFrom.id, suggestedTo.id]) : NO_CARDS),
+    [suggestedFrom, suggestedTo],
+  )
+
   const [buildNodes] = useState(createNodeBuilder)
   const [buildEdges] = useState(createEdgeBuilder)
   const nodes = useMemo(
-    () => buildNodes({ cards, frames, counts, selected, transient, raised, readOnly }),
-    [buildNodes, cards, frames, counts, selected, transient, raised, readOnly],
+    () => buildNodes({ cards, frames, counts, selected, transient, raised, readOnly, suggested }),
+    [buildNodes, cards, frames, counts, selected, transient, raised, readOnly, suggested],
   )
   const edges = useMemo(
     () => buildEdges(connections, cardsById, selected),
@@ -227,6 +276,25 @@ function BoardCanvas() {
     },
     [rf],
   )
+
+  // A newly previewed Suggestion: if one of its two Cards is out of view, pan just enough to show both
+  // (and zoom out only if they do not fit). The part of the Board under the inspector or the Page panel does not count.
+  const shownId = suggestedFrom && suggestedTo && suggestion ? suggestion.id : null
+  const shownFrom = suggestedFrom?.id
+  const shownTo = suggestedTo?.id
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!shownId || !el) return
+    const cards = latest.current.cards
+    const a = cards.find((c) => c.id === shownFrom)
+    const b = cards.find((c) => c.id === shownTo)
+    if (!a || !b) return
+    const covered =
+      (el.querySelector<HTMLElement>('.qb-inspector')?.offsetWidth ?? 0) +
+      (el.parentElement?.querySelector<HTMLElement>('.qp-panel')?.offsetWidth ?? 0)
+    const next = viewToShow(boundsOf(a, b), rf.getViewport(), el.clientWidth - covered, el.clientHeight)
+    if (next) void rf.setViewport(next, { duration: 160 })
+  }, [shownId, shownFrom, shownTo, latest, rf])
 
   // ---- creation ----
   const createCardAt = useCallback(
@@ -524,6 +592,14 @@ function BoardCanvas() {
         ariaLabelConfig={ARIA_LABELS}
       >
         <Background gap={24} size={1.6} color="var(--q-grid)" />
+        {suggestion && suggestedFrom && suggestedTo && (
+          <SuggestedConnection
+            from={placed(suggestedFrom, transient)}
+            to={placed(suggestedTo, transient)}
+            kind={suggestion.kind}
+            label={suggestion.label}
+          />
+        )}
       </ReactFlow>
 
       <Toolbar readOnly={readOnly} onAddCard={addCardAtCentre} onAddFrame={addFrameAtCentre} />

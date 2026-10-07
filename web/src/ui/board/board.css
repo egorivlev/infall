@@ -506,6 +506,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  display: flex; /* M5: the Suggestions panel (if open), then the Board */
   /* M4: the Page panel is 740px, at least 480, and always leaves 320px of the Board (room for the inspector). */
   --qb-page-w: max(480px, min(740px, calc(100% - 320px)));
 }
@@ -555,4 +556,37 @@
   border: 1px solid var(--q-line-soft);
   font: 500 10.5px var(--q-mono);
   color: var(--q-ink-2);
+}
+
+/* ---- M5: the Suggestions panel sits left of the Board; the Board (and the Page panel over it) take the rest ---- */
+.qb-area__board { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+
+/* The Connection a Suggestion previews: dashed, accent, never interactive. */
+.qb-sug { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.qb-sug__line {
+  fill: none;
+  stroke: var(--q-accent);
+  stroke-width: 1.8px;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qb-sug__dash { stroke-dasharray: 7 5; }
+.qb-sug-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font: 500 10.5px/1 var(--q-mono);
+  padding: 3px 6px;
+  border-radius: var(--q-r-chip);
+  background: var(--q-canvas);
+  border: 1px dashed var(--q-accent);
+  color: var(--q-accent);
+  pointer-events: none;
+}
+/* …and its two Cards, ringed like a selected Card. */
+.qb-board .react-flow__node-card.is-suggested .qb-card {
+  border-color: var(--q-accent);
+  box-shadow: 0 0 0 2px var(--q-accent-soft), var(--q-shadow);
 }

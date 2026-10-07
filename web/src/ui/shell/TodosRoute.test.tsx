@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../lib', () => ({
   useSession: () => h.session,
   useBoard: () => h.board,
+  useSuggestions: () => [],
   useMembers: () => [],
   useBranches: (): BranchInfo[] => [],
   useHistory: (): HistorySnapshot => ({ status: 'idle', head: 0, activities: [], checkpoints: [], preview: null }),

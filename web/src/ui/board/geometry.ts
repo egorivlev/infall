@@ -191,3 +191,47 @@ export function barPath(e: RouteEnd, towardsCurve: 1 | -1, inset = 4, half = 5):
   const py = e.dx * half
   return `M${cx + px},${cy + py} L${cx - px},${cy - py}`
 }
+
+// ---- M5: the Suggestions panel and the Connection it previews ----
+
+export const SUGGESTIONS_W = 420 // the Suggestions panel, docked left of the Board
+const PAGE_MIN_W = 480 // the Page panel never gets narrower than this
+const BOARD_MIN_W = 320 // what must stay of the Board between the two side panels
+
+/** Whether the Suggestions panel and the Page panel fit side by side in a Board area this wide. */
+export function sidePanelsFit(areaWidth: number): boolean {
+  return areaWidth - SUGGESTIONS_W - PAGE_MIN_W >= BOARD_MIN_W
+}
+
+/** The rectangle around two Cards. */
+export function boundsOf(a: Rect, b: Rect): Bounds {
+  const x = Math.min(a.x, b.x)
+  const y = Math.min(a.y, b.y)
+  return { x, y, width: Math.max(a.x + a.w, b.x + b.w) - x, height: Math.max(a.y + a.h, b.y + b.h) - y }
+}
+
+export type View = { x: number; y: number; zoom: number }
+
+/**
+ * The viewport that shows all of `b` in a `width` × `height` view (screen px), moving as little as possible:
+ * null when it is already fully in view; a pan that leaves `pad` px around it; a smaller zoom, centred,
+ * only when it does not fit at the current one.
+ */
+export function viewToShow(b: Bounds, view: View, width: number, height: number, pad = 48, minZoom = 0.1): View | null {
+  if (width <= 0 || height <= 0) return null
+  const { zoom } = view
+  const left = b.x * zoom + view.x
+  const top = b.y * zoom + view.y
+  const right = left + b.width * zoom
+  const bottom = top + b.height * zoom
+  if (left >= 0 && top >= 0 && right <= width && bottom <= height) return null
+  const room = Math.min(pad, width / 4, height / 4)
+  if (b.width * zoom + 2 * room > width || b.height * zoom + 2 * room > height) {
+    const z = Math.max(minZoom, Math.min(zoom, (width - 2 * room) / b.width, (height - 2 * room) / b.height))
+    return { x: width / 2 - (b.x + b.width / 2) * z, y: height / 2 - (b.y + b.height / 2) * z, zoom: z }
+  }
+  // Each axis moves only if something is cut off along it.
+  const dx = left < 0 ? room - left : right > width ? width - room - right : 0
+  const dy = top < 0 ? room - top : bottom > height ? height - room - bottom : 0
+  return { x: view.x + dx, y: view.y + dy, zoom }
+}

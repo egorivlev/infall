@@ -311,7 +311,7 @@ type Suggestion = {
 | Method, path | Body | 200 response |
 |---|---|---|
 | `GET /api/suggestions?branch={id}` | — | `{ suggestions: Suggestion[] }` of that Branch: all pending, plus those decided in the last 7 days; newest first |
-| `POST /api/suggestions/{id}/accept` | `{ ops: Op[] }` (1–20) | `{ suggestion: Suggestion, seq: number, changes: Change[] }` — under the write lock: if the Suggestion is pending, apply `ops` to its Branch as an ordinary edit by the caller (same rules and broadcast as `POST …/ops`), then mark it accepted. All or nothing. The client builds the ops (create Source + Attachment, or attach an existing Source, or create the Connection). `409 already_decided` if not pending; `409 rejected` if the core refuses the ops (e.g. the Card is gone) — the Suggestion then stays pending |
+| `POST /api/suggestions/{id}/accept` | `{ ops: Op[] }` (1–20) | `{ suggestion: Suggestion, seq: number, changes: Change[] }` — under the write lock: if the Suggestion is pending, apply `ops` to its Branch as an ordinary edit by the caller (same rules and broadcast as `POST …/ops`), then mark it accepted. All or nothing. The client builds the ops (create Source + Attachment, or attach an existing Source, or create the Connection). `409 already_decided` if not pending; `409 stale` if the Card it is for (or either Card of a Connection) is no longer live at the Branch head; `409 rejected` if the core refuses the ops — in both cases nothing is applied and the Suggestion stays pending |
 | `POST /api/suggestions/{id}/reject` | — | `{ suggestion }`; `409 already_decided` if not pending |
 | `POST /api/suggestions/{id}/reopen` | — | `{ suggestion }` — a rejected one becomes pending again (undo); `409 already_decided` unless rejected |
 

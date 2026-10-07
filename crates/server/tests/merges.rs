@@ -1045,6 +1045,81 @@ impl Store for BreakableStore {
     fn delete_todo(&self, id: uuid::Uuid) -> qoop_server::store::StoreResult<bool> {
         self.inner.delete_todo(id)
     }
+
+    fn access_tokens(
+        &self,
+        member: qoop_core::MemberId,
+    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::AccessTokenRecord>> {
+        self.inner.access_tokens(member)
+    }
+    fn insert_access_token(
+        &self,
+        token: &qoop_server::store::AccessTokenRecord,
+        max: usize,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.inner.insert_access_token(token, max)
+    }
+    fn delete_access_token(
+        &self,
+        member: qoop_core::MemberId,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.inner.delete_access_token(member, id)
+    }
+    fn access_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> qoop_server::store::StoreResult<
+        Option<(
+            qoop_server::store::AccessTokenRecord,
+            qoop_server::store::MemberRecord,
+        )>,
+    > {
+        self.inner.access_token_by_hash(token_hash)
+    }
+    fn touch_access_token(&self, id: uuid::Uuid, now: i64) -> qoop_server::store::StoreResult<()> {
+        self.inner.touch_access_token(id, now)
+    }
+    fn suggestions(
+        &self,
+        branch: qoop_core::BranchId,
+        decided_after: i64,
+    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::SuggestionRecord>> {
+        self.inner.suggestions(branch, decided_after)
+    }
+    fn suggestion(
+        &self,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::SuggestionRecord>> {
+        self.inner.suggestion(id)
+    }
+    fn insert_suggestion(
+        &self,
+        suggestion: &qoop_server::store::SuggestionRecord,
+    ) -> qoop_server::store::StoreResult<()> {
+        self.inner.insert_suggestion(suggestion)
+    }
+    fn decide_suggestion(
+        &self,
+        id: uuid::Uuid,
+        from: qoop_server::store::SuggestionState,
+        to: qoop_server::store::SuggestionState,
+        decided: Option<(qoop_core::MemberId, i64)>,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.inner.decide_suggestion(id, from, to, decided)
+    }
+    fn save_workspace_accepting(
+        &self,
+        ws: &Workspace,
+        suggestion: uuid::Uuid,
+        by: qoop_core::MemberId,
+        at: i64,
+    ) -> qoop_server::store::StoreResult<bool> {
+        if self.broken.load(Ordering::SeqCst) {
+            return Err(StoreError::Backend("disk full at /secret/path".to_string()));
+        }
+        self.inner.save_workspace_accepting(ws, suggestion, by, at)
+    }
 }
 
 #[tokio::test]
@@ -1082,4 +1157,57 @@ async fn a_failed_persist_leaves_the_merge_undone_and_hides_the_cause() {
     assert_eq!(res.status, StatusCode::OK, "{}", res.text);
     assert_eq!(res.body["seq"], 6);
     assert_eq!(res.body["checkpoint"]["name"], "before side");
+}
+
+#[tokio::test]
+async fn a_failed_persist_leaves_an_accepted_suggestion_pending_and_hides_the_cause() {
+    let broken = Arc::new(AtomicBool::new(false));
+    let store = BreakableStore {
+        inner: MemoryStore::new(),
+        broken: broken.clone(),
+    };
+    let w = world_on(TestApp::with_store(Arc::new(store))).await;
+    let token = w.app.access_token(&w.admin, "tools").await;
+    let made = w
+        .app
+        .tool_ok(
+            &token,
+            "suggest_connection",
+            json!({ "from": w.a, "to": w.b, "reason": "Linked." }),
+        )
+        .await;
+    let path = format!("/api/suggestions/{}/accept", made["id"].as_str().unwrap());
+    let body = json!({ "ops": [{ "Create": {
+        "entity": new_id(), "kind": "Connection",
+        "fields": { "from": { "Ref": w.a }, "to": { "Ref": w.b } }
+    } }] });
+    let before = w.app.workspace_bytes();
+    let main_before = w.board(&w.main).await;
+
+    broken.store(true, Ordering::SeqCst);
+    let res = w.app.post(&path, Some(&w.admin), body.clone()).await;
+    assert_eq!(
+        res.status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "{}",
+        res.text
+    );
+    assert_eq!(res.code(), "internal");
+    assert!(!res.text.contains("secret"), "{}", res.text);
+    assert!(!res.text.contains("disk full"));
+    assert_eq!(w.app.workspace_bytes(), before);
+    assert_eq!(w.board(&w.main).await, main_before);
+    let list = w
+        .app
+        .get(
+            &format!("/api/suggestions?branch={}", w.main),
+            Some(&w.admin),
+        )
+        .await;
+    assert_eq!(list.body["suggestions"][0]["state"], "pending");
+
+    broken.store(false, Ordering::SeqCst);
+    let res = w.app.post(&path, Some(&w.admin), body).await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+    assert_eq!(res.body["suggestion"]["state"], "accepted");
 }

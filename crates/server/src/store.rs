@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-use qoop_core::{MemberId, Workspace};
+use qoop_core::{BranchId, MemberId, Workspace};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -100,6 +100,122 @@ pub struct TodoRecord {
     pub card: Option<TodoCard>,
 }
 
+/// A stored access token (contract §12). Only the SHA-256 of its secret is kept.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccessTokenRecord {
+    pub id: Uuid,
+    pub member: MemberId,
+    pub name: String,
+    pub token_hash: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+/// What a Suggestion proposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionKind {
+    Source,
+    Connection,
+}
+
+impl SuggestionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SuggestionKind::Source => "source",
+            SuggestionKind::Connection => "connection",
+        }
+    }
+
+    fn parse(s: &str) -> Option<SuggestionKind> {
+        match s {
+            "source" => Some(SuggestionKind::Source),
+            "connection" => Some(SuggestionKind::Connection),
+            _ => None,
+        }
+    }
+}
+
+/// Where a Suggestion stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionState {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+impl SuggestionState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SuggestionState::Pending => "pending",
+            SuggestionState::Accepted => "accepted",
+            SuggestionState::Rejected => "rejected",
+        }
+    }
+
+    fn parse(s: &str) -> Option<SuggestionState> {
+        match s {
+            "pending" => Some(SuggestionState::Pending),
+            "accepted" => Some(SuggestionState::Accepted),
+            "rejected" => Some(SuggestionState::Rejected),
+            _ => None,
+        }
+    }
+}
+
+/// The Source a Suggestion proposes to attach.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SuggestedSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub year: Option<String>,
+}
+
+/// The Connection a Suggestion proposes to draw.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SuggestedConnection {
+    pub from: Uuid,
+    pub to: Uuid,
+    /// `related`, `directed` or `contradicts`.
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// A stored Suggestion (contract §12); this is also its JSON shape.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SuggestionRecord {
+    pub id: Uuid,
+    pub branch: BranchId,
+    pub kind: SuggestionKind,
+    /// Kind `source`: the Card to attach to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub card: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SuggestedSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<SuggestedConnection>,
+    pub reason: String,
+    /// The Member whose access token proposed it.
+    pub created_by: MemberId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub created_at: i64,
+    pub state: SuggestionState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decided_by: Option<MemberId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decided_at: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum StoreError {
     #[error("an account with that email already exists")]
@@ -124,7 +240,8 @@ impl From<serde_json::Error> for StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
-/// Accounts, sessions, invites, To-dos and the Workspace snapshot.
+/// Accounts, sessions, invites, To-dos, access tokens, Suggestions and the Workspace
+/// snapshot.
 pub trait Store: Send + Sync + 'static {
     fn load_workspace(&self) -> StoreResult<Option<Workspace>>;
     /// Replaces the snapshot atomically.
@@ -137,10 +254,11 @@ pub trait Store: Send + Sync + 'static {
     /// Ordered by creation time.
     fn members(&self) -> StoreResult<Vec<MemberRecord>>;
     fn member_count(&self) -> StoreResult<usize>;
-    /// Removes the account, all its sessions and the To-dos it owns (ones it created for
-    /// others stay); false if there was none.
+    /// Removes the account, all its sessions, its access tokens and the To-dos it owns
+    /// (ones it created for others stay, as do its Suggestions); false if there was none.
     fn delete_member(&self, id: MemberId) -> StoreResult<bool>;
-    /// Sets a new password hash and deletes all the account's sessions; false if unknown.
+    /// Sets a new password hash and deletes all the account's sessions and access tokens;
+    /// false if unknown.
     fn set_password(&self, id: MemberId, password_hash: &str) -> StoreResult<bool>;
 
     fn insert_session(
@@ -175,12 +293,55 @@ pub trait Store: Send + Sync + 'static {
     fn update_todo(&self, todo: &TodoRecord) -> StoreResult<bool>;
     /// False if there was none.
     fn delete_todo(&self, id: Uuid) -> StoreResult<bool>;
+
+    /// The Member's access tokens, oldest first.
+    fn access_tokens(&self, member: MemberId) -> StoreResult<Vec<AccessTokenRecord>>;
+    /// Stores a new access token unless its Member already has `max`; false (and nothing
+    /// stored) then.
+    fn insert_access_token(&self, token: &AccessTokenRecord, max: usize) -> StoreResult<bool>;
+    /// Deletes one of the Member's own tokens; false if they have none with that id.
+    fn delete_access_token(&self, member: MemberId, id: Uuid) -> StoreResult<bool>;
+    /// The token with that secret hash and the Member it acts as.
+    fn access_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> StoreResult<Option<(AccessTokenRecord, MemberRecord)>>;
+    fn touch_access_token(&self, id: Uuid, now: i64) -> StoreResult<()>;
+
+    /// The Suggestions of `branch` that are pending or were decided after `decided_after`;
+    /// newest first.
+    fn suggestions(
+        &self,
+        branch: BranchId,
+        decided_after: i64,
+    ) -> StoreResult<Vec<SuggestionRecord>>;
+    fn suggestion(&self, id: Uuid) -> StoreResult<Option<SuggestionRecord>>;
+    fn insert_suggestion(&self, suggestion: &SuggestionRecord) -> StoreResult<()>;
+    /// Moves a Suggestion from state `from` to `to`, recording who decided and when (both
+    /// `None` when it becomes pending again); false, and nothing changed, unless it is in
+    /// state `from`.
+    fn decide_suggestion(
+        &self,
+        id: Uuid,
+        from: SuggestionState,
+        to: SuggestionState,
+        decided: Option<(MemberId, i64)>,
+    ) -> StoreResult<bool>;
+    /// Atomically replaces the Workspace snapshot and marks a pending Suggestion accepted;
+    /// false, and nothing written, if the Suggestion is not pending.
+    fn save_workspace_accepting(
+        &self,
+        ws: &Workspace,
+        suggestion: Uuid,
+        by: MemberId,
+        at: i64,
+    ) -> StoreResult<bool>;
 }
 
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -234,9 +395,46 @@ CREATE TABLE todos (
 CREATE INDEX todos_owner ON todos(owner);
 ";
 
+/// M5: access tokens (they go with their Member's account) and Suggestions (which stay
+/// when the Member who created them is removed).
+const SCHEMA_V3: &str = "
+CREATE TABLE access_tokens (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+);
+CREATE INDEX access_tokens_member ON access_tokens(member_id);
+CREATE TABLE suggestions (
+    id TEXT PRIMARY KEY,
+    branch TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    card TEXT,
+    source_url TEXT,
+    source_doi TEXT,
+    source_title TEXT,
+    source_authors TEXT,
+    source_year TEXT,
+    conn_from TEXT,
+    conn_to TEXT,
+    conn_kind TEXT,
+    conn_label TEXT,
+    reason TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    model TEXT,
+    created_at INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    decided_by TEXT,
+    decided_at INTEGER
+);
+CREATE INDEX suggestions_branch ON suggestions(branch, state);
+";
+
 /// Steps that bring a file from version `i` to `i + 1`; index 0 creates the schema.
 /// A later version appends its step here.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2];
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
@@ -368,6 +566,110 @@ fn todo_row(r: &Row<'_>) -> rusqlite::Result<TodoRecord> {
     })
 }
 
+const TOKEN_COLS: &str = "id, member_id, name, token_hash, created_at, last_used_at";
+
+fn token_row(r: &Row<'_>) -> rusqlite::Result<AccessTokenRecord> {
+    Ok(AccessTokenRecord {
+        id: parse_uuid(&r.get::<_, String>(0)?)?,
+        member: MemberId(parse_uuid(&r.get::<_, String>(1)?)?),
+        name: r.get(2)?,
+        token_hash: r.get(3)?,
+        created_at: r.get(4)?,
+        last_used_at: r.get(5)?,
+    })
+}
+
+const SUGGESTION_COLS: &str = "id, branch, kind, card, source_url, source_doi, source_title, \
+     source_authors, source_year, conn_from, conn_to, conn_kind, conn_label, reason, \
+     created_by, model, created_at, state, decided_by, decided_at";
+
+fn bad_text(what: &str, s: &str) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        0,
+        rusqlite::types::Type::Text,
+        format!("unknown {what} {s:?}").into(),
+    )
+}
+
+fn opt_uuid(s: Option<String>) -> rusqlite::Result<Option<Uuid>> {
+    s.as_deref().map(parse_uuid).transpose()
+}
+
+fn suggestion_row(r: &Row<'_>) -> rusqlite::Result<SuggestionRecord> {
+    let kind: String = r.get(2)?;
+    let kind = SuggestionKind::parse(&kind).ok_or_else(|| bad_text("suggestion kind", &kind))?;
+    let state: String = r.get(17)?;
+    let state =
+        SuggestionState::parse(&state).ok_or_else(|| bad_text("suggestion state", &state))?;
+    let source = (kind == SuggestionKind::Source).then_some(SuggestedSource {
+        url: r.get(4)?,
+        doi: r.get(5)?,
+        title: r.get(6)?,
+        authors: r.get(7)?,
+        year: r.get(8)?,
+    });
+    let connection = match (
+        opt_uuid(r.get(9)?)?,
+        opt_uuid(r.get(10)?)?,
+        r.get::<_, Option<String>>(11)?,
+    ) {
+        (Some(from), Some(to), Some(kind)) => Some(SuggestedConnection {
+            from,
+            to,
+            kind,
+            label: r.get(12)?,
+        }),
+        _ => None,
+    };
+    Ok(SuggestionRecord {
+        id: parse_uuid(&r.get::<_, String>(0)?)?,
+        branch: BranchId(parse_uuid(&r.get::<_, String>(1)?)?),
+        kind,
+        card: opt_uuid(r.get(3)?)?,
+        source,
+        connection,
+        reason: r.get(13)?,
+        created_by: MemberId(parse_uuid(&r.get::<_, String>(14)?)?),
+        model: r.get(15)?,
+        created_at: r.get(16)?,
+        state,
+        decided_by: opt_uuid(r.get(18)?)?.map(MemberId),
+        decided_at: r.get(19)?,
+    })
+}
+
+/// Marks a Suggestion decided (or pending again) if it is in state `from`.
+fn decide_suggestion_on(
+    conn: &Connection,
+    id: Uuid,
+    from: SuggestionState,
+    to: SuggestionState,
+    decided: Option<(MemberId, i64)>,
+) -> StoreResult<bool> {
+    let n = conn.execute(
+        "UPDATE suggestions SET state = ?3, decided_by = ?4, decided_at = ?5
+         WHERE id = ?1 AND state = ?2",
+        params![
+            id.to_string(),
+            from.as_str(),
+            to.as_str(),
+            decided.map(|(by, _)| by.0.to_string()),
+            decided.map(|(_, at)| at),
+        ],
+    )?;
+    Ok(n > 0)
+}
+
+fn save_workspace_on(conn: &Connection, ws: &Workspace) -> StoreResult<()> {
+    let json = serde_json::to_string(ws)?;
+    conn.execute(
+        "INSERT INTO workspace (id, json) VALUES (1, ?1)
+         ON CONFLICT(id) DO UPDATE SET json = excluded.json",
+        params![json],
+    )?;
+    Ok(())
+}
+
 fn is_unique_violation(e: &rusqlite::Error) -> bool {
     matches!(
         e,
@@ -415,14 +717,9 @@ impl Store for SqliteStore {
     }
 
     fn save_workspace(&self, ws: &Workspace) -> StoreResult<()> {
-        let json = serde_json::to_string(ws)?;
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO workspace (id, json) VALUES (1, ?1)
-             ON CONFLICT(id) DO UPDATE SET json = excluded.json",
-            params![json],
-        )?;
+        save_workspace_on(&tx, ws)?;
         tx.commit()?;
         Ok(())
     }
@@ -467,6 +764,10 @@ impl Store for SqliteStore {
         let tx = conn.transaction()?;
         let id = id.0.to_string();
         tx.execute("DELETE FROM sessions WHERE member_id = ?1", params![id])?;
+        tx.execute(
+            "DELETE FROM access_tokens WHERE member_id = ?1",
+            params![id],
+        )?;
         tx.execute("DELETE FROM todos WHERE owner = ?1", params![id])?;
         let n = tx.execute("DELETE FROM members WHERE id = ?1", params![id])?;
         tx.commit()?;
@@ -482,6 +783,10 @@ impl Store for SqliteStore {
             params![password_hash, id],
         )?;
         tx.execute("DELETE FROM sessions WHERE member_id = ?1", params![id])?;
+        tx.execute(
+            "DELETE FROM access_tokens WHERE member_id = ?1",
+            params![id],
+        )?;
         tx.commit()?;
         Ok(n > 0)
     }
@@ -679,6 +984,189 @@ impl Store for SqliteStore {
             .execute("DELETE FROM todos WHERE id = ?1", params![id.to_string()])?;
         Ok(n > 0)
     }
+
+    fn access_tokens(&self, member: MemberId) -> StoreResult<Vec<AccessTokenRecord>> {
+        let conn = self.conn()?;
+        let sql = format!(
+            "SELECT {TOKEN_COLS} FROM access_tokens WHERE member_id = ?1 ORDER BY created_at, id"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![member.0.to_string()], token_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn insert_access_token(&self, t: &AccessTokenRecord, max: usize) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let member = t.member.0.to_string();
+        let have: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM access_tokens WHERE member_id = ?1",
+            params![member],
+            |r| r.get(0),
+        )?;
+        if usize::try_from(have).unwrap_or(usize::MAX) >= max {
+            return Ok(false);
+        }
+        let sql =
+            format!("INSERT INTO access_tokens ({TOKEN_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6)");
+        tx.execute(
+            &sql,
+            params![
+                t.id.to_string(),
+                member,
+                t.name,
+                t.token_hash,
+                t.created_at,
+                t.last_used_at
+            ],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    fn delete_access_token(&self, member: MemberId, id: Uuid) -> StoreResult<bool> {
+        let n = self.conn()?.execute(
+            "DELETE FROM access_tokens WHERE id = ?1 AND member_id = ?2",
+            params![id.to_string(), member.0.to_string()],
+        )?;
+        Ok(n > 0)
+    }
+
+    fn access_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> StoreResult<Option<(AccessTokenRecord, MemberRecord)>> {
+        let token_cols = TOKEN_COLS
+            .split(", ")
+            .map(|c| format!("t.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let member_cols = MEMBER_COLS
+            .split(", ")
+            .map(|c| format!("m.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT {member_cols}, {token_cols} FROM access_tokens t
+             JOIN members m ON m.id = t.member_id WHERE t.token_hash = ?1"
+        );
+        Ok(self
+            .conn()?
+            .query_row(&sql, params![token_hash], |r| {
+                let member = member_row(r)?;
+                let token = AccessTokenRecord {
+                    id: parse_uuid(&r.get::<_, String>(8)?)?,
+                    member: member.id,
+                    name: r.get(10)?,
+                    token_hash: r.get(11)?,
+                    created_at: r.get(12)?,
+                    last_used_at: r.get(13)?,
+                };
+                Ok((token, member))
+            })
+            .optional()?)
+    }
+
+    fn touch_access_token(&self, id: Uuid, now: i64) -> StoreResult<()> {
+        self.conn()?.execute(
+            "UPDATE access_tokens SET last_used_at = ?1 WHERE id = ?2",
+            params![now, id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn suggestions(
+        &self,
+        branch: BranchId,
+        decided_after: i64,
+    ) -> StoreResult<Vec<SuggestionRecord>> {
+        let conn = self.conn()?;
+        let sql = format!(
+            "SELECT {SUGGESTION_COLS} FROM suggestions
+             WHERE branch = ?1 AND (state = 'pending' OR decided_at > ?2)
+             ORDER BY created_at DESC, id DESC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![branch.0.to_string(), decided_after], suggestion_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn suggestion(&self, id: Uuid) -> StoreResult<Option<SuggestionRecord>> {
+        let sql = format!("SELECT {SUGGESTION_COLS} FROM suggestions WHERE id = ?1");
+        Ok(self
+            .conn()?
+            .query_row(&sql, params![id.to_string()], suggestion_row)
+            .optional()?)
+    }
+
+    fn insert_suggestion(&self, s: &SuggestionRecord) -> StoreResult<()> {
+        let sql = format!(
+            "INSERT INTO suggestions ({SUGGESTION_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+             ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"
+        );
+        let source = s.source.as_ref();
+        let conn = s.connection.as_ref();
+        self.conn()?.execute(
+            &sql,
+            params![
+                s.id.to_string(),
+                s.branch.0.to_string(),
+                s.kind.as_str(),
+                s.card.map(|c| c.to_string()),
+                source.and_then(|x| x.url.as_deref()),
+                source.and_then(|x| x.doi.as_deref()),
+                source.and_then(|x| x.title.as_deref()),
+                source.and_then(|x| x.authors.as_deref()),
+                source.and_then(|x| x.year.as_deref()),
+                conn.map(|c| c.from.to_string()),
+                conn.map(|c| c.to.to_string()),
+                conn.map(|c| c.kind.as_str()),
+                conn.and_then(|c| c.label.as_deref()),
+                s.reason,
+                s.created_by.0.to_string(),
+                s.model,
+                s.created_at,
+                s.state.as_str(),
+                s.decided_by.map(|m| m.0.to_string()),
+                s.decided_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn decide_suggestion(
+        &self,
+        id: Uuid,
+        from: SuggestionState,
+        to: SuggestionState,
+        decided: Option<(MemberId, i64)>,
+    ) -> StoreResult<bool> {
+        decide_suggestion_on(&*self.conn()?, id, from, to, decided)
+    }
+
+    fn save_workspace_accepting(
+        &self,
+        ws: &Workspace,
+        suggestion: Uuid,
+        by: MemberId,
+        at: i64,
+    ) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let accepted = decide_suggestion_on(
+            &tx,
+            suggestion,
+            SuggestionState::Pending,
+            SuggestionState::Accepted,
+            Some((by, at)),
+        )?;
+        if !accepted {
+            return Ok(false);
+        }
+        save_workspace_on(&tx, ws)?;
+        tx.commit()?;
+        Ok(true)
+    }
 }
 
 // ---------------------------------------------------------------- memory
@@ -690,6 +1178,8 @@ struct Memory {
     sessions: HashMap<String, (MemberId, i64)>,
     invites: Vec<InviteRecord>,
     todos: Vec<TodoRecord>,
+    tokens: Vec<AccessTokenRecord>,
+    suggestions: Vec<SuggestionRecord>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -717,6 +1207,28 @@ impl Memory {
         }
         self.members.push(m.clone());
         Ok(())
+    }
+
+    fn decide_suggestion(
+        &mut self,
+        id: Uuid,
+        from: SuggestionState,
+        to: SuggestionState,
+        decided: Option<(MemberId, i64)>,
+    ) -> bool {
+        match self
+            .suggestions
+            .iter_mut()
+            .find(|s| s.id == id && s.state == from)
+        {
+            Some(s) => {
+                s.state = to;
+                s.decided_by = decided.map(|(by, _)| by);
+                s.decided_at = decided.map(|(_, at)| at);
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -758,6 +1270,7 @@ impl Store for MemoryStore {
     fn delete_member(&self, id: MemberId) -> StoreResult<bool> {
         let mut m = self.lock()?;
         m.sessions.retain(|_, (member, _)| *member != id);
+        m.tokens.retain(|t| t.member != id);
         m.todos.retain(|t| t.owner != id);
         let before = m.members.len();
         m.members.retain(|x| x.id != id);
@@ -767,6 +1280,9 @@ impl Store for MemoryStore {
     fn set_password(&self, id: MemberId, password_hash: &str) -> StoreResult<bool> {
         let mut m = self.lock()?;
         m.sessions.retain(|_, (member, _)| *member != id);
+        if m.members.iter().any(|x| x.id == id) {
+            m.tokens.retain(|t| t.member != id);
+        }
         match m.members.iter_mut().find(|x| x.id == id) {
             Some(x) => {
                 x.password_hash = password_hash.to_string();
@@ -898,5 +1414,118 @@ impl Store for MemoryStore {
         let before = m.todos.len();
         m.todos.retain(|t| t.id != id);
         Ok(m.todos.len() < before)
+    }
+
+    fn access_tokens(&self, member: MemberId) -> StoreResult<Vec<AccessTokenRecord>> {
+        let mut tokens: Vec<AccessTokenRecord> = self
+            .lock()?
+            .tokens
+            .iter()
+            .filter(|t| t.member == member)
+            .cloned()
+            .collect();
+        tokens.sort_by_key(|t| (t.created_at, t.id.to_string()));
+        Ok(tokens)
+    }
+
+    fn insert_access_token(&self, token: &AccessTokenRecord, max: usize) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        if m.tokens.iter().filter(|t| t.member == token.member).count() >= max {
+            return Ok(false);
+        }
+        m.tokens.push(token.clone());
+        Ok(true)
+    }
+
+    fn delete_access_token(&self, member: MemberId, id: Uuid) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let before = m.tokens.len();
+        m.tokens.retain(|t| !(t.id == id && t.member == member));
+        Ok(m.tokens.len() < before)
+    }
+
+    fn access_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> StoreResult<Option<(AccessTokenRecord, MemberRecord)>> {
+        let m = self.lock()?;
+        Ok(m.tokens
+            .iter()
+            .find(|t| t.token_hash == token_hash)
+            .and_then(|t| {
+                let member = m.members.iter().find(|x| x.id == t.member)?;
+                Some((t.clone(), member.clone()))
+            }))
+    }
+
+    fn touch_access_token(&self, id: Uuid, now: i64) -> StoreResult<()> {
+        if let Some(t) = self.lock()?.tokens.iter_mut().find(|t| t.id == id) {
+            t.last_used_at = Some(now);
+        }
+        Ok(())
+    }
+
+    fn suggestions(
+        &self,
+        branch: BranchId,
+        decided_after: i64,
+    ) -> StoreResult<Vec<SuggestionRecord>> {
+        let mut list: Vec<SuggestionRecord> = self
+            .lock()?
+            .suggestions
+            .iter()
+            .filter(|s| {
+                s.branch == branch
+                    && (s.state == SuggestionState::Pending
+                        || s.decided_at.is_some_and(|at| at > decided_after))
+            })
+            .cloned()
+            .collect();
+        list.sort_by_key(|s| std::cmp::Reverse((s.created_at, s.id.to_string())));
+        Ok(list)
+    }
+
+    fn suggestion(&self, id: Uuid) -> StoreResult<Option<SuggestionRecord>> {
+        Ok(self
+            .lock()?
+            .suggestions
+            .iter()
+            .find(|s| s.id == id)
+            .cloned())
+    }
+
+    fn insert_suggestion(&self, suggestion: &SuggestionRecord) -> StoreResult<()> {
+        self.lock()?.suggestions.push(suggestion.clone());
+        Ok(())
+    }
+
+    fn decide_suggestion(
+        &self,
+        id: Uuid,
+        from: SuggestionState,
+        to: SuggestionState,
+        decided: Option<(MemberId, i64)>,
+    ) -> StoreResult<bool> {
+        Ok(self.lock()?.decide_suggestion(id, from, to, decided))
+    }
+
+    fn save_workspace_accepting(
+        &self,
+        ws: &Workspace,
+        suggestion: Uuid,
+        by: MemberId,
+        at: i64,
+    ) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let accepted = m.decide_suggestion(
+            suggestion,
+            SuggestionState::Pending,
+            SuggestionState::Accepted,
+            Some((by, at)),
+        );
+        if accepted {
+            m.workspace = Some(ws.clone());
+        }
+        Ok(accepted)
     }
 }

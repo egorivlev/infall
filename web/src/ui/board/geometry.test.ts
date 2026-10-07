@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { arrowPath, fitBounds, frameMembers, nudge, nudgeDelta, readingOrder, route, zoomLevel } from './geometry'
+import {
+  arrowPath,
+  boundsOf,
+  fitBounds,
+  frameMembers,
+  nudge,
+  nudgeDelta,
+  readingOrder,
+  route,
+  sidePanelsFit,
+  viewToShow,
+  zoomLevel,
+} from './geometry'
 
 const card = (id: string, x: number, y: number) => ({ id, x, y, w: 224, h: 132 })
 const frame = (id: string, x: number, y: number, w: number, h: number) => ({ id, x, y, w, h })
@@ -81,5 +93,49 @@ describe('route and zoom level', () => {
     expect(zoomLevel(0.54)).toBe('compact')
     expect(zoomLevel(0.3)).toBe('compact')
     expect(zoomLevel(0.29)).toBe('tile')
+  })
+})
+
+describe('showing a suggested Connection (M5)', () => {
+  const a = card('a', 0, 0)
+  const b = card('b', 400, 200)
+  const both = boundsOf(a, b)
+
+  it('bounds two Cards', () => {
+    expect(both).toEqual({ x: 0, y: 0, width: 624, height: 332 })
+    expect(boundsOf(b, a)).toEqual(both)
+  })
+
+  it('leaves the viewport alone when both Cards are fully in view', () => {
+    expect(viewToShow(both, { x: 10, y: 10, zoom: 1 }, 800, 600)).toBeNull()
+    expect(viewToShow(both, { x: 0, y: 0, zoom: 1 }, 624, 332)).toBeNull() // exactly filling it still counts
+  })
+
+  it('pans just enough, without changing the zoom, when they fit', () => {
+    // b pokes out on the right by 124: move left until it has 48px of room.
+    expect(viewToShow(both, { x: 300, y: 10, zoom: 1 }, 800, 600)).toEqual({ x: 128, y: 10, zoom: 1 })
+    // Off the top-left corner: both axes move, each only as far as needed.
+    expect(viewToShow(both, { x: -100, y: -50, zoom: 1 }, 800, 600)).toEqual({ x: 48, y: 48, zoom: 1 })
+    // At 50% they are half the size on screen.
+    expect(viewToShow(both, { x: 600, y: 100, zoom: 0.5 }, 800, 600)).toEqual({ x: 440, y: 100, zoom: 0.5 })
+  })
+
+  it('zooms out, centred, only when they do not fit at the current zoom', () => {
+    const v = viewToShow(both, { x: 0, y: 0, zoom: 2 }, 800, 600)!
+    expect(v.zoom).toBeCloseTo((800 - 96) / 624)
+    expect(v.x + (both.x + both.width / 2) * v.zoom).toBeCloseTo(400)
+    expect(v.y + (both.y + both.height / 2) * v.zoom).toBeCloseTo(300)
+    // Never below the Board's smallest zoom, never zooming in.
+    expect(viewToShow({ x: 0, y: 0, width: 100000, height: 100 }, { x: 0, y: 0, zoom: 1 }, 800, 600)!.zoom).toBe(0.1)
+  })
+
+  it('does nothing in a view without a size', () => {
+    expect(viewToShow(both, { x: 9999, y: 9999, zoom: 1 }, 0, 0)).toBeNull()
+  })
+
+  it('knows when the Suggestions panel and the Page panel both fit beside 320px of Board', () => {
+    expect(sidePanelsFit(1056)).toBe(false) // a 1280px window
+    expect(sidePanelsFit(1219)).toBe(false)
+    expect(sidePanelsFit(1220)).toBe(true)
   })
 })

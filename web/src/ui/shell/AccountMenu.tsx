@@ -6,6 +6,7 @@ import { describeError } from './errorMessages'
 import { Icon } from './Icon'
 import { initials } from './initials'
 import { Link } from './Link'
+import { AI_ACCESS_PATH } from './router'
 import { useDismiss } from './useDismiss'
 
 const ROLE_LABEL = { admin: 'Admin', member: 'Member', guest: 'Guest' } as const
@@ -82,6 +83,11 @@ export function AccountMenu({ member }: { member: Member }) {
             <span className="q-menu__name">{member.name}</span>
             <span className="q-caps">{ROLE_LABEL[member.role]}</span>
           </div>
+          {member.role !== 'guest' && (
+            <Link href={AI_ACCESS_PATH} role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
+              AI access
+            </Link>
+          )}
           {member.role === 'admin' && (
             <Link href="/members" role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
               Members

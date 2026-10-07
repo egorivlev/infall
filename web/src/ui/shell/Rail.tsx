@@ -6,6 +6,7 @@ import { Icon } from './Icon'
 import { Link } from './Link'
 import { branchPath, TODOS_PATH } from './router'
 import type { ShellView } from './Shell'
+import { SuggestionsItem } from './SuggestionsItem'
 import { SyncStatus } from './SyncStatus'
 import { useOnBoard } from './useOnBoard'
 
@@ -27,6 +28,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
             <span>To-dos</span>
           </Link>
         )}
+        {member.role !== 'guest' && <SuggestionsItem onBoard={route === 'board'} />}
         {member.role !== 'guest' && (
           <Link href="/branches" className="q-rail__item" aria-current={route === 'branches' ? 'page' : undefined}>
             <Icon name="branch" />

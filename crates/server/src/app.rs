@@ -22,7 +22,8 @@ use crate::config::Config;
 use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
-use crate::{Clock, boards, history, merges, people, todos};
+use crate::tokens::RateLimit;
+use crate::{Clock, boards, history, mcp, merges, people, suggestions, todos, tokens};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -37,6 +38,8 @@ pub struct AppState {
     pub workspace: RwLock<Workspace>,
     pub hub: Hub,
     pub throttle: Throttle,
+    /// Requests per access token on the tool endpoint.
+    pub tool_rate: RateLimit,
     pub clock: Clock,
     /// Limits concurrent Argon2 work (each run holds ~19 MiB).
     pub hashing: Semaphore,
@@ -76,7 +79,7 @@ pub async fn persist(st: &Shared, ws: Workspace) -> Result<Workspace, ApiError> 
     Ok(ws)
 }
 
-/// The full application: `/api` routes, live updates, and the built UI.
+/// The full application: `/api` routes, live updates, the tool endpoint and the built UI.
 pub fn router(st: Shared) -> Router {
     let api = Router::new()
         .route("/health", get(health))
@@ -111,6 +114,15 @@ pub fn router(st: Shared) -> Router {
             "/todos/{id}",
             patch(todos::patch_todo).delete(todos::delete_todo),
         )
+        .route(
+            "/tokens",
+            get(tokens::list_tokens).post(tokens::create_token),
+        )
+        .route("/tokens/{id}", delete(tokens::delete_token))
+        .route("/suggestions", get(suggestions::list_suggestions))
+        .route("/suggestions/{id}/accept", post(suggestions::accept))
+        .route("/suggestions/{id}/reject", post(suggestions::reject))
+        .route("/suggestions/{id}/reopen", post(suggestions::reopen))
         .route("/ws", get(live::ws_handler))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_not_found)
@@ -127,11 +139,16 @@ pub fn router(st: Shared) -> Router {
     Router::new()
         .nest("/api", api)
         .fallback(move |req: Request| ui_or_not_found(ui.clone(), req))
-        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(
             st.clone(),
             auth::origin_guard,
         ))
+        // Added after the Origin guard, so that does not wrap it: the tool endpoint is for
+        // non-browser clients and has its own rules (bearer token only, no
+        // `X-Qoop-Request`, an `Origin` checked only when present). It is also outside
+        // `/api`, so the session middleware never runs for it.
+        .route("/mcp", post(mcp::post).fallback(mcp::method_not_allowed))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn(security_headers))
         .with_state(st)
 }

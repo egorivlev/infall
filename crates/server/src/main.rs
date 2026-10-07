@@ -32,7 +32,7 @@ enum Command {
         #[arg(long)]
         name: String,
     },
-    /// Set a new password for an account and sign it out everywhere.
+    /// Set a new password for an account, sign it out everywhere and revoke its access tokens.
     ResetPassword {
         #[arg(long)]
         email: String,
@@ -61,7 +61,7 @@ fn main() -> ExitCode {
                 let password = read_password()?;
                 let m = reset_password(&store, &email, &password).map_err(|e| e.to_string())?;
                 println!(
-                    "Password changed for <{}>; all their sessions were ended.",
+                    "Password changed for <{}>; all their sessions were ended and their access tokens revoked.",
                     m.email
                 );
                 Ok(())

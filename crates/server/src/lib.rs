@@ -10,10 +10,14 @@ pub mod config;
 pub mod error;
 pub mod history;
 pub mod live;
+pub mod mcp;
 pub mod merges;
 pub mod people;
 pub mod store;
+pub mod suggestions;
 pub mod todos;
+pub mod tokens;
+pub mod tools;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -109,6 +113,7 @@ pub fn build_app_with(
         workspace: RwLock::new(workspace),
         hub: Hub::default(),
         throttle: Throttle::default(),
+        tool_rate: tokens::RateLimit::default(),
         clock,
         hashing: Semaphore::new(4),
         dummy_hash,
@@ -163,7 +168,8 @@ pub fn create_admin(
     }
 }
 
-/// Sets a new password for an existing account and deletes all its sessions.
+/// Sets a new password for an existing account and deletes all its sessions and access
+/// tokens.
 pub fn reset_password(
     store: &dyn Store,
     email: &str,

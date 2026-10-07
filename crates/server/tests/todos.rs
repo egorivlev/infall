@@ -617,7 +617,6 @@ async fn a_database_file_from_before_m4_upgrades_in_place_and_keeps_its_data() {
         res.body["todo"].clone()
     };
     assert_eq!(version(&path), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 2);
 
     // Opening the upgraded file again changes nothing.
     let app = TestApp::with_store(Arc::new(SqliteStore::open(&path).unwrap()));

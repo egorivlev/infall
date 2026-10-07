@@ -10,6 +10,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': { target: 'http://127.0.0.1:8787', changeOrigin: false, ws: true },
+      // The AI tool endpoint, so the command shown on the AI access screen works in development too.
+      '/mcp': { target: 'http://127.0.0.1:8787', changeOrigin: false },
     },
   },
   test: {

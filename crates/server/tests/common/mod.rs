@@ -228,3 +228,114 @@ pub fn create_card(id: &str, title: &str) -> Value {
 pub fn set_title(id: &str, title: &str) -> Value {
     json!({ "Set": { "entity": id, "field": "title", "value": { "Text": title } } })
 }
+
+// ---------------------------------------------------------------- the tool endpoint
+
+/// What a `tools/call` gave back.
+pub struct ToolOut {
+    pub is_error: bool,
+    /// The one `text` content item.
+    pub text: String,
+    /// That text parsed as JSON (`Null` when it is a sentence).
+    pub json: Value,
+}
+
+impl TestApp {
+    /// A request to `/mcp` the way a non-browser client sends it: no Origin, no cookie.
+    pub async fn mcp(&self, bearer: Option<&str>, body: Value) -> Res {
+        self.mcp_raw(bearer, body.to_string()).await
+    }
+
+    pub async fn mcp_raw(&self, bearer: Option<&str>, body: String) -> Res {
+        let mut b = Request::builder()
+            .method(Method::POST)
+            .uri("/mcp")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream");
+        if let Some(t) = bearer {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        self.send(b.body(Body::from(body)).unwrap()).await
+    }
+
+    /// A JSON-RPC request; returns the whole HTTP response.
+    pub async fn rpc(&self, bearer: &str, method: &str, params: Value) -> Res {
+        self.mcp(
+            Some(bearer),
+            json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }),
+        )
+        .await
+    }
+
+    /// Creates an access token for the signed-in Member; returns its secret.
+    pub async fn access_token(&self, cookie: &str, name: &str) -> String {
+        let res = self
+            .post("/api/tokens", Some(cookie), json!({ "name": name }))
+            .await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+        res.body["secret"].as_str().unwrap().to_string()
+    }
+
+    /// Calls a tool; the call itself must succeed as JSON-RPC.
+    pub async fn tool(&self, bearer: &str, name: &str, arguments: Value) -> ToolOut {
+        let res = self
+            .rpc(
+                bearer,
+                "tools/call",
+                json!({ "name": name, "arguments": arguments }),
+            )
+            .await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+        let result = &res.body["result"];
+        assert!(result.is_object(), "no result: {}", res.text);
+        let content = result["content"].as_array().expect("content");
+        assert_eq!(content.len(), 1, "{}", res.text);
+        assert_eq!(content[0]["type"], "text");
+        let text = content[0]["text"].as_str().unwrap().to_string();
+        ToolOut {
+            is_error: result["isError"].as_bool().expect("isError"),
+            json: serde_json::from_str(&text).unwrap_or(Value::Null),
+            text,
+        }
+    }
+
+    /// Calls a tool that must succeed; returns its JSON.
+    pub async fn tool_ok(&self, bearer: &str, name: &str, arguments: Value) -> Value {
+        let out = self.tool(bearer, name, arguments).await;
+        assert!(!out.is_error, "{name} failed: {}", out.text);
+        out.json
+    }
+
+    /// Calls a tool that must fail with a sentence; returns the sentence.
+    pub async fn tool_err(&self, bearer: &str, name: &str, arguments: Value) -> String {
+        let out = self.tool(bearer, name, arguments).await;
+        assert!(out.is_error, "{name} should have failed: {}", out.text);
+        out.text
+    }
+
+    /// Posts ops to a Branch; they must be accepted.
+    pub async fn ops(&self, cookie: &str, branch: &str, ops: Value) -> Res {
+        let res = self
+            .post(
+                &format!("/api/branches/{branch}/ops"),
+                Some(cookie),
+                json!({ "ops": ops }),
+            )
+            .await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+        res
+    }
+
+    /// The stored Workspace, byte for byte.
+    pub fn workspace_bytes(&self) -> String {
+        serde_json::to_string(&self.store.load_workspace().unwrap().unwrap()).unwrap()
+    }
+}
+
+pub fn create(id: &str, kind: &str, fields: Value) -> Value {
+    json!({ "Create": { "entity": id, "kind": kind, "fields": fields } })
+}
+
+pub fn delete_op(id: &str) -> Value {
+    json!({ "Delete": { "entity": id } })
+}

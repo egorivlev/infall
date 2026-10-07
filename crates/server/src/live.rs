@@ -24,7 +24,7 @@ use crate::app::Shared;
 use crate::auth::{SignedIn, live_session, origin_allowed};
 use crate::boards::{BranchInfo, changes_after, may_read};
 use crate::error::ApiError;
-use crate::store::{Role, TodoRecord};
+use crate::store::{Role, SuggestionRecord, TodoRecord};
 
 const PING_EVERY: Duration = Duration::from_secs(30);
 const MAX_UNANSWERED_PINGS: u32 = 2;
@@ -55,6 +55,13 @@ enum Event {
     Todos { version: u64, frame: Utf8Bytes },
     /// An `editing` frame; `version` grows with every change of holders on any Branch.
     Editing {
+        branch: BranchId,
+        version: u64,
+        frame: Utf8Bytes,
+    },
+    /// A `suggestions` frame, for the Branch's Member and Admin subscribers; `version` grows
+    /// with every Suggestion change on any Branch.
+    Suggestions {
         branch: BranchId,
         version: u64,
         frame: Utf8Bytes,
@@ -97,6 +104,13 @@ pub struct Hub {
     pub todo_order: tokio::sync::Mutex<()>,
     /// How many `todos` frames have been broadcast; changed only under `todo_order`.
     todos_version: AtomicU64,
+    /// Held across a Suggestion change and its `suggestions` frame, so the rules are
+    /// checked against what is then changed and frames go out in the order of the changes.
+    /// Taken after the Workspace lock by whoever needs both.
+    pub suggestion_order: tokio::sync::Mutex<()>,
+    /// How many `suggestions` frames have been broadcast; changed only under
+    /// `suggestion_order`.
+    suggestions_version: AtomicU64,
 }
 
 impl Default for Hub {
@@ -108,6 +122,8 @@ impl Default for Hub {
             next_connection: AtomicU64::new(0),
             todo_order: tokio::sync::Mutex::new(()),
             todos_version: AtomicU64::new(0),
+            suggestion_order: tokio::sync::Mutex::new(()),
+            suggestions_version: AtomicU64::new(0),
         }
     }
 }
@@ -134,6 +150,12 @@ fn branches_frame(branches: &[BranchInfo]) -> Utf8Bytes {
 
 fn todos_frame(todos: &[TodoRecord]) -> Utf8Bytes {
     json!({ "type": "todos", "todos": todos })
+        .to_string()
+        .into()
+}
+
+fn suggestions_frame(branch: BranchId, suggestions: &[SuggestionRecord]) -> Utf8Bytes {
+    json!({ "type": "suggestions", "branch": branch, "suggestions": suggestions })
         .to_string()
         .into()
 }
@@ -197,6 +219,18 @@ impl Hub {
         let frame = todos_frame(todos);
         let version = st.hub.todos_version.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = st.hub.tx.send(Event::Todos { version, frame });
+    }
+
+    /// Sends the Suggestion list of `branch` to every Member and Admin subscribed to it,
+    /// never to Guests. Called while `suggestion_order` is held.
+    pub fn broadcast_suggestions(st: &Shared, branch: BranchId, suggestions: &[SuggestionRecord]) {
+        let frame = suggestions_frame(branch, suggestions);
+        let version = st.hub.suggestions_version.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = st.hub.tx.send(Event::Suggestions {
+            branch,
+            version,
+            frame,
+        });
     }
 
     fn editing(&self) -> MutexGuard<'_, Editing> {
@@ -378,6 +412,9 @@ struct Subscription {
     seq: u64,
     presence_version: u64,
     editing_version: u64,
+    /// The newest Suggestion list this connection may already have (from a frame, or read
+    /// over HTTP after subscribing).
+    suggestions_version: u64,
 }
 
 /// One WebSocket connection.
@@ -494,6 +531,22 @@ impl Connection {
                 Ok(vec![frame])
             }
             Event::Todos { .. } => Ok(Vec::new()),
+            Event::Suggestions {
+                branch,
+                version,
+                frame,
+            } => {
+                let guest = self.is_guest();
+                match &mut self.sub {
+                    Some(sub)
+                        if sub.branch == branch && !guest && version > sub.suggestions_version =>
+                    {
+                        sub.suggestions_version = version;
+                        Ok(vec![frame])
+                    }
+                    _ => Ok(Vec::new()),
+                }
+            }
             Event::Editing {
                 branch,
                 version,
@@ -615,14 +668,15 @@ impl Connection {
             seq,
             presence_version: version,
             editing_version,
+            suggestions_version: self.st.hub.suggestions_version.load(Ordering::SeqCst),
         });
         frames
     }
 
-    /// After missing broadcast frames: send the Branch list and the To-do list (a `branches`
-    /// or `todos` frame may have been among them; never to Guests), then what was missed as
-    /// one `changes` frame, then the current `presence` and `editing`. Missed `checkpoint`
-    /// frames are not replayed.
+    /// After missing broadcast frames: send the Branch list (a `branches` frame may have
+    /// been among them; never to Guests), then what was missed as one `changes` frame, then
+    /// the current `presence` and `editing`, then the To-do list and the Suggestions of the
+    /// subscribed Branch (never to Guests). Missed `checkpoint` frames are not replayed.
     async fn resync(&mut self) -> Vec<Utf8Bytes> {
         let mut frames = Vec::new();
         let guest = self.is_guest();
@@ -657,6 +711,16 @@ impl Connection {
             if let Ok(todos) = crate::app::blocking(&self.st, |s| s.todos()).await {
                 self.todos_version = self.st.hub.todos_version.load(Ordering::SeqCst);
                 frames.push(todos_frame(&todos));
+            }
+        }
+        if !guest && let Some(branch) = self.sub.as_ref().map(|s| s.branch) {
+            let _order = self.st.hub.suggestion_order.lock().await;
+            if let Ok(list) = crate::suggestions::listed(&self.st, branch).await {
+                let version = self.st.hub.suggestions_version.load(Ordering::SeqCst);
+                if let Some(sub) = &mut self.sub {
+                    sub.suggestions_version = version;
+                }
+                frames.push(suggestions_frame(branch, &list));
             }
         }
         frames

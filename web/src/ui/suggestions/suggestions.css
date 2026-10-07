@@ -1,0 +1,152 @@
+/* The Suggestions panel (5a): docked left of the Board. Tokens (--q-*) come from tokens.css, foundations from base.css. */
+
+.qs-panel {
+  flex: none;
+  width: 420px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--q-surface);
+  border-right: 1px solid var(--q-line-soft);
+  color: var(--q-ink);
+  font: 13px/1.4 var(--q-sans);
+}
+.qs-spacer { flex: 1; }
+.qs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---- header ---- */
+.qs-head {
+  flex: none;
+  padding: 14px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--q-line-soft);
+}
+.qs-head__row { display: flex; align-items: baseline; gap: 10px; }
+.qs-head__title { margin: 0; font: 600 17px/1.3 var(--q-serif); border-radius: var(--q-r-chip); }
+.qs-head__title:focus { outline: none; }
+.qs-head__title:focus-visible { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+.qs-head__count { font: 12px var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qs-head__close {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--q-ink-3);
+  cursor: pointer;
+}
+.qs-head__close:hover { background: var(--q-hover); color: var(--q-ink); }
+.qs-head__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--q-ink-2); }
+
+/* ---- list ---- */
+.qs-list { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.qs-item {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-bottom: 1px solid var(--q-line-soft);
+}
+.qs-item.is-previewing { background: var(--q-accent-soft); }
+/* A decided Suggestion steps back; the line that says what happened (and its Undo) stays readable. */
+.qs-item.is-decided > :not(.qs-item__state) { opacity: .55; }
+
+.qs-item__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.qs-kind {
+  flex: none;
+  font: 500 10px/1 var(--q-mono);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  padding: 3px 5px;
+  border-radius: var(--q-r-chip);
+  border: 1px solid var(--q-ink-3);
+  color: var(--q-ink-2);
+}
+.qs-kind--connection { border-style: dashed; }
+.qs-item__target { min-width: 0; font-size: 12px; color: var(--q-ink-3); overflow-wrap: anywhere; }
+.qs-item__previewing { flex: none; font: 11px var(--q-mono); color: var(--q-accent); white-space: nowrap; }
+.qs-item__title { font: 600 14.5px/1.35 var(--q-serif); color: var(--q-ink); overflow-wrap: anywhere; }
+.qs-item__meta { font: 11px/1.4 var(--q-mono); color: var(--q-ink-2); overflow-wrap: anywhere; }
+.qs-item__why { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--q-ink-2); overflow-wrap: anywhere; }
+.qs-item__why b { font-weight: 600; color: var(--q-ink); }
+.qs-item__via { font: 10.5px/1.4 var(--q-mono); color: var(--q-ink-3); overflow-wrap: anywhere; }
+.qs-item__note { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--q-ink-2); }
+.qs-item__actions { display: flex; gap: 6px; padding-top: 2px; }
+.qs-btn { padding: 0 12px; border-radius: 4px; }
+.qs-item__state { display: flex; flex-direction: column; gap: 6px; }
+.qs-item__state:empty { display: none; }
+.qs-item__resolved { font: 11.5px/1.4 var(--q-mono); color: var(--q-ink-3); }
+.qs-item__error { margin: 0; }
+
+/* A Card's name: goes to that Card on the Board. Inherits the text around it — never restyles the name. */
+.qs-card {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--q-line);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.qs-card:hover { color: var(--q-ink); text-decoration-color: var(--q-accent); }
+.qs-undo {
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  font: inherit;
+  color: var(--q-accent);
+  cursor: pointer;
+}
+.qs-undo:hover:not(:disabled) { text-decoration: underline; }
+.qs-undo:disabled { color: var(--q-ink-3); cursor: not-allowed; }
+
+/* ---- after accepting a Source: the To-do offer ---- */
+.qs-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--q-r);
+  border: 1px solid var(--q-line-soft);
+  background: var(--q-raised);
+}
+.qs-offer__added { font-size: 12.5px; color: var(--q-st-understood); overflow-wrap: anywhere; }
+.qs-offer__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.qs-offer__check { display: flex; align-items: center; gap: 8px; }
+.qs-offer__check input { margin: 0; accent-color: var(--q-accent); }
+.qs-offer__check b { font-weight: 600; }
+.qs-offer__owner {
+  height: 24px;
+  max-width: 100%;
+  border-radius: 4px;
+  border: 1px solid var(--q-line);
+  background: var(--q-sunken);
+  color: var(--q-ink);
+  font-size: 12.5px;
+}
+.qs-offer__owner:disabled { color: var(--q-ink-3); cursor: not-allowed; }
+.qs-offer__done { height: 24px; padding: 0 10px; border-radius: 4px; }
+
+/* ---- empty, loading, failed ---- */
+.qs-empty {
+  flex: 1;
+  min-height: 0;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.qs-empty__title { margin: 0; font: 600 17px/1.3 var(--q-serif); }
+.qs-empty__line { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--q-ink-2); }
+.qs-empty__note { margin: 0; color: var(--q-ink-3); }

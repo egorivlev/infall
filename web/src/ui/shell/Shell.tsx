@@ -3,6 +3,7 @@ import { board, branches, members } from '../../lib'
 import type { Member } from '../../lib'
 import { BoardView } from '../board'
 import { MergeReview } from '../merge'
+import { AiAccess } from '../settings'
 import { Todos } from '../todos'
 import { Branches } from './Branches'
 import { errorStatus } from './errorMessages'
@@ -16,7 +17,7 @@ import { TopBar } from './TopBar'
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
 
-export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos'
+export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos' | 'ai-access'
 
 /** What this person may see for a route; anything else falls back to the Board. */
 function viewFor(route: Route, member: Member): ShellView {
@@ -24,6 +25,7 @@ function viewFor(route: Route, member: Member): ShellView {
   if (route.name === 'branches') return member.role === 'guest' ? 'board' : 'branches'
   if (route.name === 'merge') return member.role === 'guest' ? 'board' : 'merge'
   if (route.name === 'todos') return member.role === 'guest' ? 'board' : 'todos' // To-dos are for the team, not for Guests
+  if (route.name === 'ai-access') return member.role === 'guest' ? 'board' : 'ai-access' // a Guest has no access tokens
   return 'board' // the invite link means nothing once signed in
 }
 
@@ -31,7 +33,7 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
   const isGuest = member.role === 'guest'
   const view = viewFor(route, member)
 
-  // The Branch in the URL is the truth. Screens without one (/branches, /members, /todos) keep the last Branch open.
+  // The Branch in the URL is the truth. Screens without one (/branches, /members, /todos, /settings/ai) keep the last Branch open.
   // Guests can read main only.
   const routeBranch = route.name === 'board' ? (isGuest ? MAIN : route.branch) : null
   const [lastBranch, setLastBranch] = useState(routeBranch ?? MAIN)
@@ -88,6 +90,9 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
           <Branches current={branch} />
         ) : view === 'todos' ? (
           <Todos me={member} />
+        ) : view === 'ai-access' ? (
+          // Keyed by Member: a token shown to one person never survives into another's session.
+          <AiAccess key={member.id} />
         ) : view === 'merge' && route.name === 'merge' ? (
           <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
         ) : missing ? (

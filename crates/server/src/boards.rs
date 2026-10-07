@@ -32,7 +32,7 @@ pub(crate) fn text_fits(value: &FieldValue) -> bool {
 }
 
 /// Refuses ops that carry a Text value over the limit.
-fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
+pub(crate) fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
     let fits = ops.iter().all(|op| match op {
         Op::Create { fields, .. } => fields.values().all(text_fits),
         Op::Set { value, .. } => text_fits(value),
@@ -229,7 +229,7 @@ pub async fn post_ops(
 }
 
 /// A core refusal as `409 rejected`, with the core `ApplyError` as `detail`.
-fn rejected(e: WsError) -> ApiError {
+pub(crate) fn rejected(e: WsError) -> ApiError {
     match e {
         WsError::UnknownBranch(_) => ApiError::NotFound,
         WsError::Apply(apply) => match serde_json::to_value(&apply) {

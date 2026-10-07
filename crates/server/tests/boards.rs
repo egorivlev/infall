@@ -526,6 +526,81 @@ impl Store for FailingStore {
     fn delete_todo(&self, id: uuid::Uuid) -> qoop_server::store::StoreResult<bool> {
         self.0.delete_todo(id)
     }
+
+    fn access_tokens(
+        &self,
+        member: qoop_core::MemberId,
+    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::AccessTokenRecord>> {
+        self.0.access_tokens(member)
+    }
+    fn insert_access_token(
+        &self,
+        token: &qoop_server::store::AccessTokenRecord,
+        max: usize,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.insert_access_token(token, max)
+    }
+    fn delete_access_token(
+        &self,
+        member: qoop_core::MemberId,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.delete_access_token(member, id)
+    }
+    fn access_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> qoop_server::store::StoreResult<
+        Option<(
+            qoop_server::store::AccessTokenRecord,
+            qoop_server::store::MemberRecord,
+        )>,
+    > {
+        self.0.access_token_by_hash(token_hash)
+    }
+    fn touch_access_token(&self, id: uuid::Uuid, now: i64) -> qoop_server::store::StoreResult<()> {
+        self.0.touch_access_token(id, now)
+    }
+    fn suggestions(
+        &self,
+        branch: qoop_core::BranchId,
+        decided_after: i64,
+    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::SuggestionRecord>> {
+        self.0.suggestions(branch, decided_after)
+    }
+    fn suggestion(
+        &self,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::SuggestionRecord>> {
+        self.0.suggestion(id)
+    }
+    fn insert_suggestion(
+        &self,
+        suggestion: &qoop_server::store::SuggestionRecord,
+    ) -> qoop_server::store::StoreResult<()> {
+        self.0.insert_suggestion(suggestion)
+    }
+    fn decide_suggestion(
+        &self,
+        id: uuid::Uuid,
+        from: qoop_server::store::SuggestionState,
+        to: qoop_server::store::SuggestionState,
+        decided: Option<(qoop_core::MemberId, i64)>,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.decide_suggestion(id, from, to, decided)
+    }
+    fn save_workspace_accepting(
+        &self,
+        ws: &Workspace,
+        suggestion: uuid::Uuid,
+        by: qoop_core::MemberId,
+        at: i64,
+    ) -> qoop_server::store::StoreResult<bool> {
+        let _ = (ws, suggestion, by, at);
+        Err(qoop_server::store::StoreError::Backend(
+            "disk full at /secret/path".to_string(),
+        ))
+    }
 }
 
 #[tokio::test]

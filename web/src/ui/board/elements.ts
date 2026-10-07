@@ -5,7 +5,7 @@ import { STATUS_LABEL } from './status'
 import type { BoardNode, CardNodeType, ConnectionEdgeType, FrameNodeType } from './types'
 import type { Transient } from './uiStore'
 
-type CardEntry = { vm: CardVM; selected: boolean; t: Transient | undefined; raised: boolean; readOnly: boolean; node: CardNodeType }
+type CardEntry = { vm: CardVM; selected: boolean; t: Transient | undefined; raised: boolean; readOnly: boolean; suggested: boolean; node: CardNodeType }
 type FrameEntry = { vm: FrameVM; selected: boolean; t: Transient | undefined; count: number; readOnly: boolean; node: FrameNodeType }
 type EdgeEntry = { vm: ConnectionVM; selected: boolean; from: string; to: string; edge: ConnectionEdgeType }
 
@@ -22,6 +22,7 @@ export type NodeInputs = {
   transient: ReadonlyMap<string, Transient>
   raised: string | null // a Card with an open menu or editor sits above its neighbours
   readOnly: boolean
+  suggested?: ReadonlySet<string> // the two Cards of the Connection a Suggestion previews: accent ring
 }
 
 export function createNodeBuilder() {
@@ -65,8 +66,17 @@ export function createNodeBuilder() {
       const selected = i.selected.has(vm.id)
       const t = i.transient.get(vm.id)
       const raised = i.raised === vm.id
+      const suggested = i.suggested?.has(vm.id) ?? false
       let e = cardCache.get(vm.id)
-      if (!e || e.vm !== vm || e.selected !== selected || e.t !== t || e.raised !== raised || e.readOnly !== i.readOnly) {
+      if (
+        !e ||
+        e.vm !== vm ||
+        e.selected !== selected ||
+        e.t !== t ||
+        e.raised !== raised ||
+        e.readOnly !== i.readOnly ||
+        e.suggested !== suggested
+      ) {
         const node: CardNodeType = {
           id: vm.id,
           type: 'card',
@@ -74,6 +84,7 @@ export function createNodeBuilder() {
           width: vm.w,
           height: vm.h,
           data: { card: vm },
+          className: suggested ? 'is-suggested' : undefined,
           selected,
           draggable: !i.readOnly,
           connectable: !i.readOnly,
@@ -82,7 +93,7 @@ export function createNodeBuilder() {
           ariaLabel: `${vm.title || 'Untitled'} — ${STATUS_LABEL[vm.status]}`,
           domAttributes: CARD_DOM,
         }
-        e = { vm, selected, t, raised, readOnly: i.readOnly, node }
+        e = { vm, selected, t, raised, readOnly: i.readOnly, suggested, node }
       }
       nextCards.set(vm.id, e)
       out.push(e.node)

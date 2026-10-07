@@ -15,6 +15,7 @@ export type IconName =
   | 'checkpoint'
   | 'history'
   | 'todos'
+  | 'suggestion'
 
 const PATHS: Record<IconName, ReactNode> = {
   board: (
@@ -86,6 +87,7 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M4.6 7.2 L6.3 8.9 L9.5 5.2" />
     </>
   ),
+  suggestion: <path d="M7 1.6 L12.4 7 L7 12.4 L1.6 7 Z" />,
 }
 
 export function Icon({ name, size = 14 }: { name: IconName; size?: number }) {

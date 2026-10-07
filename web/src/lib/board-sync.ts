@@ -24,6 +24,7 @@ import type {
   PageVM,
   ServerFrame,
   SourceVM,
+  Suggestion,
 } from './types'
 
 export type SocketLike = {
@@ -61,6 +62,17 @@ type Applied = 'applied' | 'stale' | 'gap' | 'bad'
 export type SyncEvent =
   | { type: 'changes'; seq: number; changes: Change[] }
   | { type: 'checkpoint'; checkpoint: Checkpoint }
+
+/**
+ * What the Board layer tells the Suggestions of the open Branch (internal). `opened`: a Board is loaded;
+ * `reconnected`: the socket is subscribed again after a drop, so frames may have been missed; `closed`: the Board
+ * closed or is switching Branch; `suggestions`: the server's list for the open Branch, from its frame.
+ */
+export type BoardEvent =
+  | { type: 'opened' }
+  | { type: 'reconnected' }
+  | { type: 'closed' }
+  | { type: 'suggestions'; suggestions: Suggestion[] }
 
 const MAX_OPS = 200
 const BACKOFF_START = 1000
@@ -138,10 +150,15 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   const reloadTried = new Set<string>()
   const checkpointNames = new Set<string>() // Checkpoints of the open Branch met so far, for counting each once
   const listeners = new Set<(e: SyncEvent) => void>()
+  const watchers = new Set<(e: BoardEvent) => void>()
   let wasLive = false // the socket has been subscribed at least once since open()
 
   function emit(e: SyncEvent) {
     for (const fn of [...listeners]) fn(e)
+  }
+
+  function tell(e: BoardEvent) {
+    for (const fn of [...watchers]) fn(e)
   }
 
   const readOnly = () => {
@@ -408,6 +425,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
           void refreshBranches(gen).catch(() => {})
           void todosApi.reload().catch(() => {})
         }
+        if (wasLive) tell({ type: 'reconnected' })
         wasLive = true
         subscribed = true
         // A claim does not outlive its connection: make it again on the new one.
@@ -445,6 +463,9 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         break
       case 'todos':
         setTodos(f.todos)
+        break
+      case 'suggestions':
+        if (loaded && (f.branch === branchId || f.branch === branch?.name)) tell({ type: 'suggestions', suggestions: f.suggestions })
         break
       default:
         break // a frame type this build does not know
@@ -533,6 +554,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     editing = null
     pageCache.clear()
     dirty = true
+    tell({ type: 'closed' })
   }
 
   function close() {
@@ -585,6 +607,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       rebuild()
       connect()
       if (!readOnly()) void todosApi.reload().catch(() => {})
+      tell({ type: 'opened' })
     } catch (e) {
       if (g !== gen) return
       status = 'error'
@@ -670,6 +693,13 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
   }
 
+  function watch(fn: (e: BoardEvent) => void): () => void {
+    watchers.add(fn)
+    return () => {
+      watchers.delete(fn)
+    }
+  }
+
   return {
     store,
     open,
@@ -680,7 +710,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     findSource,
     startEditing,
     stopEditing,
-    internal: { target, confirm, checkpoints, listen },
+    internal: { target, confirm, checkpoints, listen, watch },
   }
 }
 

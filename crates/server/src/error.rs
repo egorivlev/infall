@@ -49,6 +49,15 @@ pub enum ApiError {
     InviteExpired,
     #[error("too many attempts")]
     TooManyAttempts,
+    /// Accepting a Suggestion whose Card is no longer live on its Branch.
+    #[error("suggestion stale")]
+    SuggestionStale,
+    /// A Suggestion that is not in the state the action needs.
+    #[error("already decided")]
+    AlreadyDecided,
+    /// An access token used more often than the tool endpoint allows.
+    #[error("too many requests")]
+    TooManyRequests,
     /// Logged, never shown.
     #[error("internal: {0}")]
     Internal(String),
@@ -128,6 +137,21 @@ impl ApiError {
                 StatusCode::TOO_MANY_REQUESTS,
                 "too_many_attempts",
                 "Too many failed sign-in attempts. Try again in 15 minutes.".into(),
+            ),
+            SuggestionStale => (
+                StatusCode::CONFLICT,
+                "stale",
+                "The Card this Suggestion was for is no longer on this Branch.".into(),
+            ),
+            AlreadyDecided => (
+                StatusCode::CONFLICT,
+                "already_decided",
+                "This Suggestion has already been decided.".into(),
+            ),
+            TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Too many requests with this access token. Try again in a minute.".into(),
             ),
             Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
