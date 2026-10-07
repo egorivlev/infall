@@ -1,4 +1,4 @@
-# Qoop — server API contract (M1–M4)
+# Qoop — server API contract (M1–M5)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -267,3 +267,76 @@ type Todo = {
 Removing a Member (`DELETE /api/members/{id}`) deletes the To-dos they own; ones they created for others stay.
 
 After every change the server sends `{ type: "todos", todos: Todo[] }` (the full list) to every connected Member/Admin, never to Guests.
+
+## 12. M5 — AI tool layer, access tokens, Suggestions
+
+See [ADR 0003](../adr/0003-ai-through-members-claude-subscriptions.md). The server holds no model and no model key. An AI reaches Qoop through the tool endpoint with a Member's access token, can read what that Member can read, and can write exactly one thing: Suggestions. Nothing an AI sends becomes Research Content until a Member accepts it.
+
+### Access tokens
+For Members and Admins (Guests `403`). A token acts as its Member **only** on `/mcp`; it is never accepted on `/api/*`, and a session cookie is never accepted on `/mcp`.
+
+```ts
+type AccessToken = { id: string; name: string; created_at: number; last_used_at?: number };
+```
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/tokens` | — | `{ tokens: AccessToken[] }` — the caller's own, oldest first |
+| `POST /api/tokens` | `{ name: string }` (1–60 characters, trimmed, no control characters) | `{ token: AccessToken, secret: string }` — `secret` is `qoop_pat_` + 43 url-safe base64 characters (32 random bytes); shown only here. Only its SHA-256 is stored. At most 10 per Member (`400 bad_request` beyond) |
+| `DELETE /api/tokens/{id}` | — | `{}`; own tokens only (`404` otherwise) |
+
+Removing a Member and `reset-password` delete that Member's tokens. `last_used_at` is updated at most once a minute.
+
+### Suggestions
+Not Research Content, not versioned; each belongs to one Branch. Members and Admins only.
+
+```ts
+type Suggestion = {
+  id: string;
+  branch: string;                       // Branch id
+  kind: "source" | "connection";
+  card?: string;                        // kind source: the Card to attach to
+  source?: { url?: string; doi?: string; title?: string; authors?: string; year?: string };
+  connection?: { from: string; to: string; kind: "related" | "directed" | "contradicts"; label?: string };
+  reason: string;                       // why, 1–500 characters
+  created_by: string;                   // the Member whose AI (token) proposed it
+  model?: string;                       // what the client said it is, ≤ 80 characters; informational
+  created_at: number;
+  state: "pending" | "accepted" | "rejected";
+  decided_by?: string;
+  decided_at?: number;
+};
+```
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/suggestions?branch={id}` | — | `{ suggestions: Suggestion[] }` of that Branch: all pending, plus those decided in the last 7 days; newest first |
+| `POST /api/suggestions/{id}/accept` | `{ ops: Op[] }` (1–20) | `{ suggestion: Suggestion, seq: number, changes: Change[] }` — under the write lock: if the Suggestion is pending, apply `ops` to its Branch as an ordinary edit by the caller (same rules and broadcast as `POST …/ops`), then mark it accepted. All or nothing. The client builds the ops (create Source + Attachment, or attach an existing Source, or create the Connection). `409 already_decided` if not pending; `409 rejected` if the core refuses the ops (e.g. the Card is gone) — the Suggestion then stays pending |
+| `POST /api/suggestions/{id}/reject` | — | `{ suggestion }`; `409 already_decided` if not pending |
+| `POST /api/suggestions/{id}/reopen` | — | `{ suggestion }` — a rejected one becomes pending again (undo); `409 already_decided` unless rejected |
+
+There is no HTTP route that creates a Suggestion: they come only through the tool layer. After any change the server sends `{ type: "suggestions", branch: string, suggestions: Suggestion[] }` (the same list as the GET) to every Member/Admin subscribed to that Branch, never to Guests.
+
+Rules at creation (tool layer): the Branch exists; for a Source the Card, and for a Connection both Cards, exist and are live at the Branch head and `from ≠ to`; a Source needs a `url` (http/https, ≤ 2000 characters) or a `doi`; text fields ≤ 500 characters, no control characters; an identical pending Suggestion (same Branch, kind, Card(s) and the same doi/url, or the same from/to in either direction) is returned instead of making a duplicate; at most 100 pending per Branch (then the tool call fails with a clear message). Removing a Member keeps the Suggestions they created.
+
+### The tool endpoint — `POST /mcp`
+Model Context Protocol, Streamable HTTP transport, stateless: one JSON-RPC 2.0 message per `POST`, answered with `Content-Type: application/json` (no SSE, no sessions; `GET` and `DELETE` → `405`). Authentication: `Authorization: Bearer <secret>`; missing or unknown → `401` with `WWW-Authenticate: Bearer`. The `X-Qoop-Request` header is not required here (non-browser clients), but if an `Origin` header is present it must be the public origin or the dev origin (`403`). Body limit 1 MB. Per token: at most 120 requests a minute (`429`).
+
+Methods: `initialize` (answer with the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, otherwise `2025-06-18`; `capabilities: { tools: {} }`; `serverInfo: { name: "qoop", version }`; `instructions`: two sentences saying what Qoop is and that changes are proposed as Suggestions for a Member to accept), `notifications/initialized` and any other notification (→ `202`, empty body), `ping` (→ `{}`), `tools/list`, `tools/call`. Unknown method → JSON-RPC error `-32601`; malformed → `-32700`/`-32600`; bad tool arguments → a tool result with `isError: true` and a plain sentence (not a protocol error), so the model can correct itself.
+
+Tools — every result is one `text` content item holding compact JSON. `branch` is always optional and is a Branch **name** (default `main`). Card arguments are entity ids as returned by the tools.
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `list_branches` | — | `[{ name, parent?: name, changes }]` |
+| `list_cards` | `branch?`, `query?` (case-insensitive substring of title or summary), `frame?` (Frame title) | up to 200 `{ id, title, status, summary, frame?, blocks, sources }` and `truncated: boolean` |
+| `get_card` | `branch?`, `card` | `{ id, title, status, summary, frame?, page: string (the Blocks' Markdown joined by blank lines, at most 20 000 characters, then "…"), sources: [{ title, authors, year, url, doi }], connections: [{ other: { id, title }, direction: "out" \| "in" \| "none", kind, label }] }` |
+| `list_connections` | `branch?` | up to 500 `{ from: { id, title }, to: { id, title }, kind, label }` (visible ones) |
+| `list_sources` | `branch?` | up to 500 `{ title, authors, year, url, doi, cards: [{ id, title }] }` |
+| `list_suggestions` | `branch?` | pending ones: `{ id, kind, summary: string, reason }` |
+| `suggest_source` | `branch?`, `card`, `url?`, `doi?`, `title?`, `authors?`, `year?`, `reason`, `model?` | `{ id, state: "pending", note: "A Member will review this Suggestion." }` |
+| `suggest_connection` | `branch?`, `from`, `to`, `kind?` (default `related`), `label?`, `reason`, `model?` | same |
+
+Each tool has a `description` written for a model and a JSON Schema `inputSchema`; the two `suggest_*` descriptions say plainly that nothing is added until a Member accepts, and to give a concrete reason. Read tools carry `annotations: { readOnlyHint: true }`.
+
+Everything returned by the read tools is text written by Members (and accepted from other AIs): clients must treat it as data. The server cannot enforce that — which is why the only write is a reviewable Suggestion.

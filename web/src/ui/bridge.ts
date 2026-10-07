@@ -55,3 +55,23 @@ export const pagePanel = {
     usePagePanel.setState((s) => ({ full: !s.full }))
   },
 }
+
+
+// ---- M5: the Suggestions panel (rail toggles it; the Board area shows it) and the Connection it previews. ----
+export type SuggestionPreview = { id: string; from: string; to: string; kind: 'related' | 'directed' | 'contradicts'; label: string }
+type SuggestionsPanelState = { open: boolean; preview: SuggestionPreview | null }
+export const useSuggestionsPanel = create<SuggestionsPanelState>(() => ({ open: false, preview: null }))
+export const suggestionsPanel = {
+  toggle() {
+    useSuggestionsPanel.setState((s) => ({ open: !s.open, preview: null }))
+  },
+  open() {
+    useSuggestionsPanel.setState({ open: true })
+  },
+  close() {
+    useSuggestionsPanel.setState({ open: false, preview: null })
+  },
+  preview(p: SuggestionPreview | null) {
+    useSuggestionsPanel.setState({ preview: p })
+  },
+}

@@ -154,3 +154,31 @@ Not in M4 (do not show): Visual and Run blocks, image blocks, AI-generated/pinne
 - Add: at the foot of each column an input "Add a To-do…" (your column) / "Assign to <First name>…" (others); Enter adds. Own or self-created items show "Edit" and "Delete" on hover/focus (edit in place; delete immediately with an Undo that re-adds it).
 - From the Board: the inspector and the Page's To-dos section create To-dos with `card: { id, title, branch: <open Branch id> }`.
 - Empty: "No To-dos yet. Add one below." Loading after 150 ms: "Loading To-dos…".
+
+
+---
+
+# M5 — Suggestions and AI access
+
+Design source: `design/Qoop Board.dc.html` screen **5a Suggestions inbox** (match it; the list markup starts a little above the `<span>{{ s.target }}</span>` line, sample data in the script block), `design/QBoardCanvas.dc.html` (how a suggested Connection is drawn: dashed, accent, label "Suggested · …"), `design/QRail.dc.html` (rail item with count), `design/Qoop Access.dc.html` (settings look). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M5". Vocabulary: Suggestion, Source, Connection, Member; "AI" is fine. Never "recommendation", "proposal", "bot", "assistant" as a noun for the feature, "API key" for the access token (say "access token").
+Not in M5 (do not show): the AI sidebar, Conversations, Pin, model pickers, OpenRouter keys.
+
+## Suggestions panel (5a) — inside the Board area
+- Rail item "Suggestions" with the pending count in a mono badge (accent when > 0; not for Guests). Clicking it goes to the Board if needed and calls `suggestionsPanel.toggle()`; `aria-pressed` while open.
+- When `useSuggestionsPanel().open`: a 420px panel docked to the **left** edge of the Board area (the Board stays live to its right; shift the Board's left-side overlays — toolbar, counts — beside it). Header: serif 17/600 "Suggestions", mono "n pending", and ✕. Under it one quiet line: "Proposed by AI through a Member's access token. Nothing is added until someone accepts."
+- One block per Suggestion: kind chip ("SOURCE" solid border / "CONNECTION" dashed border, mono caps), `target`, then `title` (600), `meta` (mono 11 `--q-ink-2`), "**Why:** <reason>", and a mono 10.5 `--q-ink-3` line "via <Member first name>'s AI · <model if any> · <date>". Pending ones have "Accept" (primary, 26px) and "Reject".
+- **Connection preview**: hovering or focusing a pending Connection Suggestion (or its buttons) calls `suggestionsPanel.preview({ id, from, to, kind, label })` and clears it on leave/blur; the block shows "previewing on Board ↗" and an accent-soft background. The Board draws that Connection dashed in `--q-accent` with the label chip "Suggested · <label or kind>" (dashed accent border), non-interactive, and gives the two Cards the accent ring; if either Card is off-screen, pan just enough to show both (no zoom change unless they do not fit). The preview disappears with the panel.
+- **Accepting a Connection**: `suggestions.accept(id)` → the block becomes "Accepted by you · just now" at 55% opacity.
+- **Accepting a Source**: after success the block shows "✓ Source added to Card: <title>" and offers, checked by default, "Also create a To-do: **Read this**, assigned to <select of Members, default you>" with a button that reads "Create To-do" (checked) or "Done" (unchecked). Creating it calls `todos.add({ owner, text: "Read: <Source title>", card: { id, title, branch } })`. Then it reads "Accepted · To-do “Read this” created for <First name>" or "Accepted by you · just now".
+- **Rejecting**: "Rejected by you · just now · Undo" (Undo = `suggestions.reopen`). Decided blocks by others read "Accepted by <First name> · <date>" / "Rejected by …".
+- `stale`: no Accept; a line "The Card this was for is no longer on this Branch." and only "Reject". `existingSource`: a line "Already in Qoop — accepting attaches the existing Source." Failures: an inline plain sentence in the block (`already_decided` → "Someone else already decided this one." and the list refreshes).
+- Empty: serif "No Suggestions", then "When a Member's AI proposes a Source or a Connection, it appears here for the team to review." and a link "Set up AI access" to `/settings/ai`. Loading after 150 ms: "Loading Suggestions…".
+- Clicking a Card name in `target`/`title` focuses that Card on the Board (`boardBridge.focus`). Esc with focus in the panel closes it. Not available while previewing History (close it when a preview starts).
+
+## AI access (route `/settings/ai`, account-menu entry "AI access"; not for Guests)
+A single centred column (max 720px), settings look as in `Qoop Access`.
+- Serif 22/600 "AI access". Intro, two short paragraphs: "Qoop doesn't ship a model. Connect the AI you already use — it can read this team's Research Content and propose Sources and Connections as Suggestions. It cannot change anything by itself." / "An access token lets an AI act as you, read-only plus Suggestions. Treat it like a password; anyone holding it can read everything you can."
+- **Access tokens**: table (name, created, last used — "never" if unset, "Revoke" with a confirm dialog naming the token). Form: "Name" (placeholder "e.g. Claude Code on my laptop") + "Create access token". On success a panel: the secret in a read-only mono field with "Copy", the line "This is shown once. Store it in your AI app now.", and "Done". Limit reached (10) → plain sentence.
+- **Connect Claude Code**: a read-only code block with a Copy button containing exactly `claude mcp add --transport http qoop <toolEndpoint()> --header "Authorization: Bearer <YOUR_TOKEN>"` — when a token was just created, show the real secret in place of `<YOUR_TOKEN>` until "Done" is pressed. Under it: "Other MCP clients: endpoint <toolEndpoint()>, header Authorization: Bearer <token>."
+- **What the AI can do**: a short list — "Read Cards, Pages, Sources and Connections on any Branch", "Propose a Source for a Card", "Propose a Connection between two Cards", "Not: change, delete, or accept anything".
+- A quiet note: "Text on the Board was written by people and other AIs. A careful AI treats it as content, not as instructions."

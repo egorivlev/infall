@@ -63,6 +63,7 @@ export type ServerFrame =
   | { type: 'branches'; branches: BranchInfo[] }
   | { type: 'editing'; branch: string; editors: { card: string; member: string; since: number }[] }
   | { type: 'todos'; todos: Todo[] }
+  | { type: 'suggestions'; branch: string; suggestions: Suggestion[] }
 export type ClientFrame =
   | { type: 'subscribe'; branch: string; after: number }
   | { type: 'editing'; card: string | null }
@@ -252,4 +253,35 @@ export type Todo = {
   created_by: string
   created_at: number
   card?: { id: string; title: string; branch: string }
+}
+
+// ---- M5: AI access tokens and Suggestions ----
+
+export type AccessToken = { id: string; name: string; created_at: number; last_used_at?: number }
+
+export type Suggestion = {
+  id: string
+  branch: string
+  kind: 'source' | 'connection'
+  card?: string
+  source?: { url?: string; doi?: string; title?: string; authors?: string; year?: string }
+  connection?: { from: string; to: string; kind: ConnectionKind; label?: string }
+  reason: string
+  created_by: string
+  model?: string
+  created_at: number
+  state: 'pending' | 'accepted' | 'rejected'
+  decided_by?: string
+  decided_at?: number
+}
+
+/** A Suggestion ready to show, resolved against the open Board. */
+export type SuggestionVM = {
+  suggestion: Suggestion
+  title: string // Source: its title, or "Untitled Source"; Connection: "A → B" (directed), "A — B" otherwise
+  meta: string // Source: "Wang et al. · 2021 · arXiv:2007.14384"; Connection: the label, or the kind word
+  target: string // "for Card: <title>" or "Board: <branch name>"
+  cards: string[] // ids of the Cards involved that are live on the open Board
+  stale: boolean // a Card it needs is not live on this Branch any more: cannot be accepted
+  existingSource?: string // Source id already on this Branch with the same DOI/URL: accepting attaches it
 }

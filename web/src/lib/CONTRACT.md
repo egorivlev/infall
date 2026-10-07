@@ -243,3 +243,33 @@ Behaviour:
 - Merge `auto`: `AutoLine.kind` has no value of its own for the new kinds, so a Page line, a new or edited Source and a new Attachment are `'Change'`: "Page of X · N blocks" (N: blocks of that Page added, removed, brought back or rewritten; one line per Card, where its first block stands in the plan), "Source T" (added, not attached by this plan), "Source T · year, DOI" (edited), "Source T · attached to X". `'Removed'`: "Source T", "Source T from X" (detached). `'Brought back'`: "Source T". In `autoSummary` these count as Changes, removed and brought back; a Page that is only reordered has no line and counts under "moved or resized". `layoutKept` does not count block order.
 - `BoardPreview` has the same shape as before; its Cards carry the `blocks` / `sources` counts of that moment.
 - `testing.ts` (the fake server): `todos`, `addTodo`, the four To-do routes, `todoFail`, `todoGate`, `todosFrame()`; `claim(member, card | null)` and `editingFrame()` for the soft lock.
+
+## M5 — AI access tokens and Suggestions
+
+Added to `index.ts` (types `AccessToken`, `Suggestion`, `SuggestionVM` in `types.ts`):
+
+```ts
+// ---- Suggestions of the open Branch ----
+export function useSuggestions(): SuggestionVM[]        // pending first (newest first), then decided (newest decision first); [] for Guests / no Board. Stable identities
+export const suggestions: {
+  reload(): Promise<void>
+  accept(id: string): Promise<{ sourceId?: string; cardId?: string }>   // builds the ops (new Source + Attachment, or attach `existingSource`, or the Connection) and calls POST …/accept. Rejects with ApiError: 409 `already_decided`, 409 `rejected` (the Card is gone), 400 `stale` locally when `stale`
+  reject(id: string): Promise<void>
+  reopen(id: string): Promise<void>                     // undo a reject
+}
+
+// ---- Access tokens for the AI tool layer (the signed-in Member's own) ----
+export const tokens: {
+  list(): Promise<AccessToken[]>
+  create(name: string): Promise<{ token: AccessToken; secret: string }>   // secret is shown once
+  remove(id: string): Promise<void>
+}
+export function toolEndpoint(): string                  // `${location.origin}/mcp`
+```
+
+Behaviour:
+
+- Loaded by `board.open()` for Members (not awaited), kept fresh by the socket `suggestions` frame for the open Branch, refetched after a reconnect, cleared on Branch switch.
+- `accept`/`reject`/`reopen` update the list optimistically and roll back on failure. The Changes of an accepted Suggestion reach the Board like any others (and are handed to it from the HTTP answer, deduplicated against the socket).
+- `useBoard().connections` never contains a suggested Connection; the UI draws the preview itself from `SuggestionVM`.
+- Guests: everything rejects locally with 403 `forbidden`; `useSuggestions()` stays `[]`.
