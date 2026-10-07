@@ -80,6 +80,39 @@ function named(e: Entity, world: Entities): string {
   return e.kind === 'Connection' ? `Connection ${ends(e, world)}` : `${e.kind} ${titleOf(e)}`
 }
 
+/** What a Source goes by: its title, else its DOI, else its address. */
+export function sourceName(e: Entity | undefined): string {
+  if (!e) return 'Untitled'
+  for (const name of ['title', 'doi', 'url']) {
+    const t = text(e.fields, name).trim()
+    if (t !== '') return t
+  }
+  return 'Untitled'
+}
+
+const SOURCE_FIELDS = ['url', 'doi', 'title', 'authors', 'year', 'note']
+
+type Laid = 'Card' | 'Frame' | 'Connection' // the kinds that sit on the Board itself
+type PageEdits = { added: number; removed: number; edited: number; reordered: number }
+
+// What a run did to one block, or to one Attachment: it appeared, it went, or (a block) it changed.
+function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'changed' | 'none' {
+  if (!was || was.deleted) return now.deleted ? 'none' : 'added'
+  return now.deleted ? 'removed' : 'changed'
+}
+
+function blocks(n: number): string {
+  return n === 1 ? 'a block' : `${n} blocks`
+}
+
+// One line for everything a run did to the Page of one Card, or none when nothing lasting happened.
+function pageLine(e: PageEdits, card: string): string | null {
+  if (e.edited > 0 || (e.added > 0 && e.removed > 0)) return `Edited the Page of ${card}`
+  if (e.added > 0) return `Added ${blocks(e.added)} to the Page of ${card}`
+  if (e.removed > 0) return `Removed ${blocks(e.removed)} from the Page of ${card}`
+  return e.reordered > 0 ? `Reordered the Page of ${card}` : null
+}
+
 function plural(n: number, kind: Kind): string {
   return `${n} ${kind}${n === 1 ? '' : 's'}`
 }
@@ -110,13 +143,63 @@ export function describeChanges(
     }
   }
   const lines: string[] = []
-  const laidOut: Record<Kind, number> = { Card: 0, Frame: 0, Connection: 0 }
+  const laidOut: Record<Laid, number> = { Card: 0, Frame: 0, Connection: 0 }
   let moved = false
   let resized = false
+  // Pages are read as a whole: what happened to all the blocks of one Card makes one line.
+  const pages = new Map<string, PageEdits>()
+  const attachedNow = new Set<string>() // Sources that this run attached to a Card
   for (const id of touched) {
     const was = before[id]
     const now = after[id]
     if (!now) continue
+    if (now.kind === 'Block') {
+      const card = ref(now.fields, 'card')
+      let e = pages.get(card)
+      if (!e) pages.set(card, (e = { added: 0, removed: 0, edited: 0, reordered: 0 }))
+      const what = fate(was, now)
+      if (what === 'added') e.added++
+      else if (what === 'removed') e.removed++
+      else if (what === 'changed' && was) {
+        if (!sameValue(was.fields, now.fields, 'text') || !sameValue(was.fields, now.fields, 'type')) e.edited++
+        else if (!sameValue(was.fields, now.fields, 'order')) e.reordered++
+      }
+    } else if (now.kind === 'Attachment' && fate(was, now) === 'added') {
+      attachedNow.add(ref(now.fields, 'source'))
+    }
+  }
+  const pagesSaid = new Set<string>()
+  for (const id of touched) {
+    const was = before[id]
+    const now = after[id]
+    if (!now) continue
+    if (now.kind === 'Block') {
+      const card = ref(now.fields, 'card')
+      if (pagesSaid.has(card)) continue
+      pagesSaid.add(card)
+      const line = pageLine(pages.get(card)!, titleOf(after[card]))
+      if (line) lines.push(line)
+      continue
+    }
+    if (now.kind === 'Attachment') {
+      const what = fate(was, now)
+      const source = sourceName(after[ref(now.fields, 'source')])
+      const card = titleOf(after[ref(now.fields, 'card')])
+      if (what === 'added') lines.push(`Added Source ${source} to ${card}`)
+      else if (what === 'removed') lines.push(`Removed Source ${source} from ${card}`)
+      continue
+    }
+    if (now.kind === 'Source') {
+      const name = sourceName(now)
+      if (!was) {
+        if (now.deleted) lines.push(`Added and removed Source ${name}`)
+        else if (!attachedNow.has(id)) lines.push(`Added Source ${name}`) // attached at once: that line says it
+      } else if (now.deleted) {
+        if (!was.deleted) lines.push(`Removed Source ${name}`)
+      } else if (was.deleted) lines.push(`Brought back Source ${name}`)
+      else if (SOURCE_FIELDS.some((f) => !sameValue(was.fields, now.fields, f))) lines.push(`Edited Source ${name}`)
+      continue
+    }
     if (!was) {
       const what = now.kind === 'Connection' ? ends(now, after) : named(now, after)
       if (now.deleted) lines.push(`Added and removed ${named(now, after)}`)

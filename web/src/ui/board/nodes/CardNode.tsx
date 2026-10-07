@@ -104,6 +104,23 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
                 {card.summary}
               </div>
             )}
+            {(card.blocks > 0 || card.sources > 0) && (
+              <div className="qb-card__foot">
+                {card.blocks > 0 && (
+                  <span title={`Page: ${card.blocks} ${card.blocks === 1 ? 'block' : 'blocks'}`}>
+                    <span aria-hidden="true">¶ {card.blocks}</span>
+                    <span className="qb-sr">
+                      Page: {card.blocks} {card.blocks === 1 ? 'block' : 'blocks'}
+                    </span>
+                  </span>
+                )}
+                {card.sources > 0 && (
+                  <span>
+                    {card.sources} {card.sources === 1 ? 'Source' : 'Sources'}
+                  </span>
+                )}
+              </div>
+            )}
           </>
         )}
         {level === 'compact' && (

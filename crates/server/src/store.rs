@@ -75,6 +75,31 @@ impl InviteRecord {
     }
 }
 
+/// The Card a To-do points at: where and what it was when the pointer was set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TodoCard {
+    pub id: Uuid,
+    pub title: String,
+    pub branch: Uuid,
+}
+
+/// A stored To-do (contract §11); this is also its JSON shape.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TodoRecord {
+    pub id: Uuid,
+    /// Whose To-do it is.
+    pub owner: MemberId,
+    pub text: String,
+    pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub done_at: Option<i64>,
+    /// Who added it: the owner, or someone assigning.
+    pub created_by: MemberId,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub card: Option<TodoCard>,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum StoreError {
     #[error("an account with that email already exists")]
@@ -99,7 +124,7 @@ impl From<serde_json::Error> for StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
-/// Accounts, sessions, invites and the Workspace snapshot.
+/// Accounts, sessions, invites, To-dos and the Workspace snapshot.
 pub trait Store: Send + Sync + 'static {
     fn load_workspace(&self) -> StoreResult<Option<Workspace>>;
     /// Replaces the snapshot atomically.
@@ -112,7 +137,8 @@ pub trait Store: Send + Sync + 'static {
     /// Ordered by creation time.
     fn members(&self) -> StoreResult<Vec<MemberRecord>>;
     fn member_count(&self) -> StoreResult<usize>;
-    /// Removes the account and all its sessions; false if there was none.
+    /// Removes the account, all its sessions and the To-dos it owns (ones it created for
+    /// others stay); false if there was none.
     fn delete_member(&self, id: MemberId) -> StoreResult<bool>;
     /// Sets a new password hash and deletes all the account's sessions; false if unknown.
     fn set_password(&self, id: MemberId, password_hash: &str) -> StoreResult<bool>;
@@ -138,12 +164,23 @@ pub trait Store: Send + Sync + 'static {
     /// Atomically marks the invite used (it must still be pending: else `InviteGone`) and
     /// creates the account (`EmailTaken` if the email is in use; then the invite stays unused).
     fn accept_invite(&self, invite: Uuid, member: &MemberRecord, now: i64) -> StoreResult<()>;
+
+    /// Ordered by creation time, then id.
+    fn todos(&self) -> StoreResult<Vec<TodoRecord>>;
+    fn todo(&self, id: Uuid) -> StoreResult<Option<TodoRecord>>;
+    /// Stores a new To-do if its owner is an existing Member or Admin; false (and nothing
+    /// stored) if the owner is unknown or a Guest.
+    fn insert_todo(&self, todo: &TodoRecord) -> StoreResult<bool>;
+    /// Replaces the To-do with the same id; false if there is none.
+    fn update_todo(&self, todo: &TodoRecord) -> StoreResult<bool>;
+    /// False if there was none.
+    fn delete_todo(&self, id: Uuid) -> StoreResult<bool>;
 }
 
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -180,9 +217,26 @@ CREATE TABLE workspace (
 );
 ";
 
+/// M4: To-dos. They go with their owner's account.
+const SCHEMA_V2: &str = "
+CREATE TABLE todos (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    done INTEGER NOT NULL,
+    done_at INTEGER,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    card_id TEXT,
+    card_title TEXT,
+    card_branch TEXT
+);
+CREATE INDEX todos_owner ON todos(owner);
+";
+
 /// Steps that bring a file from version `i` to `i + 1`; index 0 creates the schema.
 /// A later version appends its step here.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1];
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
@@ -286,6 +340,34 @@ fn invite_row(r: &Row<'_>) -> rusqlite::Result<InviteRecord> {
     })
 }
 
+const TODO_COLS: &str =
+    "id, owner, text, done, done_at, created_by, created_at, card_id, card_title, card_branch";
+
+fn todo_row(r: &Row<'_>) -> rusqlite::Result<TodoRecord> {
+    let card = match (
+        r.get::<_, Option<String>>(7)?,
+        r.get::<_, Option<String>>(8)?,
+        r.get::<_, Option<String>>(9)?,
+    ) {
+        (Some(id), Some(title), Some(branch)) => Some(TodoCard {
+            id: parse_uuid(&id)?,
+            title,
+            branch: parse_uuid(&branch)?,
+        }),
+        _ => None,
+    };
+    Ok(TodoRecord {
+        id: parse_uuid(&r.get::<_, String>(0)?)?,
+        owner: MemberId(parse_uuid(&r.get::<_, String>(1)?)?),
+        text: r.get(2)?,
+        done: r.get(3)?,
+        done_at: r.get(4)?,
+        created_by: MemberId(parse_uuid(&r.get::<_, String>(5)?)?),
+        created_at: r.get(6)?,
+        card,
+    })
+}
+
 fn is_unique_violation(e: &rusqlite::Error) -> bool {
     matches!(
         e,
@@ -385,6 +467,7 @@ impl Store for SqliteStore {
         let tx = conn.transaction()?;
         let id = id.0.to_string();
         tx.execute("DELETE FROM sessions WHERE member_id = ?1", params![id])?;
+        tx.execute("DELETE FROM todos WHERE owner = ?1", params![id])?;
         let n = tx.execute("DELETE FROM members WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(n > 0)
@@ -517,6 +600,85 @@ impl Store for SqliteStore {
         tx.commit()?;
         Ok(())
     }
+
+    fn todos(&self) -> StoreResult<Vec<TodoRecord>> {
+        let conn = self.conn()?;
+        let sql = format!("SELECT {TODO_COLS} FROM todos ORDER BY created_at, id");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], todo_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn todo(&self, id: Uuid) -> StoreResult<Option<TodoRecord>> {
+        let sql = format!("SELECT {TODO_COLS} FROM todos WHERE id = ?1");
+        Ok(self
+            .conn()?
+            .query_row(&sql, params![id.to_string()], todo_row)
+            .optional()?)
+    }
+
+    fn insert_todo(&self, t: &TodoRecord) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let owner = t.owner.0.to_string();
+        let role: Option<String> = tx
+            .query_row(
+                "SELECT role FROM members WHERE id = ?1",
+                params![owner],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if !matches!(role.as_deref(), Some("admin" | "member")) {
+            return Ok(false);
+        }
+        let sql = format!(
+            "INSERT INTO todos ({TODO_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        );
+        let card = t.card.as_ref();
+        tx.execute(
+            &sql,
+            params![
+                t.id.to_string(),
+                owner,
+                t.text,
+                t.done,
+                t.done_at,
+                t.created_by.0.to_string(),
+                t.created_at,
+                card.map(|c| c.id.to_string()),
+                card.map(|c| c.title.as_str()),
+                card.map(|c| c.branch.to_string()),
+            ],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    fn update_todo(&self, t: &TodoRecord) -> StoreResult<bool> {
+        let card = t.card.as_ref();
+        let n = self.conn()?.execute(
+            "UPDATE todos SET text = ?2, done = ?3, done_at = ?4,
+                 card_id = ?5, card_title = ?6, card_branch = ?7
+             WHERE id = ?1",
+            params![
+                t.id.to_string(),
+                t.text,
+                t.done,
+                t.done_at,
+                card.map(|c| c.id.to_string()),
+                card.map(|c| c.title.as_str()),
+                card.map(|c| c.branch.to_string()),
+            ],
+        )?;
+        Ok(n > 0)
+    }
+
+    fn delete_todo(&self, id: Uuid) -> StoreResult<bool> {
+        let n = self
+            .conn()?
+            .execute("DELETE FROM todos WHERE id = ?1", params![id.to_string()])?;
+        Ok(n > 0)
+    }
 }
 
 // ---------------------------------------------------------------- memory
@@ -527,6 +689,7 @@ struct Memory {
     members: Vec<MemberRecord>,
     sessions: HashMap<String, (MemberId, i64)>,
     invites: Vec<InviteRecord>,
+    todos: Vec<TodoRecord>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -595,6 +758,7 @@ impl Store for MemoryStore {
     fn delete_member(&self, id: MemberId) -> StoreResult<bool> {
         let mut m = self.lock()?;
         m.sessions.retain(|_, (member, _)| *member != id);
+        m.todos.retain(|t| t.owner != id);
         let before = m.members.len();
         m.members.retain(|x| x.id != id);
         Ok(m.members.len() < before)
@@ -695,5 +859,44 @@ impl Store for MemoryStore {
             i.used_at = Some(now);
         }
         Ok(())
+    }
+
+    fn todos(&self) -> StoreResult<Vec<TodoRecord>> {
+        let mut todos = self.lock()?.todos.clone();
+        todos.sort_by_key(|t| (t.created_at, t.id.to_string()));
+        Ok(todos)
+    }
+
+    fn todo(&self, id: Uuid) -> StoreResult<Option<TodoRecord>> {
+        Ok(self.lock()?.todos.iter().find(|t| t.id == id).cloned())
+    }
+
+    fn insert_todo(&self, todo: &TodoRecord) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let owner_ok = m
+            .members
+            .iter()
+            .any(|x| x.id == todo.owner && x.role != Role::Guest);
+        if owner_ok {
+            m.todos.push(todo.clone());
+        }
+        Ok(owner_ok)
+    }
+
+    fn update_todo(&self, todo: &TodoRecord) -> StoreResult<bool> {
+        match self.lock()?.todos.iter_mut().find(|t| t.id == todo.id) {
+            Some(t) => {
+                *t = todo.clone();
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    fn delete_todo(&self, id: Uuid) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let before = m.todos.len();
+        m.todos.retain(|t| t.id != id);
+        Ok(m.todos.len() < before)
     }
 }

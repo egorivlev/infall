@@ -3,6 +3,7 @@ import { board, branches, members } from '../../lib'
 import type { Member } from '../../lib'
 import { BoardView } from '../board'
 import { MergeReview } from '../merge'
+import { Todos } from '../todos'
 import { Branches } from './Branches'
 import { errorStatus } from './errorMessages'
 import { Link } from './Link'
@@ -15,13 +16,14 @@ import { TopBar } from './TopBar'
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
 
-export type ShellView = 'board' | 'branches' | 'members' | 'merge'
+export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos'
 
 /** What this person may see for a route; anything else falls back to the Board. */
 function viewFor(route: Route, member: Member): ShellView {
   if (route.name === 'members') return member.role === 'admin' ? 'members' : 'board'
   if (route.name === 'branches') return member.role === 'guest' ? 'board' : 'branches'
   if (route.name === 'merge') return member.role === 'guest' ? 'board' : 'merge'
+  if (route.name === 'todos') return member.role === 'guest' ? 'board' : 'todos' // To-dos are for the team, not for Guests
   return 'board' // the invite link means nothing once signed in
 }
 
@@ -29,7 +31,7 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
   const isGuest = member.role === 'guest'
   const view = viewFor(route, member)
 
-  // The Branch in the URL is the truth. Screens without one (/branches, /members) keep the last Branch open.
+  // The Branch in the URL is the truth. Screens without one (/branches, /members, /todos) keep the last Branch open.
   // Guests can read main only.
   const routeBranch = route.name === 'board' ? (isGuest ? MAIN : route.branch) : null
   const [lastBranch, setLastBranch] = useState(routeBranch ?? MAIN)
@@ -84,6 +86,8 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
           <Members me={member} />
         ) : view === 'branches' ? (
           <Branches current={branch} />
+        ) : view === 'todos' ? (
+          <Todos me={member} />
         ) : view === 'merge' && route.name === 'merge' ? (
           <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
         ) : missing ? (

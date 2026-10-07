@@ -10,7 +10,7 @@ use axum::http::header::{
 };
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use qoop_core::Workspace;
 use serde_json::json;
 use tokio::sync::{RwLock, Semaphore, watch};
@@ -22,7 +22,7 @@ use crate::config::Config;
 use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
-use crate::{Clock, boards, history, merges, people};
+use crate::{Clock, boards, history, merges, people, todos};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -106,6 +106,11 @@ pub fn router(st: Shared) -> Router {
         .route("/branches/{id}/ops", post(boards::post_ops))
         .route("/merges/plan", get(merges::plan))
         .route("/merges", post(merges::apply))
+        .route("/todos", get(todos::list_todos).post(todos::create_todo))
+        .route(
+            "/todos/{id}",
+            patch(todos::patch_todo).delete(todos::delete_todo),
+        )
         .route("/ws", get(live::ws_handler))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_not_found)

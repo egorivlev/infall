@@ -3,6 +3,7 @@ export type Route =
   | { name: 'board'; branch: string }
   | { name: 'branches' }
   | { name: 'members' }
+  | { name: 'todos' }
   | { name: 'merge'; from: string; into: string }
   | { name: 'invite'; token: string }
 
@@ -29,6 +30,9 @@ export function rememberBranch(name: string): void {
 export function boardPath(): string {
   return branchPath(lastBranch)
 }
+
+/** The To-dos screen (Members and Admins; the same list on every Branch). */
+export const TODOS_PATH = '/todos'
 
 /** The Merge review of `from` into `into`. Names go in the query, each encoded on its own ("/", " ", "&", "+", "#" are all safe). */
 export function mergePath(from: string, into: string): string {
@@ -58,6 +62,7 @@ export function parseRoute(pathname: string): Route {
   }
   if (parts.length === 1 && parts[0] === 'members') return { name: 'members' }
   if (parts.length === 1 && parts[0] === 'branches') return { name: 'branches' }
+  if (parts.length === 1 && parts[0] === 'todos') return { name: 'todos' }
   if (parts.length === 2 && parts[0] === 'invite' && parts[1]) return { name: 'invite', token: decode(parts[1]) }
   if (parts[0] === 'b' && path.startsWith('/b/')) {
     // Names may contain "/": normally encoded, but a hand-typed /b/ana/fit works too. One trailing slash is not part of the name.

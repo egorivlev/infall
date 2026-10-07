@@ -5,7 +5,7 @@ import { endOfLocalDay, formatDateTime, formatShortDate, formatTime, todayYmd } 
 import { describeError, describeLookupError, GENERIC_ERROR, INVALID_INVITE, isInviteGone } from './errorMessages'
 import { frameCounts } from './frameCounts'
 import { initials } from './initials'
-import { boardPath, branchPath, currentPath, mergePath, navigate, parseRoute, rememberBranch, subscribeRoute } from './router'
+import { boardPath, branchPath, currentPath, mergePath, navigate, parseRoute, rememberBranch, subscribeRoute, TODOS_PATH } from './router'
 import { searchCards } from './searchCards'
 import { applyTheme, getThemePref, nextThemePref, readThemePref, resetThemeCache, resolveTheme, setThemePref, THEME_KEY } from './theme'
 
@@ -17,6 +17,11 @@ describe('parseRoute', () => {
     expect(parseRoute('/members/')).toEqual({ name: 'members' })
     expect(parseRoute('/branches')).toEqual({ name: 'branches' })
     expect(parseRoute('/branches/')).toEqual({ name: 'branches' })
+    expect(parseRoute('/todos')).toEqual({ name: 'todos' })
+    expect(parseRoute('/todos/')).toEqual({ name: 'todos' })
+    expect(parseRoute('/todos?x=1#y')).toEqual({ name: 'todos' })
+    expect(parseRoute('/todos/abc')).toEqual(main)
+    expect(parseRoute(TODOS_PATH)).toEqual({ name: 'todos' })
     expect(parseRoute('/invite/abc123')).toEqual({ name: 'invite', token: 'abc123' })
   })
   it('decodes the token and ignores query and hash', () => {
@@ -150,7 +155,7 @@ describe('initials', () => {
   })
 })
 
-const card = (id: string, x: number, y: number, w = 224, h = 132): CardVM => ({ id, title: id, summary: '', status: 'idea', x, y, w, h })
+const card = (id: string, x: number, y: number, w = 224, h = 132): CardVM => ({ id, title: id, summary: '', status: 'idea', x, y, w, h, blocks: 0, sources: 0 })
 const frame = (id: string, x: number, y: number, w: number, h: number): FrameVM => ({ id, title: id, x, y, w, h })
 
 describe('frameCounts', () => {

@@ -4,7 +4,7 @@ import { boardBridge } from '../bridge'
 import { frameCounts } from './frameCounts'
 import { Icon } from './Icon'
 import { Link } from './Link'
-import { branchPath } from './router'
+import { branchPath, TODOS_PATH } from './router'
 import type { ShellView } from './Shell'
 import { SyncStatus } from './SyncStatus'
 import { useOnBoard } from './useOnBoard'
@@ -21,6 +21,12 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
           <Icon name="board" />
           <span>Board</span>
         </Link>
+        {member.role !== 'guest' && (
+          <Link href={TODOS_PATH} className="q-rail__item" aria-current={route === 'todos' ? 'page' : undefined}>
+            <Icon name="todos" />
+            <span>To-dos</span>
+          </Link>
+        )}
         {member.role !== 'guest' && (
           <Link href="/branches" className="q-rail__item" aria-current={route === 'branches' ? 'page' : undefined}>
             <Icon name="branch" />

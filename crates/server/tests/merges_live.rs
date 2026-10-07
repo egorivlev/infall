@@ -66,6 +66,7 @@ async fn subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
     ws.send(Message::Text(msg.into())).await.unwrap();
     assert_eq!(next_frame(&mut ws).await["type"], "subscribed");
     assert_eq!(next_frame(&mut ws).await["type"], "presence");
+    assert_eq!(next_frame(&mut ws).await["type"], "editing");
     ws
 }
 

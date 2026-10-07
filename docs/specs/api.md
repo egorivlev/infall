@@ -228,7 +228,7 @@ The plan is not trusted: the server recomputes it under the write lock (the core
 ## 11. M4 — Pages, Sources, To-dos
 
 ### Pages and Sources
-Research Content, so they are ordinary entities sent through `POST /api/branches/{id}/ops` and returned by the Board endpoints (core.md §1): `Kind` gains `"Block" | "Source" | "Attachment"`. Nothing new on the server for them. Sizes: a single Text value may be at most 100 000 characters (`400 bad_request` otherwise) — this applies to every Text field of every kind.
+Research Content, so they are ordinary entities sent through `POST /api/branches/{id}/ops` and returned by the Board endpoints (core.md §1): `Kind` gains `"Block" | "Source" | "Attachment"`. Nothing new on the server for them. Sizes: a single Text value may be at most 100 000 characters (`400 bad_request` otherwise) — this applies to every Text field of every kind, and to hand-written values in `POST /api/merges`.
 
 ### Who is editing a Page (soft lock)
 Not stored, not versioned; lives only in the live connection.

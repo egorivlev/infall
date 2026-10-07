@@ -39,7 +39,7 @@ const ADMIN: Member = { id: 'a', name: 'Elena Varga', role: 'admin', color: '#aa
 const MEMBER: Member = { id: 'm', name: 'Mei Lin', role: 'member', color: '#bbb' }
 const GUEST: Member = { id: 'g', name: 'Priya Nair', role: 'guest', color: '#ccc', access_until: new Date(2026, 10, 30).getTime() }
 
-const card = (id: string, title: string, summary = '') => ({ id, title, summary, status: 'idea' as const, x: 0, y: 0, w: 224, h: 132 })
+const card = (id: string, title: string, summary = '') => ({ id, title, summary, status: 'idea' as const, x: 0, y: 0, w: 224, h: 132, blocks: 0, sources: 0 })
 
 function snapshot(over: Partial<BoardSnapshot> = {}): BoardSnapshot {
   return {

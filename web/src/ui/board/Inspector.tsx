@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ops } from '../../lib'
 import type { CardVM, ConnectionVM, Status } from '../../lib'
+import { pagePanel } from '../bridge'
 import { returnFocus } from './focus'
 import { StatusGlyph } from './StatusGlyph'
 import { StatusMenu } from './StatusMenu'
@@ -111,6 +112,9 @@ export function Inspector({ card, connections, cards, readOnly, onSelectCard, on
       </header>
 
       <div className="qb-inspector__body">
+        <button type="button" className="q-btn q-btn--primary qb-inspector__open" onClick={() => pagePanel.open(card.id)}>
+          Open Page
+        </button>
         {readOnly ? (
           <>
             <h2 className={`qb-inspector__title${card.title ? '' : ' is-empty'}`}>{card.title || 'Untitled'}</h2>

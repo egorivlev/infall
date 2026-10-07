@@ -16,6 +16,7 @@ import type {
   Op,
   Origin,
   ServerFrame,
+  Todo,
 } from './types'
 
 export const ME: Member = { id: 'me', name: 'Me', role: 'member', color: '#111' }
@@ -121,7 +122,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
 
 /**
  * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
- * M3 (Merge). It does not compute a Merge: tests script what a plan holds with `mergeScript`.
+ * M3 (Merge), M4 (To-dos, and the frames about who edits a Page). It does not compute a Merge: tests script what a
+ * plan holds with `mergeScript`. It has no live connections either: tests hand the frames it builds to a FakeSocket.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
  * unless told otherwise; `all` holds every Branch.
  */
@@ -146,6 +148,14 @@ export class FakeServer {
   mergeGate: Promise<void> | null = null
   /** Every body posted to `/api/merges`, accepted or not. */
   mergePosts: { plan: MergePlan; decisions: [ConflictKey, Decision][]; checkpoint?: string }[] = []
+  /** To-dos, in the order the server lists them. */
+  todos: Todo[] = []
+  /** One scripted failure for the next To-do request that writes. */
+  todoFail: { status: number; code: string } | null = null
+  /** When set, To-do requests that write wait for it before answering. */
+  todoGate: Promise<void> | null = null
+  /** Claims on Pages in arrival order: `member` says it edits the Page of `card` on Branch `branch` (an id). */
+  claims: { member: string; card: string; branch: string; since: number }[] = []
   private n = 0
 
   private get main(): FakeBranch {
@@ -323,6 +333,83 @@ export class FakeServer {
     return { status: 200, body: checkpoint ? { seq: t.log.length, changes, checkpoint } : { seq: t.log.length, changes } }
   }
 
+  /** `member` claims the Page of `card` (null: lets go), as its `editing` frame would; returns the broadcast. */
+  claim(member: string, card: string | null, key?: string): ServerFrame {
+    const branch = this.find(key).info.id
+    this.claims = this.claims.filter((c) => c.member !== member)
+    if (card !== null) this.claims.push({ member, card, branch, since: this.now })
+    return this.editingFrame(key)
+  }
+
+  /** Who holds which Page on a Branch: per Card, whoever claimed it first and still holds it. */
+  editingFrame(key?: string): ServerFrame {
+    const branch = this.find(key).info.id
+    const editors: { card: string; member: string; since: number }[] = []
+    for (const c of this.claims) {
+      if (c.branch !== branch || editors.some((e) => e.card === c.card)) continue
+      editors.push({ card: c.card, member: c.member, since: c.since })
+    }
+    return { type: 'editing', branch, editors }
+  }
+
+  todosFrame(): ServerFrame {
+    return { type: 'todos', todos: this.todos.map((t) => ({ ...t })) }
+  }
+
+  /** Adds a To-do as the server would on someone's behalf; returns it. */
+  addTodo(input: { owner: string; text: string; card?: Todo['card'] }, author = this.actor.id): Todo {
+    const todo: Todo = { id: `t${this.n++}`, owner: input.owner, text: input.text.trim(), done: false, created_by: author, created_at: this.now }
+    if (input.card) todo.card = input.card
+    this.todos.push(todo)
+    return todo
+  }
+
+  private async todoRoute(path: string, method: string, body: unknown) {
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    if (method === 'GET' && path === '/api/todos') return { status: 200, body: { todos: this.todos } }
+    if (this.todoGate) await this.todoGate
+    if (this.todoFail) {
+      const f = this.todoFail
+      this.todoFail = null
+      return fail(f.status, f.code)
+    }
+    const input = (body ?? {}) as { owner?: unknown; text?: unknown; done?: unknown; card?: Todo['card'] | null }
+    const goodText = (t: unknown): t is string => typeof t === 'string' && t.trim() !== '' && t.trim().length <= 500
+    if (method === 'POST' && path === '/api/todos') {
+      const owner = this.members.find((m) => m.id === input.owner)
+      if (!owner || owner.role === 'guest' || !goodText(input.text)) return fail(400, 'bad_request')
+      return { status: 200, body: { todo: this.addTodo({ owner: owner.id, text: input.text, card: input.card ?? undefined }) } }
+    }
+    const id = decodeURIComponent(path.slice('/api/todos/'.length))
+    const at = this.todos.findIndex((t) => t.id === id)
+    const todo = this.todos[at]
+    if (!path.startsWith('/api/todos/') || !todo) return fail(404, 'not_found')
+    const me = this.actor.id
+    const mine = todo.owner === me || todo.created_by === me
+    if (method === 'DELETE') {
+      if (!mine) return fail(403, 'forbidden')
+      this.todos.splice(at, 1)
+      return { status: 200, body: {} }
+    }
+    if (method !== 'PATCH') return fail(404, 'not_found', 'no route')
+    if (input.done !== undefined && todo.owner !== me) return fail(403, 'forbidden')
+    if ((input.text !== undefined || input.card !== undefined) && !mine) return fail(403, 'forbidden')
+    if (input.text !== undefined && !goodText(input.text)) return fail(400, 'bad_request')
+    const next: Todo = { ...todo }
+    if (typeof input.text === 'string') next.text = input.text.trim()
+    if (input.card === null) delete next.card
+    else if (input.card !== undefined) next.card = input.card
+    if (input.done === true && !todo.done) {
+      next.done = true
+      next.done_at = this.now
+    } else if (input.done === false) {
+      next.done = false
+      delete next.done_at
+    }
+    this.todos[at] = next
+    return { status: 200, body: { todo: next } }
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -362,6 +449,7 @@ export class FakeServer {
       return this.json(200, { branch: this.info(this.fork(name, from)) })
     }
     if (path.startsWith('/api/merges')) return this.respond(await this.mergeRoute(path, method, body))
+    if (path === '/api/todos' || path.startsWith('/api/todos/')) return this.respond(await this.todoRoute(path, method, body))
     const m = /^\/api\/branches\/([^/?]+)\/(board|changes|ops|checkpoints|restore)(?:\?(.*))?$/.exec(path)
     const b = m ? this.all.find((x) => x.info.id === decodeURIComponent(m[1]!)) : undefined
     if (!m || !b) return this.respond(fail(404, 'not_found', 'no route'))

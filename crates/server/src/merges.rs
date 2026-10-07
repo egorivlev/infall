@@ -82,6 +82,16 @@ pub async fn apply(
     MemberOrAdmin(who): MemberOrAdmin,
     ApiJson(body): ApiJson<ApplyMerge>,
 ) -> Result<Json<Value>, ApiError> {
+    // A hand-written value is a Text like any other: the same size limit as posted ops.
+    let too_long = body.decisions.iter().any(
+        |(_, decision)| matches!(decision, Decision::Custom(value) if !crate::boards::text_fits(value)),
+    );
+    if too_long {
+        return Err(ApiError::BadRequest(format!(
+            "A text may be at most {} characters.",
+            crate::boards::MAX_TEXT_CHARS
+        )));
+    }
     let decisions = Decisions::try_from(body.decisions).map_err(|e| bad_decision(&e.0))?;
     let name = body
         .checkpoint

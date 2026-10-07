@@ -561,6 +561,25 @@ async fn a_hand_written_value_the_board_refuses_is_rejected() {
 }
 
 #[tokio::test]
+async fn a_hand_written_value_over_the_text_limit_is_refused() {
+    let w = world().await;
+    w.diverge_with_conflicts().await;
+    let before = w.snapshot().await;
+    let plan = w.planned(&w.side, &w.main).await;
+    let long = "x".repeat(100_001);
+    let res = w
+        .merge(json!({ "plan": plan, "decisions": [
+            [w.key_a(), { "Custom": { "Text": long } }],
+            [w.key_b(), "TakeSource"],
+            [w.key_c(), "TakeSource"],
+        ] }))
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST, "{}", res.text);
+    assert_eq!(res.code(), "bad_request");
+    assert_eq!(w.snapshot().await, before);
+}
+
+#[tokio::test]
 async fn a_plan_goes_stale_when_either_branch_changes() {
     let w = world().await;
     w.diverge_without_conflicts().await;
@@ -1000,6 +1019,31 @@ impl Store for BreakableStore {
     }
     fn accept_invite(&self, i: uuid::Uuid, m: &MemberRecord, n: i64) -> StoreResult<()> {
         self.inner.accept_invite(i, m, n)
+    }
+
+    fn todos(&self) -> qoop_server::store::StoreResult<Vec<qoop_server::store::TodoRecord>> {
+        self.inner.todos()
+    }
+    fn todo(
+        &self,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::TodoRecord>> {
+        self.inner.todo(id)
+    }
+    fn insert_todo(
+        &self,
+        t: &qoop_server::store::TodoRecord,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.inner.insert_todo(t)
+    }
+    fn update_todo(
+        &self,
+        t: &qoop_server::store::TodoRecord,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.inner.update_todo(t)
+    }
+    fn delete_todo(&self, id: uuid::Uuid) -> qoop_server::store::StoreResult<bool> {
+        self.inner.delete_todo(id)
     }
 }
 

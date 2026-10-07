@@ -84,7 +84,7 @@ describe('toSnapshotParts', () => {
     const e = run(run({}, card('a')), ops.createFrame({ id: 'f', x: 5, y: 6, w: 7, h: 8 }))
     const p = toSnapshotParts(e)
     expect(p.cards).toEqual([
-      { id: 'a', title: '', summary: '', status: 'idea', x: 1, y: 2, w: CARD_W, h: CARD_H },
+      { id: 'a', title: '', summary: '', status: 'idea', x: 1, y: 2, w: CARD_W, h: CARD_H, blocks: 0, sources: 0 },
     ])
     expect(p.frames).toEqual([{ id: 'f', title: '', x: 5, y: 6, w: 7, h: 8 }])
   })

@@ -2,12 +2,14 @@
 // What the UI sees is `confirmed` with the pending batches re-applied on top.
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
-import type { Entities, SnapshotParts } from './board-state'
-import { applyOps, toSnapshotParts } from './board-state'
+import type { Editors, Entities, PageIndex, SnapshotParts } from './board-state'
+import { applyOps, EMPTY_INDEX, EMPTY_PAGE, toPage, toPageIndex, toSnapshotParts } from './board-state'
 import { branchesStore, setBranches } from './branches-store'
 import { ApiError, request } from './http'
 import { membersStore, members as membersApi } from './people'
 import { sessionStore } from './session-store'
+import { findSourceIn } from './sources'
+import { setTodos, todos as todosApi } from './todos'
 import type {
   BoardResponse,
   BoardSnapshot,
@@ -19,7 +21,9 @@ import type {
   ClientFrame,
   Member,
   Op,
+  PageVM,
   ServerFrame,
+  SourceVM,
 } from './types'
 
 export type SocketLike = {
@@ -62,6 +66,11 @@ const MAX_OPS = 200
 const BACKOFF_START = 1000
 const BACKOFF_CAP = 15000
 const NO_ITEMS: never[] = []
+const NO_EDITORS: Editors = new Map()
+
+type Claim = { card: string; member: string; since: number }
+/** What the hooks read: the Board, and beside it what Pages are made of (a Page edit leaves `snapshot` alone). */
+export type BoardState = { snapshot: BoardSnapshot; pages: PageIndex; editors: Editors }
 
 function defaultSocketUrl(): string {
   const { protocol, host } = globalThis.location
@@ -90,7 +99,7 @@ const IDLE: BoardSnapshot = {
 }
 
 export function createBoardSync(options: BoardSyncOptions = {}) {
-  const store = createStore<{ snapshot: BoardSnapshot }>(() => ({ snapshot: IDLE }))
+  const store = createStore<BoardState>(() => ({ snapshot: IDLE, pages: EMPTY_INDEX, editors: NO_EDITORS }))
 
   const setTimer = options.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((h) => globalThis.clearTimeout(h as number))
@@ -112,8 +121,14 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   let presenceIds: string[] = []
   let presence: Member[] = NO_ITEMS
   let parts: SnapshotParts = { cards: NO_ITEMS, frames: NO_ITEMS, connections: NO_ITEMS }
+  let index: PageIndex = EMPTY_INDEX
   let view: Entities = confirmed
   let dirty = true
+  let claims: Claim[] = [] // who holds which Page on this Branch, as the server last said
+  let editors: Editors = NO_EDITORS // the same, without our own claim and with Members resolved
+  let editing: string | null = null // the Card whose Page we claim
+  let subscribed = false // the current socket has confirmed the subscription
+  const pageCache = new Map<string, { cards: unknown; connections: unknown; index: PageIndex; editors: Editors; page: PageVM }>()
   let socket: SocketLike | null = null
   let timer: unknown = null
   let attempt = 0
@@ -146,6 +161,32 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     return sameItems(presence, out) ? presence : out
   }
 
+  function resolveEditors(): Editors {
+    const list = membersStore.getState().members
+    const s = sessionStore.getState()
+    const me = s.status === 'signed_in' ? s.member.id : ''
+    const out: Editors = new Map()
+    let same = true
+    for (const c of claims) {
+      if (c.member === me || out.has(c.card)) continue
+      const member = list.find((m) => m.id === c.member) ?? null
+      const before = editors.get(c.card)
+      const kept = before && before.member === member && before.memberId === c.member && before.since === c.since
+      if (!kept) same = false
+      out.set(c.card, kept ? before : { member, memberId: c.member, since: c.since })
+    }
+    if (out.size === 0) return NO_EDITORS
+    return same && out.size === editors.size ? editors : out
+  }
+
+  // Asks for the Member list once per id we have no name for.
+  function meet(ids: string[]) {
+    const unknown = ids.filter((id) => !membersStore.getState().members.some((m) => m.id === id) && !reloadTried.has(id))
+    if (unknown.length === 0 || readOnly()) return
+    unknown.forEach((id) => reloadTried.add(id))
+    membersApi.reload().catch(() => {})
+  }
+
   function recomputeView() {
     let v = confirmed
     for (const b of queue) {
@@ -155,6 +196,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
     view = v
     parts = toSnapshotParts(view, parts)
+    index = toPageIndex(view, index)
     dirty = false
   }
 
@@ -174,8 +216,12 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
     if (error !== undefined) next.error = error
     if (branch) next.branch = branch
-    const prev = store.getState().snapshot
-    if (!sameSnapshot(prev, next)) store.setState({ snapshot: next })
+    editors = resolveEditors()
+    const prev = store.getState()
+    const snapshot = sameSnapshot(prev.snapshot, next) ? prev.snapshot : next
+    if (snapshot !== prev.snapshot || index !== prev.pages || editors !== prev.editors) {
+      store.setState({ snapshot, pages: index, editors })
+    }
   }
 
   function currentView(): Entities {
@@ -358,8 +404,14 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         error = undefined
         if (f.seq < seq) void reload(gen).catch(() => {})
         // Frames about Branches and Checkpoints sent while we were away are not repeated: ask again.
-        if (wasLive && !readOnly()) void refreshBranches(gen).catch(() => {})
+        if (wasLive && !readOnly()) {
+          void refreshBranches(gen).catch(() => {})
+          void todosApi.reload().catch(() => {})
+        }
         wasLive = true
+        subscribed = true
+        // A claim does not outlive its connection: make it again on the new one.
+        if (editing !== null && !readOnly()) send({ type: 'editing', card: editing })
         rebuild()
         break
       case 'changes':
@@ -368,13 +420,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       case 'presence':
         if (f.branch === branchId || f.branch === branch?.name) {
           presenceIds = f.members
-          const unknown = f.members.filter(
-            (id) => !membersStore.getState().members.some((m) => m.id === id) && !reloadTried.has(id),
-          )
-          if (unknown.length > 0 && !readOnly()) {
-            unknown.forEach((id) => reloadTried.add(id))
-            membersApi.reload().catch(() => {})
-          }
+          meet(f.members)
           rebuild()
         }
         break
@@ -389,6 +435,16 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         break
       case 'branches':
         setBranches(f.branches)
+        break
+      case 'editing':
+        if (f.branch === branchId || f.branch === branch?.name) {
+          claims = f.editors
+          meet(f.editors.map((e) => e.member))
+          rebuild()
+        }
+        break
+      case 'todos':
+        setTodos(f.todos)
         break
       default:
         break // a frame type this build does not know
@@ -407,11 +463,14 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       s.close()
     }
     presenceIds = []
+    claims = []
+    subscribed = false
   }
 
   function connect() {
     const ws = createSocket(socketUrl())
     socket = ws
+    subscribed = false
     ws.onopen = () => {
       if (socket === ws) send({ type: 'subscribe', branch: branchId, after: seq })
     }
@@ -429,6 +488,8 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       if (socket !== ws) return
       socket = null
       presenceIds = []
+      claims = []
+      subscribed = false
       status = 'reconnecting'
       const delay = Math.min(BACKOFF_START * 2 ** attempt, BACKOFF_CAP)
       attempt++
@@ -444,6 +505,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   // ---- lifecycle ----
 
   function teardown() {
+    if (editing !== null && subscribed) send({ type: 'editing', card: null }) // closing the socket ends it too
     stopSocket()
     unsubscribe.forEach((u) => u())
     unsubscribe = []
@@ -468,6 +530,8 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     reloadTried.clear()
     checkpointNames.clear()
     wasLive = false
+    editing = null
+    pageCache.clear()
     dirty = true
   }
 
@@ -520,6 +584,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       dirty = true
       rebuild()
       connect()
+      if (!readOnly()) void todosApi.reload().catch(() => {})
     } catch (e) {
       if (g !== gen) return
       status = 'error'
@@ -542,6 +607,44 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       rebuild()
       pump()
     })
+  }
+
+  // ---- Pages ----
+
+  // The Page of a Card as the Board shows it now. The same object comes back until something in it changes.
+  function page(cardId: string | null): PageVM {
+    if (cardId === null || !loaded) return EMPTY_PAGE
+    if (dirty) recomputeView()
+    const hit = pageCache.get(cardId)
+    const { cards, connections } = parts
+    if (hit && hit.cards === cards && hit.connections === connections && hit.index === index && hit.editors === editors) {
+      return hit.page
+    }
+    const next = toPage(cardId, parts, index, editors, hit?.page)
+    pageCache.set(cardId, { cards, connections, index, editors, page: next })
+    return next
+  }
+
+  function sources(): SourceVM[] {
+    if (dirty) recomputeView()
+    return index.sources
+  }
+
+  function findSource(input: { url?: string; doi?: string }): SourceVM | undefined {
+    return findSourceIn(sources(), input)
+  }
+
+  // Claims the soft lock on a Card's Page. Kept until stopEditing(), close() or a Branch switch; Guests never claim.
+  function startEditing(cardId: string) {
+    if (!loaded || readOnly() || editing === cardId) return
+    editing = cardId
+    if (subscribed) send({ type: 'editing', card: cardId })
+  }
+
+  function stopEditing() {
+    if (editing === null) return
+    editing = null
+    if (subscribed) send({ type: 'editing', card: null })
   }
 
   // ---- for History and Branches (internal) ----
@@ -567,7 +670,18 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
   }
 
-  return { store, open, close, submit, internal: { target, confirm, checkpoints, listen } }
+  return {
+    store,
+    open,
+    close,
+    submit,
+    page,
+    sources,
+    findSource,
+    startEditing,
+    stopEditing,
+    internal: { target, confirm, checkpoints, listen },
+  }
 }
 
 export type BoardSync = ReturnType<typeof createBoardSync>

@@ -1,6 +1,8 @@
-//! Live updates over WebSocket (contract §7): subscriptions, broadcast and presence.
+//! Live updates over WebSocket (contract §7): subscriptions, broadcast and presence; and
+//! who is editing a Page (contract §11), which lives only here.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -22,7 +24,7 @@ use crate::app::Shared;
 use crate::auth::{SignedIn, live_session, origin_allowed};
 use crate::boards::{BranchInfo, changes_after, may_read};
 use crate::error::ApiError;
-use crate::store::Role;
+use crate::store::{Role, TodoRecord};
 
 const PING_EVERY: Duration = Duration::from_secs(30);
 const MAX_UNANSWERED_PINGS: u32 = 2;
@@ -48,6 +50,15 @@ enum Event {
     Checkpoint { branch: BranchId, frame: Utf8Bytes },
     /// A `branches` frame, for every connected Member and Admin.
     Branches { frame: Utf8Bytes },
+    /// A `todos` frame, for every connected Member and Admin; `version` grows with every
+    /// To-do change.
+    Todos { version: u64, frame: Utf8Bytes },
+    /// An `editing` frame; `version` grows with every change of holders on any Branch.
+    Editing {
+        branch: BranchId,
+        version: u64,
+        frame: Utf8Bytes,
+    },
     /// The Member's account is gone: close their connections.
     Kick { member: MemberId },
 }
@@ -59,10 +70,33 @@ struct Presence {
     version: u64,
 }
 
-/// The fan-out and the presence table.
+/// Everyone who claimed the Page of one Card, in arrival order; the first holds it.
+struct Claims {
+    /// The server clock when the current holder became holder.
+    since: i64,
+    /// Connection id and its Member.
+    claimants: VecDeque<(u64, MemberId)>,
+}
+
+/// Who is editing which Page (the soft lock). Never stored.
+#[derive(Default)]
+struct Editing {
+    /// Per Branch and Card. A connection is in at most one queue.
+    cards: HashMap<BranchId, BTreeMap<Uuid, Claims>>,
+    version: u64,
+}
+
+/// The fan-out, the presence table and the soft lock.
 pub struct Hub {
     tx: broadcast::Sender<Event>,
     presence: Mutex<Presence>,
+    editing: Mutex<Editing>,
+    next_connection: AtomicU64,
+    /// Held across a To-do change and its `todos` frame, so frames go out in the order of
+    /// the changes.
+    pub todo_order: tokio::sync::Mutex<()>,
+    /// How many `todos` frames have been broadcast; changed only under `todo_order`.
+    todos_version: AtomicU64,
 }
 
 impl Default for Hub {
@@ -70,6 +104,10 @@ impl Default for Hub {
         Hub {
             tx: broadcast::channel(CHANNEL_CAPACITY).0,
             presence: Mutex::new(Presence::default()),
+            editing: Mutex::new(Editing::default()),
+            next_connection: AtomicU64::new(0),
+            todo_order: tokio::sync::Mutex::new(()),
+            todos_version: AtomicU64::new(0),
         }
     }
 }
@@ -90,6 +128,27 @@ fn presence_frame(branch: BranchId, members: &BTreeMap<MemberId, usize>) -> Utf8
 
 fn branches_frame(branches: &[BranchInfo]) -> Utf8Bytes {
     json!({ "type": "branches", "branches": branches })
+        .to_string()
+        .into()
+}
+
+fn todos_frame(todos: &[TodoRecord]) -> Utf8Bytes {
+    json!({ "type": "todos", "todos": todos })
+        .to_string()
+        .into()
+}
+
+/// One entry per Card that has a holder, ordered by Card id.
+fn editing_frame(branch: BranchId, cards: Option<&BTreeMap<Uuid, Claims>>) -> Utf8Bytes {
+    let editors: Vec<serde_json::Value> = cards
+        .into_iter()
+        .flatten()
+        .filter_map(|(card, claims)| {
+            let (_, member) = claims.claimants.front()?;
+            Some(json!({ "card": card, "member": member, "since": claims.since }))
+        })
+        .collect();
+    json!({ "type": "editing", "branch": branch, "editors": editors })
         .to_string()
         .into()
 }
@@ -130,6 +189,89 @@ impl Hub {
     pub fn broadcast_branches(st: &Shared, branches: &[BranchInfo]) {
         let frame = branches_frame(branches);
         let _ = st.hub.tx.send(Event::Branches { frame });
+    }
+
+    /// Sends the full To-do list to every connected Member and Admin, never to Guests.
+    /// Called while `todo_order` is held.
+    pub fn broadcast_todos(st: &Shared, todos: &[TodoRecord]) {
+        let frame = todos_frame(todos);
+        let version = st.hub.todos_version.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = st.hub.tx.send(Event::Todos { version, frame });
+    }
+
+    fn editing(&self) -> MutexGuard<'_, Editing> {
+        match self.editing.lock() {
+            Ok(e) => e,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    /// The current `editing` frame of `branch` and the editing version.
+    fn current_editing(&self, branch: BranchId) -> (Utf8Bytes, u64) {
+        let e = self.editing();
+        (editing_frame(branch, e.cards.get(&branch)), e.version)
+    }
+
+    /// Connection `conn` of `member` now edits the Page of `card` on `branch`, or nothing.
+    /// Any claim it had on that Branch ends first, and the next claimant of that Card (if
+    /// any) becomes its holder at `now`. Claiming the Card it already claims changes
+    /// nothing. Broadcasts `editing` if the holders of the Branch changed.
+    fn set_editing(
+        &self,
+        conn: u64,
+        member: MemberId,
+        branch: BranchId,
+        card: Option<Uuid>,
+        now: i64,
+    ) {
+        let mut e = self.editing();
+        let cards = e.cards.entry(branch).or_default();
+        let already = card.is_some_and(|c| {
+            cards
+                .get(&c)
+                .is_some_and(|q| q.claimants.iter().any(|(id, _)| *id == conn))
+        });
+        let mut changed = false;
+        if !already {
+            let held = cards.iter().find_map(|(c, q)| {
+                let pos = q.claimants.iter().position(|(id, _)| *id == conn)?;
+                Some((*c, pos))
+            });
+            if let Some((c, pos)) = held
+                && let Some(q) = cards.get_mut(&c)
+            {
+                q.claimants.remove(pos);
+                if pos == 0 {
+                    // The holder left: the next in line holds it from now.
+                    changed = true;
+                    q.since = now;
+                }
+                if q.claimants.is_empty() {
+                    cards.remove(&c);
+                }
+            }
+            if let Some(c) = card {
+                let q = cards.entry(c).or_insert_with(|| Claims {
+                    since: now,
+                    claimants: VecDeque::new(),
+                });
+                changed |= q.claimants.is_empty();
+                q.claimants.push_back((conn, member));
+            }
+        }
+        if cards.is_empty() {
+            e.cards.remove(&branch);
+        }
+        if changed {
+            e.version += 1;
+            let version = e.version;
+            let frame = editing_frame(branch, e.cards.get(&branch));
+            let _ = self.tx.send(Event::Editing {
+                branch,
+                version,
+                frame,
+            });
+        }
     }
 
     /// Closes every live connection of `member`.
@@ -227,6 +369,7 @@ pub async fn ws_handler(
 #[serde(tag = "type", rename_all = "lowercase")]
 enum ClientMessage {
     Subscribe { branch: String, after: u64 },
+    Editing { card: Option<String> },
 }
 
 struct Subscription {
@@ -234,13 +377,18 @@ struct Subscription {
     /// The head this connection has been sent up to.
     seq: u64,
     presence_version: u64,
+    editing_version: u64,
 }
 
 /// One WebSocket connection.
 struct Connection {
     st: Shared,
     who: SignedIn,
+    /// Tells this connection's soft-lock claim from any other's.
+    id: u64,
     sub: Option<Subscription>,
+    /// The newest To-do list this connection has been sent (after a resync, read).
+    todos_version: u64,
 }
 
 /// Frames this connection wants to send, or the reason to close it.
@@ -248,7 +396,14 @@ type Outcome = Result<Vec<Utf8Bytes>, ()>;
 
 impl Connection {
     fn new(st: Shared, who: SignedIn) -> Connection {
-        Connection { st, who, sub: None }
+        let id = st.hub.next_connection.fetch_add(1, Ordering::Relaxed);
+        Connection {
+            st,
+            who,
+            id,
+            sub: None,
+            todos_version: 0,
+        }
     }
 
     async fn run(mut self, socket: WebSocket) {
@@ -297,6 +452,7 @@ impl Connection {
             }
         }
         if let Some(sub) = self.sub.take() {
+            self.release_claim(sub.branch);
             self.st
                 .hub
                 .move_member(self.who.id(), Some(sub.branch), None);
@@ -306,6 +462,14 @@ impl Connection {
 
     fn is_guest(&self) -> bool {
         self.who.member.role == Role::Guest
+    }
+
+    /// Ends this connection's soft-lock claim on `branch`, if it has one.
+    fn release_claim(&self, branch: BranchId) {
+        let now = self.st.clock.now();
+        self.st
+            .hub
+            .set_editing(self.id, self.who.id(), branch, None, now);
     }
 
     async fn still_signed_in(&self) -> bool {
@@ -325,6 +489,22 @@ impl Connection {
             },
             Event::Branches { frame } if !self.is_guest() => Ok(vec![frame]),
             Event::Branches { .. } => Ok(Vec::new()),
+            Event::Todos { version, frame } if !self.is_guest() && version > self.todos_version => {
+                self.todos_version = version;
+                Ok(vec![frame])
+            }
+            Event::Todos { .. } => Ok(Vec::new()),
+            Event::Editing {
+                branch,
+                version,
+                frame,
+            } => match &mut self.sub {
+                Some(sub) if sub.branch == branch && version > sub.editing_version => {
+                    sub.editing_version = version;
+                    Ok(vec![frame])
+                }
+                _ => Ok(Vec::new()),
+            },
             Event::Changes { branch, seq, frame } => match &mut self.sub {
                 Some(sub) if sub.branch == branch && seq > sub.seq => {
                     sub.seq = seq;
@@ -349,14 +529,42 @@ impl Connection {
     async fn on_client_text(&mut self, text: &str) -> Vec<Utf8Bytes> {
         match serde_json::from_str::<ClientMessage>(text) {
             Ok(ClientMessage::Subscribe { branch, after }) => self.subscribe(&branch, after).await,
+            Ok(ClientMessage::Editing { card }) => self.editing(card.as_deref()),
             Err(_) => vec![error_frame(
                 "bad_request",
-                "Expected {\"type\":\"subscribe\",\"branch\":…,\"after\":…}.",
+                "Expected {\"type\":\"subscribe\",\"branch\":…,\"after\":…} or {\"type\":\"editing\",\"card\":…}.",
             )],
         }
     }
 
-    /// `subscribed`, then the catch-up `changes` (if any), then `presence`.
+    /// Claims the Page of `card` on the subscribed Branch, or ends the claim (`None`).
+    /// Ignored from Guests and before `subscribe`. The `editing` frame, if the holders
+    /// changed, comes back through the Hub like everyone else's.
+    fn editing(&mut self, card: Option<&str>) -> Vec<Utf8Bytes> {
+        let Some(branch) = self.sub.as_ref().map(|s| s.branch) else {
+            return Vec::new();
+        };
+        if self.is_guest() {
+            return Vec::new();
+        }
+        let card = match card.map(Uuid::parse_str) {
+            None => None,
+            Some(Ok(id)) => Some(id),
+            Some(Err(_)) => {
+                return vec![error_frame(
+                    "bad_request",
+                    "`card` must be a Card id or null.",
+                )];
+            }
+        };
+        let now = self.st.clock.now();
+        self.st
+            .hub
+            .set_editing(self.id, self.who.id(), branch, card, now);
+        Vec::new()
+    }
+
+    /// `subscribed`, then the catch-up `changes` (if any), then `presence`, then `editing`.
     async fn subscribe(&mut self, raw_branch: &str, after: u64) -> Vec<Utf8Bytes> {
         let (branch, seq, catch_up) = {
             let ws = self.st.workspace.read().await;
@@ -393,17 +601,28 @@ impl Connection {
             .move_member(self.who.id(), old, Some(branch))
             .unwrap_or_else(|| (presence_frame(branch, &BTreeMap::new()), 0));
         frames.push(presence);
+        // Leaving a Branch ends the claim made on it; subscribing again to the same one
+        // keeps it.
+        if let Some(old) = old
+            && old != branch
+        {
+            self.release_claim(old);
+        }
+        let (editing, editing_version) = self.st.hub.current_editing(branch);
+        frames.push(editing);
         self.sub = Some(Subscription {
             branch,
             seq,
             presence_version: version,
+            editing_version,
         });
         frames
     }
 
-    /// After missing broadcast frames: send the Branch list (a `branches` frame may have
-    /// been among them; never to Guests), then what was missed as one `changes` frame, then
-    /// the current `presence`. Missed `checkpoint` frames are not replayed.
+    /// After missing broadcast frames: send the Branch list and the To-do list (a `branches`
+    /// or `todos` frame may have been among them; never to Guests), then what was missed as
+    /// one `changes` frame, then the current `presence` and `editing`. Missed `checkpoint`
+    /// frames are not replayed.
     async fn resync(&mut self) -> Vec<Utf8Bytes> {
         let mut frames = Vec::new();
         let guest = self.is_guest();
@@ -427,6 +646,18 @@ impl Connection {
             let (presence, version) = self.st.hub.current_presence(sub.branch);
             sub.presence_version = version;
             frames.push(presence);
+            let (editing, version) = self.st.hub.current_editing(sub.branch);
+            sub.editing_version = version;
+            frames.push(editing);
+        }
+        if !guest {
+            // Under the order lock, so a list older than a frame already sent cannot
+            // follow it.
+            let _order = self.st.hub.todo_order.lock().await;
+            if let Ok(todos) = crate::app::blocking(&self.st, |s| s.todos()).await {
+                self.todos_version = self.st.hub.todos_version.load(Ordering::SeqCst);
+                frames.push(todos_frame(&todos));
+            }
         }
         frames
     }

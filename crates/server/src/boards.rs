@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use axum::Json;
 use axum::extract::{Path, State};
-use qoop_core::{Branch, BranchId, Change, Entity, EntityId, Moment, Op, Workspace, WsError};
+use qoop_core::{
+    Branch, BranchId, Change, Entity, EntityId, Moment, Op, Value as FieldValue, Workspace, WsError,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -17,6 +19,33 @@ use crate::store::Role;
 
 /// The most ops one request may carry.
 pub const MAX_OPS: usize = 200;
+
+/// The most characters one Text value may hold.
+pub const MAX_TEXT_CHARS: usize = 100_000;
+
+pub(crate) fn text_fits(value: &FieldValue) -> bool {
+    match value {
+        // Every character is at least one byte, so short strings need no counting.
+        FieldValue::Text(s) => s.len() <= MAX_TEXT_CHARS || s.chars().count() <= MAX_TEXT_CHARS,
+        _ => true,
+    }
+}
+
+/// Refuses ops that carry a Text value over the limit.
+fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
+    let fits = ops.iter().all(|op| match op {
+        Op::Create { fields, .. } => fields.values().all(text_fits),
+        Op::Set { value, .. } => text_fits(value),
+        Op::Delete { .. } | Op::Undelete { .. } => true,
+    });
+    if fits {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(format!(
+            "A text may be at most {MAX_TEXT_CHARS} characters."
+        )))
+    }
+}
 
 #[derive(Serialize)]
 pub struct BranchInfo {
@@ -173,6 +202,7 @@ pub async fn post_ops(
             "Send between 1 and {MAX_OPS} ops."
         )));
     }
+    check_text_sizes(&body.ops)?;
     let branch = Uuid::parse_str(&id)
         .map(BranchId)
         .map_err(|_| ApiError::NotFound)?;

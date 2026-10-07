@@ -1,5 +1,5 @@
 // Pure Merge logic: turning a plan and the two head Boards into what the review shows, and choices into Decisions.
-import { ends, STATUS_WORDS, titleOf } from './activities'
+import { ends, sourceName, STATUS_WORDS, titleOf } from './activities'
 import type { Entities } from './board-state'
 import type {
   AutoLine,
@@ -38,10 +38,26 @@ export type BuiltConflict = { vm: ConflictVM; print: string }
 const EMPTY = '(empty)'
 const LAYOUT = ['x', 'y', 'w', 'h']
 const EDITABLE = ['title', 'summary', 'label']
+const SOURCE_FIELDS = ['url', 'doi', 'title', 'authors', 'year', 'note']
 
-// Connections have no layout; an unknown field is content, as in the core.
+type Laid = 'Card' | 'Frame' | 'Connection' // the kinds that sit on the Board itself
+
+// Cards and Frames have a position and a size, a block its place in the Page; an unknown field is content, as in the core.
 function isLayout(kind: Kind, field: string): boolean {
-  return kind !== 'Connection' && LAYOUT.includes(field)
+  if (kind === 'Block') return field === 'order'
+  return (kind === 'Card' || kind === 'Frame') && LAYOUT.includes(field)
+}
+
+// A hand-written value is allowed for free text: titles, summaries, labels, a paragraph of a Page, a Source's fields.
+function isEditable(kind: Kind, field: string): boolean {
+  if (kind === 'Block') return field === 'text'
+  if (kind === 'Source') return SOURCE_FIELDS.includes(field)
+  return EDITABLE.includes(field)
+}
+
+function refOf(e: Entity | undefined, name: string): string {
+  const v = e?.fields[name]
+  return typeof v === 'object' && 'Ref' in v ? v.Ref : ''
 }
 
 function same(a: Value | undefined, b: Value | undefined): boolean {
@@ -66,13 +82,29 @@ function capital(s: string): string {
 function fieldWord(kind: Kind, field: string): string {
   if (kind === 'Connection' && field === 'from') return 'start'
   if (kind === 'Connection' && field === 'to') return 'end'
+  if (kind === 'Source' && (field === 'url' || field === 'doi')) return field.toUpperCase()
   return field
 }
 
+// What the headline of a field Conflict calls the field.
+function headlineWord(kind: Kind, field: string): string {
+  return kind === 'Block' && field === 'text' ? 'Paragraph' : capital(fieldWord(kind, field))
+}
+
+// The word an entity's kind goes by in a sentence. An Attachment is spoken of as the Source it attaches.
+function kindWord(kind: Kind): string {
+  return kind === 'Block' ? 'block' : kind === 'Attachment' ? 'Source' : kind
+}
+
+// A block is named by its Page, an Attachment by its Source and Card.
 function titleIn(world: Entities, id: string): string {
   const e = world[id]
   if (!e) return 'Untitled'
-  return e.kind === 'Connection' ? ends(e, world) : titleOf(e)
+  if (e.kind === 'Connection') return ends(e, world)
+  if (e.kind === 'Block') return `Page: ${titleOf(world[refOf(e, 'card')])}`
+  if (e.kind === 'Source') return sourceName(e)
+  if (e.kind === 'Attachment') return `${sourceName(world[refOf(e, 'source')])} on ${titleOf(world[refOf(e, 'card')])}`
+  return titleOf(e)
 }
 
 function statusOf(value: Value): Status {
@@ -160,10 +192,10 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
         vm: {
           ...common,
           type: 'field',
-          headline: `${capital(fieldWord(entityKind, field))} changed on both`,
+          headline: `${headlineWord(entityKind, field)} changed on both`,
           source: { ...describeValue(entityKind, field, source, sourceWorld), ...lastTouch(w.sourceChanges, sourceFrom, touches) },
           target: { ...describeValue(entityKind, field, target, targetWorld), ...lastTouch(w.targetChanges, targetFrom, touches) },
-          canEdit: EDITABLE.includes(field),
+          canEdit: isEditable(entityKind, field),
         },
         print: JSON.stringify([source, target]),
       }
@@ -183,17 +215,34 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
     const kept = (changes: readonly Change[], from: number) =>
       lastTouch(changes, from, touchesContent(key.entity, entityKind))
     const [gone, other] = deletedOnSource ? [w.sourceName, w.targetName] : [w.targetName, w.sourceName]
+    // An Attachment has nothing to edit: it is there or it is not.
+    const say =
+      entityKind === 'Attachment'
+        ? {
+            headline: `Detached on ${gone}, kept on ${other}`,
+            remove: 'Detach the Source',
+            back: 'Attach the Source again',
+            keep: 'Keep the Source attached',
+            leave: 'Leave the Source detached',
+          }
+        : {
+            headline: `Deleted on ${gone}, ${edited ? 'edited' : 'kept'} on ${other}`,
+            remove: `Delete the ${kindWord(entityKind)}`,
+            back: `Bring back the ${kindWord(entityKind)}${withEdits}`,
+            keep: `Keep the ${kindWord(entityKind)}${withEdits}`,
+            leave: `Leave the ${kindWord(entityKind)} deleted`,
+          }
     return {
       vm: {
         ...common,
         type: 'edit_vs_delete',
-        headline: `Deleted on ${gone}, ${edited ? 'edited' : 'kept'} on ${other}`,
+        headline: say.headline,
         source: deletedOnSource
-          ? { text: `Delete the ${entityKind}`, ...deleted(w.sourceChanges, sourceFrom) }
-          : { text: `Bring back the ${entityKind}${withEdits}`, ...kept(w.sourceChanges, sourceFrom) },
+          ? { text: say.remove, ...deleted(w.sourceChanges, sourceFrom) }
+          : { text: say.back, ...kept(w.sourceChanges, sourceFrom) },
         target: deletedOnSource
-          ? { text: `Keep the ${entityKind}${withEdits}`, ...kept(w.targetChanges, targetFrom) }
-          : { text: `Leave the ${entityKind} deleted`, ...deleted(w.targetChanges, targetFrom) },
+          ? { text: say.keep, ...kept(w.targetChanges, targetFrom) }
+          : { text: say.leave, ...deleted(w.targetChanges, targetFrom) },
         canEdit: false,
       },
       print: JSON.stringify([c.EditVsDelete.deleted_on, live ? contentOf(live) : null]),
@@ -216,33 +265,87 @@ function count(n: number, one: string, many = `${one}s`): string {
 export function buildAuto(plan: MergePlan, source: Entities, target: Entities): { lines: AutoLine[]; summary: string } {
   if (plan.auto.length === 0) return { lines: [], summary: 'Nothing to merge automatically' }
   const world: Entities = { ...target, ...source }
-  type Seen = { created?: Kind; deleted?: true; undeleted?: true; content: string[]; layout: boolean }
+  type Seen = { created?: Kind; made?: Entity; deleted?: true; undeleted?: true; content: string[]; layout: boolean }
   const seen = new Map<string, Seen>()
   for (const op of plan.auto) {
     const id = entityOf(op)
     let s = seen.get(id)
     if (!s) seen.set(id, (s = { content: [], layout: false }))
-    if ('Create' in op) s.created = op.Create.kind
-    else if ('Delete' in op) s.deleted = true
+    if ('Create' in op) {
+      s.created = op.Create.kind
+      s.made = { kind: op.Create.kind, fields: op.Create.fields, deleted: false }
+    } else if ('Delete' in op) s.deleted = true
     else if ('Undelete' in op) s.undeleted = true
-    else if (isLayout(world[id]?.kind ?? 'Card', op.Set.field)) s.layout = true
+    else if (isLayout((world[id] ?? s.made)?.kind ?? 'Card', op.Set.field)) s.layout = true
     else if (!s.content.includes(op.Set.field)) s.content.push(op.Set.field)
   }
   const lines: AutoLine[] = []
-  const added: Record<Kind, number> = { Card: 0, Frame: 0, Connection: 0 }
+  const added: Record<Laid, number> = { Card: 0, Frame: 0, Connection: 0 }
   let changed = 0
   let removed = 0
   let back = 0
   let laidOut = 0
   let hidden = 0
+  const entityIn = (id: string) => world[id] ?? seen.get(id)?.made
+  const arrives = (s: Seen) => (s.created !== undefined || s.undeleted === true) && !s.deleted
+  // Sources the plan attaches to a Card: the Attachment's line names them, so they need none of their own.
+  const attachedHere = new Set<string>()
+  for (const [id, s] of seen) {
+    const e = entityIn(id)
+    if (e?.kind === 'Attachment' && arrives(s)) attachedHere.add(refOf(e, 'source'))
+  }
+  // A Page is one line however many of its blocks change; `line` is where it goes.
+  const pages = new Map<string, { blocks: number; reordered: boolean; line: number }>()
   for (const [id, s] of seen) {
     const title = titleIn(world, id)
-    const kind = world[id]?.kind ?? s.created ?? 'Card'
-    if (s.created) {
-      if (s.deleted) {
-        hidden++ // arrives deleted, only so that what refers to it stays valid
-        continue
+    const e = entityIn(id)
+    const kind = e?.kind ?? 'Card'
+    if (s.created && s.deleted) {
+      hidden++ // arrives deleted, only so that what refers to it stays valid
+      continue
+    }
+    if (kind === 'Block') {
+      const card = refOf(e, 'card')
+      let p = pages.get(card)
+      if (!p) pages.set(card, (p = { blocks: 0, reordered: false, line: -1 }))
+      if (s.created || s.deleted || s.undeleted || s.content.length > 0) {
+        if (p.blocks === 0) p.line = lines.push({ kind: 'Change', what: '' }) - 1
+        p.blocks++
+      } else if (s.layout) p.reordered = true
+      continue
+    }
+    if (kind === 'Attachment') {
+      const source = sourceName(entityIn(refOf(e, 'source')))
+      const card = titleOf(entityIn(refOf(e, 'card')))
+      if (arrives(s)) {
+        changed++
+        lines.push({ kind: 'Change', what: `Source ${source} · attached to ${card}` })
+      } else if (s.deleted) {
+        removed++
+        lines.push({ kind: 'Removed', what: `Source ${source} from ${card}` })
       }
+      continue
+    }
+    if (kind === 'Source') {
+      const name = `Source ${sourceName(e)}`
+      if (s.created) {
+        if (attachedHere.has(id)) continue
+        changed++
+        lines.push({ kind: 'Change', what: name })
+      } else if (s.deleted) {
+        removed++
+        lines.push({ kind: 'Removed', what: name })
+      } else if (s.undeleted) {
+        back++
+        lines.push({ kind: 'Brought back', what: name })
+      } else if (s.content.length > 0) {
+        changed++
+        lines.push({ kind: 'Change', what: `${name} · ${s.content.map((n) => fieldWord(kind, n)).join(', ')}` })
+      }
+      continue
+    }
+    if (s.created) {
+      if (s.created !== 'Card' && s.created !== 'Frame' && s.created !== 'Connection') continue
       added[s.created]++
       const label = s.created === 'Connection' ? describeValue('Connection', 'label', world[id]?.fields.label ?? 'Null', world).text : EMPTY
       lines.push({ kind: `${s.created} added`, what: label === EMPTY ? title : `${title} · ${label}` })
@@ -258,6 +361,12 @@ export function buildAuto(plan: MergePlan, source: Entities, target: Entities): 
     } else if (s.layout) {
       laidOut++
     }
+  }
+  for (const [card, p] of pages) {
+    if (p.blocks > 0) {
+      changed++
+      lines[p.line] = { kind: 'Change', what: `Page of ${titleOf(entityIn(card))} · ${count(p.blocks, 'block')}` }
+    } else if (p.reordered) laidOut++
   }
   const others = added.Card + added.Frame + added.Connection + removed + back + laidOut + hidden
   const parts = [

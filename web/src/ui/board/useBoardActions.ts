@@ -19,6 +19,8 @@ export function describeRemoval(items: readonly Removal[]): string {
     n('Card') && plural(n('Card'), 'Card'),
     n('Frame') && plural(n('Frame'), 'Frame'),
     n('Connection') && plural(n('Connection'), 'Connection'),
+    n('Block') && plural(n('Block'), 'block'),
+    n('Source') && plural(n('Source'), 'Source'),
   ].filter((p): p is string => Boolean(p))
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : (parts[0] ?? '')
   return `Deleted ${list}.`
@@ -41,14 +43,15 @@ async function submit(batch: Op[]): Promise<boolean> {
   }
 }
 
-function removeWithUndo(items: readonly Removal[]): void {
+/** `message` replaces the default wording, e.g. for a Source taken off one Card (its Attachment is what goes). */
+function removeWithUndo(items: readonly Removal[], message?: string): void {
   if (items.length === 0) return
   const ids = items.map((i) => i.id)
   // The delete is applied locally at once, so the Undo offer appears at once too.
   const pending = submit(ids.map((id) => ops.remove(id)))
   const toastId = toasts.show(
     {
-      message: describeRemoval(items),
+      message: message ?? describeRemoval(items),
       action: {
         label: 'Undo',
         run: () => {

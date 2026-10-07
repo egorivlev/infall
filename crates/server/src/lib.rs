@@ -13,6 +13,7 @@ pub mod live;
 pub mod merges;
 pub mod people;
 pub mod store;
+pub mod todos;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};

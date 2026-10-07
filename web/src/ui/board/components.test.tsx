@@ -25,6 +25,8 @@ const card = (id: string, title: string, extra: Partial<CardVM> = {}): CardVM =>
   y: 0,
   w: 224,
   h: 132,
+  blocks: 0,
+  sources: 0,
   ...extra,
 })
 

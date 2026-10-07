@@ -70,4 +70,78 @@ describe('op builders', () => {
   it('rejects non-finite coordinates', () => {
     expect(() => ops.move('a', NaN, 0)).toThrow(RangeError)
   })
+
+  it('addBlock creates a text block of a Card at an order key', () => {
+    expect(ops.addBlock({ id: 'k', card: 'a', text: 'Hello $x$', order: 'V' })).toEqual({
+      Create: {
+        entity: 'k',
+        kind: 'Block',
+        fields: { card: { Ref: 'a' }, type: { Text: 'text' }, order: { Text: 'V' }, text: { Text: 'Hello $x$' } },
+      },
+    })
+  })
+  it('addBlock leaves an empty text unset, generates an id and refuses an empty order', () => {
+    const op = ops.addBlock({ card: 'a', text: '', order: 'V' })
+    if (!('Create' in op)) throw new Error('not create')
+    expect(op.Create.entity).toHaveLength(36)
+    expect(op.Create.fields).toEqual({ card: { Ref: 'a' }, type: { Text: 'text' }, order: { Text: 'V' } })
+    expect(() => ops.addBlock({ card: 'a', text: 'x', order: '' })).toThrow(RangeError)
+  })
+  it('setBlockText; an empty text sets Null and the block stays', () => {
+    expect(ops.setBlockText('k', '  kept as typed ')).toEqual({
+      Set: { entity: 'k', field: 'text', value: { Text: '  kept as typed ' } },
+    })
+    expect(ops.setBlockText('k', '')).toEqual({ Set: { entity: 'k', field: 'text', value: 'Null' } })
+  })
+  it('moveBlock sets the order key', () => {
+    expect(ops.moveBlock('k', 'Vz')).toEqual({ Set: { entity: 'k', field: 'order', value: { Text: 'Vz' } } })
+    expect(() => ops.moveBlock('k', '')).toThrow(RangeError)
+  })
+  it('createSource keeps the fields given, trims what identifies it, omits the rest', () => {
+    expect(
+      ops.createSource({
+        id: 's',
+        url: ' https://example.com/p ',
+        doi: ' 10.1000/Xyz\n',
+        title: 'A paper',
+        authors: 'A. Author, B. Author',
+        year: '1997',
+        note: ' as typed ',
+      }),
+    ).toEqual({
+      Create: {
+        entity: 's',
+        kind: 'Source',
+        fields: {
+          url: { Text: 'https://example.com/p' },
+          doi: { Text: '10.1000/Xyz' },
+          title: { Text: 'A paper' },
+          authors: { Text: 'A. Author, B. Author' },
+          year: { Text: '1997' },
+          note: { Text: ' as typed ' },
+        },
+      },
+    })
+    const bare = ops.createSource({ url: 'https://example.com', title: '', doi: '   ' })
+    if (!('Create' in bare)) throw new Error('not create')
+    expect(bare.Create.entity).toHaveLength(36)
+    expect(bare.Create.kind).toBe('Source')
+    expect(bare.Create.fields).toEqual({ url: { Text: 'https://example.com' } })
+  })
+  it('setSourceField; an empty text sets Null', () => {
+    expect(ops.setSourceField('s', 'year', '2001')).toEqual({ Set: { entity: 's', field: 'year', value: { Text: '2001' } } })
+    expect(ops.setSourceField('s', 'doi', ' 10.1000/x ')).toEqual({ Set: { entity: 's', field: 'doi', value: { Text: '10.1000/x' } } })
+    expect(ops.setSourceField('s', 'note', '')).toEqual({ Set: { entity: 's', field: 'note', value: 'Null' } })
+    expect(ops.setSourceField('s', 'url', '  ')).toEqual({ Set: { entity: 's', field: 'url', value: 'Null' } })
+  })
+  it('attach joins a Card and a Source; remove and restore work on the new kinds', () => {
+    expect(ops.attach({ id: 't', card: 'a', source: 's' })).toEqual({
+      Create: { entity: 't', kind: 'Attachment', fields: { card: { Ref: 'a' }, source: { Ref: 's' } } },
+    })
+    const op = ops.attach({ card: 'a', source: 's' })
+    if (!('Create' in op)) throw new Error('not create')
+    expect(op.Create.entity).toHaveLength(36)
+    expect(ops.remove('t')).toEqual({ Delete: { entity: 't' } })
+    expect(ops.restore('t')).toEqual({ Undelete: { entity: 't' } })
+  })
 })

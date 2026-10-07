@@ -501,6 +501,31 @@ impl Store for FailingStore {
     ) -> qoop_server::store::StoreResult<()> {
         self.0.accept_invite(i, m, n)
     }
+
+    fn todos(&self) -> qoop_server::store::StoreResult<Vec<qoop_server::store::TodoRecord>> {
+        self.0.todos()
+    }
+    fn todo(
+        &self,
+        id: uuid::Uuid,
+    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::TodoRecord>> {
+        self.0.todo(id)
+    }
+    fn insert_todo(
+        &self,
+        t: &qoop_server::store::TodoRecord,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.insert_todo(t)
+    }
+    fn update_todo(
+        &self,
+        t: &qoop_server::store::TodoRecord,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.update_todo(t)
+    }
+    fn delete_todo(&self, id: uuid::Uuid) -> qoop_server::store::StoreResult<bool> {
+        self.0.delete_todo(id)
+    }
 }
 
 #[tokio::test]
@@ -552,4 +577,100 @@ async fn a_failed_persist_leaves_history_unchanged() {
     let branches = app.get("/api/branches", Some(&admin)).await;
     assert_eq!(branches.body["branches"].as_array().unwrap().len(), 1);
     assert_eq!(branches.body["branches"][0]["checkpoints"], 0);
+}
+
+#[tokio::test]
+async fn a_text_value_may_hold_at_most_100_000_characters() {
+    let app = TestApp::new();
+    let admin = app.admin().await;
+    let main = app.main_branch(&admin).await;
+    let ops = format!("/api/branches/{main}/ops");
+    let at_limit = "x".repeat(100_000);
+    let over = "x".repeat(100_001);
+
+    // `Create` fields.
+    let a = new_id();
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [create_card(&a, &over)] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.code(), "bad_request");
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [create_card(&a, &at_limit)] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.code());
+    assert_eq!(res.body["seq"], 1);
+
+    // `Set` values; one long value refuses the whole request.
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [set_title(&a, "short"), set_title(&a, &over)] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.code(), "bad_request");
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [{ "Set": { "entity": a, "field": "summary", "value": { "Text": at_limit } } }] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.code());
+    assert_eq!(res.body["seq"], 2);
+
+    // Characters are counted, not bytes; and every kind is covered.
+    let wide_ok = "й".repeat(100_000);
+    let wide_over = "й".repeat(100_001);
+    let block = |id: &str, text: &str| {
+        json!({ "Create": { "entity": id, "kind": "Block", "fields": {
+            "card": { "Ref": a }, "type": { "Text": "text" }, "text": { "Text": text }, "order": { "Text": "a" }
+        } } })
+    };
+    let b = new_id();
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [block(&b, &wide_over)] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.code(), "bad_request");
+    let res = app
+        .post(&ops, Some(&admin), json!({ "ops": [block(&b, &wide_ok)] }))
+        .await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "{} {}",
+        res.code(),
+        res.body["error"]["detail"]
+    );
+    assert_eq!(res.body["seq"], 3);
+    let s = new_id();
+    let res = app
+        .post(
+            &ops,
+            Some(&admin),
+            json!({ "ops": [{ "Create": { "entity": s, "kind": "Source", "fields": { "note": { "Text": wide_over } } } }] }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // Nothing refused was applied.
+    let changes = app
+        .get(&format!("/api/branches/{main}/changes"), Some(&admin))
+        .await;
+    assert_eq!(changes.body["seq"], 3);
 }

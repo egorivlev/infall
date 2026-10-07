@@ -15,6 +15,19 @@ const num = (n: number): Value => ({ Float: whole(n) })
 const txt = (s: string): Value => ({ Text: s })
 const set = (entity: string, field: string, value: Value): Op => ({ Set: { entity, field, value } })
 
+const SOURCE_FIELDS = ['url', 'doi', 'title', 'authors', 'year', 'note'] as const
+type SourceField = (typeof SOURCE_FIELDS)[number]
+
+// What identifies a Source is stored without the spaces a paste brings along; the other fields as typed.
+function sourceText(field: SourceField, text: string): string {
+  return field === 'url' || field === 'doi' ? text.trim() : text
+}
+
+function orderKey(order: string): string {
+  if (order === '') throw new RangeError('A block needs an order key.')
+  return order
+}
+
 export const ops = {
   createCard(input: { id?: string; x: number; y: number; title?: string; status?: Status }): Op {
     const fields: Fields = { x: num(input.x), y: num(input.y) }
@@ -53,6 +66,41 @@ export const ops = {
   },
   resize(entity: string, w: number, h: number): Op[] {
     return [set(entity, 'w', num(w)), set(entity, 'h', num(h))]
+  },
+  addBlock(input: { id?: string; card: string; text: string; order: string }): Op {
+    const fields: Fields = { card: { Ref: input.card }, type: txt('text'), order: txt(orderKey(input.order)) }
+    if (input.text !== '') fields.text = txt(input.text)
+    return { Create: { entity: input.id ?? newId(), kind: 'Block', fields } }
+  },
+  setBlockText(block: string, text: string): Op {
+    return set(block, 'text', text === '' ? 'Null' : txt(text))
+  },
+  moveBlock(block: string, order: string): Op {
+    return set(block, 'order', txt(orderKey(order)))
+  },
+  createSource(input: {
+    id?: string
+    url?: string
+    doi?: string
+    title?: string
+    authors?: string
+    year?: string
+    note?: string
+  }): Op {
+    const fields: Fields = {}
+    for (const name of SOURCE_FIELDS) {
+      const value = sourceText(name, input[name] ?? '')
+      if (value !== '') fields[name] = txt(value)
+    }
+    return { Create: { entity: input.id ?? newId(), kind: 'Source', fields } }
+  },
+  setSourceField(source: string, field: SourceField, text: string): Op {
+    const value = sourceText(field, text)
+    return set(source, field, value === '' ? 'Null' : txt(value))
+  },
+  attach(input: { id?: string; card: string; source: string }): Op {
+    const fields: Fields = { card: { Ref: input.card }, source: { Ref: input.source } }
+    return { Create: { entity: input.id ?? newId(), kind: 'Attachment', fields } }
   },
   remove(entity: string): Op {
     return { Delete: { entity } }

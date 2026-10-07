@@ -104,6 +104,10 @@ async fn subscribe_gets_subscribed_then_catch_up_then_presence() {
         next_frame(&mut ws).await,
         json!({ "type": "presence", "branch": main, "members": [me] })
     );
+    assert_eq!(
+        next_frame(&mut ws).await,
+        json!({ "type": "editing", "branch": main, "editors": [] })
+    );
 
     // Already up to date: no changes frame.
     let mut ws2 = connect(addr, Some(&admin), Some(ORIGIN)).await.unwrap();
@@ -116,6 +120,7 @@ async fn subscribe_gets_subscribed_then_catch_up_then_presence() {
         json!([me]),
         "a Member connected twice appears once"
     );
+    assert_eq!(next_frame(&mut ws2).await["type"], "editing");
     quiet(&mut ws).await;
 }
 
@@ -131,11 +136,13 @@ async fn a_post_reaches_every_subscriber_with_the_right_seq() {
     subscribe(&mut first, &main, 0).await;
     assert_eq!(next_frame(&mut first).await["type"], "subscribed");
     assert_eq!(next_frame(&mut first).await["type"], "presence");
+    assert_eq!(next_frame(&mut first).await["type"], "editing");
 
     let mut second = connect(addr, Some(&bea), Some(ORIGIN)).await.unwrap();
     subscribe(&mut second, &main, 0).await;
     assert_eq!(next_frame(&mut second).await["type"], "subscribed");
     assert_eq!(next_frame(&mut second).await["type"], "presence");
+    assert_eq!(next_frame(&mut second).await["type"], "editing");
     let presence = next_frame(&mut first).await;
     assert_eq!(presence["members"].as_array().unwrap().len(), 2);
 
@@ -183,8 +190,10 @@ async fn presence_updates_when_a_client_disconnects() {
     subscribe(&mut first, &main, 0).await;
     next_frame(&mut first).await;
     next_frame(&mut first).await;
+    next_frame(&mut first).await;
     let mut second = connect(addr, Some(&bea), Some(ORIGIN)).await.unwrap();
     subscribe(&mut second, &main, 0).await;
+    next_frame(&mut second).await;
     next_frame(&mut second).await;
     next_frame(&mut second).await;
     assert_eq!(

@@ -611,3 +611,57 @@ describe('merge.refresh', () => {
     expect(snap()).toMatchObject({ status: 'error', errorCode: 'network', source: { name: 'try' }, target: { name: 'main' } })
   })
 })
+
+describe('a Merge with Pages and Sources', () => {
+  const PARAGRAPH = field('p1', 'text', T('Intro'), T('Intro, on try'), T('Intro, on main'))
+
+  // Both Branches rewrite the same paragraph of Alpha's Page; `try` also adds a paragraph and a Source.
+  beforeEach(() => {
+    const page = [ops.addBlock({ id: 'p1', card: 'a', text: 'Intro', order: 'V' })]
+    server.commit(page, ME.id)
+    server.commit(page, ME.id, 'try')
+    const added = [
+      ops.addBlock({ id: 'p2', card: 'a', text: 'More', order: 'k' }),
+      ops.createSource({ id: 's1', title: 'Kitaev 2003' }),
+      ops.attach({ id: 't1', card: 'a', source: 's1' }),
+    ]
+    server.commit([ops.setBlockText('p1', 'Intro, on try'), ...added], OTHER.id, 'try')
+    server.commit([ops.setBlockText('p1', 'Intro, on main')], ME.id)
+    server.mergeScript = { auto: added, conflicts: [PARAGRAPH] }
+  })
+
+  it('shows the Page and the Source among what merges by itself, and the paragraph as a Conflict to edit', async () => {
+    await merge.open('try', 'main')
+    const s = snap()
+    expect(s.status).toBe('ready')
+    expect(s.auto).toEqual([
+      { kind: 'Change', what: 'Page of Alpha S · 1 block' },
+      { kind: 'Change', what: 'Source Kitaev 2003 · attached to Alpha S' },
+    ])
+    expect(s.autoSummary).toBe('2 Changes')
+    expect(s.conflicts).toHaveLength(1)
+    expect(s.conflicts[0]).toMatchObject({
+      id: 'p1:text',
+      entityKind: 'Block',
+      entityTitle: 'Page: Alpha S',
+      headline: 'Paragraph changed on both',
+      source: { text: 'Intro, on try', author: OTHER.id },
+      target: { text: 'Intro, on main', author: ME.id },
+      canEdit: true,
+    })
+  })
+
+  it('applies a paragraph written by hand and the open Board shows the merged Page', async () => {
+    await sync.open('main')
+    await merge.open('try', 'main')
+    merge.decide('p1:text', { custom: 'Intro, from both' })
+    expect(snap().conflicts[0]!.choice).toEqual({ custom: 'Intro, from both' })
+    await merge.apply()
+    expect(server.mergePosts[0]!.decisions).toEqual([[{ entity: 'p1', field: 'text' }, { Custom: { Text: 'Intro, from both' } }]])
+    expect(snap().status).toBe('merged')
+    const merged = sync.page('a')
+    expect(merged.blocks.map((b) => b.text)).toEqual(['Intro, from both', 'More'])
+    expect(merged.sources.map((x) => x.title)).toEqual(['Kitaev 2003'])
+    expect(merged.card).toMatchObject({ blocks: 2, sources: 1 })
+  })
+})

@@ -14,8 +14,9 @@ import {
 import type { EdgeChangeset, NodeChangeset, OnConnectEnd, OnNodeDrag } from '@xyflow/react'
 import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory } from '../../lib'
 import type { CardVM, ConnectionVM, FrameVM, Kind, Op } from '../../lib'
-import { useBoardRequest, useHistoryPanel } from '../bridge'
+import { pagePanel, useBoardRequest, useHistoryPanel, usePagePanel } from '../bridge'
 import { HistoryPanel } from '../history'
+import { PagePanel } from '../page'
 import { EmptyState, ErrorNote, LoadingNote } from './BoardMessage'
 import { ConnectionPopover } from './ConnectionPopover'
 import { ConnectionEdge } from './edges/ConnectionEdge'
@@ -74,12 +75,29 @@ export function BoardView() {
   const focusBoard = useCallback(() => {
     areaRef.current?.querySelector<HTMLElement>('.qb-board')?.focus({ preventScroll: true })
   }, [])
+
+  // The Page of a Card, docked over the right of the Board. Not while History previews an earlier moment.
+  const pageCard = usePagePanel((s) => s.cardId)
+  const pageFull = usePagePanel((s) => s.full)
+  const previewing = useHistory().preview !== null
+  useEffect(() => {
+    if (previewing && pageCard) pagePanel.close()
+  }, [previewing, pageCard])
+  const closePage = useCallback((cardId: string) => {
+    pagePanel.close()
+    // Focus goes back to the Card the Page belongs to, else to the Board.
+    const area = areaRef.current
+    const nodes = area?.querySelectorAll<HTMLElement>('.react-flow__node-card') ?? []
+    const node = [...nodes].find((n) => n.getAttribute('data-id') === cardId) ?? area?.querySelector<HTMLElement>('.qb-board')
+    node?.focus({ preventScroll: true })
+  }, [])
   return (
     <div className="qb-area" ref={areaRef}>
       <div className="qb-area__canvas">
         <ReactFlowProvider>
           <BoardCanvas />
         </ReactFlowProvider>
+        {pageCard && !previewing && <PagePanel key={pageCard} cardId={pageCard} full={pageFull} onClose={closePage} />}
       </div>
       {historyOpen && !isGuest && <HistoryPanel onClose={focusBoard} />}
     </div>
@@ -233,8 +251,18 @@ function BoardCanvas() {
   }, [viewportCentre, actions])
 
   const onDoubleClick = (e: ReactMouseEvent) => {
+    if (!(e.target instanceof Element)) return
+    // On a Card, outside its title and summary (those edit in place): open its Page.
+    const node = e.target.closest('.react-flow__node-card')
+    if (node) {
+      if (previewing || e.target.closest('.react-flow__handle')) return
+      if (!readOnly && e.target.closest('.qb-card--full .qb-card__title, .qb-card--full .qb-card__summary')) return
+      const id = node.getAttribute('data-id')
+      if (id && cardsById.has(id)) pagePanel.open(id)
+      return
+    }
     if (readOnly) return
-    if (!(e.target instanceof Element) || !e.target.classList.contains('react-flow__pane')) return
+    if (!e.target.classList.contains('react-flow__pane')) return
     const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
     createCardAt(p.x - CARD_W / 2, p.y - CARD_H / 2)
   }
@@ -390,6 +418,14 @@ function BoardCanvas() {
       if (card) reveal(card)
       return
     }
+    if (e.key.toLowerCase() === 'o' && !mod && !e.altKey && !previewing) {
+      // O opens the Page of the one selected Card (Guests may read it too).
+      const only = sel.size === 1 ? [...sel][0] : undefined
+      if (!only || !cardsById.has(only)) return
+      e.preventDefault()
+      pagePanel.open(only)
+      return
+    }
     if (readOnly) return
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
@@ -415,8 +451,13 @@ function BoardCanvas() {
   }
 
   // ---- derived overlays ----
+  // The Page panel covers the right of the Board: the inspector moves beside it, and is not shown
+  // at all for the Card whose Page is open (the Page has everything the inspector has).
+  const pageCard = usePagePanel((s) => s.cardId)
+  const pageFull = usePagePanel((s) => s.full)
+  const pageOpen = pageCard !== null && !previewing
   const only = selected.size === 1 ? [...selected][0] : undefined
-  const inspected = only && !previewing ? cardsById.get(only) : undefined
+  const inspected = only && !previewing && !(pageOpen && only === pageCard) ? cardsById.get(only) : undefined
   const selectedConn = only && !readOnly ? connections.find((c) => c.id === only) : undefined
   const isEmpty = cards.length === 0 && frames.length === 0
   const loading = isEmpty && !previewing && (snap.status === 'idle' || snap.status === 'loading')
@@ -435,7 +476,7 @@ function BoardCanvas() {
   return (
     <div
       ref={wrapRef}
-      className={`qb-board${readOnly ? ' is-readonly' : ''}${previewing ? ' is-preview' : ''}${inspected ? ' has-inspector' : ''}`}
+      className={`qb-board${readOnly ? ' is-readonly' : ''}${previewing ? ' is-preview' : ''}${inspected ? ' has-inspector' : ''}${pageOpen && !pageFull ? ' has-page' : ''}`}
       data-testid="board"
       role="region"
       aria-label="Board"
@@ -518,7 +559,8 @@ function BoardCanvas() {
         />
       )}
 
-      <Toast />
+      {/* While the Page panel is open it shows the toasts itself: it covers the middle of the Board. */}
+      {!pageOpen && <Toast />}
     </div>
   )
 }

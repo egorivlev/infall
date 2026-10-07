@@ -414,3 +414,174 @@ describe('mergeOptions', () => {
     expect(mergeOptions(child, [child])).toEqual({})
   })
 })
+
+describe('Pages and Sources in a Merge', () => {
+  const block = (id: string, cardId: string, order: string, text = id): Op => ops.addBlock({ id, card: cardId, text, order })
+  // BASE plus a Page on Alpha (two blocks), a Source attached to Alpha, and a loose Source.
+  const PAGES = replay(BASE, [
+    block('p1', 'a', 'G', 'Intro'),
+    block('p2', 'a', 'V', 'Body'),
+    ops.createSource({ id: 's1', title: 'Kitaev 2003', url: 'https://example.com/k' }),
+    ops.createSource({ id: 's2', title: 'Dennis 2002' }),
+    ops.attach({ id: 't1', card: 'a', source: 's1' }),
+  ])
+  function pages(sourceOps: Op[], targetOps: Op[]): MergeWorld {
+    return {
+      sourceName: 'try',
+      targetName: 'main',
+      source: replay(PAGES, sourceOps),
+      target: replay(PAGES, targetOps),
+      base: PAGES,
+      sourceChanges: log('sam', 200, sourceOps),
+      targetChanges: log('tess', 300, targetOps),
+    }
+  }
+  const evd = (entity: string, deleted_on: 'Source' | 'Target'): Conflict => ({ EditVsDelete: { entity, deleted_on } })
+  const auto = (list: Op[], target: Entities = PAGES) => buildAuto(plan([], list), replay(PAGES, list), target)
+
+  it('shows a paragraph changed on both: named by its Page, editable by hand', () => {
+    const w = pages([ops.setText('a', 'title', 'Alpha S'), ops.setBlockText('p1', 'Intro, by Sam')], [ops.setBlockText('p1', 'Intro, by Tess')])
+    expect(one(field('p1', 'text', T('Intro'), T('Intro, by Sam'), T('Intro, by Tess')), w)).toEqual({
+      id: 'p1:text',
+      key: { entity: 'p1', field: 'text' },
+      type: 'field',
+      entityKind: 'Block',
+      entityTitle: 'Page: Alpha S',
+      field: 'text',
+      headline: 'Paragraph changed on both',
+      source: { text: 'Intro, by Sam', author: 'sam', at: 200 },
+      target: { text: 'Intro, by Tess', author: 'tess', at: 300 },
+      canEdit: true,
+      choice: null,
+    })
+  })
+  it('shows an emptied paragraph as (empty), and a hand-written one becomes a Custom text', () => {
+    const w = pages([ops.setBlockText('p2', '')], [ops.setBlockText('p2', 'Body, longer')])
+    const vm = one(field('p2', 'text', T('Body'), 'Null', T('Body, longer')), w)
+    expect(vm).toMatchObject({ entityTitle: 'Page: Alpha', headline: 'Paragraph changed on both', canEdit: true })
+    expect(vm.source.text).toBe('(empty)')
+    expect(toDecisions([{ ...vm, choice: { custom: 'Body, merged by hand' } }]).decisions).toEqual([
+      [{ entity: 'p2', field: 'text' }, { Custom: { Text: 'Body, merged by hand' } }],
+    ])
+  })
+  it('shows a Source field changed on both, by the Source title, editable by hand', () => {
+    const w = pages([ops.setSourceField('s1', 'url', 'https://example.com/s')], [ops.setSourceField('s1', 'url', 'https://example.com/t')])
+    expect(one(field('s1', 'url', T('https://example.com/k'), T('https://example.com/s'), T('https://example.com/t')), w)).toMatchObject({
+      entityKind: 'Source',
+      entityTitle: 'Kitaev 2003',
+      headline: 'URL changed on both',
+      source: { text: 'https://example.com/s', author: 'sam' },
+      target: { text: 'https://example.com/t', author: 'tess' },
+      canEdit: true,
+    })
+    const year = one(field('s2', 'year', 'Null', T('2002'), T('2001')), pages([], []))
+    expect(year).toMatchObject({ entityTitle: 'Dennis 2002', headline: 'Year changed on both', canEdit: true })
+    expect(one(field('s2', 'doi', 'Null', T('10.1/a'), T('10.1/b')), pages([], [])).headline).toBe('DOI changed on both')
+  })
+  it('words a block deleted on one Branch and edited on the other', () => {
+    const w = pages([ops.remove('p1')], [ops.setBlockText('p1', 'Intro, longer')])
+    expect(one(evd('p1', 'Source'), w)).toMatchObject({
+      type: 'edit_vs_delete',
+      entityKind: 'Block',
+      entityTitle: 'Page: Alpha',
+      headline: 'Deleted on try, edited on main',
+      source: { text: 'Delete the block', author: 'sam', at: 200 },
+      target: { text: 'Keep the block with its edits: text', author: 'tess', at: 300 },
+      canEdit: false,
+    })
+    const reordered = pages([ops.moveBlock('p1', 'k')], [ops.remove('p1')])
+    expect(one(evd('p1', 'Target'), reordered)).toMatchObject({
+      headline: 'Deleted on main, kept on try',
+      source: { text: 'Bring back the block' },
+      target: { text: 'Leave the block deleted' },
+    })
+  })
+  it('words a Source deleted on one Branch and edited on the other, and a detached one', () => {
+    const w = pages([ops.setSourceField('s1', 'url', 'https://example.com/new'), ops.setSourceField('s1', 'note', 'key')], [ops.remove('s1')])
+    expect(one(evd('s1', 'Target'), w)).toMatchObject({
+      entityTitle: 'Kitaev 2003',
+      headline: 'Deleted on main, edited on try',
+      source: { text: 'Bring back the Source with its edits: note, URL' },
+      target: { text: 'Leave the Source deleted' },
+    })
+    const detached = pages([ops.remove('t1')], [])
+    expect(one(evd('t1', 'Source'), detached)).toMatchObject({
+      entityKind: 'Attachment',
+      entityTitle: 'Kitaev 2003 on Alpha',
+      headline: 'Detached on try, kept on main',
+      source: { text: 'Detach the Source', author: 'sam' },
+      target: { text: 'Keep the Source attached' },
+      canEdit: false,
+    })
+    expect(one(evd('t1', 'Target'), pages([], [ops.remove('t1')]))).toMatchObject({
+      headline: 'Detached on main, kept on try',
+      source: { text: 'Attach the Source again' },
+      target: { text: 'Leave the Source detached' },
+    })
+  })
+  it('lists a Page once, with how many of its blocks change', () => {
+    expect(auto([ops.setBlockText('p1', 'Intro!'), block('p3', 'a', 'k', 'More'), ops.remove('p2'), block('q1', 'b', 'V', 'On Beta')])).toEqual({
+      lines: [
+        { kind: 'Change', what: 'Page of Alpha · 3 blocks' },
+        { kind: 'Change', what: 'Page of Beta · 1 block' },
+      ],
+      summary: '2 Changes',
+    })
+  })
+  it('lists the Page of a Card the plan adds, after the Card', () => {
+    expect(auto([card('n', 'New'), block('q1', 'n', 'V'), block('q2', 'n', 'k')])).toEqual({
+      lines: [
+        { kind: 'Card added', what: 'New' },
+        { kind: 'Change', what: 'Page of New · 2 blocks' },
+      ],
+      summary: '2 Changes · 1 Card added, 1 other Change',
+    })
+  })
+  it('counts a Page that is only reordered as moved, without a line', () => {
+    expect(auto([ops.moveBlock('p1', 'k'), ...ops.move('b', 9, 9)])).toEqual({ lines: [], summary: '2 moved or resized' })
+    expect(auto([ops.moveBlock('p1', 'k'), ops.setBlockText('p2', 'Body!')])).toEqual({
+      lines: [{ kind: 'Change', what: 'Page of Alpha · 1 block' }],
+      summary: '1 Change',
+    })
+  })
+  it('lists Sources: added, attached, edited, removed, brought back', () => {
+    expect(
+      auto([
+        ops.createSource({ id: 's3', title: 'Fowler 2012' }),
+        ops.attach({ id: 't3', card: 'b', source: 's3' }),
+        ops.createSource({ id: 's4', title: 'Loose one' }),
+        ops.attach({ id: 't4', card: 'b', source: 's2' }),
+        ops.setSourceField('s2', 'year', '2002'),
+        ops.setSourceField('s2', 'doi', '10.1063/1.1499754'),
+        ops.remove('t1'),
+        ops.remove('s1'),
+      ]),
+    ).toEqual({
+      lines: [
+        { kind: 'Change', what: 'Source Fowler 2012 · attached to Beta' },
+        { kind: 'Change', what: 'Source Loose one' },
+        { kind: 'Change', what: 'Source Dennis 2002 · attached to Beta' },
+        { kind: 'Change', what: 'Source Dennis 2002 · year, DOI' },
+        { kind: 'Removed', what: 'Source Kitaev 2003 from Alpha' },
+        { kind: 'Removed', what: 'Source Kitaev 2003' },
+      ],
+      summary: '6 Changes · 4 other Changes, 2 removed',
+    })
+    const target = replay(PAGES, [ops.remove('s2'), ops.remove('t1')])
+    expect(buildAuto(plan([], [ops.restore('s2'), ops.restore('t1')]), PAGES, target)).toEqual({
+      lines: [
+        { kind: 'Brought back', what: 'Source Dennis 2002' },
+        { kind: 'Change', what: 'Source Kitaev 2003 · attached to Alpha' },
+      ],
+      summary: '2 Changes · 1 other Change, 1 brought back',
+    })
+  })
+  it('gives no line to blocks, Sources and Attachments that arrive already deleted', () => {
+    const list = [block('q1', 'b', 'V'), ops.remove('q1'), ops.createSource({ id: 's3', title: 'Gone' }), ops.remove('s3')]
+    expect(auto(list)).toEqual({ lines: [], summary: '2 added and removed' })
+  })
+  it('does not count a different block order as layout kept', () => {
+    const source = replay(PAGES, [ops.moveBlock('p1', 'k'), ...ops.move('a', 5, 5)])
+    expect(countLayoutKept(plan([]), source, PAGES)).toBe(1)
+  })
+})

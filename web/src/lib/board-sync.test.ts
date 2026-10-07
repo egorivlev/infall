@@ -88,7 +88,7 @@ describe('open', () => {
     server.branch = { id: 'main', name: 'main', seq: 0, checkpoints: 0 }
     await sync.open()
     expect(snap().cards).toEqual([])
-    expect(server.requests.at(-1)?.path).toBe('/api/branches/main/board')
+    expect(server.requests.some((r) => r.path === '/api/branches/main/board')).toBe(true)
   })
   it('resolves presence through the members store and drops unknown ids', async () => {
     const ws = await openLive()

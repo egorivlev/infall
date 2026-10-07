@@ -159,7 +159,7 @@ describe('Branch routes', () => {
 
   it('returns to the open Branch when a Board action is asked for from another screen', async () => {
     go('/b/try-QEC')
-    h.board = snapshot({ branch: QEC, cards: [{ id: 'c1', title: 'Decoders', summary: '', status: 'idea', x: 0, y: 0, w: 224, h: 132 }] })
+    h.board = snapshot({ branch: QEC, cards: [{ id: 'c1', title: 'Decoders', summary: '', status: 'idea', x: 0, y: 0, w: 224, h: 132, blocks: 0, sources: 0 }] })
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('link', { name: 'Branches' }))

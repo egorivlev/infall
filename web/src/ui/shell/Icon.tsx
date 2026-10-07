@@ -14,6 +14,7 @@ export type IconName =
   | 'frame'
   | 'checkpoint'
   | 'history'
+  | 'todos'
 
 const PATHS: Record<IconName, ReactNode> = {
   board: (
@@ -77,6 +78,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="7" cy="7" r="5.4" />
       <path d="M7 3.8 V7 L9.2 8.4" />
+    </>
+  ),
+  todos: (
+    <>
+      <rect x="2" y="2" width="10" height="10" rx="1.5" />
+      <path d="M4.6 7.2 L6.3 8.9 L9.5 5.2" />
     </>
   ),
 }

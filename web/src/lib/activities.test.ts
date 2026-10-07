@@ -277,3 +277,108 @@ describe('describeChanges', () => {
     expect(describeChanges({}, {}, [ch(ops.remove('ghost'))])).toEqual(['No lasting changes'])
   })
 })
+
+describe('describeChanges: Pages and Sources', () => {
+  const block = (id: string, cardId: string, order: string, text = id) => ops.addBlock({ id, card: cardId, text, order })
+  // Card "Threshold" with two blocks and a Source; Card "Decoder" with nothing.
+  const base = boardOf([
+    card('a', 'Threshold'),
+    card('b', 'Decoder'),
+    block('k1', 'a', 'G'),
+    block('k2', 'a', 'V'),
+    ops.createSource({ id: 's1', title: 'Kitaev 2003' }),
+    ops.attach({ id: 'at1', card: 'a', source: 's1' }),
+  ])
+  const said = (list: Op[]) => lines(many(list), base)
+
+  it('reads typing in a Page as one line, however many keystrokes', () => {
+    expect(said([ops.setBlockText('k1', 'a'), ops.setBlockText('k1', 'ab'), ops.setBlockText('k2', 'c')])).toEqual([
+      ['Edited the Page of Threshold'],
+    ])
+  })
+  it('says when blocks were only added, only removed, or only reordered', () => {
+    expect(said([block('k3', 'a', 'k')])).toEqual([['Added a block to the Page of Threshold']])
+    expect(said([block('k3', 'a', 'k'), block('k4', 'a', 'm')])).toEqual([['Added 2 blocks to the Page of Threshold']])
+    expect(said([ops.remove('k1')])).toEqual([['Removed a block from the Page of Threshold']])
+    expect(said([ops.remove('k1'), ops.remove('k2')])).toEqual([['Removed 2 blocks from the Page of Threshold']])
+    expect(said([ops.moveBlock('k1', 'k')])).toEqual([['Reordered the Page of Threshold']])
+  })
+  it('reads a mix of adding, removing and rewriting as editing the Page', () => {
+    expect(said([block('k3', 'a', 'k'), ops.remove('k1')])).toEqual([['Edited the Page of Threshold']])
+    expect(said([block('k3', 'a', 'k'), ops.setBlockText('k2', 'new')])).toEqual([['Edited the Page of Threshold']])
+    expect(said([ops.moveBlock('k1', 'k'), ops.setBlockText('k2', 'new')])).toEqual([['Edited the Page of Threshold']])
+  })
+  it('reads a block that came back as added, and says nothing of what cancels out', () => {
+    const removed = replay(base, [ops.remove('k1')])
+    expect(lines(many([ops.restore('k1')]), removed)).toEqual([['Added a block to the Page of Threshold']])
+    expect(said([block('k3', 'a', 'k'), ops.remove('k3')])).toEqual([['No lasting changes']])
+    expect(said([ops.setBlockText('k1', 'x'), ops.setBlockText('k1', 'k1')])).toEqual([['No lasting changes']])
+    expect(said([block('k3', 'a', 'k'), ops.remove('k3'), ops.setText('b', 'title', 'Decoders')])).toEqual([
+      ['Renamed Card Decoder → Decoders'],
+    ])
+  })
+  it('gives each Page its own line, where it was first touched, by the title the Card ends with', () => {
+    expect(
+      said([
+        ops.setBlockText('k1', 'x'),
+        block('kb', 'b', 'V'),
+        ops.setText('a', 'title', 'Threshold ≈ 1%'),
+        ops.setBlockText('k2', 'y'),
+        card('c', 'New'),
+        block('kc', 'c', 'V'),
+      ]),
+    ).toEqual([
+      [
+        'Edited the Page of Threshold ≈ 1%',
+        'Added a block to the Page of Decoder',
+        'Renamed Card Threshold → Threshold ≈ 1%',
+        'Added Card New',
+        'Added a block to the Page of New',
+      ],
+    ])
+  })
+  it('does not count a Page edit as moving a Card', () => {
+    expect(said([ops.moveBlock('k1', 'k'), ...ops.move('b', 5, 5)])).toEqual([
+      ['Reordered the Page of Threshold', 'Moved 1 Card'],
+    ])
+  })
+  it('says which Source was added to or removed from which Card', () => {
+    expect(said([ops.attach({ id: 'at2', card: 'b', source: 's1' })])).toEqual([['Added Source Kitaev 2003 to Decoder']])
+    expect(said([ops.remove('at1')])).toEqual([['Removed Source Kitaev 2003 from Threshold']])
+    const detached = replay(base, [ops.remove('at1')])
+    expect(lines(many([ops.restore('at1')]), detached)).toEqual([['Added Source Kitaev 2003 to Threshold']])
+    expect(said([ops.attach({ id: 'at2', card: 'b', source: 's1' }), ops.remove('at2')])).toEqual([['No lasting changes']])
+  })
+  it('reads a new Source attached at once as one line, and a loose one on its own', () => {
+    expect(
+      said([ops.createSource({ id: 's2', title: 'Dennis 2002', doi: '10.1063/1.1499754' }), ops.attach({ id: 'at2', card: 'b', source: 's2' })]),
+    ).toEqual([['Added Source Dennis 2002 to Decoder']])
+    expect(said([ops.createSource({ id: 's2', title: 'Dennis 2002' })])).toEqual([['Added Source Dennis 2002']])
+    expect(said([ops.createSource({ id: 's2', title: 'Dennis 2002' }), ops.remove('s2')])).toEqual([
+      ['Added and removed Source Dennis 2002'],
+    ])
+  })
+  it('says when a Source was edited, removed or brought back', () => {
+    expect(said([ops.setSourceField('s1', 'year', '2003'), ops.setSourceField('s1', 'authors', 'A. Kitaev')])).toEqual([
+      ['Edited Source Kitaev 2003'],
+    ])
+    expect(said([ops.setSourceField('s1', 'title', 'Fault-tolerant quantum computation by anyons')])).toEqual([
+      ['Edited Source Fault-tolerant quantum computation by anyons'],
+    ])
+    expect(said([ops.remove('s1')])).toEqual([['Removed Source Kitaev 2003']])
+    const removed = replay(base, [ops.remove('s1')])
+    expect(lines(many([ops.restore('s1')]), removed)).toEqual([['Brought back Source Kitaev 2003']])
+    expect(said([ops.setSourceField('s1', 'note', 'x'), ops.setSourceField('s1', 'note', '')])).toEqual([['No lasting changes']])
+  })
+  it('names an untitled Source by its DOI, else its address', () => {
+    expect(said([ops.createSource({ id: 's2', doi: '10.1000/x', url: 'https://example.com' })])).toEqual([['Added Source 10.1000/x']])
+    expect(said([ops.createSource({ id: 's2', url: 'https://example.com' })])).toEqual([['Added Source https://example.com']])
+    expect(said([ops.createSource({ id: 's2', note: 'no name' })])).toEqual([['Added Source Untitled']])
+  })
+  it('still cuts long Activities to six lines', () => {
+    const list = ['c', 'd', 'e', 'f', 'g', 'h', 'i'].flatMap((id) => [card(id, id.toUpperCase()), block(`k${id}`, id, 'V')])
+    const [out] = said(list)
+    expect(out).toHaveLength(6)
+    expect(out![5]).toBe('and 9 more')
+  })
+})

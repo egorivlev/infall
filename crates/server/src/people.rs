@@ -171,9 +171,21 @@ pub async fn delete_member(
     if id == who.id() {
         return Err(ApiError::Forbidden("An Admin cannot remove themself."));
     }
-    if !blocking(&st, move |s| s.delete_member(id)).await? {
+    // Their own To-dos go with the account, in the same store transaction.
+    let order = st.hub.todo_order.lock().await;
+    let (removed, todos_changed) = blocking(&st, move |s| {
+        let before = s.todos()?.len();
+        let removed = s.delete_member(id)?;
+        Ok((removed, s.todos()?.len() != before))
+    })
+    .await?;
+    if !removed {
         return Err(ApiError::NotFound);
     }
+    if todos_changed {
+        crate::todos::broadcast(&st).await?;
+    }
+    drop(order);
     Hub::disconnect_member(&st, id);
     tracing::info!(member = %id.0, by = %who.id().0, "member removed");
     Ok(Json(json!({})))
