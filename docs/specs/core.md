@@ -11,7 +11,7 @@ Research Content on a Board is a set of entities. Each has a stable id, a kind, 
 | Card | `title` Text, `summary` Text, `status` Text | `x`, `y`, `w`, `h` Float |
 | Frame | `title` Text | `x`, `y`, `w`, `h` Float |
 | Connection | `from` Ref, `to` Ref, `label` Text, `kind` Text | — |
-| Block | `card` Ref, `type` Text, `text` Text | `order` Text |
+| Block | `card` Ref, `type` Text, `text` Text, `title` Text | `order` Text |
 | Source | `url`, `doi`, `title`, `authors`, `year`, `note` Text | — |
 | Attachment | `card` Ref, `source` Ref | — |
 
@@ -20,7 +20,7 @@ Research Content on a Board is a set of entities. Each has a stable id, a kind, 
 - Any field may be `Null`; `Null` and "never set" are the same thing.
 - Floats must be finite.
 - A Connection's `from` and `to` must refer to Cards that exist on the Board (live or deleted) and are required at creation. A Connection is **visible** only while both its Cards are live; deleting a Card does not delete its Connections.
-- A **Block** is one block of a Card's Page. `card` must refer to a Card; `type` is `text` (the only type so far; `text` holds Markdown with TeX math). Blocks of a Page are read in ascending `order` (compared as plain strings; ties broken by id). `order` is a layout field: when two Branches reorder the same Block, the target's order wins and it is not a Conflict. Two Branches changing the same Block's `text` is a field Conflict; changing different Blocks of one Page merges automatically.
+- A **Block** is one block of a Card's Page. `card` must refer to a Card; `type` is `text` (the field `text` holds Markdown with TeX math) or `visual` (a Visual: `text` holds its HTML/JavaScript source, `title` its caption; the core treats the source as opaque text). Unset `type` means `text`. Blocks of a Page are read in ascending `order` (compared as plain strings; ties broken by id). `order` is a layout field: when two Branches reorder the same Block, the target's order wins and it is not a Conflict. Two Branches changing the same Block's `text` is a field Conflict; changing different Blocks of one Page merges automatically.
 - A **Source** is identified by its `url` or `doi`. An **Attachment** attaches one Source (`source`) to one Card (`card`); a Source may be attached to many Cards.
 - Every Ref field is required at creation, must point at an existing entity of the right kind (live or deleted), and cannot be cleared. A Connection, Block or Attachment is **visible** only while it and everything it refers to are live; deleting a Card does not delete its Blocks or Attachments.
 - An unknown field, or a value of the wrong type, is rejected.

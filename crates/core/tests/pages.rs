@@ -187,3 +187,31 @@ fn decide_all(plan: &MergePlan, decision: Decision) -> Decisions {
         .map(|c| (c.key(), decision.clone()))
         .collect()
 }
+
+#[test]
+fn a_visual_is_a_block_with_source_and_a_title() {
+    let mut board = Board::new();
+    let (a, create_a) = card("A");
+    board.apply(&create_a).unwrap();
+    let (v, create_v) = op_create(
+        EntityKind::Block,
+        &[
+            ("card", Value::Ref(a)),
+            ("type", text("visual")),
+            ("title", text("Bloch sphere")),
+            ("text", text("<canvas></canvas><script>1</script>")),
+            ("order", text("a0")),
+        ],
+    );
+    board.apply(&create_v).unwrap();
+    assert!(board.is_visible(v));
+    assert_eq!(
+        field_class(EntityKind::Block, "title"),
+        Some(FieldClass::Content)
+    );
+    // A caption is only for Blocks.
+    assert!(matches!(
+        board.apply(&set(a, "type", text("visual"))),
+        Err(ApplyError::Schema(SchemaError::UnknownField { .. }))
+    ));
+}

@@ -74,7 +74,7 @@ pub enum SchemaError {
 }
 
 /// Types a Block may have.
-const BLOCK_TYPES: [&str; 1] = ["text"];
+const BLOCK_TYPES: [&str; 2] = ["text", "visual"];
 
 /// Kinds a Connection may have; unset means `related`.
 const KINDS: [&str; 3] = ["related", "directed", "contradicts"];
@@ -99,7 +99,7 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
         (Connection, "from" | "to") => Some((Content, Type::Ref)),
         (Connection, "label" | "kind") => Some((Content, Type::Text)),
         (Block, "card") => Some((Content, Type::Ref)),
-        (Block, "type" | "text") => Some((Content, Type::Text)),
+        (Block, "type" | "text" | "title") => Some((Content, Type::Text)),
         // Where a Block sits in its Page is layout: on a Merge the target's order wins.
         (Block, "order") => Some((Layout, Type::Text)),
         (Source, "url" | "doi" | "title" | "authors" | "year" | "note") => {
