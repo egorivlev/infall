@@ -4,7 +4,7 @@ import type { Editors, Entities } from './board-state'
 import { applyOps, EMPTY_PAGE, toPage, toPageIndex, toSnapshotParts } from './board-state'
 import { previewAt } from './history'
 import { ops } from './ops'
-import type { Change, Op } from './types'
+import type { Change, Op, Value } from './types'
 
 const card = (id: string, title = id.toUpperCase()): Op => ops.createCard({ id, x: 0, y: 0, title })
 const block = (id: string, cardId: string, order: string, text = id): Op => ops.addBlock({ id, card: cardId, text, order })
@@ -82,7 +82,7 @@ describe('toPageIndex', () => {
   it('orders blocks by `order`, ties by id', () => {
     const index = toPageIndex(board(block('k0', 'a', 'V', 'tie'), block('k9', 'a', 'V', 'tie')))
     expect(index.blocks.get('a')!.map((b) => b.id)).toEqual(['k1', 'k0', 'k2', 'k9', 'k3'])
-    expect(index.blocks.get('a')![0]).toEqual({ id: 'k1', card: 'a', type: 'text', text: 'first', order: 'G' })
+    expect(index.blocks.get('a')![0]).toEqual({ id: 'k1', card: 'a', type: 'text', text: 'first', title: '', order: 'G' })
   })
   it('compares `order` as plain strings', () => {
     const index = toPageIndex(replay({}, [card('a'), block('x', 'a', 'a'), block('y', 'a', 'Z'), block('z', 'a', '9z')]))
@@ -254,5 +254,61 @@ describe('History preview on a Board with Pages and Sources', () => {
       ['b', 1, 1],
     ])
     expect(end.cards[1]).toBe(full.cards[1])
+  })
+})
+
+describe('Visuals (M6)', () => {
+  const visual = (id: string, cardId: string, order: string, title?: string): Op =>
+    ops.addBlock({ id, card: cardId, type: 'visual', text: `<p>${id}</p>`, title, order })
+  // A block of Card `b` as another build might write it: with any `type`, or none.
+  const typed = (id: string, type?: Value): Op => ({
+    Create: { entity: id, kind: 'Block', fields: { card: { Ref: 'b' }, order: { Text: 'W' }, text: { Text: id }, ...(type ? { type } : {}) } },
+  })
+
+  it('reads a Visual with its source and title, a text block with an empty title', () => {
+    const e = board(visual('v1', 'a', 'H', 'Decoder demo'), ops.setBlockTitle('k2', 'stray'))
+    const list = toPageIndex(e).blocks.get('a')!
+    expect(list.map((b) => [b.id, b.type])).toEqual([
+      ['k1', 'text'],
+      ['v1', 'visual'],
+      ['k2', 'text'],
+      ['k3', 'text'],
+    ])
+    expect(list[1]).toEqual({ id: 'v1', card: 'a', type: 'visual', text: '<p>v1</p>', title: 'Decoder demo', order: 'H' })
+    expect(list[2]).toMatchObject({ id: 'k2', title: '' }) // a caption belongs to a Visual only
+  })
+  it('reads a Visual without a title as an empty title, and follows a title edit', () => {
+    const e = board(visual('v1', 'a', 'H'))
+    const before = toPageIndex(e)
+    expect(before.blocks.get('a')![1]).toMatchObject({ type: 'visual', title: '' })
+    const after = toPageIndex(replay(e, [ops.setBlockTitle('v1', 'Named')]), before)
+    expect(after.blocks.get('a')![1]).toMatchObject({ type: 'visual', title: 'Named' })
+    expect(after.blocks.get('a')![0]).toBe(before.blocks.get('a')![0])
+    expect(after.blocks.get('b')).toBe(before.blocks.get('b'))
+  })
+  it('reads an unset type, and a type that is not a text, as a text block', () => {
+    const e = board(typed('u1'), typed('u2', { Float: 1 }), typed('u3', { Text: 'text' }))
+    expect(toPageIndex(e).blocks.get('b')!.map((b) => [b.id, b.type, b.title])).toEqual([
+      ['kb', 'text', ''],
+      ['u1', 'text', ''],
+      ['u2', 'text', ''],
+      ['u3', 'text', ''],
+    ])
+  })
+  it('counts text blocks and Visuals alike', () => {
+    const e = board(visual('v1', 'a', 'H'), visual('v2', 'b', 'H'), ops.remove('v2'))
+    expect(toSnapshotParts(e).cards.map((c) => [c.id, c.blocks])).toEqual([
+      ['a', 4],
+      ['b', 1],
+    ])
+    expect(page(e, 'a').blocks).toHaveLength(4)
+  })
+  it('keeps a block of a kind it does not know in the store, but neither shows nor counts it', () => {
+    const e = board(typed('r1', { Text: 'run' }))
+    expect(e.r1).toEqual({ kind: 'Block', deleted: false, fields: { card: { Ref: 'b' }, order: { Text: 'W' }, text: { Text: 'r1' }, type: { Text: 'run' } } })
+    expect(toPageIndex(e).blocks.get('b')!.map((b) => b.id)).toEqual(['kb'])
+    expect(toSnapshotParts(e).cards.find((c) => c.id === 'b')!.blocks).toBe(1)
+    // …and it can still be edited and removed like any entity
+    expect(applyOps(e, [ops.setBlockText('r1', 'x'), ops.remove('r1')]).ok).toBe(true)
   })
 })

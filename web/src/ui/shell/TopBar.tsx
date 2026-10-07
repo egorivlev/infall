@@ -20,7 +20,10 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
       </div>
       {guest ? (
         <div className="q-branch q-branch--plain">
-          <span className="q-branch__name">{branch}</span>
+          <span className="q-branch__name">{branch}</span>{' '}
+          <span className="q-branch__note" aria-hidden="true">
+            ·
+          </span>{' '}
           <span className="q-branch__note">read-only</span>
         </div>
       ) : (
@@ -37,8 +40,8 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
       <div className="q-topbar__search">
         <SearchBox />
       </div>
-      {guest && <GuestBadge member={member} />}
-      <Presence branch={branch} />
+      {/* A Guest is told nothing about who else is here: a badge with the end of their access instead. */}
+      {guest ? <GuestBadge member={member} /> : <Presence branch={branch} />}
       <ThemeToggle />
       <AccountMenu member={member} />
     </header>

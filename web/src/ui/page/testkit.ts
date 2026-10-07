@@ -25,7 +25,17 @@ export const card = (id: string, title: string, extra: Partial<CardVM> = {}): Ca
   ...extra,
 })
 
-export const block = (id: string, cardId: string, order: string, text: string): BlockVM => ({ id, card: cardId, type: 'text', text, order })
+export const block = (id: string, cardId: string, order: string, text: string): BlockVM => ({ id, card: cardId, type: 'text', text, title: '', order })
+
+/** A Visual: `source` is its HTML/JavaScript. */
+export const visual = (id: string, cardId: string, order: string, title: string, source: string): BlockVM => ({
+  id,
+  card: cardId,
+  type: 'visual',
+  text: source,
+  title,
+  order,
+})
 
 export const source = (id: string, extra: Partial<SourceVM> = {}): SourceVM => ({
   id,
@@ -77,7 +87,11 @@ export function createFakePageLib() {
   let made = 0
 
   const fakeOps = {
-    addBlock: (input: { id?: string; card: string; text: string; order: string }) => ({ fake: 'addBlock', ...input }),
+    addBlock: (input: { id?: string; card: string; type?: 'text' | 'visual'; title?: string; text: string; order: string }) => ({
+      fake: 'addBlock',
+      ...input,
+    }),
+    setBlockTitle: (id: string, title: string) => ({ fake: 'setBlockTitle', block: id, title }),
     setBlockText: (id: string, text: string) => ({ fake: 'setBlockText', block: id, text }),
     moveBlock: (id: string, order: string) => ({ fake: 'moveBlock', block: id, order }),
     createSource: (input: Record<string, string | undefined>) => ({ fake: 'createSource', ...input }),
@@ -101,7 +115,16 @@ export function createFakePageLib() {
     }
     switch (op.fake) {
       case 'addBlock':
-        return pageStore.setState({ blocks: [...s.blocks, block(String(op.id), String(op.card), String(op.order), String(op.text))] })
+        return pageStore.setState({
+          blocks: [
+            ...s.blocks,
+            op.type === 'visual'
+              ? visual(String(op.id), String(op.card), String(op.order), String(op.title ?? ''), String(op.text))
+              : block(String(op.id), String(op.card), String(op.order), String(op.text)),
+          ],
+        })
+      case 'setBlockTitle':
+        return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, title: String(op.title) } : b)) })
       case 'setBlockText':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, text: String(op.text) } : b)) })
       case 'moveBlock':
@@ -237,6 +260,7 @@ export function createFakePageLib() {
         ...real,
         ...base.lib,
         ops: { ...real.ops, ...fakeOps },
+        VISUAL_FRAME_PATH: '/visual-frame',
         board: { open: vi.fn(), close: vi.fn(), submit: (batch: unknown[]) => submit(batch) },
         usePage,
         useSources: () => {

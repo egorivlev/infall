@@ -382,3 +382,51 @@ describe('describeChanges: Pages and Sources', () => {
     expect(out![5]).toBe('and 9 more')
   })
 })
+
+describe('describeChanges: Visuals (M6)', () => {
+  const block = (id: string, cardId: string, order: string, text = id) => ops.addBlock({ id, card: cardId, text, order })
+  const visual = (id: string, cardId: string, order: string, title?: string) =>
+    ops.addBlock({ id, card: cardId, type: 'visual', text: '<p>one</p>', title, order })
+  // Card "Threshold" with a paragraph and the Visual "Decoder demo".
+  const base = boardOf([card('a', 'Threshold'), block('k1', 'a', 'G'), visual('v1', 'a', 'V', 'Decoder demo')])
+  const said = (list: Op[]) => lines(many(list), base)
+
+  it('names an added Visual by its title', () => {
+    expect(said([visual('v2', 'a', 'k', 'Error rates')])).toEqual([['Added Visual Error rates to the Page of Threshold']])
+    expect(said([visual('v2', 'a', 'k')])).toEqual([['Added Untitled Visual to the Page of Threshold']])
+    expect(said([visual('v2', 'a', 'k'), ops.setBlockTitle('v2', 'Named later')])).toEqual([
+      ['Added Visual Named later to the Page of Threshold'],
+    ])
+  })
+  it('says a Visual was edited when its source changed, however many keystrokes', () => {
+    expect(said([ops.setBlockText('v1', '<p>t</p>'), ops.setBlockText('v1', '<p>two</p>')])).toEqual([
+      ['Edited Visual Decoder demo in the Page of Threshold'],
+    ])
+  })
+  it('says a Visual was edited when its title changed, by the new title', () => {
+    expect(said([ops.setBlockTitle('v1', 'Decoder, live')])).toEqual([['Edited Visual Decoder, live in the Page of Threshold']])
+    expect(said([ops.setBlockTitle('v1', '')])).toEqual([['Edited Untitled Visual in the Page of Threshold']])
+  })
+  it('names a removed Visual, and one that came back reads as added', () => {
+    expect(said([ops.remove('v1')])).toEqual([['Removed Visual Decoder demo from the Page of Threshold']])
+    const removed = replay(base, [ops.remove('v1')])
+    expect(lines(many([ops.restore('v1')]), removed)).toEqual([['Added Visual Decoder demo to the Page of Threshold']])
+  })
+  it('says nothing about a Visual that was added and removed, or edited back', () => {
+    expect(said([visual('v2', 'a', 'k'), ops.remove('v2')])).toEqual([['No lasting changes']])
+    expect(said([ops.setBlockText('v1', 'x'), ops.setBlockText('v1', '<p>one</p>')])).toEqual([['No lasting changes']])
+  })
+  it('gives each Visual its own line beside the line of the Page', () => {
+    expect(said([ops.setBlockText('k1', 'typed'), ops.setBlockText('v1', 'x'), visual('v2', 'a', 'k', 'Second')])).toEqual([
+      ['Edited the Page of Threshold', 'Edited Visual Decoder demo in the Page of Threshold', 'Added Visual Second to the Page of Threshold'],
+    ])
+    // a Visual does not count as "a block" of the Page line
+    expect(said([visual('v2', 'a', 'k', 'Second'), block('k2', 'a', 'm')])).toEqual([
+      ['Added Visual Second to the Page of Threshold', 'Added a block to the Page of Threshold'],
+    ])
+  })
+  it('reads moving a Visual within the Page as reordering the Page', () => {
+    expect(said([ops.moveBlock('v1', 'A')])).toEqual([['Reordered the Page of Threshold']])
+    expect(said([ops.moveBlock('v1', 'A'), ops.setBlockTitle('v1', 'New')])).toEqual([['Edited Visual New in the Page of Threshold']])
+  })
+})

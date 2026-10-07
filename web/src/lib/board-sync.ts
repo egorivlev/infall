@@ -1,5 +1,7 @@
 // The Board store: server truth (`confirmed` + `seq`) plus a queue of optimistic batches.
 // What the UI sees is `confirmed` with the pending batches re-applied on top.
+// A Guest (api.md §13) has no Changes: its Board comes whole, without deleted entities, and is fetched again
+// whenever the socket says `refresh`.
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import type { Editors, Entities, PageIndex, SnapshotParts } from './board-state'
@@ -146,6 +148,10 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   let attempt = 0
   let catching: Promise<void> | null = null
   let gapAgain = false
+  let refetching: Promise<void> | null = null // a Guest's Board fetch in flight
+  let refetchAgain = false // a `refresh` came during it: fetch once more afterwards
+  let refetchTimer: unknown = null // the retry after a failed Guest fetch
+  let refetchAttempt = 0
   let unsubscribe: (() => void)[] = []
   const reloadTried = new Set<string>()
   const checkpointNames = new Set<string>() // Checkpoints of the open Branch met so far, for counting each once
@@ -341,7 +347,62 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     if (!full) for (const c of fresh) emit({ type: 'checkpoint', checkpoint: c })
   }
 
+  // ---- Guests: the Board is fetched whole ----
+
+  function stopRefetchTimer() {
+    if (refetchTimer !== null) {
+      clearTimer(refetchTimer)
+      refetchTimer = null
+    }
+  }
+
+  // Fetches the Board again and replaces the state with it. One fetch at a time: asked again while one is on its
+  // way, it fetches exactly once more afterwards. A failure keeps the old state, shows `reconnecting` and tries
+  // again with the socket's backoff, for as long as the socket is subscribed (a new subscription fetches anyway).
+  function refetch(): Promise<void> {
+    if (refetching) {
+      refetchAgain = true
+      return refetching
+    }
+    stopRefetchTimer()
+    const g = gen
+    const run = async () => {
+      try {
+        do {
+          refetchAgain = false
+          const b = await request<BoardResponse>('GET', `${base()}/board`)
+          if (g !== gen) return
+          const jumped = b.seq > seq
+          confirmed = b.entities
+          seq = b.seq
+          dirty = true
+          refetchAttempt = 0
+          if (subscribed && status === 'reconnecting') status = 'live'
+          rebuild()
+          if (jumped) emit({ type: 'changes', seq, changes: [] })
+        } while (refetchAgain && g === gen)
+      } catch {
+        if (g !== gen || !loaded) return
+        if (subscribed) {
+          status = 'reconnecting'
+          const delay = Math.min(BACKOFF_START * 2 ** refetchAttempt, BACKOFF_CAP)
+          refetchAttempt++
+          refetchTimer = setTimer(() => {
+            refetchTimer = null
+            void refetch()
+          }, delay)
+          rebuild()
+        }
+      } finally {
+        if (g === gen) refetching = null
+      }
+    }
+    refetching = run()
+    return refetching
+  }
+
   function catchUp(): Promise<void> {
+    if (readOnly()) return refetch() // a Guest may not read Changes
     if (catching) {
       gapAgain = true
       return catching
@@ -413,7 +474,32 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     socket?.send(JSON.stringify(frame))
   }
 
+  // A Guest's socket: `subscribed`, `refresh`, `error` — anything else is not for a Guest and is ignored.
+  function handleGuestFrame(f: ServerFrame) {
+    if (f.type === 'subscribed') {
+      attempt = 0
+      status = 'live'
+      error = undefined
+      subscribed = true
+      // What happened while we were away is not told: fetch the Board again.
+      if (wasLive) {
+        tell({ type: 'reconnected' })
+        void refetch()
+      }
+      wasLive = true
+      rebuild()
+    } else if (f.type === 'refresh') {
+      if (loaded && (f.branch === branchId || f.branch === branch?.name)) void refetch()
+    } else if (f.type === 'error') {
+      status = 'error'
+      error = f.message
+      stopSocket()
+      rebuild()
+    }
+  }
+
   function handleFrame(f: ServerFrame) {
+    if (readOnly()) return handleGuestFrame(f)
     switch (f.type) {
       case 'subscribed':
         attempt = 0
@@ -467,12 +553,15 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       case 'suggestions':
         if (loaded && (f.branch === branchId || f.branch === branch?.name)) tell({ type: 'suggestions', suggestions: f.suggestions })
         break
+      case 'refresh':
+        break // for Guests only: a Member has the Changes themselves
       default:
         break // a frame type this build does not know
     }
   }
 
   function stopSocket() {
+    stopRefetchTimer()
     if (timer !== null) {
       clearTimer(timer)
       timer = null
@@ -511,6 +600,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       presenceIds = []
       claims = []
       subscribed = false
+      stopRefetchTimer() // the next subscription fetches the Board
       status = 'reconnecting'
       const delay = Math.min(BACKOFF_START * 2 ** attempt, BACKOFF_CAP)
       attempt++
@@ -548,6 +638,9 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     attempt = 0
     catching = null
     gapAgain = false
+    refetching = null
+    refetchAgain = false
+    refetchAttempt = 0
     reloadTried.clear()
     checkpointNames.clear()
     wasLive = false

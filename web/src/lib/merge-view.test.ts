@@ -455,6 +455,75 @@ describe('Pages and Sources in a Merge', () => {
       choice: null,
     })
   })
+  describe('Visuals (M6)', () => {
+    const VISUALS = replay(PAGES, [ops.addBlock({ id: 'v1', card: 'a', type: 'visual', text: '<p>0</p>', title: 'Demo', order: 'k' })])
+    const visuals = (sourceOps: Op[], targetOps: Op[]): MergeWorld => ({
+      sourceName: 'try',
+      targetName: 'main',
+      source: replay(VISUALS, sourceOps),
+      target: replay(VISUALS, targetOps),
+      base: VISUALS,
+      sourceChanges: log('sam', 200, sourceOps),
+      targetChanges: log('tess', 300, targetOps),
+    })
+
+    it('shows the source of a Visual changed on both: named by its title, editable by hand', () => {
+      const w = visuals([ops.setBlockText('v1', '<p>S</p>')], [ops.setBlockText('v1', '<p>T</p>')])
+      expect(one(field('v1', 'text', T('<p>0</p>'), T('<p>S</p>'), T('<p>T</p>')), w)).toEqual({
+        id: 'v1:text',
+        key: { entity: 'v1', field: 'text' },
+        type: 'field',
+        entityKind: 'Block',
+        entityTitle: 'Visual Demo',
+        field: 'text',
+        headline: 'Visual changed on both',
+        source: { text: '<p>S</p>', author: 'sam', at: 200 },
+        target: { text: '<p>T</p>', author: 'tess', at: 300 },
+        canEdit: true,
+        choice: null,
+      })
+    })
+    it('shows the title of a Visual changed on both, and a hand-written one becomes a Custom text', () => {
+      const w = visuals([ops.setBlockTitle('v1', 'Demo S')], [ops.setBlockTitle('v1', '')])
+      const vm = one(field('v1', 'title', T('Demo'), T('Demo S'), 'Null'), w)
+      expect(vm).toMatchObject({
+        id: 'v1:title',
+        entityKind: 'Block',
+        entityTitle: 'Visual Demo S',
+        field: 'title',
+        headline: 'Visual title changed on both',
+        source: { text: 'Demo S', author: 'sam', at: 200 },
+        target: { text: '(empty)', author: 'tess', at: 300 },
+        canEdit: true,
+      })
+      expect(toDecisions([{ ...vm, choice: { custom: 'Demo, merged' } }]).decisions).toEqual([
+        [{ entity: 'v1', field: 'title' }, { Custom: { Text: 'Demo, merged' } }],
+      ])
+    })
+    it('calls a Visual without a title Untitled Visual', () => {
+      const w = visuals([ops.setBlockTitle('v1', ''), ops.setBlockText('v1', 'S')], [ops.setBlockText('v1', 'T')])
+      expect(one(field('v1', 'text', T('<p>0</p>'), T('S'), T('T')), w).entityTitle).toBe('Untitled Visual')
+    })
+    it('says Visual, source and title in edit vs delete', () => {
+      const w = visuals([ops.remove('v1')], [ops.setBlockText('v1', 'T'), ops.setBlockTitle('v1', 'Demo T')])
+      expect(one(evd('v1', 'Source'), w)).toMatchObject({
+        entityTitle: 'Visual Demo',
+        headline: 'Deleted on try, edited on main',
+        source: { text: 'Delete the Visual' },
+        target: { text: 'Keep the Visual with its edits: source, title' },
+        canEdit: false,
+      })
+    })
+    it('leaves a paragraph Conflict as it was', () => {
+      const w = visuals([ops.setBlockText('p1', 'S')], [ops.setBlockText('p1', 'T')])
+      expect(one(field('p1', 'text', T('Intro'), T('S'), T('T')), w)).toMatchObject({ entityTitle: 'Page: Alpha', headline: 'Paragraph changed on both' })
+    })
+    it('counts a Visual as a block of its Page in the automatic list', () => {
+      const list = [ops.addBlock({ id: 'v2', card: 'a', type: 'visual', text: 'x', title: 'New', order: 'm' }), ops.setBlockTitle('v1', 'Renamed')]
+      const out = buildAuto(plan([], list), replay(VISUALS, list), VISUALS)
+      expect(out.lines).toEqual([{ kind: 'Change', what: 'Page of Alpha · 2 blocks' }])
+    })
+  })
   it('shows an emptied paragraph as (empty), and a hand-written one becomes a Custom text', () => {
     const w = pages([ops.setBlockText('p2', '')], [ops.setBlockText('p2', 'Body, longer')])
     const vm = one(field('p2', 'text', T('Body'), 'Null', T('Body, longer')), w)

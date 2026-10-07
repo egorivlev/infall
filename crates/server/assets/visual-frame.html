@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Visual</title>
+</head>
+<body>
+<script>
+(function () {
+  "use strict";
+  var host = window.parent;
+  // Opened on its own there is nobody to talk to.
+  if (!host || host === window) return;
+
+  var NAME = /^--q-[a-z0-9-]+$/;
+  var UNSAFE = /[;{}<]/;
+
+  // Runs inside the new document, before the Visual's source: reports the content height
+  // (the root element's own box, which can shrink again; scrollHeight never goes below the
+  // frame's viewport)
+  // and uncaught errors to the parent. It is complete before the source begins, so the
+  // source cannot change its text.
+  var REPORTER = '<script>(function(){' +
+    'var p=window.parent,d=document.documentElement,last=-1;' +
+    'function post(m){m.qoop="visual";p.postMessage(m,"*")}' +
+    'function height(){var h=Math.ceil(d.getBoundingClientRect().height);' +
+    'if(h!==last){last=h;post({type:"height",value:h})}}' +
+    'function fail(m){var s;try{s=String(m)}catch(e){s="Error"}' +
+    'post({type:"error",message:s.slice(0,300)})}' +
+    'window.addEventListener("error",function(e){fail(e.message||"Error")});' +
+    'window.addEventListener("unhandledrejection",function(e){var r=e.reason;' +
+    'fail(r&&r.message?r.message:r)});' +
+    'window.addEventListener("load",height);' +
+    'if(window.ResizeObserver)new ResizeObserver(height).observe(d);' +
+    '})();<\/script>';
+
+  function themeStyle(theme) {
+    var root = "";
+    var scheme = "";
+    if (theme && typeof theme === "object") {
+      Object.keys(theme).forEach(function (name) {
+        var value = theme[name];
+        if (typeof value !== "string") return;
+        if (name === "color-scheme") {
+          if (value === "light" || value === "dark") scheme = value;
+        } else if (NAME.test(name) && !UNSAFE.test(value)) {
+          root += name + ":" + value + ";";
+        }
+      });
+    }
+    if (scheme) root += "color-scheme:" + scheme + ";";
+    return "<style>:root{" + root + "}" +
+      "body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;" +
+      "color:var(--q-ink);background:transparent}</style>";
+  }
+
+  var rendered = false;
+
+  function onMessage(event) {
+    if (rendered || event.source !== host) return;
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.qoop !== "visual" || data.type !== "render") return;
+    if (typeof data.html !== "string") return;
+    rendered = true;
+    window.removeEventListener("message", onMessage);
+    var doc = '<!doctype html><meta charset="utf-8">' +
+      themeStyle(data.theme) + REPORTER + data.html;
+    document.open();
+    document.write(doc);
+    document.close();
+  }
+
+  function ready() {
+    host.postMessage({ qoop: "visual", type: "ready" }, "*");
+  }
+
+  window.addEventListener("message", onMessage);
+  if (document.readyState === "complete") ready();
+  else window.addEventListener("load", ready, { once: true });
+})();
+</script>
+</body>
+</html>

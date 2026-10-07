@@ -67,13 +67,17 @@ export const ops = {
   resize(entity: string, w: number, h: number): Op[] {
     return [set(entity, 'w', num(w)), set(entity, 'h', num(h))]
   },
-  addBlock(input: { id?: string; card: string; text: string; order: string }): Op {
-    const fields: Fields = { card: { Ref: input.card }, type: txt('text'), order: txt(orderKey(input.order)) }
+  addBlock(input: { id?: string; card: string; text: string; order: string; type?: 'text' | 'visual'; title?: string }): Op {
+    const fields: Fields = { card: { Ref: input.card }, type: txt(input.type ?? 'text'), order: txt(orderKey(input.order)) }
     if (input.text !== '') fields.text = txt(input.text)
+    if (input.title) fields.title = txt(input.title)
     return { Create: { entity: input.id ?? newId(), kind: 'Block', fields } }
   },
   setBlockText(block: string, text: string): Op {
     return set(block, 'text', text === '' ? 'Null' : txt(text))
+  },
+  setBlockTitle(block: string, title: string): Op {
+    return set(block, 'title', title === '' ? 'Null' : txt(title))
   },
   moveBlock(block: string, order: string): Op {
     return set(block, 'order', txt(orderKey(order)))

@@ -142,6 +142,15 @@ function shallowEqual(a: object, b: object): boolean {
   })
 }
 
+/**
+ * What a Block is, read from its `type`: unset (or not a text value) means 'text'. A type this build does not
+ * know gives null: the Block stays in the entity store as it came, but is not shown and not counted.
+ */
+export function blockType(fields: Fields): BlockVM['type'] | null {
+  const t = text(fields, 'type')
+  return t === '' || t === 'text' ? 'text' : t === 'visual' ? 'visual' : null
+}
+
 function isLive(entities: Entities, id: string, kind: Kind): boolean {
   const e = entities[id]
   return e !== undefined && e.kind === kind && !e.deleted
@@ -173,7 +182,7 @@ export function toSnapshotParts(entities: Entities, prev?: SnapshotParts): Snaps
     if (!e || e.deleted) continue
     if (e.kind === 'Block') {
       const card = ref(e.fields, 'card')
-      if (liveCard(card)) blockCount.set(card, (blockCount.get(card) ?? 0) + 1)
+      if (liveCard(card) && blockType(e.fields) !== null) blockCount.set(card, (blockCount.get(card) ?? 0) + 1)
     } else if (e.kind === 'Attachment') {
       const card = ref(e.fields, 'card')
       const source = ref(e.fields, 'source')
@@ -288,10 +297,11 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
     const f = e.fields
     if (e.kind === 'Block') {
       const card = ref(f, 'card')
-      if (!isLive(entities, card, 'Card')) continue
+      const type = blockType(f)
+      if (type === null || !isLive(entities, card, 'Card')) continue
       let list = blocks.get(card)
       if (!list) blocks.set(card, (list = []))
-      list.push({ id, card, type: 'text', text: text(f, 'text'), order: text(f, 'order') })
+      list.push({ id, card, type, text: text(f, 'text'), title: type === 'visual' ? text(f, 'title') : '', order: text(f, 'order') })
     } else if (e.kind === 'Source') {
       sourceById.set(id, {
         id,

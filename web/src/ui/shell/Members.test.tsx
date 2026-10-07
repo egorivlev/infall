@@ -70,7 +70,7 @@ describe('Members table', () => {
     expect(within(rows[1]!).getByText('e@lab.org')).toBeInTheDocument()
     expect(within(rows[1]!).getByText('Admin')).toBeInTheDocument()
     expect(within(rows[1]!).queryByRole('button')).toBeNull()
-    expect(within(rows[3]!).getByText('until 15 Dec 2030')).toBeInTheDocument()
+    expect(within(rows[3]!).getByText('Guest · until 15 Dec 2030')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove Ana Ruiz' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(2)
     expect(screen.getByText(/2 Members · 1 Guest/)).toBeInTheDocument()
@@ -143,7 +143,8 @@ describe('Pending invites', () => {
     const user = userEvent.setup()
     renderMembers()
     expect(await screen.findByText('t.okafor@uni-delft.nl')).toBeInTheDocument()
-    expect(screen.getByText(/Guest · until 15 Dec 2030/)).toBeInTheDocument()
+    // The Guest row in the table reads the same; this is the invite's own chip.
+    expect(within(screen.getByRole('region', { name: 'Pending invites' })).getByText(/Guest · until 15 Dec 2030/)).toBeInTheDocument()
     h.pending = []
     await user.click(screen.getByRole('button', { name: 'Revoke invite for t.okafor@uni-delft.nl' }))
     expect(h.revoked).toEqual([['i1']])

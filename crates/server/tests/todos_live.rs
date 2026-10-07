@@ -102,6 +102,24 @@ async fn subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
     ws
 }
 
+/// A Guest's connection subscribed to `branch` at its head: `subscribed` and nothing more.
+async fn guest_subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
+    // The head is learnt on a connection of its own, so that this one is owed no `refresh`.
+    let mut probe = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": u32::MAX }).to_string();
+    probe.send(Message::Text(msg.into())).await.unwrap();
+    let head = next_frame(&mut probe).await["seq"].as_u64().unwrap();
+    drop(probe);
+    let mut ws = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": head }).to_string();
+    ws.send(Message::Text(msg.into())).await.unwrap();
+    assert_eq!(
+        next_frame(&mut ws).await,
+        json!({ "type": "subscribed", "branch": branch, "seq": head })
+    );
+    ws
+}
+
 async fn claim(ws: &mut Socket, card: Option<&str>) {
     say(ws, json!({ "type": "editing", "card": card })).await;
 }
@@ -186,7 +204,7 @@ async fn every_todo_change_sends_the_full_list_to_members_and_never_to_guests() 
     let mut admin = connected(w.addr, &w.admin).await;
     let mut bea = subscribed(w.addr, &w.bea, &w.main).await;
     let mut cal = subscribed(w.addr, &w.cal, &w.side).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     let mut idle_guest = connected(w.addr, &w.guest).await;
 
     let list = || async { w.app.get("/api/todos", Some(&w.admin)).await.body["todos"].clone() };
@@ -287,7 +305,7 @@ async fn every_todo_change_sends_the_full_list_to_members_and_never_to_guests() 
 async fn removing_a_member_sends_the_list_without_their_todos() {
     let w = world().await;
     let mut admin = connected(w.addr, &w.admin).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     for (cookie, owner, text) in [
         (&w.bea, &w.bea_id, "Bea's own"),
         (&w.bea, &w.cal_id, "Bea gave Cal this"),
@@ -333,7 +351,7 @@ async fn a_claim_reaches_every_subscriber_of_that_branch_only() {
     let w = world().await;
     let mut admin = subscribed(w.addr, &w.admin, &w.main).await;
     let mut bea = subscribed(w.addr, &w.bea, &w.main).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     let mut cal = subscribed(w.addr, &w.cal, &w.side).await;
     let mut idle = connected(w.addr, &w.cal).await;
 
@@ -344,10 +362,11 @@ async fn a_claim_reaches_every_subscriber_of_that_branch_only() {
         &w.main,
         json!([{ "card": card, "member": w.admin_id, "since": START + 1_000 }]),
     );
-    // The claimant too, and Guests.
-    for ws in [&mut admin, &mut bea, &mut guest] {
+    // The claimant too; never Guests.
+    for ws in [&mut admin, &mut bea] {
         assert_eq!(next_news(ws).await, held);
     }
+    quiet(&mut guest).await;
     quiet(&mut cal).await;
     quiet(&mut idle).await;
 
@@ -375,9 +394,10 @@ async fn a_claim_reaches_every_subscriber_of_that_branch_only() {
 
     // Stopping empties the list.
     claim(&mut admin, None).await;
-    for ws in [&mut admin, &mut bea, &mut guest, &mut late] {
+    for ws in [&mut admin, &mut bea, &mut late] {
         assert_eq!(next_news(ws).await, w.editing(&w.main, json!([])));
     }
+    quiet(&mut guest).await;
     // Stopping again changes nothing.
     claim(&mut admin, None).await;
     quiet(&mut bea).await;
@@ -483,14 +503,14 @@ async fn a_claim_ends_when_the_holder_subscribes_to_another_branch() {
     let w = world().await;
     let mut admin = subscribed(w.addr, &w.admin, &w.main).await;
     let mut bea = subscribed(w.addr, &w.bea, &w.main).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     let card = new_id();
     claim(&mut admin, Some(&card)).await;
     let first = w.editing(
         &w.main,
         json!([{ "card": card, "member": w.admin_id, "since": START }]),
     );
-    for ws in [&mut admin, &mut bea, &mut guest] {
+    for ws in [&mut admin, &mut bea] {
         assert_eq!(next_news(ws).await, first);
     }
     claim(&mut bea, Some(&card)).await;
@@ -510,11 +530,12 @@ async fn a_claim_ends_when_the_holder_subscribes_to_another_branch() {
         json!([{ "card": card, "member": w.bea_id, "since": START + 4_000 }]),
     );
     assert_eq!(next_news(&mut bea).await, second);
-    assert_eq!(next_news(&mut guest).await, second);
     // The one who left hears no more of `main`.
     claim(&mut bea, None).await;
-    assert_eq!(next_news(&mut guest).await, w.editing(&w.main, json!([])));
+    assert_eq!(next_news(&mut bea).await, w.editing(&w.main, json!([])));
     quiet(&mut admin).await;
+    // A Guest heard none of it.
+    quiet(&mut guest).await;
 }
 
 #[tokio::test]
@@ -578,7 +599,7 @@ async fn one_connection_holds_at_most_one_card() {
 async fn claims_from_guests_and_before_subscribing_are_ignored() {
     let w = world().await;
     let mut admin = subscribed(w.addr, &w.admin, &w.main).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     let card = new_id();
 
     claim(&mut guest, Some(&card)).await;
@@ -603,12 +624,13 @@ async fn claims_from_guests_and_before_subscribing_are_ignored() {
         &w.main,
         json!([{ "card": card, "member": w.admin_id, "since": START }]),
     );
-    assert_eq!(next_news(&mut guest).await, held);
-    claim(&mut guest, Some(&card)).await;
-    claim(&mut admin, None).await;
     assert_eq!(next_news(&mut admin).await, held);
+    claim(&mut guest, Some(&card)).await;
+    // The Guest's claim has been handled before the release below is announced.
+    say(&mut guest, json!("ping?")).await;
+    assert_eq!(next_frame(&mut guest).await["type"], "error");
+    claim(&mut admin, None).await;
     assert_eq!(next_news(&mut admin).await, w.editing(&w.main, json!([])));
-    assert_eq!(next_news(&mut guest).await, w.editing(&w.main, json!([])));
     quiet(&mut guest).await;
 
     // A Member's malformed claim gets an error frame and changes nothing.

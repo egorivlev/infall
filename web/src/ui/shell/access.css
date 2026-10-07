@@ -10,6 +10,9 @@
 .q-access__submit[aria-disabled="true"] { cursor: progress; opacity: .8; }
 .q-access__error { margin: 0; }
 .q-access__foot { margin: 0; padding-top: 14px; border-top: 1px solid var(--q-line-soft); font-size: 12px; line-height: 1.5; color: var(--q-ink-3); }
+.q-access__foot p { margin: 0; }
+.q-access__notice { margin: 0; padding: 10px 12px; border: 1px solid var(--q-st-question); border-radius: var(--q-r); font-size: 13px; line-height: 1.45; color: var(--q-ink); }
+.q-access__lead { margin: 0; font-size: 13px; line-height: 1.45; color: var(--q-ink-2); }
 .q-access__message { margin: 0; font: 400 17px/1.45 var(--q-serif); color: var(--q-ink); }
 .q-access .q-input, .q-invite .q-input { font-size: 14px; }
 .q-access .q-input { height: 36px; }
@@ -44,7 +47,8 @@
 .q-person__email { font-size: 12px; color: var(--q-ink-3); overflow-wrap: anywhere; }
 .q-role { display: inline-block; font: 500 10px/1 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; padding: 4px 6px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line); color: var(--q-ink-2); }
 .q-role--admin { border-color: var(--q-ink-2); }
-.q-role--guest { border-color: var(--q-st-question); }
+.q-role--guest { border-color: var(--q-st-question); color: var(--q-st-question); white-space: nowrap; }
+.q-role--ended { border-color: var(--q-line); color: var(--q-ink-3); }
 .q-tag { font: 500 10px/1 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; padding: 3px 5px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line); color: var(--q-ink-3); }
 
 .q-pending { display: flex; flex-direction: column; gap: var(--q-s2); margin-top: var(--q-s2); }

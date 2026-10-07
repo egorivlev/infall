@@ -362,7 +362,7 @@ The UI embeds it as `<iframe sandbox="allow-scripts" src="/visual-frame">`. Both
 |---|---|---|
 | frame → parent | `{ type: "ready" }` | loaded; send the source |
 | parent → frame | `{ type: "render", html: string, theme: Record<string, string> }` | once per load. The frame replaces its document with: a `<style>` that defines every `theme` entry as a CSS custom property on `:root` (names must match `^--q-[a-z0-9-]+$`, values must not contain `;`, `{`, `}` or `<` — others are dropped) and sets `margin: 0`, the app's sans font stack, `color: var(--q-ink)`, transparent background, `color-scheme` from `theme["color-scheme"]`; then the reporter script below; then `html` as given |
-| frame → parent | `{ type: "height", value: number }` | the document's content height in px, on load and whenever it changes (ResizeObserver) |
+| frame → parent | `{ type: "height", value: number }` | the content height in px (the root element's own box, so it can shrink as well as grow), on load and whenever it changes (ResizeObserver) |
 | frame → parent | `{ type: "error", message: string }` | an uncaught error or unhandled rejection (message only, ≤ 300 characters) |
 
 To render again the parent reloads the iframe. A Visual receives nothing about the Board, the Member or the server — only its own source and theme colours. The app's own CSP is unchanged (`default-src 'self'` allows the frame; `frame-ancestors 'none'` stays on every other response).
@@ -372,6 +372,7 @@ The glossary says a Guest reads the Research Content of `main` and nothing else:
 
 - `GET /api/branches/{main}/board` for a Guest returns only **visible** entities (live, and everything they refer to live) — no tombstones. `seq` is still the head.
 - `GET /api/branches/{id}/changes` → `403 forbidden` for Guests (this ends the M1 exception).
+- `GET /api/branches` for a Guest lists only `main`, with `checkpoints: 0`.
 - WebSocket for a Guest: `subscribe` on `main` is answered with `subscribed`; after that the only frame a Guest ever receives is `{ type: "refresh", branch: string, seq: number }` — sent whenever `main` gains Changes (coalesced: at most one per 500 ms), and once right after `subscribed` if the `after` they sent is not the head. No `changes`, `presence`, `editing`, `checkpoint`, `branches`, `todos` or `suggestions` frames. On `refresh` the client fetches the Board again.
 - Everything else stays refused as before (`403`): ops, Members, invites, History, Checkpoints, Branches, Merge, To-dos, Suggestions, access tokens, `/mcp`.
 - `GET /api/invites/lookup` additionally returns `access_until` (unix ms) for a Guest invite, so the invite screen can say until when.

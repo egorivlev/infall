@@ -6,7 +6,7 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::HeaderValue;
 use axum::http::header::{
-    CONTENT_SECURITY_POLICY, CONTENT_TYPE, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
+    CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
 };
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -29,6 +29,18 @@ use crate::{Clock, boards, history, mcp, merges, people, suggestions, todos, tok
 pub const BODY_LIMIT: usize = 1024 * 1024;
 
 const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
+
+/// The policy of the page a Visual runs in (contract §13): sandboxed into an opaque origin,
+/// no network, embeddable only by the app itself.
+const VISUAL_FRAME_CSP: &str = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
+
+/// The host page of a Visual. It carries no data, only the message protocol of §13.
+const VISUAL_FRAME: &str = include_str!("../assets/visual-frame.html");
+
+/// Marks a response that brings its own security headers, so `security_headers` leaves it
+/// alone.
+#[derive(Clone, Copy)]
+struct OwnSecurityHeaders;
 
 /// Everything handlers share.
 pub struct AppState {
@@ -138,6 +150,7 @@ pub fn router(st: Shared) -> Router {
 
     Router::new()
         .nest("/api", api)
+        .route("/visual-frame", get(visual_frame))
         .fallback(move |req: Request| ui_or_not_found(ui.clone(), req))
         .layer(middleware::from_fn_with_state(
             st.clone(),
@@ -157,6 +170,25 @@ async fn health(State(_): State<Shared>) -> impl IntoResponse {
     axum::Json(json!({ "ok": true }))
 }
 
+/// `GET /visual-frame`: public and static, with its own headers instead of the app's CSP.
+async fn visual_frame() -> Response {
+    let mut res = VISUAL_FRAME.into_response();
+    res.extensions_mut().insert(OwnSecurityHeaders);
+    let h = res.headers_mut();
+    h.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    h.insert(
+        CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(VISUAL_FRAME_CSP),
+    );
+    h.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    h.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    res
+}
+
 /// The built UI for every non-`/api` path; anything under `/api` that no route matched
 /// (such as `/api/`) is a JSON 404, never `index.html`.
 async fn ui_or_not_found(ui: ServeDir<ServeFile>, req: Request) -> Response {
@@ -174,9 +206,13 @@ async fn api_not_found() -> ApiError {
     ApiError::NotFound
 }
 
-/// `nosniff` and `Referrer-Policy` on everything; the CSP on HTML.
+/// `nosniff` and `Referrer-Policy` on everything; the CSP on HTML. The Visual frame sets
+/// its own.
 async fn security_headers(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
+    if res.extensions().get::<OwnSecurityHeaders>().is_some() {
+        return res;
+    }
     let is_html = res
         .headers()
         .get(CONTENT_TYPE)

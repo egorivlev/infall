@@ -525,15 +525,14 @@ async fn guests_are_refused_everything_in_history() {
     assert_eq!(branches.body["branches"][0]["seq"], 3);
     assert_eq!(branches.body["branches"][0]["checkpoints"], 0);
 
-    // The M1 reads still work.
+    // The present Board still reads; the Changes behind it do not (M6).
     let head = board(&app, &guest, &main, None).await;
     assert_eq!(head.status, StatusCode::OK);
     assert_eq!(head.body["seq"], 3);
-    assert_eq!(
+    forbidden(
         app.get(&format!("/api/branches/{main}/changes"), Some(&guest))
-            .await
-            .status,
-        StatusCode::OK
+            .await,
+        "changes",
     );
 }
 

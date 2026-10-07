@@ -85,6 +85,24 @@ async fn subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
     ws
 }
 
+/// A Guest's connection subscribed to `branch` at its head: `subscribed` and nothing more.
+async fn guest_subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
+    // The head is learnt on a connection of its own, so that this one is owed no `refresh`.
+    let mut probe = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": u32::MAX }).to_string();
+    probe.send(Message::Text(msg.into())).await.unwrap();
+    let head = next_frame(&mut probe).await["seq"].as_u64().unwrap();
+    drop(probe);
+    let mut ws = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": head }).to_string();
+    ws.send(Message::Text(msg.into())).await.unwrap();
+    assert_eq!(
+        next_frame(&mut ws).await,
+        json!({ "type": "subscribed", "branch": branch, "seq": head })
+    );
+    ws
+}
+
 /// An Admin, two Members and a Guest; `main` with two Cards and `side` forked from it.
 struct World {
     app: TestApp,
@@ -168,7 +186,7 @@ async fn every_suggestion_change_goes_to_the_members_subscribed_to_that_branch()
     let mut bea = subscribed(w.addr, &w.bea, &w.main).await;
     let mut admin = subscribed(w.addr, &w.admin, &w.main).await;
     let mut cal = subscribed(w.addr, &w.cal, &w.side).await;
-    let mut guest = subscribed(w.addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(w.addr, &w.guest, &w.main).await;
     let mut idle = connected(w.addr, &w.bea).await;
 
     // Proposed through the tool layer.
@@ -231,8 +249,8 @@ async fn every_suggestion_change_goes_to_the_members_subscribed_to_that_branch()
         .await;
     assert_eq!(res.code(), "already_decided");
 
-    // Accepted: the `changes` frame, then the `suggestions` frame. The Guest gets only
-    // the Changes.
+    // Accepted: the `changes` frame, then the `suggestions` frame. The Guest is only told
+    // to read the Board again.
     let (source, attachment) = (new_id(), new_id());
     let res = w
         .app
@@ -257,7 +275,10 @@ async fn every_suggestion_change_goes_to_the_members_subscribed_to_that_branch()
         assert_eq!(next_news(ws).await, changes);
         assert_eq!(next_news(ws).await, expected);
     }
-    assert_eq!(next_news(&mut guest).await, changes);
+    assert_eq!(
+        next_frame(&mut guest).await,
+        json!({ "type": "refresh", "branch": w.main, "seq": 4 })
+    );
 
     // Nobody else heard any of it: not the Member on another Branch, not the Guest on
     // this one, not a connection subscribed to nothing.

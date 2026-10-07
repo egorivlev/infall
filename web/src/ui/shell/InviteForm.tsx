@@ -10,8 +10,8 @@ type InviteRole = 'member' | 'guest'
 type Errors = { email?: string; until?: string }
 
 const ROLE_NOTE: Record<InviteRole, string> = {
-  member: 'Full access: edit the Board, and see other Members.',
-  guest: 'Read-only Board on main. No editing.',
+  member: 'Full access: edit, Branch, Merge, To-dos and their own AI.',
+  guest: 'Read-only Board and Pages on main. No editing, To-dos, AI or History.',
 }
 
 function checkEmail(v: string): string | undefined {

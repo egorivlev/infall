@@ -1,10 +1,34 @@
+import { useState } from 'react'
 import type { Member } from '../../lib'
 import { formatShortDate } from './dates'
 import { initials } from './initials'
 
 const ROLE_LABEL = { admin: 'Admin', member: 'Member', guest: 'Guest' } as const
 
+/** Members and Admins in the order given, then Guests: those who still have access first, then by when it ends. */
+function ordered(people: Member[], now: number): Member[] {
+  const team = people.filter((m) => m.role !== 'guest')
+  const guests = people.filter((m) => m.role === 'guest')
+  const ended = (m: Member) => (m.access_until != null && m.access_until <= now ? 1 : 0)
+  guests.sort((a, b) => ended(a) - ended(b) || (a.access_until ?? Infinity) - (b.access_until ?? Infinity))
+  return [...team, ...guests]
+}
+
+/** "Guest · until 30 Nov" while access lasts, "Guest · ended 30 Nov" after. */
+function RoleChip({ member, now }: { member: Member; now: number }) {
+  if (member.role !== 'guest' || member.access_until == null) {
+    return <span className={`q-role q-role--${member.role}`}>{ROLE_LABEL[member.role]}</span>
+  }
+  const over = member.access_until <= now
+  return (
+    <span className={`q-role q-role--guest${over ? ' q-role--ended' : ''}`}>
+      Guest · {over ? 'ended' : 'until'} {formatShortDate(member.access_until)}
+    </span>
+  )
+}
+
 export function MembersTable({ people, meId, onRemove }: { people: Member[]; meId: string; onRemove: (m: Member, trigger: HTMLElement) => void }) {
+  const [now] = useState(() => Date.now())
   return (
     <div className="q-tablebox">
       <table className="q-table">
@@ -13,14 +37,13 @@ export function MembersTable({ people, meId, onRemove }: { people: Member[]; meI
           <tr>
             <th scope="col">Member</th>
             <th scope="col">Role</th>
-            <th scope="col">Access</th>
             <th scope="col">
               <span className="q-sr">Actions</span>
             </th>
           </tr>
         </thead>
         <tbody>
-          {people.map((m) => (
+          {ordered(people, now).map((m) => (
             <tr key={m.id}>
               <td>
                 <div className="q-person">
@@ -37,9 +60,8 @@ export function MembersTable({ people, meId, onRemove }: { people: Member[]; meI
                 </div>
               </td>
               <td>
-                <span className={`q-role q-role--${m.role}`}>{ROLE_LABEL[m.role]}</span>
+                <RoleChip member={m} now={now} />
               </td>
-              <td className="q-table__note">{m.role === 'guest' && m.access_until != null ? `until ${formatShortDate(m.access_until)}` : ''}</td>
               <td className="q-table__act">
                 {m.id !== meId && (
                   <button

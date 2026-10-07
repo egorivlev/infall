@@ -7,6 +7,7 @@ import { Icon } from './Icon'
 import { initials } from './initials'
 import { Link } from './Link'
 import { AI_ACCESS_PATH } from './router'
+import { clearSigningOut, noteSigningOut } from './sessionEnd'
 import { useDismiss } from './useDismiss'
 
 const ROLE_LABEL = { admin: 'Admin', member: 'Member', guest: 'Guest' } as const
@@ -51,9 +52,11 @@ export function AccountMenu({ member }: { member: Member }) {
     if (busy) return
     setBusy(true)
     setError('')
+    noteSigningOut() // so the login screen does not tell a Guest their access ended
     try {
       await session.logout()
     } catch (e) {
+      clearSigningOut()
       setError(describeError(e))
     } finally {
       setBusy(false)

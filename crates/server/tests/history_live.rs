@@ -70,6 +70,24 @@ async fn subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
     ws
 }
 
+/// A Guest's connection subscribed to `branch` at its head: `subscribed` and nothing more.
+async fn guest_subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
+    // The head is learnt on a connection of its own, so that this one is owed no `refresh`.
+    let mut probe = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": u32::MAX }).to_string();
+    probe.send(Message::Text(msg.into())).await.unwrap();
+    let head = next_frame(&mut probe).await["seq"].as_u64().unwrap();
+    drop(probe);
+    let mut ws = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": head }).to_string();
+    ws.send(Message::Text(msg.into())).await.unwrap();
+    assert_eq!(
+        next_frame(&mut ws).await,
+        json!({ "type": "subscribed", "branch": branch, "seq": head })
+    );
+    ws
+}
+
 /// Reads frames until one that is not `presence` (other sockets joining cause those).
 async fn next_news(ws: &mut Socket) -> Value {
     loop {
@@ -145,7 +163,7 @@ async fn a_restore_is_broadcast_as_changes_and_a_no_op_restore_is_not() {
     let addr = serve(&w.app).await;
     let mut sender = subscribed(addr, &w.admin, &w.main).await;
     let mut other = subscribed(addr, &w.bea, &w.main).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
     let mut elsewhere = subscribed(addr, &w.bea, &w.side).await;
 
     let path = format!("/api/branches/{}/restore", w.main);
@@ -156,8 +174,7 @@ async fn a_restore_is_broadcast_as_changes_and_a_no_op_restore_is_not() {
     assert_eq!(res.status.as_u16(), 200, "{}", res.text);
     let n = res.body["changes"].as_array().unwrap().len() as u64;
     assert!(n > 0);
-    // Guests see a Restore too: on the wire it is ordinary Changes on main.
-    for ws in [&mut sender, &mut other, &mut guest] {
+    for ws in [&mut sender, &mut other] {
         let frame = next_news(ws).await;
         assert_eq!(
             frame,
@@ -171,6 +188,11 @@ async fn a_restore_is_broadcast_as_changes_and_a_no_op_restore_is_not() {
         assert_eq!(frame["changes"][0]["origin"]["Restore"]["to_seq"], 1);
     }
     no_news(&mut elsewhere).await;
+    // A Guest is only told to read the Board again.
+    assert_eq!(
+        next_frame(&mut guest).await,
+        json!({ "type": "refresh", "branch": w.main, "seq": 2 + n })
+    );
 
     // The Board already matches moment 1: nothing to say.
     let res = w
@@ -178,9 +200,10 @@ async fn a_restore_is_broadcast_as_changes_and_a_no_op_restore_is_not() {
         .post(&path, Some(&w.admin), json!({ "to_seq": 1 }))
         .await;
     assert_eq!(res.body, json!({ "seq": 2 + n, "changes": [] }));
-    for ws in [&mut sender, &mut other, &mut guest, &mut elsewhere] {
+    for ws in [&mut sender, &mut other, &mut elsewhere] {
         no_news(ws).await;
     }
+    quiet(&mut guest).await;
 
     // The stream carries on in order afterwards.
     let res = w
@@ -193,6 +216,10 @@ async fn a_restore_is_broadcast_as_changes_and_a_no_op_restore_is_not() {
         .await;
     assert_eq!(res.body["seq"], 3 + n);
     assert_eq!(next_news(&mut sender).await["seq"], 3 + n);
+    assert_eq!(
+        next_frame(&mut guest).await,
+        json!({ "type": "refresh", "branch": w.main, "seq": 3 + n })
+    );
 }
 
 #[tokio::test]
@@ -201,7 +228,7 @@ async fn a_checkpoint_reaches_that_branchs_member_subscribers_only() {
     let addr = serve(&w.app).await;
     let mut sender = subscribed(addr, &w.admin, &w.main).await;
     let mut other = subscribed(addr, &w.bea, &w.main).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
     let mut elsewhere = subscribed(addr, &w.bea, &w.side).await;
     let mut idle = connected(addr, &w.bea).await;
 
@@ -224,7 +251,7 @@ async fn a_checkpoint_reaches_that_branchs_member_subscribers_only() {
             })
         );
     }
-    no_news(&mut guest).await;
+    quiet(&mut guest).await;
     no_news(&mut elsewhere).await;
     quiet(&mut idle).await;
 
@@ -256,7 +283,7 @@ async fn a_checkpoint_reaches_that_branchs_member_subscribers_only() {
     assert_eq!(frame["checkpoint"], res.body["checkpoint"]);
     no_news(&mut sender).await;
     no_news(&mut other).await;
-    no_news(&mut guest).await;
+    quiet(&mut guest).await;
 }
 
 #[tokio::test]
@@ -266,7 +293,7 @@ async fn a_new_branch_is_announced_to_every_member_and_never_to_guests() {
     let mut on_main = subscribed(addr, &w.admin, &w.main).await;
     let mut on_side = subscribed(addr, &w.bea, &w.side).await;
     let mut idle = connected(addr, &w.bea).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
     let mut idle_guest = connected(addr, &w.guest).await;
 
     let res = w
@@ -293,7 +320,7 @@ async fn a_new_branch_is_announced_to_every_member_and_never_to_guests() {
                 .contains(&res.body["branch"])
         );
     }
-    no_news(&mut guest).await;
+    quiet(&mut guest).await;
     quiet(&mut idle_guest).await;
 
     // A refused fork is not announced.

@@ -70,6 +70,24 @@ async fn subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
     ws
 }
 
+/// A Guest's connection subscribed to `branch` at its head: `subscribed` and nothing more.
+async fn guest_subscribed(addr: SocketAddr, cookie: &str, branch: &str) -> Socket {
+    // The head is learnt on a connection of its own, so that this one is owed no `refresh`.
+    let mut probe = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": u32::MAX }).to_string();
+    probe.send(Message::Text(msg.into())).await.unwrap();
+    let head = next_frame(&mut probe).await["seq"].as_u64().unwrap();
+    drop(probe);
+    let mut ws = connected(addr, cookie).await;
+    let msg = json!({ "type": "subscribe", "branch": branch, "after": head }).to_string();
+    ws.send(Message::Text(msg.into())).await.unwrap();
+    assert_eq!(
+        next_frame(&mut ws).await,
+        json!({ "type": "subscribed", "branch": branch, "seq": head })
+    );
+    ws
+}
+
 /// Reads frames until one that is not `presence` (other sockets joining cause those).
 async fn next_news(ws: &mut Socket) -> Value {
     loop {
@@ -164,21 +182,22 @@ impl World {
 }
 
 #[tokio::test]
-async fn a_merge_into_main_reaches_its_subscribers_guests_included() {
+async fn a_merge_into_main_reaches_its_subscribers_and_tells_guests_to_refresh() {
     let w = world().await;
     let addr = serve(&w.app).await;
     let mut sender = subscribed(addr, &w.admin, &w.main).await;
     let mut other = subscribed(addr, &w.bea, &w.main).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
     let mut on_source = subscribed(addr, &w.bea, &w.side).await;
     let mut idle = connected(addr, &w.bea).await;
     let mut idle_guest = connected(addr, &w.guest).await;
 
     // Planning says nothing to anyone.
     let plan = w.planned(&w.side, &w.main).await;
-    for ws in [&mut sender, &mut other, &mut guest, &mut on_source] {
+    for ws in [&mut sender, &mut other, &mut on_source] {
         no_news(ws).await;
     }
+    quiet(&mut guest).await;
 
     let res = w
         .app
@@ -223,9 +242,12 @@ async fn a_merge_into_main_reaches_its_subscribers_guests_included() {
         assert_eq!(next_news(ws).await, branches);
         no_news(ws).await;
     }
-    // A Guest on main sees the Changes and nothing else.
-    assert_eq!(next_news(&mut guest).await, changes);
-    no_news(&mut guest).await;
+    // A Guest on main is told to read the Board again and nothing else.
+    assert_eq!(
+        next_frame(&mut guest).await,
+        json!({ "type": "refresh", "branch": w.main, "seq": 2 })
+    );
+    quiet(&mut guest).await;
     // The source's subscribers and idle Members only learn the new heads.
     assert_eq!(next_news(&mut on_source).await, branches);
     no_news(&mut on_source).await;
@@ -235,11 +257,13 @@ async fn a_merge_into_main_reaches_its_subscribers_guests_included() {
 
     // The stream on main carries on in order afterwards.
     ops(&w.app, &w.bea, &w.main, json!([set_title(&w.card, "A3")])).await;
-    for ws in [&mut sender, &mut guest] {
-        let frame = next_news(ws).await;
-        assert_eq!(frame["type"], "changes");
-        assert_eq!(frame["seq"], 3);
-    }
+    let frame = next_news(&mut sender).await;
+    assert_eq!(frame["type"], "changes");
+    assert_eq!(frame["seq"], 3);
+    assert_eq!(
+        next_frame(&mut guest).await,
+        json!({ "type": "refresh", "branch": w.main, "seq": 3 })
+    );
 }
 
 #[tokio::test]
@@ -255,7 +279,7 @@ async fn a_merge_into_a_branch_reaches_that_branch_and_not_the_source() {
     let addr = serve(&w.app).await;
     let mut on_target = subscribed(addr, &w.bea, &w.side).await;
     let mut on_source = subscribed(addr, &w.admin, &w.main).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
 
     let plan = w.planned(&w.main, &w.side).await;
     let res = w
@@ -282,7 +306,7 @@ async fn a_merge_into_a_branch_reaches_that_branch_and_not_the_source() {
     no_news(&mut on_target).await;
     assert_eq!(next_news(&mut on_source).await, branches);
     no_news(&mut on_source).await;
-    no_news(&mut guest).await;
+    quiet(&mut guest).await;
 }
 
 #[tokio::test]
@@ -291,7 +315,7 @@ async fn a_merge_that_changes_nothing_sends_no_changes_and_a_refused_one_sends_n
     let addr = serve(&w.app).await;
     let mut on_main = subscribed(addr, &w.bea, &w.main).await;
     let mut on_side = subscribed(addr, &w.bea, &w.side).await;
-    let mut guest = subscribed(addr, &w.guest, &w.main).await;
+    let mut guest = guest_subscribed(addr, &w.guest, &w.main).await;
 
     // Refused: stale, undecided-free but tampered, and a taken name.
     let plan = w.planned(&w.side, &w.main).await;
@@ -306,9 +330,10 @@ async fn a_merge_that_changes_nothing_sends_no_changes_and_a_refused_one_sends_n
         )
         .await;
     assert_eq!(res.code(), "stale");
-    for ws in [&mut on_main, &mut on_side, &mut guest] {
+    for ws in [&mut on_main, &mut on_side] {
         no_news(ws).await;
     }
+    quiet(&mut guest).await;
 
     // main has nothing side lacks: merging it into side appends nothing.
     let plan = w.planned(&w.main, &w.side).await;
@@ -336,5 +361,5 @@ async fn a_merge_that_changes_nothing_sends_no_changes_and_a_refused_one_sends_n
     no_news(&mut on_side).await;
     assert_eq!(next_news(&mut on_main).await, branches);
     no_news(&mut on_main).await;
-    no_news(&mut guest).await;
+    quiet(&mut guest).await;
 }

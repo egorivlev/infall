@@ -87,6 +87,34 @@ describe('op builders', () => {
     expect(op.Create.fields).toEqual({ card: { Ref: 'a' }, type: { Text: 'text' }, order: { Text: 'V' } })
     expect(() => ops.addBlock({ card: 'a', text: 'x', order: '' })).toThrow(RangeError)
   })
+  it('addBlock creates a Visual with its source and title', () => {
+    expect(ops.addBlock({ id: 'v', card: 'a', type: 'visual', text: '<canvas></canvas>', title: 'Demo', order: 'V' })).toEqual({
+      Create: {
+        entity: 'v',
+        kind: 'Block',
+        fields: {
+          card: { Ref: 'a' },
+          type: { Text: 'visual' },
+          order: { Text: 'V' },
+          text: { Text: '<canvas></canvas>' },
+          title: { Text: 'Demo' },
+        },
+      },
+    })
+  })
+  it('addBlock leaves an empty or missing title unset, and an explicit text type is the default', () => {
+    const fields = { card: { Ref: 'a' }, type: { Text: 'visual' }, order: { Text: 'V' } }
+    expect(ops.addBlock({ id: 'v', card: 'a', type: 'visual', text: '', order: 'V' })).toEqual({ Create: { entity: 'v', kind: 'Block', fields } })
+    expect(ops.addBlock({ id: 'v', card: 'a', type: 'visual', text: '', title: '', order: 'V' })).toEqual({ Create: { entity: 'v', kind: 'Block', fields } })
+    expect(ops.addBlock({ id: 'k', card: 'a', type: 'text', text: 'x', order: 'V' })).toEqual(ops.addBlock({ id: 'k', card: 'a', text: 'x', order: 'V' }))
+    expect(JSON.stringify(ops.addBlock({ id: 'k', card: 'a', text: 'x', order: 'V' }))).toBe(
+      '{"Create":{"entity":"k","kind":"Block","fields":{"card":{"Ref":"a"},"type":{"Text":"text"},"order":{"Text":"V"},"text":{"Text":"x"}}}}',
+    )
+  })
+  it('setBlockTitle; an empty title sets Null', () => {
+    expect(ops.setBlockTitle('v', ' Demo ')).toEqual({ Set: { entity: 'v', field: 'title', value: { Text: ' Demo ' } } })
+    expect(ops.setBlockTitle('v', '')).toEqual({ Set: { entity: 'v', field: 'title', value: 'Null' } })
+  })
   it('setBlockText; an empty text sets Null and the block stays', () => {
     expect(ops.setBlockText('k', '  kept as typed ')).toEqual({
       Set: { entity: 'k', field: 'text', value: { Text: '  kept as typed ' } },

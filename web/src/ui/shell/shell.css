@@ -17,7 +17,7 @@
 .q-branch { display: flex; align-items: center; gap: var(--q-s2); height: 30px; padding: 0 10px 0 8px; border-radius: var(--q-r); border: 1px solid var(--q-cur-branch); color: var(--q-ink); white-space: nowrap; }
 .q-branch svg { color: var(--q-cur-branch); }
 .q-branch__name { font: 600 13px/1 var(--q-mono); color: var(--q-cur-branch); }
-.q-branch--plain { border: 0; padding: 0 0 0 var(--q-s1); gap: 10px; }
+.q-branch--plain { border: 0; padding: 0 0 0 var(--q-s1); gap: 6px; }
 .q-branch--plain .q-branch__name { color: var(--q-ink); }
 .q-branch__note { font-size: 12px; color: var(--q-ink-3); }
 

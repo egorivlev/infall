@@ -418,7 +418,7 @@ describe('a Guest', () => {
     server.actor = GUEST
   })
 
-  it('reads Pages and Sources and sees who is editing, but never claims or edits', async () => {
+  it('reads Pages and Sources, is not told who is editing, and never claims or edits', async () => {
     seed()
     const ws = await openLive()
     expect(snap().readOnly).toBe(true)
@@ -429,7 +429,7 @@ describe('a Guest', () => {
     sync.stopEditing()
     expect(editingFrames(ws)).toEqual([])
     ws.receive(server.claim(OTHER.id, 'a'))
-    expect(sync.page('a').editor).toEqual({ member: null, memberId: OTHER.id, since: 0 })
+    expect(sync.page('a').editor).toBeNull() // M6: such a frame is not for a Guest
     await settle()
     expect(server.requests.some((r) => r.path === '/api/members')).toBe(false)
     await expect(sync.submit([ops.setBlockText('k1', 'x')])).rejects.toMatchObject({ status: 403, code: 'forbidden' })

@@ -92,6 +92,16 @@ export function sourceName(e: Entity | undefined): string {
 
 const SOURCE_FIELDS = ['url', 'doi', 'title', 'authors', 'year', 'note']
 
+export function isVisual(e: Entity | undefined): boolean {
+  return e !== undefined && e.kind === 'Block' && text(e.fields, 'type') === 'visual'
+}
+
+/** What a Visual goes by: "Visual <title>", or "Untitled Visual". */
+export function visualName(e: Entity | undefined): string {
+  const t = e ? text(e.fields, 'title').trim() : ''
+  return t === '' ? 'Untitled Visual' : `Visual ${t}`
+}
+
 type Laid = 'Card' | 'Frame' | 'Connection' // the kinds that sit on the Board itself
 type PageEdits = { added: number; removed: number; edited: number; reordered: number }
 
@@ -99,6 +109,11 @@ type PageEdits = { added: number; removed: number; edited: number; reordered: nu
 function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'changed' | 'none' {
   if (!was || was.deleted) return now.deleted ? 'none' : 'added'
   return now.deleted ? 'removed' : 'changed'
+}
+
+// A Visual is edited when its source, its title, or what it is changed.
+function visualEdited(was: Entity, now: Entity): boolean {
+  return ['text', 'title', 'type'].some((f) => !sameValue(was.fields, now.fields, f))
 }
 
 function blocks(n: number): string {
@@ -158,7 +173,10 @@ export function describeChanges(
       let e = pages.get(card)
       if (!e) pages.set(card, (e = { added: 0, removed: 0, edited: 0, reordered: 0 }))
       const what = fate(was, now)
-      if (what === 'added') e.added++
+      if (isVisual(now)) {
+        // A Visual has a line of its own; only its place in the Page is the Page's business.
+        if (what === 'changed' && was && !visualEdited(was, now) && !sameValue(was.fields, now.fields, 'order')) e.reordered++
+      } else if (what === 'added') e.added++
       else if (what === 'removed') e.removed++
       else if (what === 'changed' && was) {
         if (!sameValue(was.fields, now.fields, 'text') || !sameValue(was.fields, now.fields, 'type')) e.edited++
@@ -175,6 +193,14 @@ export function describeChanges(
     if (!now) continue
     if (now.kind === 'Block') {
       const card = ref(now.fields, 'card')
+      if (isVisual(now)) {
+        const what = fate(was, now)
+        const name = visualName(now)
+        const page = `the Page of ${titleOf(after[card])}`
+        if (what === 'added') lines.push(`Added ${name} to ${page}`)
+        else if (what === 'removed') lines.push(`Removed ${name} from ${page}`)
+        else if (what === 'changed' && was && visualEdited(was, now)) lines.push(`Edited ${name} in ${page}`)
+      }
       if (pagesSaid.has(card)) continue
       pagesSaid.add(card)
       const line = pageLine(pages.get(card)!, titleOf(after[card]))

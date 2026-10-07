@@ -16,7 +16,8 @@ function checkPassword(v: string): string | undefined {
   return v ? undefined : 'Enter your password.'
 }
 
-export function Login() {
+/** `notice` explains why the person is here again (a Guest whose access ended). */
+export function Login({ notice }: { notice?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<Errors>({})
@@ -56,6 +57,11 @@ export function Login() {
 
   return (
     <AccessCard title="Sign in to Qoop" subtitle={window.location.host}>
+      {notice && (
+        <p className="q-access__notice" role="status">
+          {notice}
+        </p>
+      )}
       <form className="q-access__form" onSubmit={submit} noValidate>
         <Field
           label="Email"
@@ -88,7 +94,10 @@ export function Login() {
           </p>
         )}
       </form>
-      <p className="q-access__foot">Forgot your password? Ask your Admin.</p>
+      <div className="q-access__foot">
+        <p>Forgot your password? Ask your Admin.</p>
+        <p>Got an invite? Open the link you were sent.</p>
+      </div>
     </AccessCard>
   )
 }

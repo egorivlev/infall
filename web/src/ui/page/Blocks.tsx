@@ -1,19 +1,16 @@
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, MouseEvent, Ref } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 import { newId, ops, orderBetween } from '../../lib'
 import type { BlockVM } from '../../lib'
 import { useBoardActions } from '../board/useBoardActions'
+import { AddSlot } from './AddSlot'
+import { BlockTools } from './BlockTools'
+import type { AddBlock, BlockHandlers, VisualResult } from './BlockTools'
 import { DraftArea } from './DraftArea'
 import type { DraftResult } from './DraftArea'
 import { editLock } from './lock'
 import { MarkdownView } from './MarkdownView'
-
-type Handlers = {
-  edit: (id: string) => void
-  finish: (id: string, result: DraftResult) => void
-  move: (id: string, by: -1 | 1) => void
-  remove: (id: string) => void
-}
+import { VisualBlock } from './visuals/VisualBlock'
 
 type BlockProps = {
   block: BlockVM
@@ -22,11 +19,11 @@ type BlockProps = {
   last: boolean
   editing: boolean
   canEdit: boolean
-  handlers: Handlers
+  handlers: BlockHandlers
 }
 
 /**
- * One Block. Memoised: `block` keeps its identity until it changes and every other prop is a
+ * One text Block. Memoised: `block` keeps its identity until it changes and every other prop is a
  * primitive or stable, so typing in (or committing) one Block never re-renders the others.
  */
 const Block = memo(function Block({ block, index, last, editing, canEdit, handlers }: BlockProps) {
@@ -80,41 +77,7 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
 
   return (
     <div className="qp-block" data-block={id} data-testid={`block-${id}`}>
-      {canEdit && (
-        <div className="qp-block__tools" role="group" aria-label={`Block ${n}`}>
-          <button
-            type="button"
-            className="qp-tool"
-            data-move="-1"
-            aria-label="Move block up"
-            title="Move block up"
-            disabled={index === 0}
-            onClick={() => handlers.move(id, -1)}
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="qp-tool"
-            data-move="1"
-            aria-label="Move block down"
-            title="Move block down"
-            disabled={last}
-            onClick={() => handlers.move(id, 1)}
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            className="qp-tool qp-tool--danger"
-            aria-label="Delete block"
-            title="Delete block"
-            onClick={() => handlers.remove(id)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      {canEdit && <BlockTools id={id} index={index} last={last} handlers={handlers} />}
       {canEdit ? (
         <div
           ref={viewRef}
@@ -131,23 +94,6 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
         <div className="qp-block__view">{body}</div>
       )}
     </div>
-  )
-})
-
-type SlotProps = {
-  /** The new Block goes before the Block at this index (or at the end). */
-  index: number
-  label: string
-  end?: boolean
-  onAdd: (index: number) => void
-  ref?: Ref<HTMLButtonElement>
-}
-
-const AddSlot = memo(function AddSlot({ index, label, end, onAdd, ref }: SlotProps) {
-  return (
-    <button ref={ref} type="button" className={`qp-add${end ? ' qp-add--end' : ''}`} aria-label={label} onClick={() => onAdd(index)}>
-      <span aria-hidden="true">+ Add block</span>
-    </button>
   )
 })
 
@@ -255,29 +201,46 @@ export function Blocks({ cardId, blocks, canEdit }: Props) {
     [actions],
   )
 
-  const addAt = useCallback(
-    (index: number) => {
+  // A Visual's editor ended: the title and the source that changed go out together, as one batch.
+  const finishVisual = useCallback(
+    (id: string, result: VisualResult) => {
+      setEditing((s) => {
+        if (!s.has(id)) return s
+        const next = new Set(s)
+        next.delete(id)
+        return next.size ? next : NONE
+      })
+      if (!result.commit || !latest.current.blocks.some((b) => b.id === id)) return
+      const batch = []
+      if (result.title !== undefined) batch.push(ops.setBlockTitle(id, result.title))
+      if (result.source !== undefined) batch.push(ops.setBlockText(id, result.source))
+      void actions.submit(batch)
+    },
+    [actions],
+  )
+
+  const addAt = useCallback<AddBlock>(
+    (index, template) => {
       const { blocks: list, cardId: card } = latest.current
       const id = newId()
       const order = orderBetween(list[index - 1]?.order, list[index]?.order)
       // The Board applies it locally at once, so the new Block is there when the editor opens.
-      void actions.submit([ops.addBlock({ id, card, text: '', order })])
+      const op = template
+        ? ops.addBlock({ id, card, type: 'visual', title: template.title, text: template.source, order })
+        : ops.addBlock({ id, card, text: '', order })
+      void actions.submit([op])
       setEditing((s) => new Set(s).add(id))
     },
     [actions],
   )
 
-  const handlers = useMemo<Handlers>(() => ({ edit, finish, move, remove }), [edit, finish, move, remove])
+  const handlers = useMemo<BlockHandlers>(() => ({ edit, finish, finishVisual, move, remove }), [edit, finish, finishVisual, move, remove])
 
   if (blocks.length === 0) {
     return (
       <div className="qp-blocks qp-blocks--empty" ref={rootRef}>
         <p className="qp-blocks__none">This Page is empty.</p>
-        {canEdit && (
-          <button type="button" className="q-btn q-btn--primary" onClick={() => addAt(0)}>
-            + Add block
-          </button>
-        )}
+        {canEdit && <AddSlot index={0} label="Add block" variant="first" onAdd={addAt} />}
       </div>
     )
   }
@@ -289,10 +252,14 @@ export function Blocks({ cardId, blocks, canEdit }: Props) {
           {canEdit && (
             <AddSlot index={i} label={i === 0 ? 'Add block at the start' : `Add block before block ${i + 1}`} onAdd={addAt} />
           )}
-          <Block block={b} index={i} last={i === blocks.length - 1} editing={open.has(b.id)} canEdit={canEdit} handlers={handlers} />
+          {b.type === 'visual' ? (
+            <VisualBlock block={b} index={i} last={i === blocks.length - 1} editing={open.has(b.id)} canEdit={canEdit} handlers={handlers} />
+          ) : (
+            <Block block={b} index={i} last={i === blocks.length - 1} editing={open.has(b.id)} canEdit={canEdit} handlers={handlers} />
+          )}
         </Fragment>
       ))}
-      {canEdit && <AddSlot ref={endRef} index={blocks.length} label="Add block at the end" end onAdd={addAt} />}
+      {canEdit && <AddSlot ref={endRef} index={blocks.length} label="Add block at the end" variant="end" onAdd={addAt} />}
     </div>
   )
 }

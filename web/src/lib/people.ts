@@ -49,7 +49,7 @@ export const invites = {
   async remove(id: string): Promise<void> {
     await request('DELETE', `/api/invites/${encodeURIComponent(id)}`)
   },
-  lookup(token: string): Promise<{ email: string; role: Role }> {
+  lookup(token: string): Promise<{ email: string; role: Role; access_until?: number }> {
     return request('GET', `/api/invites/lookup?token=${encodeURIComponent(token)}`)
   },
 }

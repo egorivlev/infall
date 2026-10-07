@@ -277,13 +277,9 @@ async fn guests_read_only_main_and_cannot_post_ops() {
             .status,
         StatusCode::OK
     );
-    assert_eq!(
-        app.get(&format!("/api/branches/{main}/changes"), Some(&guest))
-            .await
-            .status,
-        StatusCode::OK
-    );
     for path in [
+        format!("/api/branches/{main}/changes"),
+        format!("/api/branches/{main}/changes?after=0"),
         format!("/api/branches/{side}/board"),
         format!("/api/branches/{side}/changes"),
         format!("/api/branches/{}/board", new_id()),

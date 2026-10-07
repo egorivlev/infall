@@ -111,7 +111,14 @@ pub async fn list_branches(State(st): State<Shared>, who: SignedIn) -> Json<Valu
     let list: Vec<BranchInfo> = ws
         .branches()
         .filter(|b| may_read(&who, b))
-        .map(|b| BranchInfo::of(&ws, b))
+        .map(|b| {
+            let mut info = BranchInfo::of(&ws, b);
+            // A Guest has no history: not even how many Checkpoints there are.
+            if who.member.role == Role::Guest {
+                info.checkpoints = 0;
+            }
+            info
+        })
         .collect();
     Json(json!({ "branches": list }))
 }
@@ -128,14 +135,16 @@ pub struct BoardQuery {
     at: Option<u64>,
 }
 
-/// The Board at the head, or at the moment `at` (Members and Admins only).
+/// The Board at the head, or at the moment `at` (Members and Admins only). Guests get only
+/// its visible entities.
 pub async fn get_board(
     State(st): State<Shared>,
     who: SignedIn,
     Path(id): Path<String>,
     ApiQuery(q): ApiQuery<BoardQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    if q.at.is_some() && who.member.role == Role::Guest {
+    let guest = who.member.role == Role::Guest;
+    if q.at.is_some() && guest {
         return Err(ApiError::Forbidden("Guests cannot read History."));
     }
     let ws = st.workspace.read().await;
@@ -157,7 +166,12 @@ pub async fn get_board(
     let view = BoardView {
         branch: moment.branch,
         seq: moment.seq,
-        entities: board.entities().map(|(id, e)| (id, e.clone())).collect(),
+        // Guests get the present only: no tombstones, nothing that points at one.
+        entities: board
+            .entities()
+            .filter(|(id, _)| !guest || board.is_visible(*id))
+            .map(|(id, e)| (id, e.clone()))
+            .collect(),
     };
     serde_json::to_value(view)
         .map(Json)
@@ -176,6 +190,9 @@ pub async fn get_changes(
     Path(id): Path<String>,
     ApiQuery(q): ApiQuery<ChangesQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    if who.member.role == Role::Guest {
+        return Err(ApiError::Forbidden("Guests cannot read History."));
+    }
     let ws = st.workspace.read().await;
     let branch = readable_branch(&ws, &who, &id)?;
     let changes = changes_after(branch, q.after).ok_or_else(|| {

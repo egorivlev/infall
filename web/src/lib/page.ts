@@ -6,6 +6,9 @@ import type { PageVM, SourceVM } from './types'
 export { normalizeDoi, normalizeUrl } from './sources'
 export { orderBetween } from './order'
 
+/** Where the server hosts the sandboxed page a Visual runs in (api.md §13); the UI embeds it in an iframe. */
+export const VISUAL_FRAME_PATH = '/visual-frame'
+
 export const page = {
   startEditing: sync.startEditing,
   stopEditing: sync.stopEditing,

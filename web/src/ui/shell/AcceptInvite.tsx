@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { invites, session } from '../../lib'
 import type { Role } from '../../lib'
 import { AccessCard } from './AccessCard'
+import { formatShortDate } from './dates'
 import { describeError, describeLookupError, INVALID_INVITE, isInviteGone } from './errorMessages'
 import { Field } from './Field'
 import { useDelayedFlag } from './useDelayedFlag'
@@ -11,7 +12,10 @@ type Lookup =
   | { status: 'loading' }
   | { status: 'invalid' }
   | { status: 'failed'; message: string }
-  | { status: 'ready'; email: string; role: Role }
+  | { status: 'ready'; email: string; role: Role; accessUntil?: number }
+
+// api.md §13: the lookup of a Guest invite also says until when. Optional here until the data layer's type has it.
+type InviteLookup = { email: string; role: Role; access_until?: number }
 
 const ROLE_WORD: Record<Role, string> = { admin: 'an Admin', member: 'a Member', guest: 'a Guest' }
 const PASSWORD_RULE = 'At least 12 characters'
@@ -28,7 +32,7 @@ export function AcceptInvite({ token }: { token: string }) {
     let cancelled = false
     invites
       .lookup(token)
-      .then((r) => !cancelled && setLookup({ status: 'ready', email: r.email, role: r.role }))
+      .then((r: InviteLookup) => !cancelled && setLookup({ status: 'ready', email: r.email, role: r.role, accessUntil: r.access_until }))
       .catch((e: unknown) => {
         if (cancelled) return
         setLookup(isInviteGone(e) ? { status: 'invalid' } : { status: 'failed', message: describeLookupError(e) })
@@ -73,10 +77,20 @@ export function AcceptInvite({ token }: { token: string }) {
       </AccessCard>
     )
   }
-  return <InviteForm token={token} email={lookup.email} role={lookup.role} onGone={() => setLookup({ status: 'invalid' })} />
+  return (
+    <InviteForm
+      token={token}
+      email={lookup.email}
+      role={lookup.role}
+      accessUntil={lookup.accessUntil}
+      onGone={() => setLookup({ status: 'invalid' })}
+    />
+  )
 }
 
-function InviteForm({ token, email, role, onGone }: { token: string; email: string; role: Role; onGone: () => void }) {
+type FormProps = { token: string; email: string; role: Role; accessUntil?: number; onGone: () => void }
+
+function InviteForm({ token, email, role, accessUntil, onGone }: FormProps) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<Errors>({})
@@ -115,6 +129,11 @@ function InviteForm({ token, email, role, onGone }: { token: string; email: stri
 
   return (
     <AccessCard title={`You're invited as ${ROLE_WORD[role]}`} subtitle={email}>
+      {role === 'guest' && (
+        <p className="q-access__lead">
+          {accessUntil != null ? `Read-only access to the team's Board until ${formatShortDate(accessUntil)}.` : "Read-only access to the team's Board."}
+        </p>
+      )}
       <form className="q-access__form" onSubmit={submit} noValidate>
         <Field
           label="Name"

@@ -1,5 +1,8 @@
 //! Live updates over WebSocket (contract §7): subscriptions, broadcast and presence; and
 //! who is editing a Page (contract §11), which lives only here.
+//!
+//! Guests (contract §13) get none of that: after `subscribed` their connection is only ever
+//! sent `refresh` frames, and they are not part of presence.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,6 +21,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::app::Shared;
@@ -30,6 +34,8 @@ const PING_EVERY: Duration = Duration::from_secs(30);
 const MAX_UNANSWERED_PINGS: u32 = 2;
 const MAX_CLIENT_MESSAGE: usize = 64 * 1024;
 const CHANNEL_CAPACITY: usize = 1024;
+/// A Guest gets at most one `refresh` frame in this long (contract §13).
+const REFRESH_EVERY: Duration = Duration::from_millis(500);
 
 /// What is fanned out to every connection; each one forwards what concerns it.
 #[derive(Debug, Clone)]
@@ -171,6 +177,12 @@ fn editing_frame(branch: BranchId, cards: Option<&BTreeMap<Uuid, Claims>>) -> Ut
         })
         .collect();
     json!({ "type": "editing", "branch": branch, "editors": editors })
+        .to_string()
+        .into()
+}
+
+fn refresh_frame(branch: BranchId, seq: u64) -> Utf8Bytes {
+    json!({ "type": "refresh", "branch": branch, "seq": seq })
         .to_string()
         .into()
 }
@@ -426,6 +438,11 @@ struct Connection {
     sub: Option<Subscription>,
     /// The newest To-do list this connection has been sent (after a resync, read).
     todos_version: u64,
+    /// Guests only: when the last `refresh` frame was sent.
+    refresh_sent: Option<Instant>,
+    /// Guests only: the head a `refresh` is still owed for, once `REFRESH_EVERY` has passed
+    /// since the last one.
+    refresh_owed: Option<u64>,
 }
 
 /// Frames this connection wants to send, or the reason to close it.
@@ -440,6 +457,8 @@ impl Connection {
             id,
             sub: None,
             todos_version: 0,
+            refresh_sent: None,
+            refresh_owed: None,
         }
     }
 
@@ -447,10 +466,10 @@ impl Connection {
         let (mut sink, mut stream) = socket.split();
         let mut events = self.st.hub.tx.subscribe();
         let mut shutdown = self.st.shutdown.subscribe();
-        let mut ping =
-            tokio::time::interval_at(tokio::time::Instant::now() + PING_EVERY, PING_EVERY);
+        let mut ping = tokio::time::interval_at(Instant::now() + PING_EVERY, PING_EVERY);
         let mut unanswered = 0u32;
         loop {
+            let refresh_at = self.refresh_at();
             let outcome: Outcome = tokio::select! {
                 msg = stream.next() => match msg {
                     Some(Ok(Message::Text(text))) => Ok(self.on_client_text(&text).await),
@@ -474,6 +493,8 @@ impl Connection {
                         }
                     }
                 },
+                _ = tokio::time::sleep_until(refresh_at.unwrap_or_else(Instant::now)),
+                    if refresh_at.is_some() => Ok(self.owed_refresh()),
                 _ = shutdown.changed() => Err(()),
             };
             let Ok(frames) = outcome else { break };
@@ -488,7 +509,10 @@ impl Connection {
                 break;
             }
         }
-        if let Some(sub) = self.sub.take() {
+        // Guests were never in presence and never hold a claim.
+        if let Some(sub) = self.sub.take()
+            && !self.is_guest()
+        {
             self.release_claim(sub.branch);
             self.st
                 .hub
@@ -516,17 +540,82 @@ impl Connection {
         )
     }
 
+    /// When the owed `refresh` may go out, if one is owed.
+    fn refresh_at(&self) -> Option<Instant> {
+        self.refresh_owed?;
+        Some(
+            self.refresh_sent
+                .map_or_else(Instant::now, |sent| sent + REFRESH_EVERY),
+        )
+    }
+
+    /// A `refresh` for head `seq` of the subscribed Branch: now, if none went out within
+    /// `REFRESH_EVERY`; otherwise it is owed, and one frame with the newest head follows
+    /// when that time has passed.
+    fn refresh(&mut self, seq: u64) -> Vec<Utf8Bytes> {
+        let Some(branch) = self.sub.as_ref().map(|s| s.branch) else {
+            return Vec::new();
+        };
+        let now = Instant::now();
+        if self
+            .refresh_sent
+            .is_some_and(|sent| now < sent + REFRESH_EVERY)
+        {
+            self.refresh_owed = Some(self.refresh_owed.map_or(seq, |owed| owed.max(seq)));
+            return Vec::new();
+        }
+        self.refresh_sent = Some(now);
+        self.refresh_owed = None;
+        vec![refresh_frame(branch, seq)]
+    }
+
+    /// The `refresh` that was held back, now that its time has come.
+    fn owed_refresh(&mut self) -> Vec<Utf8Bytes> {
+        let owed = self.refresh_owed.take();
+        match (owed, self.sub.as_ref().map(|s| s.branch)) {
+            (Some(seq), Some(branch)) => {
+                self.refresh_sent = Some(Instant::now());
+                vec![refresh_frame(branch, seq)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// What a Guest's connection makes of an event: new Changes on its Branch become a
+    /// `refresh`; everything else is not for Guests.
+    fn on_guest_event(&mut self, ev: Event) -> Outcome {
+        match ev {
+            Event::Kick { member } if member == self.who.id() => Err(()),
+            Event::Changes { branch, seq, .. } => match &mut self.sub {
+                Some(sub) if sub.branch == branch && seq > sub.seq => {
+                    sub.seq = seq;
+                    Ok(self.refresh(seq))
+                }
+                _ => Ok(Vec::new()),
+            },
+            Event::Kick { .. }
+            | Event::Presence { .. }
+            | Event::Checkpoint { .. }
+            | Event::Branches { .. }
+            | Event::Todos { .. }
+            | Event::Editing { .. }
+            | Event::Suggestions { .. } => Ok(Vec::new()),
+        }
+    }
+
     fn on_event(&mut self, ev: Event) -> Outcome {
+        if self.is_guest() {
+            return self.on_guest_event(ev);
+        }
         match ev {
             Event::Kick { member } if member == self.who.id() => Err(()),
             Event::Kick { .. } => Ok(Vec::new()),
             Event::Checkpoint { branch, frame } => match &self.sub {
-                Some(sub) if sub.branch == branch && !self.is_guest() => Ok(vec![frame]),
+                Some(sub) if sub.branch == branch => Ok(vec![frame]),
                 _ => Ok(Vec::new()),
             },
-            Event::Branches { frame } if !self.is_guest() => Ok(vec![frame]),
-            Event::Branches { .. } => Ok(Vec::new()),
-            Event::Todos { version, frame } if !self.is_guest() && version > self.todos_version => {
+            Event::Branches { frame } => Ok(vec![frame]),
+            Event::Todos { version, frame } if version > self.todos_version => {
                 self.todos_version = version;
                 Ok(vec![frame])
             }
@@ -535,18 +624,13 @@ impl Connection {
                 branch,
                 version,
                 frame,
-            } => {
-                let guest = self.is_guest();
-                match &mut self.sub {
-                    Some(sub)
-                        if sub.branch == branch && !guest && version > sub.suggestions_version =>
-                    {
-                        sub.suggestions_version = version;
-                        Ok(vec![frame])
-                    }
-                    _ => Ok(Vec::new()),
+            } => match &mut self.sub {
+                Some(sub) if sub.branch == branch && version > sub.suggestions_version => {
+                    sub.suggestions_version = version;
+                    Ok(vec![frame])
                 }
-            }
+                _ => Ok(Vec::new()),
+            },
             Event::Editing {
                 branch,
                 version,
@@ -618,6 +702,7 @@ impl Connection {
     }
 
     /// `subscribed`, then the catch-up `changes` (if any), then `presence`, then `editing`.
+    /// A Guest gets `subscribed` and, if `after` is not the head, one `refresh`.
     async fn subscribe(&mut self, raw_branch: &str, after: u64) -> Vec<Utf8Bytes> {
         let (branch, seq, catch_up) = {
             let ws = self.st.workspace.read().await;
@@ -637,7 +722,7 @@ impl Connection {
             };
             let seq = b.changes().len() as u64;
             let catch_up = changes_after(b, after)
-                .filter(|c| !c.is_empty())
+                .filter(|c| !guest && !c.is_empty())
                 .map(|c| changes_frame(b.id(), seq, c));
             (b.id(), seq, catch_up)
         };
@@ -646,6 +731,19 @@ impl Connection {
                 .to_string()
                 .into(),
         ];
+        if self.is_guest() {
+            self.sub = Some(Subscription {
+                branch,
+                seq,
+                presence_version: 0,
+                editing_version: 0,
+                suggestions_version: 0,
+            });
+            if after != seq {
+                frames.extend(self.refresh(seq));
+            }
+            return frames;
+        }
         frames.extend(catch_up);
         let old = self.sub.as_ref().map(|s| s.branch);
         let (presence, version) = self
@@ -674,18 +772,33 @@ impl Connection {
     }
 
     /// After missing broadcast frames: send the Branch list (a `branches` frame may have
-    /// been among them; never to Guests), then what was missed as one `changes` frame, then
-    /// the current `presence` and `editing`, then the To-do list and the Suggestions of the
-    /// subscribed Branch (never to Guests). Missed `checkpoint` frames are not replayed.
+    /// been among them), then what was missed as one `changes` frame, then the current
+    /// `presence` and `editing`, then the To-do list and the Suggestions of the subscribed
+    /// Branch. Missed `checkpoint` frames are not replayed.
+    ///
+    /// A Guest gets one `refresh` if its Branch moved on, and nothing else.
     async fn resync(&mut self) -> Vec<Utf8Bytes> {
+        if self.is_guest() {
+            let head = {
+                let ws = self.st.workspace.read().await;
+                self.sub
+                    .as_ref()
+                    .and_then(|sub| ws.branch(sub.branch))
+                    .map(|b| b.changes().len() as u64)
+            };
+            return match (head, &mut self.sub) {
+                (Some(head), Some(sub)) if head > sub.seq => {
+                    sub.seq = head;
+                    self.refresh(head)
+                }
+                _ => Vec::new(),
+            };
+        }
         let mut frames = Vec::new();
-        let guest = self.is_guest();
         {
             let ws = self.st.workspace.read().await;
-            if !guest {
-                let list: Vec<BranchInfo> = ws.branches().map(|b| BranchInfo::of(&ws, b)).collect();
-                frames.push(branches_frame(&list));
-            }
+            let list: Vec<BranchInfo> = ws.branches().map(|b| BranchInfo::of(&ws, b)).collect();
+            frames.push(branches_frame(&list));
             if let Some(sub) = &mut self.sub
                 && let Some(b) = ws.branch(sub.branch)
             {
@@ -704,7 +817,7 @@ impl Connection {
             sub.editing_version = version;
             frames.push(editing);
         }
-        if !guest {
+        {
             // Under the order lock, so a list older than a frame already sent cannot
             // follow it.
             let _order = self.st.hub.todo_order.lock().await;
@@ -713,7 +826,7 @@ impl Connection {
                 frames.push(todos_frame(&todos));
             }
         }
-        if !guest && let Some(branch) = self.sub.as_ref().map(|s| s.branch) {
+        if let Some(branch) = self.sub.as_ref().map(|s| s.branch) {
             let _order = self.st.hub.suggestion_order.lock().await;
             if let Ok(list) = crate::suggestions::listed(&self.st, branch).await {
                 let version = self.st.hub.suggestions_version.load(Ordering::SeqCst);
@@ -724,5 +837,264 @@ impl Connection {
             }
         }
         frames
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use qoop_core::{EntityId, EntityKind, Fields, Op, Value as FieldValue, Workspace};
+    use tokio::sync::{RwLock, Semaphore, watch};
+
+    use super::*;
+    use crate::Clock;
+    use crate::app::AppState;
+    use crate::auth::Throttle;
+    use crate::config::Config;
+    use crate::store::{MemberRecord, MemoryStore};
+    use crate::tokens::RateLimit;
+
+    fn state() -> (Shared, BranchId) {
+        let (workspace, main) = Workspace::new();
+        let st = Arc::new(AppState {
+            config: Config::for_tests("."),
+            store: Arc::new(MemoryStore::new()),
+            workspace: RwLock::new(workspace),
+            hub: Hub::default(),
+            throttle: Throttle::default(),
+            tool_rate: RateLimit::default(),
+            clock: Clock::manual(0),
+            hashing: Semaphore::new(1),
+            dummy_hash: String::new(),
+            shutdown: Arc::new(watch::Sender::new(false)),
+        });
+        (st, main)
+    }
+
+    fn connection(st: &Shared, role: Role) -> Connection {
+        let member = MemberRecord {
+            id: MemberId::new(),
+            email: format!("{}@example.org", role.as_str()),
+            name: role.as_str().to_string(),
+            role,
+            color: String::new(),
+            password_hash: String::new(),
+            access_until: (role == Role::Guest).then_some(i64::MAX),
+            created_at: 0,
+        };
+        Connection::new(
+            st.clone(),
+            SignedIn {
+                member,
+                token_hash: String::new(),
+            },
+        )
+    }
+
+    /// Adds one Card to `branch`; returns the new head.
+    async fn change(st: &Shared, branch: BranchId) -> u64 {
+        let mut fields = Fields::new();
+        fields.insert("title".into(), FieldValue::Text("A".into()));
+        let op = Op::Create {
+            entity: EntityId(Uuid::new_v4()),
+            kind: EntityKind::Card,
+            fields,
+        };
+        let mut ws = st.workspace.write().await;
+        ws.record_all(branch, MemberId::new(), 0, vec![op])
+            .unwrap()
+            .seq
+    }
+
+    fn kinds(frames: &[Utf8Bytes]) -> Vec<String> {
+        frames
+            .iter()
+            .map(|f| {
+                let v: serde_json::Value = serde_json::from_str(f.as_str()).unwrap();
+                v["type"].as_str().unwrap().to_string()
+            })
+            .collect()
+    }
+
+    /// One event of every kind there is, all about `branch`, all newer than anything a
+    /// connection has seen; `seq` is what the `changes` one claims as the head.
+    fn every_event(branch: BranchId, seq: u64) -> Vec<Event> {
+        let frame = || Utf8Bytes::from(r#"{"type":"secret"}"#);
+        vec![
+            Event::Changes {
+                branch,
+                seq,
+                frame: frame(),
+            },
+            Event::Presence {
+                branch,
+                version: u64::MAX,
+                frame: frame(),
+            },
+            Event::Checkpoint {
+                branch,
+                frame: frame(),
+            },
+            Event::Branches { frame: frame() },
+            Event::Todos {
+                version: u64::MAX,
+                frame: frame(),
+            },
+            Event::Editing {
+                branch,
+                version: u64::MAX,
+                frame: frame(),
+            },
+            Event::Suggestions {
+                branch,
+                version: u64::MAX,
+                frame: frame(),
+            },
+            Event::Kick {
+                member: MemberId::new(),
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn no_event_but_new_changes_gives_a_guest_a_frame_and_that_one_is_a_refresh() {
+        let (st, main) = state();
+        let mut guest = connection(&st, Role::Guest);
+        // Before subscribing: nothing at all.
+        for ev in every_event(main, 5) {
+            assert_eq!(guest.on_event(ev), Ok(Vec::new()));
+        }
+        let frames = guest.subscribe(&main.0.to_string(), 0).await;
+        assert_eq!(kinds(&frames), ["subscribed"]);
+        // Subscribed: the frame that was broadcast is never forwarded, whatever it is.
+        let mut sent = Vec::new();
+        for ev in every_event(main, 5) {
+            sent.extend(guest.on_event(ev).unwrap());
+        }
+        assert_eq!(
+            sent,
+            vec![refresh_frame(main, 5)],
+            "one refresh, built here, and nothing that was broadcast"
+        );
+        // Changes it already knows of, and those of another Branch, are not news.
+        for ev in [
+            Event::Changes {
+                branch: main,
+                seq: 5,
+                frame: "x".into(),
+            },
+            Event::Changes {
+                branch: BranchId(Uuid::new_v4()),
+                seq: 99,
+                frame: "x".into(),
+            },
+        ] {
+            assert_eq!(guest.on_event(ev), Ok(Vec::new()));
+        }
+        assert_eq!(guest.refresh_owed, None);
+        // Being removed still closes the connection.
+        let me = guest.who.id();
+        assert_eq!(guest.on_event(Event::Kick { member: me }), Err(()));
+    }
+
+    #[tokio::test]
+    async fn refreshes_within_the_window_are_held_back_as_one_with_the_newest_head() {
+        let (st, main) = state();
+        let mut guest = connection(&st, Role::Guest);
+        guest.subscribe(&main.0.to_string(), 0).await;
+        assert_eq!(guest.refresh_at(), None);
+        let changes = |seq| Event::Changes {
+            branch: main,
+            seq,
+            frame: "x".into(),
+        };
+        assert_eq!(guest.on_event(changes(1)), Ok(vec![refresh_frame(main, 1)]));
+        let sent = guest.refresh_sent.unwrap();
+        for seq in 2..=4 {
+            assert_eq!(guest.on_event(changes(seq)), Ok(Vec::new()));
+        }
+        assert_eq!(guest.refresh_owed, Some(4));
+        assert_eq!(guest.refresh_at(), Some(sent + REFRESH_EVERY));
+        assert_eq!(guest.owed_refresh(), vec![refresh_frame(main, 4)]);
+        assert_eq!(guest.refresh_owed, None);
+        assert_eq!(guest.refresh_at(), None);
+        assert_eq!(guest.owed_refresh(), Vec::<Utf8Bytes>::new());
+    }
+
+    #[tokio::test]
+    async fn a_guest_is_not_in_presence_and_gets_one_refresh_when_behind() {
+        let (st, main) = state();
+        let head = change(&st, main).await;
+        let mut guest = connection(&st, Role::Guest);
+        let frames = guest.subscribe(&main.0.to_string(), 0).await;
+        assert_eq!(kinds(&frames), ["subscribed", "refresh"]);
+        assert_eq!(frames[1], refresh_frame(main, head));
+        assert!(st.hub.presence().counts.is_empty());
+        assert_eq!(st.hub.presence().version, 0);
+
+        let mut member = connection(&st, Role::Member);
+        let frames = member.subscribe(&main.0.to_string(), 0).await;
+        assert_eq!(
+            kinds(&frames),
+            ["subscribed", "changes", "presence", "editing"]
+        );
+        let (presence, _) = st.hub.current_presence(main);
+        assert_eq!(
+            presence,
+            presence_frame(main, &BTreeMap::from([(member.who.id(), 1)]))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lagged_guest_is_resynced_with_one_refresh_and_a_member_with_everything() {
+        let (st, main) = state();
+        let mut guest = connection(&st, Role::Guest);
+        let mut member = connection(&st, Role::Member);
+        guest.subscribe(&main.0.to_string(), 0).await;
+        member.subscribe(&main.0.to_string(), 0).await;
+        let mut idle_guest = connection(&st, Role::Guest);
+
+        // More is broadcast than a connection's queue holds, so the oldest is lost.
+        let mut events = st.hub.tx.subscribe();
+        let head = change(&st, main).await;
+        for _ in 0..CHANNEL_CAPACITY {
+            for ev in every_event(main, head) {
+                let _ = st.hub.tx.send(ev);
+            }
+        }
+        assert!(matches!(events.recv().await, Err(RecvError::Lagged(_))));
+
+        // What the connection loop does then: resync, and carry on with what is left.
+        let mut to_guest = guest.resync().await;
+        let mut to_idle = idle_guest.resync().await;
+        let to_member = member.resync().await;
+        while let Ok(ev) = events.try_recv() {
+            to_guest.extend(guest.on_event(ev.clone()).unwrap());
+            to_idle.extend(idle_guest.on_event(ev).unwrap());
+        }
+        assert_eq!(to_guest, vec![refresh_frame(main, head)]);
+        assert_eq!(guest.refresh_owed, None);
+        assert_eq!(to_idle, Vec::<Utf8Bytes>::new());
+        // Up to date again: another resync has nothing to say.
+        assert_eq!(guest.resync().await, Vec::<Utf8Bytes>::new());
+
+        assert_eq!(
+            kinds(&to_member),
+            [
+                "branches",
+                "changes",
+                "presence",
+                "editing",
+                "todos",
+                "suggestions"
+            ]
+        );
+
+        // A resync inside the window is held back like any other refresh.
+        let head = change(&st, main).await;
+        assert_eq!(guest.resync().await, Vec::<Utf8Bytes>::new());
+        assert_eq!(guest.refresh_owed, Some(head));
+        assert_eq!(guest.owed_refresh(), vec![refresh_frame(main, head)]);
     }
 }

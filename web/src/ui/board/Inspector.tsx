@@ -150,7 +150,7 @@ export function Inspector({ card, connections, cards, readOnly, onSelectCard, on
         <section className="qb-inspector__section">
           <h3 className="q-caps">Connections</h3>
           {rows.length === 0 ? (
-            <p className="q-hint">No Connections yet.</p>
+            <p className="q-hint">{readOnly ? 'No Connections.' : 'No Connections yet.'}</p>
           ) : (
             <ul className="qb-inspector__conns">
               {rows.map((r) => (

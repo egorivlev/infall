@@ -85,6 +85,11 @@ const view = (n: number) => screen.getByRole('group', { name: `Block ${n}. Press
 const editor = (n: number) => screen.getByRole<HTMLTextAreaElement>('textbox', { name: `Block ${n}, Markdown` })
 const blockIds = () => [...panel().querySelectorAll('[data-block]')].map((el) => el.getAttribute('data-block'))
 const flush = () => act(async () => {})
+/** "+ Add block" is a menu since M6: this opens the named one and chooses "Text". */
+const addText = (name: string) => {
+  fireEvent.click(screen.getByRole('button', { name }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Text' }))
+}
 const lastBatch = () => submit.mock.calls[submit.mock.calls.length - 1]![0]
 
 describe('Page panel: frame', () => {
@@ -311,7 +316,7 @@ describe('Page panel: Blocks', () => {
 
   it('adds a Block between two others and opens it; left empty, it is removed again without a toast', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Add block before block 2' }))
+    addText('Add block before block 2')
     expect(orderBetween).toHaveBeenCalledWith('1', '2')
     expect(submit).toHaveBeenCalledTimes(1)
     const added = lastBatch()[0] as { id: string }
@@ -329,7 +334,7 @@ describe('Page panel: Blocks', () => {
 
   it('adds a Block at the end, and at the start', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Add block at the end' }))
+    addText('Add block at the end')
     expect(orderBetween).toHaveBeenLastCalledWith('3', undefined)
     expect(lastBatch()).toEqual([{ fake: 'addBlock', id: expect.any(String), card: 'a', text: '', order: '4' }])
     const id = (lastBatch()[0] as { id: string }).id
@@ -338,7 +343,7 @@ describe('Page panel: Blocks', () => {
     expect(lastBatch()).toEqual([{ fake: 'setBlockText', block: id, text: 'A new last paragraph' }])
     expect(blockIds()).toEqual(['b1', 'b2', 'b3', id])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add block at the start' }))
+    addText('Add block at the start')
     expect(orderBetween).toHaveBeenLastCalledWith(undefined, '1')
     expect(lastBatch()).toEqual([{ fake: 'addBlock', id: expect.any(String), card: 'a', text: '', order: '0' }])
     expect(editor(1)).toHaveFocus()
@@ -346,13 +351,13 @@ describe('Page panel: Blocks', () => {
 
   it('a new Block cancelled with Esc is removed too; whitespace counts as empty', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Add block at the end' }))
+    addText('Add block at the end')
     const id = (lastBatch()[0] as { id: string }).id
     fireEvent.change(editor(4), { target: { value: 'typed, then cancelled' } })
     fireEvent.keyDown(editor(4), { key: 'Escape' })
     expect(lastBatch()).toEqual([ops.remove(id)])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add block at the end' }))
+    addText('Add block at the end')
     const id2 = (lastBatch()[0] as { id: string }).id
     fireEvent.change(editor(4), { target: { value: '  \n \n' } })
     fireEvent.blur(editor(4))
@@ -378,7 +383,7 @@ describe('Page panel: Blocks', () => {
     act(() => pageStore.setState({ blocks: [] }))
     open()
     expect(screen.getByText('This Page is empty.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '+ Add block' }))
+    addText('+ Add block')
     expect(orderBetween).toHaveBeenCalledWith(undefined, undefined)
     expect(lastBatch()).toEqual([{ fake: 'addBlock', id: expect.any(String), card: 'a', text: '', order: '1' }])
     expect(editor(1)).toHaveFocus()
@@ -503,7 +508,7 @@ describe('Page panel: the soft lock claim', () => {
 
   it('a new Block claims too; removing it again lets go', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Add block at the end' }))
+    addText('Add block at the end')
     expect(page.startEditing).toHaveBeenCalledTimes(1)
     fireEvent.blur(editor(4))
     act(() => void vi.advanceTimersByTime(RELEASE_GRACE_MS))
@@ -588,7 +593,7 @@ describe('Page panel: the soft lock claim', () => {
 
     it('a new Block opens once and is added once', () => {
       openStrict()
-      fireEvent.click(screen.getByRole('button', { name: 'Add block at the end' }))
+      addText('Add block at the end')
       expect(submit).toHaveBeenCalledTimes(1)
       expect(blockIds()).toHaveLength(4)
       expect(editor(4)).toHaveFocus()

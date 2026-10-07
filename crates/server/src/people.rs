@@ -303,7 +303,14 @@ pub async fn lookup_invite(
     ApiQuery(q): ApiQuery<LookupQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let invite = pending_invite(&st, &q.token).await?;
-    Ok(Json(json!({ "email": invite.email, "role": invite.role })))
+    let mut body = json!({ "email": invite.email, "role": invite.role });
+    // Until when a Guest would have access, so the invite screen can say so.
+    if invite.role == Role::Guest
+        && let Some(until) = invite.access_until
+    {
+        body["access_until"] = json!(until);
+    }
+    Ok(Json(body))
 }
 
 #[derive(Deserialize)]

@@ -82,7 +82,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
         )}
       </section>
       <footer className="q-rail__foot">
-        <SyncStatus status={status} />
+        <SyncStatus status={status} readOnly={member.role === 'guest'} />
         <div className="q-rail__host">{window.location.host}</div>
       </footer>
     </aside>

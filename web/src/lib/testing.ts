@@ -101,6 +101,24 @@ function fail(status: number, code: string, message = 'nope', detail: unknown = 
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
 
+// What a Guest's Board holds (api.md §13): live entities whose every reference is live too. No tombstones.
+export function visibleEntities(entities: Entities): Entities {
+  const live = (id: unknown, kind: string) => typeof id === 'string' && entities[id]?.kind === kind && !entities[id]!.deleted
+  const refTo = (e: Entities[string], field: string) => {
+    const v = e.fields[field]
+    return typeof v === 'object' && 'Ref' in v ? v.Ref : undefined
+  }
+  const out: Entities = {}
+  for (const [id, e] of Object.entries(entities)) {
+    if (e.deleted) continue
+    if (e.kind === 'Connection' && !(live(refTo(e, 'from'), 'Card') && live(refTo(e, 'to'), 'Card'))) continue
+    if (e.kind === 'Block' && !live(refTo(e, 'card'), 'Card')) continue
+    if (e.kind === 'Attachment' && !(live(refTo(e, 'card'), 'Card') && live(refTo(e, 'source'), 'Source'))) continue
+    out[id] = e
+  }
+  return out
+}
+
 const sameField = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 // The ops that turn `current` into `target` (core `restore`): later entities become deleted, not absent.
@@ -127,7 +145,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
 /**
  * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
  * M3 (Merge), M4 (To-dos, and the frames about who edits a Page), M5 (access tokens, Suggestions — which only
- * `suggest` makes, as the tool layer would). It does not compute a Merge: tests script what a
+ * `suggest` makes, as the tool layer would), M6 (a Guest gets the Board without deleted entities, 403 on Changes,
+ * and `refreshFrame`). It does not compute a Merge: tests script what a
  * plan holds with `mergeScript`. It has no live connections either: tests hand the frames it builds to a FakeSocket.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
  * unless told otherwise; `all` holds every Branch.
@@ -141,6 +160,10 @@ export class FakeServer {
   responseGate: Promise<void> | null = null // when set, POST /ops waits for it after applying, before answering
   failNext: { status: number; code: string } | null = null
   failChanges = false
+  /** When set, `GET …/board` (without `at`) waits for it before answering. */
+  boardGate: Promise<void> | null = null
+  /** How many of the next `GET …/board` requests (without `at`) fail with a 500. */
+  failBoard = 0
   members: Member[] = [ME, OTHER]
   actor: Member = ME // who the requests come from
   now = 0 // the `at` given to new Changes, Checkpoints and Branches
@@ -220,6 +243,12 @@ export class FakeServer {
   frameFor(changes: Change[], key?: string): ServerFrame {
     const b = this.find(key)
     return { type: 'changes', branch: b.info.id, seq: b.log.length, changes }
+  }
+
+  /** The frame a Guest gets when the Branch gained Changes: fetch the Board again. */
+  refreshFrame(key?: string): ServerFrame {
+    const b = this.find(key)
+    return { type: 'refresh', branch: b.info.id, seq: b.log.length }
   }
 
   // A change made by someone else; returns the frame the server would broadcast.
@@ -592,13 +621,21 @@ export class FakeServer {
     const id = b.info.id
     if (guest && b.info.name !== 'main') return this.respond(forbidden)
     if (what === 'board' && method === 'GET') {
-      if (!query.has('at')) return this.json(200, { branch: id, seq: b.log.length, entities: b.entities })
+      if (!query.has('at')) {
+        if (this.boardGate) await this.boardGate
+        if (this.failBoard > 0) {
+          this.failBoard--
+          return this.respond(fail(500, 'internal', 'x'))
+        }
+        return this.json(200, { branch: id, seq: b.log.length, entities: guest ? visibleEntities(b.entities) : b.entities })
+      }
       if (guest) return this.respond(forbidden)
       const at = Number(query.get('at'))
       if (!(at >= 0 && at <= b.log.length)) return this.respond(fail(400, 'bad_request'))
       return this.json(200, { branch: id, seq: at, entities: this.boardAt(b, at) })
     }
     if (what === 'changes' && method === 'GET') {
+      if (guest) return this.respond(forbidden)
       if (this.failChanges) return this.respond(fail(500, 'internal', 'x'))
       return this.json(200, { seq: b.log.length, changes: b.log.slice(Number(query.get('after') ?? 0)) })
     }

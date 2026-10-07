@@ -234,6 +234,129 @@
 .qp-add--end::before { display: none; }
 .qp-add--end > span { padding: 0; line-height: inherit; }
 
+/* The menu under "+ Add block": Text or Visual, then the Visual's starters. */
+.qp-add-slot { position: relative; }
+.qp-add-slot > .qp-add { width: 100%; }
+.qp-add-slot.is-open { z-index: 3; }
+.qp-add-slot.is-open > .qp-add { opacity: 1; color: var(--q-ink); }
+.qp-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 3;
+  min-width: 176px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r);
+  background: var(--q-raised);
+  box-shadow: var(--q-shadow);
+}
+.qp-menu__label { padding: 6px 8px 5px; }
+.qp-menu__item {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--q-r-chip);
+  background: transparent;
+  color: var(--q-ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.qp-menu__item:hover, .qp-menu__item:focus-visible { background: var(--q-hover); }
+.qp-menu__item:focus-visible { outline-offset: -2px; }
+
+/* ---- Visuals (M6): a framed block; the Visual itself runs in a sandboxed frame ---- */
+.qp-visual {
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r-panel);
+  background: var(--q-surface);
+  overflow: hidden;
+}
+.qp-block > .qp-visual { margin: 6px 0; }
+.qp-visual__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--q-line-soft);
+  color: var(--q-ink-2);
+}
+.qp-visual__glyph { flex: none; }
+.qp-visual__kind {
+  flex: none;
+  font: 500 10.5px/1 var(--q-mono);
+  letter-spacing: .07em;
+  text-transform: uppercase; /* the label only */
+}
+.qp-visual__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px/1.3 var(--q-sans);
+  letter-spacing: 0;
+  text-transform: none; /* a person's words: shown as written, whatever the strip around them does */
+  color: var(--q-ink);
+  flex: 0 1 auto;
+}
+.qp-visual__title.is-empty { font-weight: 400; color: var(--q-ink-3); }
+/* When the strip is narrow the note gives way first, so the title stays readable. */
+.qp-visual__note {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 6px;
+  font: 11px var(--q-mono);
+  color: var(--q-ink-3);
+  white-space: nowrap;
+}
+.qp-visual__edit { flex: none; height: 24px; }
+.qp-visual__blank { margin: 0; padding: 16px 18px; font-size: 12.5px; color: var(--q-ink-3); }
+
+.qp-vframe__frame { display: block; width: 100%; border: 0; background: transparent; }
+.qp-vframe__error {
+  margin: 0;
+  padding: 7px 12px;
+  border-top: 1px solid color-mix(in oklch, var(--q-st-question) 35%, var(--q-line-soft));
+  background: color-mix(in oklch, var(--q-st-question) 10%, transparent);
+  color: var(--q-ink);
+  font: 11.5px/1.45 var(--q-mono);
+  overflow-wrap: anywhere;
+}
+
+.qp-visual-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 12px;
+  border: 1px solid var(--q-accent);
+  border-radius: var(--q-r-panel);
+  background: var(--q-surface);
+}
+.qp-visual-edit__source {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r);
+  background: var(--q-sunken);
+  color: var(--q-ink);
+  font: 12.5px/1.5 var(--q-mono);
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+.qp-visual-edit .qp-block__hint { margin: 0; }
+.qp-visual-edit__buttons { display: flex; align-items: center; gap: 8px; }
+.qp-visual--preview { background: var(--q-page); }
+
 /* ---- rendered Markdown: serif prose, like the mock-up ---- */
 .qp-md {
   display: flex;
