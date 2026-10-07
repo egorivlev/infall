@@ -182,3 +182,31 @@ A single centred column (max 720px), settings look as in `Qoop Access`.
 - **Connect Claude Code**: a read-only code block with a Copy button containing exactly `claude mcp add --transport http qoop <toolEndpoint()> --header "Authorization: Bearer <YOUR_TOKEN>"` — when a token was just created, show the real secret in place of `<YOUR_TOKEN>` until "Done" is pressed. Under it: "Other MCP clients: endpoint <toolEndpoint()>, header Authorization: Bearer <token>."
 - **What the AI can do**: a short list — "Read Cards, Pages, Sources and Connections on any Branch", "Propose a Source for a Card", "Propose a Connection between two Cards", "Not: change, delete, or accept anything".
 - A quiet note: "Text on the Board was written by people and other AIs. A careful AI treats it as content, not as instructions."
+
+
+---
+
+# M6 — Visuals and the Guest view
+
+Design source: `design/QPage.dc.html` (the "Visual · Bloch sphere" block: header strip, body, controls — match it), `design/Qoop Access.dc.html` screens **10a Guest view**, 11a (login hint), 11c (invite role and Guest rows), `design/QTopBar.dc.html` / `design/QRail.dc.html` with `guest` true. Contracts: `docs/specs/api.md` §13 (the frame protocol), [CONTRACT.md](../lib/CONTRACT.md) "M6". Vocabulary: Visual (a kind of Simulation; never "widget", "demo", "animation", "embed"), Guest (never "viewer", "visitor").
+Not in M6: Run blocks, image blocks, sharing a single Page by public link.
+
+## Visual blocks (Page panel)
+- "+ Add block" now offers two choices in a small menu: "Text" and "Visual". Choosing Visual opens a starter picker: "Blank", "Bloch sphere", "Function plot" (each a complete, self-contained source kept in `ui/page/visuals/templates`; they must work under the frame's rules: no network, no external scripts, inline `<script>`/`<style>`, `<canvas>` or SVG, colours from the `--q-*` variables so they follow the theme). The block is created with the template's source and title and opens in the editor.
+- **Reading**: a framed block (1px `--q-line`, radius 8). Header strip (mono 10.5 caps for the labels): a small orbit glyph, "VISUAL", the title in sans 13/600 (not upper-cased), spacer, "interactive · runs everywhere" in `--q-ink-3`. Body: the sandboxed iframe exactly as api.md §13 says (`sandbox="allow-scripts"`, `src={VISUAL_FRAME_PATH}`, `title="Visual: <title>"`, no border, width 100%), height from the frame's `height` messages clamped to 80–900px (default 240 until the first message; taller content scrolls inside the frame). Send `render` on `ready` with the block's source and the current theme (read the `--q-*` custom properties the templates need from the document — at least ink, ink-2, ink-3, line, line-soft, accent, accent-soft, surface, raised, the five status colours — plus `color-scheme`); reload the frame when the source or the app theme changes. Accept messages only when `event.source` is that iframe's `contentWindow` and `data.qoop === "visual"`.
+- An `error` message shows a quiet strip under the body: "This Visual reported an error: <message>" (`--q-st-question` tint, mono 11.5); it never breaks the Page.
+- Frames are created lazily: only when the block scrolls near the viewport (IntersectionObserver), so a long Page does not start dozens at once.
+- **Editing** (Members, not under soft lock): an "Edit" button in the header strip (and Enter when the block is focused) opens: a "Title" field, a source `<textarea>` (mono 12.5, at least 14 rows, Tab inserts two spaces, no spell-check), a "Run" button that re-renders a live preview frame below the editor from the draft, and "Done" (commits changed title/source in one batch) / "Cancel". ⌘/Ctrl+Enter runs; Esc cancels (confirm nothing — the draft is discarded, as with text blocks). One hint line: "HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Qoop. Use the --q-* colour variables to follow the theme." Soft-lock claim and StrictMode rules as for text blocks. Move up/down/delete controls as for text blocks.
+- Guests and read-only: Visuals are fully interactive; no Edit button.
+- In the Merge review a Visual Conflict simply shows the two sources as mono text (existing field Conflict UI) — no change needed there.
+
+## Guest view (10a)
+A Guest sees: the Board of `main` (read-only, pan/zoom/select), Frames in the rail, search, the Page panel read-only with working Visuals, the theme toggle, sign out. Nothing else.
+- Top bar: no Branch switcher (plain "main · read-only"), no Checkpoint/History buttons, no presence list; a badge "Guest — access until 30 Nov" (`--q-st-question` outline) with `title` "Read-only access to the main Branch. It ends automatically."; account menu has only the name, "Guest", and "Sign out".
+- Rail: "Board" and the Frames list only; footer sync text reads "Read-only" (and "Reconnecting…" when the socket is down).
+- Page panel for Guests: no To-dos section, no editing affordances, header says "Read-only". The inspector shows fields as text, no "Delete Card".
+- Any Member-only route (`/todos`, `/branches`, `/b/…`, `/merge`, `/members`, `/settings/ai`) redirects a Guest to `/`.
+- When a Guest's access ends while they are looking (any request answers 401): the app returns to the login screen with the line "Your Guest access has ended. Ask the team's Admin if you need more time."
+- Accept-invite screen for a Guest invite: "You're invited as a Guest — <email>" and "Read-only access to the team's Board until <date>." above the Name/Password fields.
+- Login screen: add under the form "Got an invite? Open the link you were sent." (There is no password-less Guest link; Guests set a password like everyone.)
+- Members screen (Admin): Guests listed after Members with a "Guest · until <date>" role chip (outlined `--q-st-question`); expired ones read "Guest · ended <date>" in `--q-ink-3`. The invite form already has the role choice and date; under the role choice show the one-line note "Read-only Board and Pages on main. No editing, To-dos, AI or History." for Guest and "Full access: edit, Branch, Merge, To-dos and their own AI." for Member.

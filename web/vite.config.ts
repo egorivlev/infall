@@ -12,6 +12,8 @@ export default defineConfig({
       '/api': { target: 'http://127.0.0.1:8787', changeOrigin: false, ws: true },
       // The AI tool endpoint, so the command shown on the AI access screen works in development too.
       '/mcp': { target: 'http://127.0.0.1:8787', changeOrigin: false },
+      // The sandboxed host page for Visuals: it must come from the server, with the server's headers.
+      '/visual-frame': { target: 'http://127.0.0.1:8787', changeOrigin: false },
     },
   },
   test: {

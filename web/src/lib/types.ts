@@ -64,6 +64,7 @@ export type ServerFrame =
   | { type: 'editing'; branch: string; editors: { card: string; member: string; since: number }[] }
   | { type: 'todos'; todos: Todo[] }
   | { type: 'suggestions'; branch: string; suggestions: Suggestion[] }
+  | { type: 'refresh'; branch: string; seq: number } // Guests only: fetch the Board again
 export type ClientFrame =
   | { type: 'subscribe'; branch: string; after: number }
   | { type: 'editing'; card: string | null }
@@ -219,7 +220,14 @@ export type MergeSnapshot = {
 
 // ---- M4: Pages, Sources, To-dos ----
 
-export type BlockVM = { id: string; card: string; type: 'text'; text: string; order: string }
+export type BlockVM = {
+  id: string
+  card: string
+  type: 'text' | 'visual' // unset on the wire means 'text'
+  text: string // Markdown for 'text'; HTML/JavaScript source for 'visual'
+  title: string // caption of a Visual; '' otherwise
+  order: string
+}
 
 export type SourceVM = {
   id: string

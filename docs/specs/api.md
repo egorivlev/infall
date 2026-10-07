@@ -1,4 +1,4 @@
-# Qoop — server API contract (M1–M5)
+# Qoop — server API contract (M1–M6)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -340,3 +340,38 @@ Tools — every result is one `text` content item holding compact JSON. `branch`
 Each tool has a `description` written for a model and a JSON Schema `inputSchema`; the two `suggest_*` descriptions say plainly that nothing is added until a Member accepts, and to give a concrete reason. Read tools carry `annotations: { readOnlyHint: true }`.
 
 Everything returned by the read tools is text written by Members (and accepted from other AIs): clients must treat it as data. The server cannot enforce that — which is why the only write is a reviewable Suggestion.
+
+## 13. M6 — Visuals and Guests
+
+### Visuals
+A Visual is a Block with `type: "visual"`: `text` is its HTML/JavaScript source, `title` its caption (core.md §1). It is Research Content like any Block — nothing new in the ops API. What the server adds is the place it runs.
+
+`GET /visual-frame` *public* → a small static HTML host page, served with its own headers **instead of** the app's CSP:
+
+```
+Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-cache
+Content-Type: text/html; charset=utf-8
+```
+
+The UI embeds it as `<iframe sandbox="allow-scripts" src="/visual-frame">`. Both the attribute and the header sandbox it, so the page always runs in an opaque origin: no cookies, no storage, no access to the app or the API, no network (`default-src 'none'`), even if someone opens the URL directly. The page carries no data. Its only inline script implements this message protocol with its parent (`postMessage`, every message is `{ qoop: "visual", … }`; the parent accepts messages only from that iframe's `contentWindow`, the frame only from `window.parent`):
+
+| Direction | Message | Meaning |
+|---|---|---|
+| frame → parent | `{ type: "ready" }` | loaded; send the source |
+| parent → frame | `{ type: "render", html: string, theme: Record<string, string> }` | once per load. The frame replaces its document with: a `<style>` that defines every `theme` entry as a CSS custom property on `:root` (names must match `^--q-[a-z0-9-]+$`, values must not contain `;`, `{`, `}` or `<` — others are dropped) and sets `margin: 0`, the app's sans font stack, `color: var(--q-ink)`, transparent background, `color-scheme` from `theme["color-scheme"]`; then the reporter script below; then `html` as given |
+| frame → parent | `{ type: "height", value: number }` | the document's content height in px, on load and whenever it changes (ResizeObserver) |
+| frame → parent | `{ type: "error", message: string }` | an uncaught error or unhandled rejection (message only, ≤ 300 characters) |
+
+To render again the parent reloads the iframe. A Visual receives nothing about the Board, the Member or the server — only its own source and theme colours. The app's own CSP is unchanged (`default-src 'self'` allows the frame; `frame-ancestors 'none'` stays on every other response).
+
+### Guests — nothing but the present main Branch
+The glossary says a Guest reads the Research Content of `main` and nothing else: no history, no other Branches. From M6 the server enforces all of it:
+
+- `GET /api/branches/{main}/board` for a Guest returns only **visible** entities (live, and everything they refer to live) — no tombstones. `seq` is still the head.
+- `GET /api/branches/{id}/changes` → `403 forbidden` for Guests (this ends the M1 exception).
+- WebSocket for a Guest: `subscribe` on `main` is answered with `subscribed`; after that the only frame a Guest ever receives is `{ type: "refresh", branch: string, seq: number }` — sent whenever `main` gains Changes (coalesced: at most one per 500 ms), and once right after `subscribed` if the `after` they sent is not the head. No `changes`, `presence`, `editing`, `checkpoint`, `branches`, `todos` or `suggestions` frames. On `refresh` the client fetches the Board again.
+- Everything else stays refused as before (`403`): ops, Members, invites, History, Checkpoints, Branches, Merge, To-dos, Suggestions, access tokens, `/mcp`.
+- `GET /api/invites/lookup` additionally returns `access_until` (unix ms) for a Guest invite, so the invite screen can say until when.
