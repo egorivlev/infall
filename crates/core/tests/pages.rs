@@ -215,3 +215,35 @@ fn a_visual_is_a_block_with_source_and_a_title() {
         Err(ApplyError::Schema(SchemaError::UnknownField { .. }))
     ));
 }
+
+#[test]
+fn a_pinned_block_carries_who_pinned_it_and_whether_it_was_reviewed() {
+    let mut board = Board::new();
+    let (a, create_a) = card("A");
+    board.apply(&create_a).unwrap();
+    let (b, create_b) = op_create(
+        EntityKind::Block,
+        &[
+            ("card", Value::Ref(a)),
+            ("text", text("The plateau looks like limited expressivity.")),
+            ("order", text("a0")),
+            ("ai_model", text("claude-sonnet")),
+            ("ai_pinned_by", text("member-1")),
+            ("ai_pinned_at", Value::Float(1_700_000_000_000.0)),
+        ],
+    );
+    board.apply(&create_b).unwrap();
+    assert_eq!(board.get(b).unwrap().get("ai_reviewed_by"), &Value::Null);
+    board
+        .apply(&set(b, "ai_reviewed_by", text("member-2")))
+        .unwrap();
+    assert!(matches!(
+        board.apply(&set(b, "ai_pinned_at", text("yesterday"))),
+        Err(ApplyError::Schema(SchemaError::WrongType { .. }))
+    ));
+    // Only Blocks carry these.
+    assert!(matches!(
+        board.apply(&set(a, "ai_model", text("x"))),
+        Err(ApplyError::Schema(SchemaError::UnknownField { .. }))
+    ));
+}

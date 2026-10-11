@@ -100,6 +100,10 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
         (Connection, "label" | "kind") => Some((Content, Type::Text)),
         (Block, "card") => Some((Content, Type::Ref)),
         (Block, "type" | "text" | "title") => Some((Content, Type::Text)),
+        // Set on a Block pinned from an AI Conversation: which model, who pinned it and when,
+        // and who reviewed it (unset = not reviewed). Member ids are held as text.
+        (Block, "ai_model" | "ai_pinned_by" | "ai_reviewed_by") => Some((Content, Type::Text)),
+        (Block, "ai_pinned_at") => Some((Content, Type::Float)),
         // Where a Block sits in its Page is layout: on a Merge the target's order wins.
         (Block, "order") => Some((Layout, Type::Text)),
         (Source, "url" | "doi" | "title" | "authors" | "year" | "note") => {
