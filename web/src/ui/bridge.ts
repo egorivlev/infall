@@ -75,3 +75,25 @@ export const suggestionsPanel = {
     useSuggestionsPanel.setState({ preview: p })
   },
 }
+
+
+// ---- M7: the AI sidebar (the top bar toggles it; the shell shows it at the right edge). ----
+type AiPanelState = { open: boolean }
+export const useAiPanel = create<AiPanelState>(() => ({ open: false }))
+export const aiPanel = {
+  toggle() {
+    useAiPanel.setState((s) => ({ open: !s.open }))
+  },
+  close() {
+    useAiPanel.setState({ open: false })
+  },
+}
+
+/** What the Member is looking at on the Board, published by the Board so the sidebar can follow it. */
+type BoardFocusState = { card: { id: string; title: string } | null }
+export const useBoardFocus = create<BoardFocusState>(() => ({ card: null }))
+export const boardFocus = {
+  set(card: { id: string; title: string } | null) {
+    useBoardFocus.setState({ card })
+  },
+}

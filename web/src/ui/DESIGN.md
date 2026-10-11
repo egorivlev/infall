@@ -210,3 +210,39 @@ A Guest sees: the Board of `main` (read-only, pan/zoom/select), Frames in the ra
 - Accept-invite screen for a Guest invite: "You're invited as a Guest — <email>" and "Read-only access to the team's Board until <date>." above the Name/Password fields.
 - Login screen: add under the form "Got an invite? Open the link you were sent." (There is no password-less Guest link; Guests set a password like everyone.)
 - Members screen (Admin): Guests listed after Members with a "Guest · until <date>" role chip (outlined `--q-st-question`); expired ones read "Guest · ended <date>" in `--q-ink-3`. The invite form already has the role choice and date; under the role choice show the one-line note "Read-only Board and Pages on main. No editing, To-dos, AI or History." for Guest and "Full access: edit, Branch, Merge, To-dos and their own AI." for Member.
+
+
+---
+
+# M7 — the AI sidebar, Pin, and AI settings
+
+Design source: `design/Qoop Board.dc.html` screens **4a AI sidebar conversation** and **4b AI sidebar empty** (match them: 376px column, header, privacy line, messages, scope chip, composer), `design/QPage.dc.html` (the "AI-GENERATED" pinned block), `design/Qoop Access.dc.html` screen 11b (the AI part of Member settings), `design/QTopBar.dc.html` with `ai` true (the top-bar button). Contracts: [CONTRACT.md](../lib/CONTRACT.md) "M7", `docs/specs/desktop.md`. Vocabulary: Conversation (never "chat", "thread", "session"), Pin, AI; "Claude Code" and "OpenRouter" are product names.
+
+## Top bar and layout
+- A top-bar button "AI" (spark icon, `aria-pressed`) toggles `aiPanel` (`ui/bridge`); not for Guests. When open, the shell grid gains a 376px right column for the sidebar on **every** screen (Board, To-dos, Branches…); the work area shrinks. Below 1100px window width the sidebar overlays the work area instead of shrinking it.
+- The Board publishes what is selected through `boardFocus.set(...)` (one selected Card, or the Card whose Page is open; otherwise null).
+
+## Sidebar (4a)
+- Header: "AI", then what answers — "Claude Code" (+ version in `title`) or the OpenRouter model name; "+" (New Conversation); a Conversations menu (list by title and date, newest first; each with a delete button; confirm delete inline); "⇥" collapses the sidebar.
+- Under the header, always: "**Private** — only you can see this Conversation. Pin copies an answer into a Page."
+- Messages: the Member's messages as right-aligned bubbles (`--q-raised`), with a small chip of what they were looking at when it differs from the previous message; answers as plain flowing Markdown (reuse the Page's Markdown/KaTeX renderer — import it from `ui/page`, do not copy it; links open in a new tab; no raw HTML). While streaming: a quiet caret and a "Stop" button; used tools as a mono 10.5 line "read: list_cards, get_card" / "proposed a Suggestion" (when a `suggest_*` tool ran; link "Open Suggestions" → `suggestionsPanel.open()` after going to the Board). `error`: the sentence in `--q-st-question` and "Try again" (re-sends the same user message). `stopped`: "Stopped." in `--q-ink-3`.
+- Under each finished answer: "Pin to Page" and "Copy". Pin targets the scoped Card: with a Card in scope the button reads "Pin to Page · <Card title>" and calls `ai.pin`; afterwards it shows "✓ Pinned to Page · <Card title>" (a button that opens that Page). With no Card in scope it is disabled with `title="Select a Card to pin this to its Page"`. An answer may be pinned to several Cards.
+- Composer (bottom): the scope chip — "Card: <title> ✕" with the note "follows your selection" (✕ switches to the Board scope until the selection changes), or "Board: <branch>"; a textarea "Ask about Card: <title>…" / "Ask about Board: <branch>…"; hint "⏎ send · ⇧⏎ new line". Disabled while an answer streams (except Stop). The draft survives closing and reopening the sidebar (memory only).
+- Empty Conversation: three quiet starter prompts as buttons, depending on scope ("What is missing from this Page?", "Which Sources should this Card cite?", "What should connect to this Card?" / "Summarise the state of this Board", "Which Cards look related but are not connected?", "Where are the open questions?").
+
+## No AI set up (4b)
+When `useAi().setup.provider === 'none'` the body shows, by `reason`:
+- `desktop_no_claude`: serif "AI isn't set up on this computer", then "This sidebar runs on your own Claude subscription through Claude Code. Install Claude Code, sign in to it once in a terminal, then press Check again." + button "Check again" (`ai.refresh()`), and the line "Or add an OpenRouter key in AI settings." (link).
+- `browser_no_key` / `no_model`: serif "AI isn't set up for you", then "Qoop doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser, add an OpenRouter key in AI settings." + link "Open AI settings"; for `no_model`: "Choose a model in AI settings."
+- `server_off`: "…In the browser it needs an OpenRouter key, which this server is not set up to store. Ask your Admin, or use the desktop app."
+- Always the line "Conversations are private. Other Members only see answers you Pin."
+- The composer is shown disabled with "Set up AI to ask about …".
+
+## Pinned blocks (Page)
+A Block with `ai` set renders as in `QPage`: a bordered block with a header strip — chip "AI-GENERATED" (mono caps, dashed border), the model, spacer, "Pinned by <Name> · <date>"; the Markdown body in a `<blockquote>`-like inset; footer line: "Not reviewed by a Member." with a button "Mark reviewed" (any Member; `ops.markReviewed(block, me.id)`), or "Reviewed by <Name>." once set. It can be moved and deleted like any block; editing its text is allowed and keeps the AI marking (the header then adds "· edited"? — no: keep it simple, no extra state). Guests see it read-only.
+
+## AI settings (the `/settings/ai` screen gains a section, above "Access tokens")
+- "**AI sidebar**" card. First line, by environment: in the desktop app "This app runs the sidebar on your own Claude subscription through Claude Code — nothing to set here." + status line "Claude Code <version> found" / "Claude Code not found on this computer" (+ "Check again"); in a browser "In the desktop app the sidebar runs on your own Claude subscription. In the browser it needs an OpenRouter key."
+- "OpenRouter (optional)": if `enabled` is false: "This server is not set up to store keys. Ask your Admin." Otherwise: the key as "••••<last4> · added <date>" with "Replace" and "Remove" (confirm), or a password-type field "OpenRouter key" + "Add key"; then "Model": a `<select>` filled from `ai.models()` (with a text filter above it when the list is long; shows the current id even if the list fails to load) — changing it calls `ai.setModel`.
+- Small print: "Your key is stored encrypted on <host> and is never shown again. The server sends your question, and what the AI reads through Qoop's tools, to OpenRouter. Conversations are kept only on this device."
+- The key field is never pre-filled, never logged, cleared after submit; failures in plain words.

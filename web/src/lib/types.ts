@@ -227,6 +227,7 @@ export type BlockVM = {
   text: string // Markdown for 'text'; HTML/JavaScript source for 'visual'
   title: string // caption of a Visual; '' otherwise
   order: string
+  ai?: { model: string; pinnedBy: string; pinnedAt: number; reviewedBy?: string } // set when pinned from an AI Conversation (M7)
 }
 
 export type SourceVM = {
@@ -292,4 +293,62 @@ export type SuggestionVM = {
   cards: string[] // ids of the Cards involved that are live on the open Board
   stale: boolean // a Card it needs is not live on this Branch any more: cannot be accepted
   existingSource?: string // Source id already on this Branch with the same DOI/URL: accepting attaches it
+}
+
+// ---- M7: the AI sidebar ----
+
+export type AiEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string }
+  | { type: 'done'; model?: string; session?: string }
+  | { type: 'error'; message: string }
+
+/** The bridge the desktop app puts on `window.qoopDesktop` (docs/specs/desktop.md). Absent in a browser. */
+export type QoopDesktop = {
+  version: string
+  claude: {
+    status(): Promise<{ installed: boolean; version?: string }>
+    send(
+      request: { id: string; prompt: string; system: string; resume?: string; tools: { url: string; token: string } },
+      onEvent: (event: AiEvent) => void,
+    ): Promise<void>
+    cancel(id: string): Promise<void>
+  }
+}
+
+export type AiModel = { id: string; name: string; context_length?: number }
+
+/** Which AI the sidebar would use right now, and why not if none. */
+export type AiSetup =
+  | { provider: 'claude-code'; label: string; version?: string } // desktop app, `claude` installed
+  | { provider: 'openrouter'; label: string; model: string } // a key and a model are set
+  | {
+      provider: 'none'
+      reason: 'loading' | 'guest' | 'desktop_no_claude' | 'browser_no_key' | 'no_model' | 'server_off'
+      desktop: boolean // running inside the desktop app
+      openrouter: { enabled: boolean; key?: { last4: string; added_at: number }; model?: string }
+    }
+
+export type AiScope = { branch: string; branchName: string; card?: { id: string; title: string } }
+
+export type AiMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  text: string // Markdown; grows while streaming
+  at: number
+  status: 'done' | 'streaming' | 'error' | 'stopped'
+  error?: string // plain sentence when status is 'error'
+  tools?: string[] // names of Qoop tools the AI used in this answer, in order
+  model?: string // what answered (assistant messages)
+  scope?: AiScope // what the Member was looking at when they asked (user messages)
+  pinned?: { card: string; cardTitle: string; block: string }[] // where this answer was pinned
+}
+
+export type AiConversation = { id: string; title: string; createdAt: number; updatedAt: number; messages: AiMessage[] }
+
+export type AiSnapshot = {
+  setup: AiSetup
+  conversations: { id: string; title: string; updatedAt: number }[] // newest first; this Member, this device
+  current: AiConversation | null
+  busy: boolean // an answer is streaming
 }
