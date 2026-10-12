@@ -10,20 +10,21 @@ use axum::http::header::{
 };
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use qoop_core::Workspace;
 use serde_json::json;
 use tokio::sync::{RwLock, Semaphore, watch};
 use tower::ServiceExt;
 use tower_http::services::{ServeDir, ServeFile};
 
+use crate::ai::{self, AiState};
 use crate::auth::{self, Throttle};
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
 use crate::tokens::RateLimit;
-use crate::{Clock, boards, history, mcp, merges, people, suggestions, todos, tokens};
+use crate::{Clock, boards, chat, history, mcp, merges, people, suggestions, todos, tokens};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -52,6 +53,8 @@ pub struct AppState {
     pub throttle: Throttle,
     /// Requests per access token on the tool endpoint.
     pub tool_rate: RateLimit,
+    /// The OpenRouter path of the AI sidebar: its HTTP client, turn limit and model list.
+    pub ai: AiState,
     pub clock: Clock,
     /// Limits concurrent Argon2 work (each run holds ~19 MiB).
     pub hashing: Semaphore,
@@ -135,6 +138,11 @@ pub fn router(st: Shared) -> Router {
         .route("/suggestions/{id}/accept", post(suggestions::accept))
         .route("/suggestions/{id}/reject", post(suggestions::reject))
         .route("/suggestions/{id}/reopen", post(suggestions::reopen))
+        .route("/ai/status", get(ai::get_status))
+        .route("/ai/key", put(ai::put_key).delete(ai::delete_key))
+        .route("/ai/model", put(ai::put_model))
+        .route("/ai/models", get(ai::get_models))
+        .route("/ai/chat", post(chat::chat))
         .route("/ws", get(live::ws_handler))
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_not_found)

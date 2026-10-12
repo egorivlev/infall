@@ -37,3 +37,32 @@
 .q-command__code { flex: 1; min-width: 0; margin: 0; padding: 5px 4px 8px; overflow-x: auto; white-space: pre; font: 12.5px/1.5 var(--q-mono); color: var(--q-ink); border-radius: var(--q-r-chip); }
 .q-command__code code { font: inherit; }
 .q-command__copy { flex: none; background: var(--q-surface); }
+
+/* ---- AI sidebar (M7): what answers on this device, the OpenRouter key and model ---- */
+.q-ai__status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--q-s2) var(--q-s3); }
+.q-ai__found { font-size: 13px; line-height: 1.5; color: var(--q-ink-2); }
+.q-ai__found.is-found { color: var(--q-ink); }
+.q-ai__found .q-mono { font-size: 12.5px; }
+.q-ai__or { min-width: 0; display: flex; flex-direction: column; gap: var(--q-s3); padding-top: 14px; border-top: 1px solid var(--q-line-soft); }
+.q-ai__sub { margin: 0; font: 600 13px/1.4 var(--q-sans); color: var(--q-ink); }
+.q-ai__sub:focus-visible { outline-offset: 4px; }
+.q-ai__optional { font-weight: 400; color: var(--q-ink-3); }
+.q-ai__keyrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--q-s2); font-size: 13px; }
+.q-ai__keylabel { flex: none; width: 56px; font-size: 12.5px; color: var(--q-ink-2); }
+/* Looks like a field, is not one: the key itself never comes back from the server. */
+.q-ai__mask { box-sizing: border-box; flex: 1 1 200px; max-width: 320px; min-width: 0; min-height: 32px; display: flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--q-line); border-radius: 4px; background: var(--q-sunken); color: var(--q-ink-2); white-space: pre-wrap; }
+.q-ai__mask .q-mono { font-size: 12.5px; letter-spacing: .02em; }
+.q-ai__keyrow .q-btn { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.q-ai__keyform { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--q-s3); align-items: start; }
+.q-ai__keyform .q-input { height: 34px; font-size: 13px; }
+.q-ai__keyform .q-label { line-height: 19px; }
+.q-ai__keybuttons { display: flex; gap: var(--q-s2); }
+.q-ai__cancel { font-weight: 500; }
+.q-ai__model { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.q-ai__filter { display: flex; flex-direction: column; gap: 6px; max-width: 420px; margin-bottom: 6px; }
+.q-ai__filter .q-input { height: 32px; font-size: 13px; }
+.q-ai__filter .q-hint { font-size: 11px; }
+/* Model ids are shown as written: mono, never upper-cased. */
+.q-ai__select { max-width: 420px; min-width: 0; height: 32px; padding: 0 8px; font: 12.5px var(--q-mono); text-transform: none; letter-spacing: 0; }
+.q-ai__small { text-wrap: pretty; line-height: 1.5; }
+.q-ai__host { overflow-wrap: anywhere; }

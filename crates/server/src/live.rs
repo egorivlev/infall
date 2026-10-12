@@ -864,6 +864,7 @@ mod tests {
             hub: Hub::default(),
             throttle: Throttle::default(),
             tool_rate: RateLimit::default(),
+            ai: crate::ai::AiState::new().unwrap(),
             clock: Clock::manual(0),
             hashing: Semaphore::new(1),
             dummy_hash: String::new(),

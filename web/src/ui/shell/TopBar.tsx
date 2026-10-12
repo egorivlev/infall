@@ -1,5 +1,6 @@
 import type { Member } from '../../lib'
 import { AccountMenu } from './AccountMenu'
+import { AiButton } from './AiButton'
 import { BranchSwitcher } from './BranchSwitcher'
 import { CheckpointButton } from './CheckpointButton'
 import { GuestBadge } from './GuestBadge'
@@ -42,6 +43,8 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
       </div>
       {/* A Guest is told nothing about who else is here: a badge with the end of their access instead. */}
       {guest ? <GuestBadge member={member} /> : <Presence branch={branch} />}
+      {/* A Conversation is a Member's: Guests have no AI. */}
+      {!guest && <AiButton />}
       <ThemeToggle />
       <AccountMenu member={member} />
     </header>

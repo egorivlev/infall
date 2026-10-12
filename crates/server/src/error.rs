@@ -58,6 +58,22 @@ pub enum ApiError {
     /// An access token used more often than the tool endpoint allows.
     #[error("too many requests")]
     TooManyRequests,
+    /// A Member who started more AI turns than a minute allows.
+    #[error("too many AI turns")]
+    TooManyTurns,
+    /// The OpenRouter path is off: the server has no `QOOP_SECRET_KEY`.
+    #[error("AI not configured")]
+    AiNotConfigured,
+    /// The Member has no OpenRouter key, or the stored one can no longer be read; the
+    /// value is the sentence shown.
+    #[error("no OpenRouter key")]
+    NoKey(&'static str),
+    /// The Member has not chosen a model.
+    #[error("no model")]
+    NoModel,
+    /// The upstream model list could not be fetched.
+    #[error("upstream failed")]
+    UpstreamFailed,
     /// Logged, never shown.
     #[error("internal: {0}")]
     Internal(String),
@@ -152,6 +168,27 @@ impl ApiError {
                 StatusCode::TOO_MANY_REQUESTS,
                 "too_many_requests",
                 "Too many requests with this access token. Try again in a minute.".into(),
+            ),
+            TooManyTurns => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Too many AI turns in a minute. Try again in a moment.".into(),
+            ),
+            AiNotConfigured => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "ai_not_configured",
+                "OpenRouter keys are not set up on this server.".into(),
+            ),
+            NoKey(m) => (StatusCode::CONFLICT, "no_key", (*m).into()),
+            NoModel => (
+                StatusCode::CONFLICT,
+                "no_model",
+                "Choose a model first.".into(),
+            ),
+            UpstreamFailed => (
+                StatusCode::BAD_GATEWAY,
+                "upstream_failed",
+                "The list of models could not be fetched from OpenRouter. Try again later.".into(),
             ),
             Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -430,3 +430,49 @@ describe('describeChanges: Visuals (M6)', () => {
     expect(said([ops.moveBlock('v1', 'A'), ops.setBlockTitle('v1', 'New')])).toEqual([['Edited Visual New in the Page of Threshold']])
   })
 })
+
+describe('describeChanges: Pin (M7)', () => {
+  const block = (id: string, cardId: string, order: string, text = id) => ops.addBlock({ id, card: cardId, text, order })
+  const pin = (id: string, cardId: string, order: string) =>
+    ops.pinBlock({ id, card: cardId, text: 'answer', order, model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1 })
+  // Card "Threshold" with a paragraph and a pinned answer that nobody reviewed; Card "Decoder" with nothing.
+  const base = boardOf([card('a', 'Threshold'), card('b', 'Decoder'), block('k1', 'a', 'G'), pin('p1', 'a', 'V')])
+  const said = (list: Op[]) => lines(many(list), base)
+
+  it('says when an AI answer was pinned to a Page', () => {
+    expect(said([pin('p2', 'b', 'V')])).toEqual([['Pinned an AI answer to the Page of Decoder']])
+    expect(said([pin('p2', 'a', 'k'), pin('p3', 'a', 'm')])).toEqual([['Pinned 2 AI answers to the Page of Threshold']])
+  })
+  it('says when an AI answer was marked as reviewed', () => {
+    expect(said([ops.markReviewed('p1', 'other')])).toEqual([['Marked an AI answer as reviewed in the Page of Threshold']])
+    expect(said([pin('p2', 'a', 'k')]).length).toBe(1)
+    const two = replay(base, [pin('p2', 'a', 'k')])
+    expect(lines(many([ops.markReviewed('p1', 'me'), ops.markReviewed('p2', 'me')]), two)).toEqual([
+      ['Marked 2 AI answers as reviewed in the Page of Threshold'],
+    ])
+  })
+  it('keeps the Page line beside them for what else happened to the Page', () => {
+    expect(said([pin('p2', 'a', 'k'), block('k2', 'a', 'm')])).toEqual([
+      ['Pinned an AI answer to the Page of Threshold', 'Added a block to the Page of Threshold'],
+    ])
+    expect(said([ops.markReviewed('p1', 'other'), ops.setBlockText('p1', 'answer, corrected')])).toEqual([
+      ['Marked an AI answer as reviewed in the Page of Threshold', 'Edited the Page of Threshold'],
+    ])
+    expect(said([ops.setBlockText('k1', 'x'), pin('p2', 'b', 'V'), ops.markReviewed('p1', 'other')])).toEqual([
+      ['Marked an AI answer as reviewed in the Page of Threshold', 'Edited the Page of Threshold', 'Pinned an AI answer to the Page of Decoder'],
+    ])
+  })
+  it('reads the rest as for any block', () => {
+    expect(said([ops.remove('p1')])).toEqual([['Removed a block from the Page of Threshold']])
+    expect(said([ops.setBlockText('p1', 'edited')])).toEqual([['Edited the Page of Threshold']])
+    expect(said([pin('p2', 'a', 'k'), ops.remove('p2')])).toEqual([['No lasting changes']])
+    expect(lines(many([ops.restore('p1')]), replay(base, [ops.remove('p1')]))).toEqual([['Added a block to the Page of Threshold']])
+    // pinned and reviewed in one go: the pin says it; taking a review back, or reviewing twice, says nothing
+    expect(said([pin('p2', 'a', 'k'), ops.markReviewed('p2', 'me')])).toEqual([['Pinned an AI answer to the Page of Threshold']])
+    const reviewed = replay(base, [ops.markReviewed('p1', 'other')])
+    expect(lines(many([ops.markReviewed('p1', '')]), reviewed)).toEqual([['No lasting changes']])
+    expect(lines(many([ops.markReviewed('p1', 'me')]), reviewed)).toEqual([['No lasting changes']])
+    // a review mark on a block that is not a pinned answer is not one
+    expect(said([ops.markReviewed('k1', 'me')])).toEqual([['No lasting changes']])
+  })
+})

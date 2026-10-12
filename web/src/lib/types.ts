@@ -318,16 +318,21 @@ export type QoopDesktop = {
 
 export type AiModel = { id: string; name: string; context_length?: number }
 
-/** Which AI the sidebar would use right now, and why not if none. */
-export type AiSetup =
+/** What the server holds for the Member's OpenRouter path (api.md §14); `enabled: false` when it is off or could not be asked. */
+export type AiOpenRouter = { enabled: boolean; key?: { last4: string; added_at: number }; model?: string }
+
+/**
+ * Which AI the sidebar would use right now, and why not if none. Every variant says whether this is the desktop
+ * app and what the OpenRouter settings are, so the settings screen can show and remove a stored key in any state.
+ */
+export type AiSetup = (
   | { provider: 'claude-code'; label: string; version?: string } // desktop app, `claude` installed
   | { provider: 'openrouter'; label: string; model: string } // a key and a model are set
-  | {
-      provider: 'none'
-      reason: 'loading' | 'guest' | 'desktop_no_claude' | 'browser_no_key' | 'no_model' | 'server_off'
-      desktop: boolean // running inside the desktop app
-      openrouter: { enabled: boolean; key?: { last4: string; added_at: number }; model?: string }
-    }
+  | { provider: 'none'; reason: 'loading' | 'guest' | 'desktop_no_claude' | 'browser_no_key' | 'no_model' | 'server_off' }
+) & {
+  desktop: boolean // running inside the desktop app
+  openrouter: AiOpenRouter
+}
 
 export type AiScope = { branch: string; branchName: string; card?: { id: string; title: string } }
 

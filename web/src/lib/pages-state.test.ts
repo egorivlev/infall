@@ -312,3 +312,51 @@ describe('Visuals (M6)', () => {
     expect(applyOps(e, [ops.setBlockText('r1', 'x'), ops.remove('r1')]).ok).toBe(true)
   })
 })
+
+describe('Blocks pinned from an AI Conversation (M7)', () => {
+  const pin = (id: string, order: string): Op => ops.pinBlock({ id, card: 'a', text: 'answer', order, model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1234 })
+  const blockOf = (e: Entities, id: string) => page(e, 'a').blocks.find((b) => b.id === id)!
+  const setField = (entity: string, field: string, value: Value): Op => ({ Set: { entity, field, value } })
+
+  it('reads the AI fields into BlockVM.ai; an ordinary block has none', () => {
+    const e = board(pin('p1', 'z'))
+    expect(blockOf(e, 'p1')).toEqual({
+      id: 'p1',
+      card: 'a',
+      type: 'text',
+      text: 'answer',
+      title: '',
+      order: 'z',
+      ai: { model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1234 },
+    })
+    expect('ai' in blockOf(e, 'k1')).toBe(false)
+    expect(toSnapshotParts(e).cards.find((c) => c.id === 'a')!.blocks).toBe(4)
+  })
+  it('is reviewed once a Member put their id on it, and not after the mark is taken back', () => {
+    const reviewed = board(pin('p1', 'z'), ops.markReviewed('p1', 'other'))
+    expect(blockOf(reviewed, 'p1').ai).toEqual({ model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1234, reviewedBy: 'other' })
+    const back = board(pin('p1', 'z'), ops.markReviewed('p1', 'other'), ops.markReviewed('p1', ''))
+    expect(blockOf(back, 'p1').ai).toEqual({ model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1234 })
+  })
+  it('is AI-generated only for as long as ai_pinned_by is set; missing pieces read as empty', () => {
+    const cleared = board(pin('p1', 'z'), ops.markReviewed('p1', 'other'), setField('p1', 'ai_pinned_by', 'Null'))
+    expect('ai' in blockOf(cleared, 'p1')).toBe(false)
+    const bare = board(block('p2', 'a', 'z'), setField('p2', 'ai_pinned_by', { Text: 'me' }))
+    expect(blockOf(bare, 'p2').ai).toEqual({ model: '', pinnedBy: 'me', pinnedAt: 0 })
+    const odd = board(block('p3', 'a', 'z'), setField('p3', 'ai_pinned_by', { Float: 3 }), setField('p3', 'ai_reviewed_by', { Text: 'other' }))
+    expect('ai' in blockOf(odd, 'p3')).toBe(false)
+  })
+  it('keeps the block and the list when nothing about it changed, and replaces only it when it is reviewed', () => {
+    const e = board(pin('p1', 'z'))
+    const first = toPageIndex(e)
+    const moved = replay(e, ops.move('b', 9, 9))
+    const second = toPageIndex(moved, first)
+    expect(second).toBe(first)
+    const third = toPageIndex(replay(moved, [ops.markReviewed('p1', 'other')]), second)
+    expect(third.blocks.get('a')).not.toBe(second.blocks.get('a'))
+    expect(third.blocks.get('a')![0]).toBe(second.blocks.get('a')![0])
+    expect(third.blocks.get('a')!.at(-1)).not.toBe(second.blocks.get('a')!.at(-1))
+    expect(third.blocks.get('b')).toBe(second.blocks.get('b'))
+    expect(third.sources).toBe(second.sources)
+  })
+})

@@ -129,17 +129,37 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
 }
 
+function sameKeys(a: Record<string, unknown>, b: Record<string, unknown>, same: (x: unknown, y: unknown) => boolean): boolean {
+  const ka = Object.keys(a)
+  return ka.length === Object.keys(b).length && ka.every((k) => k in b && same(a[k], b[k]))
+}
+
 // Equal key by key; a value that is an array (a Source's `cards`) is compared item by item.
 function shallowEqual(a: object, b: object): boolean {
-  const ka = Object.keys(a)
-  if (ka.length !== Object.keys(b).length) return false
-  const rb = b as Record<string, unknown>
-  const ra = a as Record<string, unknown>
-  return ka.every((k) => {
-    const x = ra[k]
-    const y = rb[k]
+  return sameKeys(a as Record<string, unknown>, b as Record<string, unknown>, (x, y) => {
     return Object.is(x, y) || (Array.isArray(x) && Array.isArray(y) && sameItems(x, y))
   })
+}
+
+// As above, and a Block's `ai` (a small record made anew on every pass) is compared key by key.
+function sameBlock(a: BlockVM, b: BlockVM): boolean {
+  const { ai: aiA, ...restA } = a
+  const { ai: aiB, ...restB } = b
+  if (!shallowEqual(restA, restB)) return false
+  return aiA === undefined || aiB === undefined ? aiA === aiB : sameKeys(aiA, aiB, Object.is)
+}
+
+/**
+ * What marks a Block as pinned from an AI Conversation (core.md): set for as long as `ai_pinned_by` holds a Member
+ * id; `reviewedBy` once a Member marked it reviewed.
+ */
+export function blockAi(fields: Fields): BlockVM['ai'] {
+  const pinnedBy = text(fields, 'ai_pinned_by')
+  if (pinnedBy === '') return undefined
+  const ai: NonNullable<BlockVM['ai']> = { model: text(fields, 'ai_model'), pinnedBy, pinnedAt: float(fields, 'ai_pinned_at', 0) }
+  const reviewedBy = text(fields, 'ai_reviewed_by')
+  if (reviewedBy !== '') ai.reviewedBy = reviewedBy
+  return ai
 }
 
 /**
@@ -157,12 +177,12 @@ function isLive(entities: Entities, id: string, kind: Kind): boolean {
 }
 
 // Reuses previous item objects (and the previous array) when nothing changed, so identity is stable.
-function reuse<T extends { id: string }>(prev: readonly T[] | undefined, next: T[]): T[] {
+function reuse<T extends { id: string }>(prev: readonly T[] | undefined, next: T[], sameItem: (a: T, b: T) => boolean = shallowEqual): T[] {
   if (!prev) return next
   const old = new Map(prev.map((item) => [item.id, item]))
   const merged = next.map((item) => {
     const before = old.get(item.id)
-    return before && shallowEqual(before, item) ? before : item
+    return before && sameItem(before, item) ? before : item
   })
   const same = merged.length === prev.length && merged.every((item, i) => item === prev[i])
   return same ? (prev as T[]) : merged
@@ -275,11 +295,15 @@ function byYear(a: SourceVM, b: SourceVM): number {
   return (na ? 0 : yb - ya) || byTitle(a, b)
 }
 
-function reuseMap<T extends { id: string }>(prev: Map<string, T[]> | undefined, next: Map<string, T[]>): Map<string, T[]> {
+function reuseMap<T extends { id: string }>(
+  prev: Map<string, T[]> | undefined,
+  next: Map<string, T[]>,
+  sameItem?: (a: T, b: T) => boolean,
+): Map<string, T[]> {
   if (!prev) return next
   let same = prev.size === next.size
   for (const [key, list] of next) {
-    const kept = reuse(prev.get(key), list)
+    const kept = reuse(prev.get(key), list, sameItem)
     if (kept !== prev.get(key)) same = false
     next.set(key, kept)
   }
@@ -301,7 +325,10 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
       if (type === null || !isLive(entities, card, 'Card')) continue
       let list = blocks.get(card)
       if (!list) blocks.set(card, (list = []))
-      list.push({ id, card, type, text: text(f, 'text'), title: type === 'visual' ? text(f, 'title') : '', order: text(f, 'order') })
+      const block: BlockVM = { id, card, type, text: text(f, 'text'), title: type === 'visual' ? text(f, 'title') : '', order: text(f, 'order') }
+      const ai = blockAi(f)
+      if (ai) block.ai = ai
+      list.push(block)
     } else if (e.kind === 'Source') {
       sourceById.set(id, {
         id,
@@ -340,7 +367,7 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
   for (const list of attached.values()) list.sort(byYear)
   const next: PageIndex = {
     sources,
-    blocks: reuseMap(prev?.blocks, blocks),
+    blocks: reuseMap(prev?.blocks, blocks, sameBlock),
     attached: reuseMap(prev?.attached, attached),
   }
   return prev && next.sources === prev.sources && next.blocks === prev.blocks && next.attached === prev.attached ? prev : next

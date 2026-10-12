@@ -27,6 +27,12 @@ export const card = (id: string, title: string, extra: Partial<CardVM> = {}): Ca
 
 export const block = (id: string, cardId: string, order: string, text: string): BlockVM => ({ id, card: cardId, type: 'text', text, title: '', order })
 
+/** A text Block pinned from an AI Conversation. */
+export const pinned = (id: string, cardId: string, order: string, text: string, ai: NonNullable<BlockVM['ai']>): BlockVM => ({
+  ...block(id, cardId, order, text),
+  ai,
+})
+
 /** A Visual: `source` is its HTML/JavaScript. */
 export const visual = (id: string, cardId: string, order: string, title: string, source: string): BlockVM => ({
   id,
@@ -94,6 +100,7 @@ export function createFakePageLib() {
     setBlockTitle: (id: string, title: string) => ({ fake: 'setBlockTitle', block: id, title }),
     setBlockText: (id: string, text: string) => ({ fake: 'setBlockText', block: id, text }),
     moveBlock: (id: string, order: string) => ({ fake: 'moveBlock', block: id, order }),
+    markReviewed: (id: string, memberId: string) => ({ fake: 'markReviewed', block: id, member: memberId }),
     createSource: (input: Record<string, string | undefined>) => ({ fake: 'createSource', ...input }),
     setSourceField: (id: string, field: string, text: string) => ({ fake: 'setSourceField', source: id, field, text }),
     attach: (input: { id?: string; card: string; source: string }) => ({ fake: 'attach', ...input }),
@@ -127,6 +134,10 @@ export function createFakePageLib() {
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, title: String(op.title) } : b)) })
       case 'setBlockText':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, text: String(op.text) } : b)) })
+      case 'markReviewed':
+        return pageStore.setState({
+          blocks: s.blocks.map((b) => (b.id === op.block && b.ai ? { ...b, ai: { ...b.ai, reviewedBy: String(op.member) } } : b)),
+        })
       case 'moveBlock':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, order: String(op.order) } : b)) })
       case 'createSource': {

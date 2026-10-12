@@ -10,14 +10,14 @@ use axum::extract::{Request, State};
 use axum::http::header::{ALLOW, CONTENT_TYPE, ORIGIN, WWW_AUTHENTICATE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use qoop_core::{Board, BranchId, Workspace};
+use qoop_core::{Board, BranchId, MemberId, Workspace};
 use serde_json::{Map, Value, json};
 
 use crate::app::{BODY_LIMIT, Shared};
 use crate::auth::origin_allowed;
 use crate::error::ApiError;
 use crate::suggestions::{self, ConnectionInput, SourceInput};
-use crate::tokens::{TokenBearer, bearer_member};
+use crate::tokens::bearer_member;
 use crate::tools::{self, shown};
 
 /// Protocol versions this server speaks, newest first.
@@ -124,12 +124,12 @@ pub async fn post(State(st): State<Shared>, req: Request) -> Response {
             );
         }
     };
-    handle(&st, &who, message).await
+    handle(&st, who.member.id, message).await
 }
 
 // ---------------------------------------------------------------- JSON-RPC
 
-async fn handle(st: &Shared, who: &TokenBearer, message: Value) -> Response {
+async fn handle(st: &Shared, who: MemberId, message: Value) -> Response {
     let invalid =
         |id: &Value, why: &str| rpc_error(StatusCode::BAD_REQUEST, id, INVALID_REQUEST, why);
     let Value::Object(msg) = message else {
@@ -414,11 +414,14 @@ fn proposed(suggestion: &crate::store::SuggestionRecord) -> Value {
     })
 }
 
-/// Runs one tool; `None` if there is no tool of that name. Faults of the server come back
-/// as a sentence that says nothing about them.
-async fn call(
+/// Runs one tool as the Member `who`; `None` if there is no tool of that name. Faults of
+/// the server come back as a sentence that says nothing about them.
+///
+/// This is the one way a tool is run: `/mcp` calls it for the Member of the access token,
+/// and the chat loop of the AI sidebar (contract §14) for the signed-in Member.
+pub async fn call(
     st: &Shared,
-    who: &TokenBearer,
+    who: MemberId,
     name: &str,
     arguments: Option<&Value>,
 ) -> Option<Result<Value, String>> {
@@ -440,7 +443,7 @@ async fn call(
 
 async fn run(
     st: &Shared,
-    who: &TokenBearer,
+    who: MemberId,
     name: &str,
     arguments: Option<&Value>,
 ) -> Result<Value, Failure> {
@@ -477,7 +480,7 @@ async fn run(
                 reason: args.required("reason")?.to_string(),
                 model: args.owned("model")?,
             };
-            let made = suggestions::propose(st, &ws, branch, who.member.id, |board| {
+            let made = suggestions::propose(st, &ws, branch, who, |board| {
                 suggestions::draft_source(board, &input)
             })
             .await??;
@@ -492,7 +495,7 @@ async fn run(
                 reason: args.required("reason")?.to_string(),
                 model: args.owned("model")?,
             };
-            let made = suggestions::propose(st, &ws, branch, who.member.id, |board| {
+            let made = suggestions::propose(st, &ws, branch, who, |board| {
                 suggestions::draft_connection(board, &input)
             })
             .await??;

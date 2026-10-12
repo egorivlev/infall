@@ -173,3 +173,37 @@ describe('op builders', () => {
     expect(ops.restore('t')).toEqual({ Undelete: { entity: 't' } })
   })
 })
+
+describe('op builders: Pin (M7)', () => {
+  it('pinBlock creates a text Block that carries the model, who pinned it and when', () => {
+    expect(ops.pinBlock({ id: 'k', card: 'a', text: '**Answer**', order: 'V', model: 'claude-sonnet-4-5', pinnedBy: 'me', pinnedAt: 1700000000000.4 })).toEqual({
+      Create: {
+        entity: 'k',
+        kind: 'Block',
+        fields: {
+          card: { Ref: 'a' },
+          type: { Text: 'text' },
+          order: { Text: 'V' },
+          text: { Text: '**Answer**' },
+          ai_model: { Text: 'claude-sonnet-4-5' },
+          ai_pinned_by: { Text: 'me' },
+          ai_pinned_at: { Float: 1700000000000 },
+        },
+      },
+    })
+  })
+  it('pinBlock generates an id, leaves an empty text or model unset, and refuses what cannot be a pin', () => {
+    const op = ops.pinBlock({ card: 'a', text: '', order: 'V', model: '', pinnedBy: 'me', pinnedAt: 5 })
+    if (!('Create' in op)) throw new Error('not create')
+    expect(op.Create.entity).toHaveLength(36)
+    expect(op.Create.fields).toEqual({ card: { Ref: 'a' }, type: { Text: 'text' }, order: { Text: 'V' }, ai_pinned_by: { Text: 'me' }, ai_pinned_at: { Float: 5 } })
+    const input = { card: 'a', text: 't', order: 'V', model: 'm', pinnedBy: 'me', pinnedAt: 5 }
+    expect(() => ops.pinBlock({ ...input, pinnedBy: '' })).toThrow(RangeError)
+    expect(() => ops.pinBlock({ ...input, order: '' })).toThrow(RangeError)
+    expect(() => ops.pinBlock({ ...input, pinnedAt: NaN })).toThrow(RangeError)
+  })
+  it('markReviewed sets ai_reviewed_by; an empty id takes the mark back', () => {
+    expect(ops.markReviewed('k', 'other')).toEqual({ Set: { entity: 'k', field: 'ai_reviewed_by', value: { Text: 'other' } } })
+    expect(ops.markReviewed('k', '')).toEqual({ Set: { entity: 'k', field: 'ai_reviewed_by', value: 'Null' } })
+  })
+})

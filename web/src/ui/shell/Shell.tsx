@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { board, branches, members } from '../../lib'
 import type { Member } from '../../lib'
+import { AiSidebar } from '../ai'
 import { BoardView } from '../board'
+import { sidePanelsFit } from '../board/geometry'
+import { suggestionsPanel, useAiPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { MergeReview } from '../merge'
 import { AiAccess } from '../settings'
 import { Todos } from '../todos'
@@ -78,12 +81,24 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
 
   const missing = unknown === branch
 
+  // The AI sidebar takes a column from the work area on every screen. Guests have none.
+  const aiOpen = useAiPanel((s) => s.open) && !isGuest
+  // The Board decides which of its side panels stays when both are opened; it cannot see the sidebar take its room.
+  // If Suggestions and a Page are both open and no longer fit, Suggestions gives way (the Page is what the AI is asked about).
+  const work = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!aiOpen) return
+    const width = work.current?.clientWidth ?? 0
+    if (width === 0 || sidePanelsFit(width)) return // 0: not laid out, nothing to go by
+    if (useSuggestionsPanel.getState().open && usePagePanel.getState().cardId !== null) suggestionsPanel.close()
+  }, [aiOpen])
+
   return (
-    <div className="q-shell" data-branch={branch}>
+    <div className={aiOpen ? 'q-shell has-ai' : 'q-shell'} data-branch={branch}>
       <TopBar member={member} branch={branch} available={!missing} />
       {/* A Merge starts from the Branches screen, so that is where the rail points. */}
       <Rail member={member} route={view === 'merge' ? 'branches' : view} branch={branch} />
-      <main className="q-work">
+      <main className="q-work" ref={work}>
         {view === 'members' ? (
           <Members me={member} />
         ) : view === 'branches' ? (
@@ -106,6 +121,7 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
           </div>
         )}
       </main>
+      {aiOpen && <AiSidebar branch={branch} />}
     </div>
   )
 }

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod openrouter;
+
 use std::sync::Arc;
 
 use axum::Router;
@@ -135,6 +137,10 @@ impl TestApp {
 
     pub async fn post(&self, path: &str, cookie: Option<&str>, body: Value) -> Res {
         self.write(Method::POST, path, cookie, body).await
+    }
+
+    pub async fn put(&self, path: &str, cookie: Option<&str>, body: Value) -> Res {
+        self.write(Method::PUT, path, cookie, body).await
     }
 
     pub async fn delete(&self, path: &str, cookie: Option<&str>) -> Res {

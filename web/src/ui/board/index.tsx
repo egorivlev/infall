@@ -14,7 +14,7 @@ import {
 import type { EdgeChangeset, NodeChangeset, OnConnectEnd, OnNodeDrag } from '@xyflow/react'
 import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory } from '../../lib'
 import type { CardVM, ConnectionVM, FrameVM, Kind, Op } from '../../lib'
-import { pagePanel, suggestionsPanel, useBoardRequest, useHistoryPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
+import { boardFocus, pagePanel, suggestionsPanel, useBoardRequest, useHistoryPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { HistoryPanel } from '../history'
 import { PagePanel } from '../page'
 import { SuggestionsPanel } from '../suggestions'
@@ -527,6 +527,14 @@ function BoardCanvas() {
   const only = selected.size === 1 ? [...selected][0] : undefined
   const inspected = only && !previewing && !(pageOpen && only === pageCard) ? cardsById.get(only) : undefined
   const selectedConn = only && !readOnly ? connections.find((c) => c.id === only) : undefined
+  // What the AI sidebar follows: the one selected Card, else the Card whose Page is open. Nothing while History previews.
+  const focusCard = previewing ? undefined : ((only ? cardsById.get(only) : undefined) ?? (pageCard ? cardsById.get(pageCard) : undefined))
+  const focusId = focusCard?.id
+  const focusTitle = focusCard?.title
+  useEffect(() => {
+    boardFocus.set(focusId === undefined ? null : { id: focusId, title: focusTitle ?? '' })
+  }, [focusId, focusTitle])
+  useEffect(() => () => boardFocus.set(null), [])
   const isEmpty = cards.length === 0 && frames.length === 0
   const loading = isEmpty && !previewing && (snap.status === 'idle' || snap.status === 'loading')
   const failed = isEmpty && !previewing && snap.status === 'error'

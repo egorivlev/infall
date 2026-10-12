@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/core", "crates/server"]
+# The desktop app is a workspace of its own (own lock file, own target directory).
+exclude = ["desktop/src-tauri"]
 resolver = "3"
 
 # Argon2 is unusably slow unoptimized; keep debug builds and tests fast.

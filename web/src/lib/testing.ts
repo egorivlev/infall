@@ -4,6 +4,8 @@ import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
 import type {
   AccessToken,
+  AiEvent,
+  AiModel,
   BranchInfo,
   Change,
   Checkpoint,
@@ -16,6 +18,7 @@ import type {
   Moment,
   Op,
   Origin,
+  QoopDesktop,
   ServerFrame,
   Suggestion,
   Todo,
@@ -86,6 +89,75 @@ export class FakeTimers {
 
 export type Logged = { method: string; path: string; body: unknown }
 
+/** One step of a scripted AI answer: an event (sent as a `data:` line), bytes as they are, or a pause. */
+export type AiStep = AiEvent | { raw: string } | { wait: Promise<void> }
+
+export type FakeRun = {
+  request: Parameters<QoopDesktop['claude']['send']>[0]
+  ended: boolean
+  /** Hands an event to the page as the app would (anything can be passed, to play a misbehaving app). */
+  emit(event: unknown): void
+  end(): void
+  fail(error?: unknown): void
+}
+
+/**
+ * A fake `window.qoopDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
+ * `emit` / `end` / `fail`; with `script` set, a run plays those events and ends by itself. `cancel` ends the run,
+ * as the app does when it has terminated the process.
+ */
+export function fakeDesktop(options: { installed?: boolean; claudeVersion?: string } = {}) {
+  const runs: FakeRun[] = []
+  const cancelled: string[] = []
+  const desk = {
+    version: '0.7.0',
+    installed: options.installed ?? true,
+    claudeVersion: options.claudeVersion as string | undefined,
+    /** When true, `claude.status()` rejects. */
+    statusFails: false,
+    statusCalls: 0,
+    script: null as AiEvent[] | null,
+    runs,
+    cancelled,
+    claude: {
+      async status(): Promise<{ installed: boolean; version?: string }> {
+        desk.statusCalls++
+        if (desk.statusFails) throw new Error('bridge down')
+        return desk.installed && desk.claudeVersion !== undefined ? { installed: true, version: desk.claudeVersion } : { installed: desk.installed }
+      },
+      send(request: FakeRun['request'], onEvent: (event: AiEvent) => void): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+          const run: FakeRun = {
+            request,
+            ended: false,
+            emit: (event) => {
+              if (!run.ended) onEvent(event as AiEvent)
+            },
+            end: () => {
+              run.ended = true
+              resolve()
+            },
+            fail: (error = new Error('run failed')) => {
+              run.ended = true
+              reject(error)
+            },
+          }
+          runs.push(run)
+          if (desk.script) {
+            for (const event of desk.script) run.emit(event)
+            run.end()
+          }
+        })
+      },
+      async cancel(id: string): Promise<void> {
+        cancelled.push(id)
+        runs.find((r) => r.request.id === id && !r.ended)?.end()
+      },
+    },
+  }
+  return desk satisfies QoopDesktop
+}
+
 /** One Branch inside the fake server. `base` is its Board at seq 0. */
 export type FakeBranch = {
   info: BranchInfo
@@ -146,7 +218,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
  * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
  * M3 (Merge), M4 (To-dos, and the frames about who edits a Page), M5 (access tokens, Suggestions — which only
  * `suggest` makes, as the tool layer would), M6 (a Guest gets the Board without deleted entities, 403 on Changes,
- * and `refreshFrame`). It does not compute a Merge: tests script what a
+ * and `refreshFrame`), M7 (`/api/ai/*`: settings, and a chat whose event stream tests script with `aiScript`).
+ * It does not compute a Merge: tests script what a
  * plan holds with `mergeScript`. It has no live connections either: tests hand the frames it builds to a FakeSocket.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
  * unless told otherwise; `all` holds every Branch.
@@ -196,6 +269,24 @@ export class FakeServer {
   suggestionFail: { status: number; code: string } | null = null
   /** When set, accept / reject / reopen wait for it before doing anything. */
   suggestionGate: Promise<void> | null = null
+  /** M7, the OpenRouter path: false plays a server without `QOOP_SECRET_KEY`. */
+  aiEnabled = true
+  /** Per Member id: the stored key (never sent back) and the model. */
+  aiSettings: Record<string, { key?: string; added_at?: number; model?: string }> = {}
+  aiModels: AiModel[] = [
+    { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', context_length: 200000 },
+    { id: 'openai/gpt-5', name: 'GPT-5' },
+  ]
+  /** One scripted failure for the next `/api/ai/*` request. */
+  aiFail: { status: number; code: string } | null = null
+  /** What the next `POST /api/ai/chat` streams. */
+  aiScript: AiStep[] = [{ type: 'done' }]
+  /** Bytes per chunk of the stream; 0 sends everything up to the next pause as one chunk. */
+  aiChunk = 0
+  /** When true, the stream breaks at the end of the script instead of closing. */
+  aiDrop = false
+  /** How many chat requests the client aborted. */
+  aiAborted = 0
   private n = 0
 
   private get main(): FakeBranch {
@@ -571,6 +662,106 @@ export class FakeServer {
     return { status: 200, body: {} }
   }
 
+  /** What `GET /api/ai/status` says for a Member. */
+  aiStatus(member = this.actor.id): { enabled: boolean; key?: { last4: string; added_at: number }; model?: string } {
+    if (!this.aiEnabled) return { enabled: false }
+    const mine = this.aiSettings[member] ?? {}
+    const status: ReturnType<FakeServer['aiStatus']> = { enabled: true }
+    if (mine.key !== undefined) status.key = { last4: mine.key.slice(-4), added_at: mine.added_at ?? 0 }
+    if (mine.model !== undefined) status.model = mine.model
+    return status
+  }
+
+  // The scripted answer as a byte stream, cut into chunks of `aiChunk` bytes whatever they split.
+  private aiStream(signal: AbortSignal | undefined): ReadableStream<Uint8Array> {
+    const script = this.aiScript
+    const size = this.aiChunk
+    const drop = this.aiDrop
+    const encoder = new TextEncoder()
+    let gone = false
+    let breaking = false
+    return new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        signal?.addEventListener('abort', () => {
+          if (gone) return
+          gone = true
+          this.aiAborted++
+          controller.error(new DOMException('The request was aborted.', 'AbortError'))
+        })
+        let text = ''
+        const flush = () => {
+          const bytes = encoder.encode(text)
+          text = ''
+          const step = size > 0 ? size : Math.max(bytes.length, 1)
+          for (let i = 0; i < bytes.length && !gone; i += step) controller.enqueue(bytes.slice(i, i + step))
+        }
+        for (const item of script) {
+          if (gone) return
+          if ('wait' in item) {
+            flush()
+            await item.wait
+          } else text += 'raw' in item ? item.raw : `data: ${JSON.stringify(item)}\n`
+        }
+        if (gone) return
+        flush()
+        if (drop) breaking = true
+        else {
+          gone = true
+          controller.close()
+        }
+      },
+      // The break comes once the reader has taken what was sent (an error would throw away the chunks in the queue).
+      pull: (controller) => {
+        if (!breaking || gone) return
+        gone = true
+        controller.error(new TypeError('network error'))
+      },
+    })
+  }
+
+  private aiRoute(path: string, method: string, body: unknown, signal: AbortSignal | undefined): { status: number; body: unknown } | Response {
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    if (this.aiFail) {
+      const f = this.aiFail
+      this.aiFail = null
+      return fail(f.status, f.code)
+    }
+    const me = this.actor.id
+    const input = (body ?? {}) as { key?: unknown; model?: unknown; messages?: unknown }
+    const off = fail(503, 'ai_not_configured')
+    if (method === 'GET' && path === '/api/ai/status') return { status: 200, body: this.aiStatus() }
+    if (method === 'GET' && path === '/api/ai/models') return { status: 200, body: { models: this.aiModels } }
+    if (path === '/api/ai/key' && (method === 'PUT' || method === 'DELETE')) {
+      if (!this.aiEnabled) return off
+      const { key: _key, added_at: _at, ...rest } = this.aiSettings[me] ?? {}
+      if (method === 'DELETE') this.aiSettings[me] = rest
+      else {
+        if (typeof input.key !== 'string' || !/^[\x21-\x7e]{20,400}$/.test(input.key)) return fail(400, 'bad_request')
+        this.aiSettings[me] = { ...rest, key: input.key, added_at: this.now }
+      }
+      return { status: 200, body: this.aiStatus() }
+    }
+    if (path === '/api/ai/model' && method === 'PUT') {
+      if (!this.aiEnabled) return off
+      if (typeof input.model !== 'string' || !/^[A-Za-z0-9._:/-]{1,120}$/.test(input.model)) return fail(400, 'bad_request')
+      this.aiSettings[me] = { ...this.aiSettings[me], model: input.model }
+      return { status: 200, body: this.aiStatus() }
+    }
+    if (path !== '/api/ai/chat' || method !== 'POST') return fail(404, 'not_found', 'no route')
+    if (!this.aiEnabled) return off
+    const messages = input.messages as { role?: unknown; content?: unknown }[] | undefined
+    const good =
+      Array.isArray(messages) &&
+      messages.length >= 1 &&
+      messages.length <= 60 &&
+      messages.every((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.length <= 40000) &&
+      messages[messages.length - 1]!.role === 'user'
+    if (!good) return fail(400, 'bad_request')
+    if (this.aiSettings[me]?.key === undefined) return fail(409, 'no_key')
+    if (this.aiSettings[me]?.model === undefined) return fail(409, 'no_model')
+    return { ok: true, status: 200, body: this.aiStream(signal), text: async () => '' } as unknown as Response
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -613,6 +804,12 @@ export class FakeServer {
     if (path === '/api/todos' || path.startsWith('/api/todos/')) return this.respond(await this.todoRoute(path, method, body))
     if (path.startsWith('/api/suggestions')) return this.respond(await this.suggestionRoute(path, method, body))
     if (path === '/api/tokens' || path.startsWith('/api/tokens/')) return this.respond(this.tokenRoute(path, method, body))
+    if (path.startsWith('/api/ai/')) {
+      const signal = init?.signal ?? undefined
+      if (signal?.aborted) throw new DOMException('The request was aborted.', 'AbortError')
+      const answer = this.aiRoute(path, method, body, signal)
+      return 'ok' in answer ? answer : this.respond(answer)
+    }
     const m = /^\/api\/branches\/([^/?]+)\/(board|changes|ops|checkpoints|restore)(?:\?(.*))?$/.exec(path)
     const b = m ? this.all.find((x) => x.info.id === decodeURIComponent(m[1]!)) : undefined
     if (!m || !b) return this.respond(fail(404, 'not_found', 'no route'))

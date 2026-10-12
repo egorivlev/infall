@@ -4,7 +4,7 @@ The desktop app ([ADR 0002](../adr/0002-desktop-app-primary-browser-fallback.md)
 
 ## Shell
 - First start (or "Change server…" from the app menu): a small local screen asks for the server address (`https://…`; `http://` only for `localhost`/`127.0.0.1`), checks `GET <address>/api/health` answers `{ "ok": true }`, stores the address in the app's config directory, and loads the server's UI in the main window. Later starts go straight there.
-- The window shows only that origin. Navigation to any other origin opens in the system browser instead. No address bar, no devtools in release builds.
+- The window shows only that origin. A navigation to any other origin is refused and opens nothing — a script in any frame, a Visual's sandbox included, can start one, and it looks the same as one the Member started. Only a link that asks for a new window (`target="_blank"`, which every external link in the UI uses and which a sandboxed frame cannot do) is handed to the system browser, at most once every two seconds. No address bar, no devtools in release builds.
 - The server's pages are remote content: they get **no** general access to the app. The only thing exposed to that one origin is the bridge below; nothing is exposed to any other origin or to frames (the Visual sandbox frame included).
 
 ## Bridge — `window.qoopDesktop`

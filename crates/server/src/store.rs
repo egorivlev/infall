@@ -216,6 +216,24 @@ pub struct SuggestionRecord {
     pub decided_at: Option<i64>,
 }
 
+/// A Member's OpenRouter key as it is kept: sealed, never in the clear (contract §14).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiKeyRecord {
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,
+    /// The last four characters of the key, so its owner can recognise it.
+    pub last4: String,
+    pub added_at: i64,
+}
+
+/// A Member's settings for the OpenRouter path of the AI sidebar.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AiSettingsRecord {
+    pub key: Option<AiKeyRecord>,
+    /// The model id the Member chose.
+    pub model: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum StoreError {
     #[error("an account with that email already exists")]
@@ -240,8 +258,8 @@ impl From<serde_json::Error> for StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
-/// Accounts, sessions, invites, To-dos, access tokens, Suggestions and the Workspace
-/// snapshot.
+/// Accounts, sessions, invites, To-dos, access tokens, Suggestions, AI settings and the
+/// Workspace snapshot.
 pub trait Store: Send + Sync + 'static {
     fn load_workspace(&self) -> StoreResult<Option<Workspace>>;
     /// Replaces the snapshot atomically.
@@ -336,12 +354,20 @@ pub trait Store: Send + Sync + 'static {
         by: MemberId,
         at: i64,
     ) -> StoreResult<bool>;
+
+    /// The Member's AI settings; the default (nothing set) if they have none.
+    fn ai_settings(&self, member: MemberId) -> StoreResult<AiSettingsRecord>;
+    /// Stores or replaces the Member's sealed key, or removes it (`None`); their model
+    /// stays. False, and nothing stored, if there is no such Member.
+    fn set_ai_key(&self, member: MemberId, key: Option<&AiKeyRecord>) -> StoreResult<bool>;
+    /// Sets the Member's model; their key stays. False if there is no such Member.
+    fn set_ai_model(&self, member: MemberId, model: &str) -> StoreResult<bool>;
 }
 
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -432,9 +458,22 @@ CREATE TABLE suggestions (
 CREATE INDEX suggestions_branch ON suggestions(branch, state);
 ";
 
+/// M7: per Member, the sealed OpenRouter key and the chosen model. The row goes with the
+/// account.
+const SCHEMA_V4: &str = "
+CREATE TABLE ai_settings (
+    member_id TEXT PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+    key_ciphertext BLOB,
+    key_nonce BLOB,
+    key_last4 TEXT,
+    key_added_at INTEGER,
+    model TEXT
+);
+";
+
 /// Steps that bring a file from version `i` to `i + 1`; index 0 creates the schema.
 /// A later version appends its step here.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
@@ -670,6 +709,15 @@ fn save_workspace_on(conn: &Connection, ws: &Workspace) -> StoreResult<()> {
     Ok(())
 }
 
+fn member_exists_on(conn: &Connection, id: &str) -> StoreResult<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM members WHERE id = ?1",
+        params![id],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
 fn is_unique_violation(e: &rusqlite::Error) -> bool {
     matches!(
         e,
@@ -769,6 +817,7 @@ impl Store for SqliteStore {
             params![id],
         )?;
         tx.execute("DELETE FROM todos WHERE owner = ?1", params![id])?;
+        tx.execute("DELETE FROM ai_settings WHERE member_id = ?1", params![id])?;
         let n = tx.execute("DELETE FROM members WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(n > 0)
@@ -1167,6 +1216,85 @@ impl Store for SqliteStore {
         tx.commit()?;
         Ok(true)
     }
+
+    fn ai_settings(&self, member: MemberId) -> StoreResult<AiSettingsRecord> {
+        type Columns = (
+            Option<Vec<u8>>,
+            Option<Vec<u8>>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+        );
+        let row: Option<Columns> = self
+            .conn()?
+            .query_row(
+                "SELECT key_ciphertext, key_nonce, key_last4, key_added_at, model
+                 FROM ai_settings WHERE member_id = ?1",
+                params![member.0.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        Ok(match row {
+            None => AiSettingsRecord::default(),
+            Some((ciphertext, nonce, last4, added_at, model)) => AiSettingsRecord {
+                key: match (ciphertext, nonce, last4, added_at) {
+                    (Some(ciphertext), Some(nonce), Some(last4), Some(added_at)) => {
+                        Some(AiKeyRecord {
+                            ciphertext,
+                            nonce,
+                            last4,
+                            added_at,
+                        })
+                    }
+                    _ => None,
+                },
+                model,
+            },
+        })
+    }
+
+    fn set_ai_key(&self, member: MemberId, key: Option<&AiKeyRecord>) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let id = member.0.to_string();
+        if !member_exists_on(&tx, &id)? {
+            return Ok(false);
+        }
+        tx.execute(
+            "INSERT INTO ai_settings (member_id, key_ciphertext, key_nonce, key_last4, key_added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(member_id) DO UPDATE SET
+                 key_ciphertext = excluded.key_ciphertext,
+                 key_nonce = excluded.key_nonce,
+                 key_last4 = excluded.key_last4,
+                 key_added_at = excluded.key_added_at",
+            params![
+                id,
+                key.map(|k| &k.ciphertext),
+                key.map(|k| &k.nonce),
+                key.map(|k| &k.last4),
+                key.map(|k| k.added_at)
+            ],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    fn set_ai_model(&self, member: MemberId, model: &str) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let id = member.0.to_string();
+        if !member_exists_on(&tx, &id)? {
+            return Ok(false);
+        }
+        tx.execute(
+            "INSERT INTO ai_settings (member_id, model) VALUES (?1, ?2)
+             ON CONFLICT(member_id) DO UPDATE SET model = excluded.model",
+            params![id, model],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
 }
 
 // ---------------------------------------------------------------- memory
@@ -1180,6 +1308,7 @@ struct Memory {
     todos: Vec<TodoRecord>,
     tokens: Vec<AccessTokenRecord>,
     suggestions: Vec<SuggestionRecord>,
+    ai: HashMap<MemberId, AiSettingsRecord>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -1272,6 +1401,7 @@ impl Store for MemoryStore {
         m.sessions.retain(|_, (member, _)| *member != id);
         m.tokens.retain(|t| t.member != id);
         m.todos.retain(|t| t.owner != id);
+        m.ai.remove(&id);
         let before = m.members.len();
         m.members.retain(|x| x.id != id);
         Ok(m.members.len() < before)
@@ -1527,5 +1657,27 @@ impl Store for MemoryStore {
             m.workspace = Some(ws.clone());
         }
         Ok(accepted)
+    }
+
+    fn ai_settings(&self, member: MemberId) -> StoreResult<AiSettingsRecord> {
+        Ok(self.lock()?.ai.get(&member).cloned().unwrap_or_default())
+    }
+
+    fn set_ai_key(&self, member: MemberId, key: Option<&AiKeyRecord>) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        if !m.members.iter().any(|x| x.id == member) {
+            return Ok(false);
+        }
+        m.ai.entry(member).or_default().key = key.cloned();
+        Ok(true)
+    }
+
+    fn set_ai_model(&self, member: MemberId, model: &str) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        if !m.members.iter().any(|x| x.id == member) {
+            return Ok(false);
+        }
+        m.ai.entry(member).or_default().model = Some(model.to_string());
+        Ok(true)
     }
 }

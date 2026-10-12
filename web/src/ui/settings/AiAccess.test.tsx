@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   listed: 0,
   created: [] as unknown[][],
   removed: [] as unknown[][],
+  ai: { setup: { provider: 'none', reason: 'loading', desktop: false, openrouter: { enabled: false } }, conversations: [], current: null, busy: false },
 }))
 
 vi.mock('../../lib', () => ({
@@ -32,6 +33,9 @@ vi.mock('../../lib', () => ({
     },
   },
   toolEndpoint: () => 'https://qoop.test/mcp',
+  // The "AI sidebar" card above the tokens has its own tests (AiSidebarCard.test.tsx); here it stays in its checking state.
+  useAi: () => h.ai,
+  ai: { refresh: async () => {}, setKey: async () => {}, removeKey: async () => {}, setModel: async () => {}, models: async () => [] },
 }))
 
 import { AiAccess } from './AiAccess'

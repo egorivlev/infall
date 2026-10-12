@@ -1011,7 +1011,6 @@ async fn a_database_file_from_before_m5_upgrades_in_place_and_keeps_its_data() {
         (token, made["id"].as_str().unwrap().to_string())
     };
     assert_eq!(version(&path), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 3);
 
     // Opening the upgraded file again changes nothing.
     let app = TestApp::with_store(Arc::new(SqliteStore::open(&path).unwrap()));

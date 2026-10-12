@@ -521,3 +521,69 @@
   .qp-panel { animation: none; }
   .qp-block__tools, .qp-add, .qp-source__actions { transition: none; }
 }
+
+/* ---- Pinned blocks (M7): an answer copied from an AI Conversation, marked as such ---- */
+.qp-pin {
+  border: 1px dashed var(--q-line);
+  border-radius: 6px;
+  background: var(--q-sunken);
+}
+.qp-block > .qp-pin { margin: 6px 0; }
+.qp-pin__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px dashed var(--q-line);
+  color: var(--q-ink-2);
+}
+.qp-pin__chip {
+  flex: none;
+  padding: 3px 5px;
+  border: 1px dashed var(--q-ink-3);
+  border-radius: var(--q-r-chip);
+  font: 600 10px/1 var(--q-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase; /* the label only */
+  color: var(--q-ink-2);
+}
+/* A model id and a Member's name are shown as written, whatever the strip around them does. */
+.qp-pin__model {
+  min-width: 0;
+  font: 12px/1.4 var(--q-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+.qp-pin__space { flex: 1; }
+.qp-pin__glyph { flex: none; color: var(--q-ink-3); }
+.qp-pin__by { min-width: 0; font: 12px/1.4 var(--q-sans); overflow-wrap: anywhere; }
+.qp-pin__name { text-transform: none; letter-spacing: 0; }
+.qp-pin__body { padding: 12px 16px 12px; }
+.qp-pin__body .qp-md { font-size: 15px; color: var(--q-ink-2); }
+.qp-pin__body.is-editable { outline-offset: -3px; }
+.qp-pin__body.is-editable:hover { box-shadow: none; background: color-mix(in oklch, var(--q-hover) 60%, transparent); }
+.qp-pin__editor { padding: 10px 12px; }
+.qp-pin__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 0 16px 10px;
+  font: 11.5px/1.5 var(--q-sans);
+  color: var(--q-ink-2);
+}
+.qp-pin__review {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r);
+  background: var(--q-surface);
+  color: var(--q-ink);
+  font: 500 11.5px/1 var(--q-sans);
+  cursor: pointer;
+}
+.qp-pin__review:hover { background: var(--q-hover); }

@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup",
+  "description": "The local first-run screen may read and save the server address. Nothing else.",
+  "local": true,
+  "windows": ["setup"],
+  "permissions": ["allow-setup-current", "allow-setup-save"]
+}

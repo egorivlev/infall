@@ -1,0 +1,139 @@
+/* The AI sidebar (M7, screens 4a / 4b). Tokens (--q-*) come from tokens.css, foundations from base.css.
+   The shell gives it the 376px column at the right edge (shell.css: .q-shell.has-ai). */
+
+.qa-side {
+  position: relative;
+  z-index: 1; /* its own stacking context, under the top bar's menus */
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--q-surface);
+  border-left: 1px solid var(--q-chrome-line);
+  color: var(--q-ink);
+  font: 13px/1.4 var(--q-sans);
+}
+
+/* ---- header ---- */
+.qa-head { flex: none; display: flex; align-items: center; gap: var(--q-s2); min-height: 44px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--q-line-soft); }
+.qa-head__title { margin: 0; font: 600 13px/1.4 var(--q-sans); }
+.qa-head__provider { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px/1.4 var(--q-mono); color: var(--q-ink-3); }
+.qa-head__space { flex: 1; }
+.qa-iconbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink-3); cursor: pointer; }
+.qa-iconbtn:hover:not(:disabled), .qa-iconbtn[aria-expanded="true"] { background: var(--q-hover); color: var(--q-ink); }
+.qa-iconbtn:disabled { cursor: not-allowed; opacity: .5; }
+
+/* ---- Conversations menu ---- */
+.qa-convs { position: relative; display: flex; }
+.qa-convs__pop { position: absolute; top: 32px; right: -30px; z-index: 20; width: 320px; max-height: min(420px, calc(100vh - 120px)); overflow-y: auto; padding: var(--q-s1); background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
+.qa-convs__label { padding: 6px 8px 4px; }
+.qa-convs__empty { margin: 0; padding: 6px 8px 8px; }
+.qa-convs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.qa-convs__row { display: flex; align-items: center; gap: 2px; min-height: 32px; }
+.qa-convs__open { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--q-s2); min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink); text-align: left; cursor: pointer; }
+.qa-convs__open:hover:not(:disabled) { background: var(--q-hover); }
+.qa-convs__open[aria-current="true"] { background: var(--q-hover); box-shadow: inset 2px 0 0 var(--q-accent); }
+.qa-convs__open:disabled { cursor: not-allowed; color: var(--q-ink-3); }
+.qa-convs__open:focus-visible, .qa-convs__del:focus-visible { outline-offset: -2px; }
+.qa-convs__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-convs__date { flex: none; font: 11px/1.4 var(--q-mono); color: var(--q-ink-3); }
+.qa-convs__confirm { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; }
+.qa-convs__ask { flex: 1; min-width: 0; font-size: 12.5px; color: var(--q-ink-2); }
+
+/* ---- privacy line ---- */
+.qa-private { flex: none; display: flex; align-items: flex-start; gap: var(--q-s2); margin: 0; padding: 8px 12px; background: var(--q-sunken); border-bottom: 1px solid var(--q-line-soft); font-size: 12px; line-height: 1.45; color: var(--q-ink-2); }
+.qa-private svg { flex: none; margin-top: 2px; }
+.qa-private b { font-weight: 600; color: var(--q-ink); }
+
+/* ---- the Conversation ---- */
+.qa-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qa-log { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 10px; display: flex; flex-direction: column; gap: var(--q-s4); }
+.qa-log:focus-visible { outline-offset: -2px; }
+.qa-jump { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); background: var(--q-raised); box-shadow: var(--q-shadow); }
+.qa-jump:hover:not(:disabled) { background: var(--q-raised); border-color: var(--q-ink-3); }
+
+.qa-user { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.qa-user__scope { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line-soft); font-size: 11px; line-height: 1.5; color: var(--q-ink-3); }
+.qa-bubble { max-width: 100%; padding: 8px 11px; border-radius: 6px; background: var(--q-raised); border: 1px solid var(--q-line-soft); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.qa-answer { min-width: 0; display: flex; flex-direction: column; gap: var(--q-s2); }
+/* The Page's Markdown, a size smaller for the narrow column; wide formulas, tables and code scroll inside themselves. */
+.qa-answer .qp-md { gap: 10px; font-size: 15px; min-width: 0; }
+.qa-answer .qp-md pre, .qa-answer .qp-md table, .qa-answer .qp-md .katex-display { max-width: 100%; overflow-x: auto; }
+.qa-answer .qp-md img { max-width: 100%; height: auto; }
+.qa-caret { width: 7px; height: 15px; background: var(--q-ink-3); border-radius: 1px; }
+.qa-tools { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 2px; font: 10.5px/1.5 var(--q-mono); color: var(--q-ink-3); overflow-wrap: anywhere; }
+.qa-link { padding: 0; border: 0; background: transparent; font: inherit; color: var(--q-accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.qa-answer__end { display: flex; align-items: center; flex-wrap: wrap; gap: var(--q-s2); }
+.qa-answer__error { font-size: 12.5px; line-height: 1.45; color: var(--q-st-question); }
+.qa-answer__stopped { font-size: 12.5px; color: var(--q-ink-3); }
+
+.qa-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.qa-act { max-width: 100%; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 4px; border: 1px solid var(--q-line); background: transparent; color: var(--q-ink); font: 500 12px var(--q-sans); cursor: pointer; }
+.qa-act svg { flex: none; }
+.qa-act__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-act:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--q-hover); }
+.qa-act:disabled, .qa-act[aria-disabled="true"] { color: var(--q-ink-3); cursor: not-allowed; }
+.qa-act--pinned { border-color: var(--q-line-soft); color: var(--q-ink-3); }
+.qa-act--pinned:hover { color: var(--q-ink); }
+.qa-act--quiet { border-color: transparent; color: var(--q-ink-3); font-weight: 400; }
+.qa-act--quiet:hover { color: var(--q-ink); }
+.qa-actions__note { font-size: 12px; color: var(--q-st-question); }
+.qa-actions__note:empty { display: none; }
+
+/* ---- an empty Conversation ---- */
+.qa-starters { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--q-s2); padding: 14px; }
+.qa-starters__lead { margin: 0; font-size: 12.5px; color: var(--q-ink-3); }
+.qa-starters__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.qa-starter { width: 100%; min-height: 30px; padding: 6px 10px; border-radius: var(--q-r); border: 1px solid var(--q-line-soft); background: transparent; color: var(--q-ink-2); font-size: 13px; line-height: 1.4; text-align: left; cursor: pointer; }
+.qa-starter:hover:not(:disabled) { background: var(--q-hover); color: var(--q-ink); border-color: var(--q-line); }
+.qa-starter:disabled { color: var(--q-ink-3); cursor: not-allowed; }
+
+/* ---- no AI set up (4b) ---- */
+.qa-none { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: var(--q-s4) var(--q-s6); }
+.qa-none > svg { flex: none; color: var(--q-ink-3); }
+.qa-none__h { margin: 0; font: 600 19px/1.3 var(--q-serif); }
+.qa-none__p, .qa-none__quiet { margin: 0; font-size: 13px; line-height: 1.55; color: var(--q-ink-2); text-wrap: pretty; }
+.qa-none__quiet { color: var(--q-ink-3); text-align: center; }
+.qa-none__p a { color: var(--q-accent); text-decoration: underline; text-underline-offset: 2px; }
+.qa-none__private { display: flex; gap: var(--q-s2); }
+.qa-none__private svg { flex: none; margin-top: 3px; }
+.qa-none__actions { display: flex; gap: var(--q-s2); padding-top: 4px; }
+a.qa-none__link, a.qa-none__link:hover { color: var(--q-accent-ink); text-decoration: none; }
+
+/* ---- composer ---- */
+.qa-composer { flex: none; display: flex; flex-direction: column; gap: var(--q-s2); padding: 10px 12px 12px; border-top: 1px solid var(--q-line-soft); }
+.qa-composer__scope { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.qa-composer__note { flex: none; font-size: 11.5px; color: var(--q-ink-3); white-space: nowrap; }
+.qa-chip { min-width: 0; display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid var(--q-line); font-size: 12px; color: var(--q-ink); }
+.qa-chip--card { padding-right: 2px; border-color: var(--q-accent); background: var(--q-accent-soft); }
+.qa-chip__kind { flex: none; color: var(--q-ink-3); }
+.qa-chip--card .qa-chip__kind { color: var(--q-ink-2); }
+.qa-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-chip__x { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--q-ink-2); cursor: pointer; }
+.qa-chip__x:hover { background: var(--q-hover); color: var(--q-ink); }
+.qa-field { display: flex; flex-direction: column; gap: 6px; min-height: 64px; padding: 9px 10px 7px; border-radius: var(--q-r); border: 1px solid var(--q-line); background: var(--q-sunken); cursor: text; }
+.qa-field:focus-within { border-color: var(--q-accent); }
+.qa-field:has(.qa-field__input:focus-visible) { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+.qa-field__input { flex: 1; width: 100%; min-height: 20px; max-height: 180px; padding: 0; border: 0; outline: none; resize: none; background: transparent; color: var(--q-ink); font-size: 13px; line-height: 1.5; field-sizing: content; }
+.qa-field__input::placeholder { color: var(--q-ink-3); }
+.qa-field__input:disabled { cursor: not-allowed; }
+.qa-field__foot { display: flex; justify-content: flex-end; align-items: center; min-height: 26px; }
+.qa-field__hint { font: 11px/1.4 var(--q-mono); color: var(--q-ink-3); }
+.qa-composer__error { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--q-st-question); }
+.qa-composer__error:empty { display: none; }
+.qa-composer.is-off .qa-field { min-height: 48px; border-style: dashed; }
+.qa-composer.is-off .qa-chip { color: var(--q-ink-2); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .qa-caret { animation: qa-caret 1.1s steps(2, jump-none) infinite; }
+  @keyframes qa-caret { from { opacity: 1; } to { opacity: .25; } }
+  .qa-convs__pop { animation: q-pop 140ms var(--q-ease); }
+}
+
+/* Below 1100px the sidebar lies over the work area instead of taking a column from it (shell.css keeps the two-column grid). */
+@media (max-width: 1099px) {
+  .qa-side { position: fixed; top: 44px; right: 0; bottom: 0; z-index: 4; width: 376px; box-shadow: var(--q-shadow); }
+}

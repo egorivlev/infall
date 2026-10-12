@@ -103,7 +103,7 @@ export function visualName(e: Entity | undefined): string {
 }
 
 type Laid = 'Card' | 'Frame' | 'Connection' // the kinds that sit on the Board itself
-type PageEdits = { added: number; removed: number; edited: number; reordered: number }
+type PageEdits = { added: number; removed: number; edited: number; reordered: number; pinned: number; reviewed: number }
 
 // What a run did to one block, or to one Attachment: it appeared, it went, or (a block) it changed.
 function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'changed' | 'none' {
@@ -114,6 +114,14 @@ function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'chan
 // A Visual is edited when its source, its title, or what it is changed.
 function visualEdited(was: Entity, now: Entity): boolean {
   return ['text', 'title', 'type'].some((f) => !sameValue(was.fields, now.fields, f))
+}
+
+// A Block pinned from an AI Conversation says who pinned it; it is reviewed once a Member put their id on it.
+const isPinned = (e: Entity): boolean => text(e.fields, 'ai_pinned_by') !== ''
+const isReviewed = (e: Entity): boolean => text(e.fields, 'ai_reviewed_by') !== ''
+
+function answers(n: number): string {
+  return n === 1 ? 'an AI answer' : `${n} AI answers`
 }
 
 function blocks(n: number): string {
@@ -171,14 +179,18 @@ export function describeChanges(
     if (now.kind === 'Block') {
       const card = ref(now.fields, 'card')
       let e = pages.get(card)
-      if (!e) pages.set(card, (e = { added: 0, removed: 0, edited: 0, reordered: 0 }))
+      if (!e) pages.set(card, (e = { added: 0, removed: 0, edited: 0, reordered: 0, pinned: 0, reviewed: 0 }))
       const what = fate(was, now)
       if (isVisual(now)) {
         // A Visual has a line of its own; only its place in the Page is the Page's business.
         if (what === 'changed' && was && !visualEdited(was, now) && !sameValue(was.fields, now.fields, 'order')) e.reordered++
-      } else if (what === 'added') e.added++
-      else if (what === 'removed') e.removed++
+      } else if (what === 'added') {
+        // Pinned in this run: said in its own words. One that only came back reads as any block does.
+        if (!was && isPinned(now)) e.pinned++
+        else e.added++
+      } else if (what === 'removed') e.removed++
       else if (what === 'changed' && was) {
+        if (isPinned(now) && isReviewed(now) && !isReviewed(was)) e.reviewed++
         if (!sameValue(was.fields, now.fields, 'text') || !sameValue(was.fields, now.fields, 'type')) e.edited++
         else if (!sameValue(was.fields, now.fields, 'order')) e.reordered++
       }
@@ -203,7 +215,11 @@ export function describeChanges(
       }
       if (pagesSaid.has(card)) continue
       pagesSaid.add(card)
-      const line = pageLine(pages.get(card)!, titleOf(after[card]))
+      const edits = pages.get(card)!
+      const title = titleOf(after[card])
+      if (edits.pinned > 0) lines.push(`Pinned ${answers(edits.pinned)} to the Page of ${title}`)
+      if (edits.reviewed > 0) lines.push(`Marked ${answers(edits.reviewed)} as reviewed in the Page of ${title}`)
+      const line = pageLine(edits, title)
       if (line) lines.push(line)
       continue
     }

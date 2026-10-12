@@ -1,4 +1,5 @@
-//! The `qoop-server` command line: `serve` (default), `create-admin`, `reset-password`.
+//! The `qoop-server` command line: `serve` (default), `create-admin`, `reset-password`,
+//! `gen-secret-key`.
 
 use std::future::IntoFuture;
 use std::process::ExitCode;
@@ -7,6 +8,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use qoop_server::config::Config;
+use qoop_server::secret::SecretKey;
 use qoop_server::store::{SqliteStore, Store};
 use qoop_server::{Clock, build_app_with, create_admin, reset_password};
 use tracing_subscriber::EnvFilter;
@@ -37,6 +39,8 @@ enum Command {
         #[arg(long)]
         email: String,
     },
+    /// Print a fresh value for QOOP_SECRET_KEY (32 random bytes, base64).
+    GenSecretKey,
 }
 
 fn main() -> ExitCode {
@@ -46,9 +50,15 @@ fn main() -> ExitCode {
         )
         .init();
     let cli = Cli::parse();
+    let command = cli.command.unwrap_or(Command::Serve);
     let result = match Config::from_env() {
+        // Needs no configuration, and must work when the configured key is the problem.
+        _ if matches!(command, Command::GenSecretKey) => SecretKey::generate().map(|key| {
+            println!("{}", key.to_base64());
+        }),
         Err(e) => Err(e),
-        Ok(config) => match cli.command.unwrap_or(Command::Serve) {
+        Ok(config) => match command {
+            Command::GenSecretKey => Ok(()),
             Command::Serve => serve(config),
             Command::CreateAdmin { email, name } => open(&config).and_then(|store| {
                 let password = read_password()?;

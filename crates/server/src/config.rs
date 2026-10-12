@@ -2,6 +2,14 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
+
+use crate::secret::SecretKey;
+
+/// Where OpenRouter is unless `QOOP_OPENROUTER_URL` says otherwise.
+pub const DEFAULT_OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
+/// How long an AI turn may go without progress from upstream (contract §14).
+pub const AI_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Everything the server needs to know about where it runs.
 #[derive(Debug, Clone)]
@@ -13,6 +21,13 @@ pub struct Config {
     /// One extra Origin allowed for local UI development.
     pub dev_origin: Option<String>,
     pub web_dir: PathBuf,
+    /// Seals Members' OpenRouter keys at rest; `None` turns the OpenRouter path off.
+    pub secret_key: Option<SecretKey>,
+    /// The upstream base URL, without a trailing slash: the only host the server calls.
+    pub openrouter_url: String,
+    /// How long an AI turn may go without progress from upstream. Not read from the
+    /// environment: always `AI_IDLE_TIMEOUT`, except in tests.
+    pub ai_idle_timeout: Duration,
 }
 
 impl Config {
@@ -34,16 +49,32 @@ impl Config {
             ),
             None => None,
         };
+        let secret_key = match var("QOOP_SECRET_KEY") {
+            Some(raw) => Some(SecretKey::from_base64(&raw).map_err(|why| {
+                format!("QOOP_SECRET_KEY {why}; `qoop-server gen-secret-key` prints a valid one")
+            })?),
+            None => None,
+        };
+        let openrouter_url = normalize_base_url(
+            &var("QOOP_OPENROUTER_URL").unwrap_or_else(|| DEFAULT_OPENROUTER_URL.to_string()),
+        )
+        .ok_or(
+            "QOOP_OPENROUTER_URL must be an http:// or https:// URL without a query, fragment or credentials",
+        )?;
         Ok(Config {
             addr,
             db: PathBuf::from(var("QOOP_DB").unwrap_or_else(|| "./qoop.db".to_string())),
             public_origin,
             dev_origin,
             web_dir: PathBuf::from(var("QOOP_WEB_DIR").unwrap_or_else(|| "./web/dist".to_string())),
+            secret_key,
+            openrouter_url,
+            ai_idle_timeout: AI_IDLE_TIMEOUT,
         })
     }
 
-    /// A configuration for tests and tools: public origin `http://localhost:8787`.
+    /// A configuration for tests and tools: public origin `http://localhost:8787`, the
+    /// OpenRouter path off.
     pub fn for_tests(web_dir: impl Into<PathBuf>) -> Config {
         Config {
             addr: ([127, 0, 0, 1], 0).into(),
@@ -51,6 +82,9 @@ impl Config {
             public_origin: "http://localhost:8787".to_string(),
             dev_origin: None,
             web_dir: web_dir.into(),
+            secret_key: None,
+            openrouter_url: DEFAULT_OPENROUTER_URL.to_string(),
+            ai_idle_timeout: AI_IDLE_TIMEOUT,
         }
     }
 
@@ -79,9 +113,46 @@ fn normalize_origin(raw: &str) -> Option<String> {
     Some(lower)
 }
 
+/// Trims whitespace and trailing slashes; `None` unless it is an http(s) URL with a host
+/// and without a query, a fragment or credentials.
+pub fn normalize_base_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    let url = reqwest::Url::parse(trimmed).ok()?;
+    let plain = matches!(url.scheme(), "http" | "https")
+        && url.has_host()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    plain.then(|| trimmed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_upstream_base_url_is_a_plain_http_url() {
+        assert_eq!(
+            normalize_base_url(" https://openrouter.ai/api/v1/ ").as_deref(),
+            Some("https://openrouter.ai/api/v1")
+        );
+        assert_eq!(
+            normalize_base_url("http://127.0.0.1:9000").as_deref(),
+            Some("http://127.0.0.1:9000")
+        );
+        for bad in [
+            "openrouter.ai/api/v1",
+            "ftp://openrouter.ai",
+            "https://user:pw@openrouter.ai/api/v1",
+            "https://openrouter.ai/api/v1?x=1",
+            "https://openrouter.ai/api/v1#frag",
+            "file:///etc/passwd",
+            "",
+        ] {
+            assert_eq!(normalize_base_url(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn origins_are_normalized_and_compared_exactly() {

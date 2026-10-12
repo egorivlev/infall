@@ -10,6 +10,7 @@ import { DraftArea } from './DraftArea'
 import type { DraftResult } from './DraftArea'
 import { editLock } from './lock'
 import { MarkdownView } from './MarkdownView'
+import { PinFoot, PinHead } from './Pinned'
 import { VisualBlock } from './visuals/VisualBlock'
 
 type BlockProps = {
@@ -23,11 +24,12 @@ type BlockProps = {
 }
 
 /**
- * One text Block. Memoised: `block` keeps its identity until it changes and every other prop is a
+ * One text Block. One pinned from an AI Conversation (`block.ai`) reads differently — a marked frame
+ * around the same Markdown — and is edited, moved and deleted like any other. Memoised: `block` keeps its identity until it changes and every other prop is a
  * primitive or stable, so typing in (or committing) one Block never re-renders the others.
  */
 const Block = memo(function Block({ block, index, last, editing, canEdit, handlers }: BlockProps) {
-  const { id, text } = block
+  const { id, text, ai } = block
   const hintId = useId()
   const viewRef = useRef<HTMLDivElement>(null)
   const refocus = useRef(false)
@@ -41,8 +43,8 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
   }, [editing])
 
   if (editing) {
-    return (
-      <div className="qp-block is-editing" data-block={id} data-testid={`block-${id}`}>
+    const editor = (
+      <>
         <DraftArea
           initial={text}
           label={`Block ${n}, Markdown`}
@@ -57,6 +59,19 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
         <p className="qp-block__hint" id={hintId}>
           Markdown · $math$ · ⌘Enter to finish · Esc to cancel
         </p>
+      </>
+    )
+    return (
+      <div className="qp-block is-editing" data-block={id} data-testid={`block-${id}`}>
+        {ai ? (
+          // Editing the text keeps the marking: the strip stays on while the editor is open.
+          <div className="qp-pin qp-pin--editing">
+            <PinHead ai={ai} />
+            <div className="qp-pin__editor">{editor}</div>
+          </div>
+        ) : (
+          editor
+        )}
       </div>
     )
   }
@@ -74,6 +89,33 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
   }
 
   const body = text.trim() ? <MarkdownView text={text} /> : <p className="qp-block__blank">Empty block</p>
+
+  if (ai) {
+    return (
+      <div className="qp-block" data-block={id} data-testid={`block-${id}`}>
+        {canEdit && <BlockTools id={id} index={index} last={last} handlers={handlers} />}
+        <div className="qp-pin" role="group" aria-label={`Block ${n}, AI-generated`}>
+          <PinHead ai={ai} />
+          {canEdit ? (
+            <div
+              ref={viewRef}
+              className="qp-block__view qp-pin__body is-editable"
+              role="group"
+              tabIndex={0}
+              aria-label={`Block ${n}, AI-generated. Press Enter to edit.`}
+              onClick={onClick}
+              onKeyDown={onKeyDown}
+            >
+              {body}
+            </div>
+          ) : (
+            <div className="qp-block__view qp-pin__body">{body}</div>
+          )}
+          <PinFoot block={id} ai={ai} canReview={canEdit} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="qp-block" data-block={id} data-testid={`block-${id}`}>

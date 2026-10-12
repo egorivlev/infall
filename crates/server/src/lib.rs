@@ -3,9 +3,11 @@
 //! The contract is `docs/specs/api.md`. `build_app` gives a `Router` that tests can drive
 //! without a socket; `main.rs` adds the CLI and the listener.
 
+pub mod ai;
 pub mod app;
 pub mod auth;
 pub mod boards;
+pub mod chat;
 pub mod config;
 pub mod error;
 pub mod history;
@@ -13,6 +15,7 @@ pub mod live;
 pub mod mcp;
 pub mod merges;
 pub mod people;
+pub mod secret;
 pub mod store;
 pub mod suggestions;
 pub mod todos;
@@ -114,6 +117,7 @@ pub fn build_app_with(
         hub: Hub::default(),
         throttle: Throttle::default(),
         tool_rate: tokens::RateLimit::default(),
+        ai: ai::AiState::new().map_err(StartError::Other)?,
         clock,
         hashing: Semaphore::new(4),
         dummy_hash,

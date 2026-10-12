@@ -12,7 +12,14 @@ const h = vi.hoisted(() => ({
   opened: [] as string[],
 }))
 
+// M7: no AI set up. The sidebar and the AI settings card have their own tests.
+const noAi = vi.hoisted(() => ({
+  snapshot: { setup: { provider: 'none', reason: 'loading', desktop: false, openrouter: { enabled: false } }, conversations: [], current: null, busy: false },
+}))
+
 vi.mock('../../lib', () => ({
+  useAi: () => noAi.snapshot,
+  ai: { refresh: async () => {}, models: async () => [] },
   useSession: () => h.session,
   useBoard: () => h.board,
   useSuggestions: () => h.suggestions,

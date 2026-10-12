@@ -79,6 +79,20 @@ export const ops = {
   setBlockTitle(block: string, title: string): Op {
     return set(block, 'title', title === '' ? 'Null' : txt(title))
   },
+  /** A text Block pinned from an AI Conversation: it carries what produced it, who pinned it, and when (unix ms). */
+  pinBlock(input: { id?: string; card: string; text: string; order: string; model: string; pinnedBy: string; pinnedAt: number }): Op {
+    if (input.pinnedBy === '') throw new RangeError('A pinned block needs the Member who pinned it.')
+    const fields: Fields = { card: { Ref: input.card }, type: txt('text'), order: txt(orderKey(input.order)) }
+    if (input.text !== '') fields.text = txt(input.text)
+    if (input.model !== '') fields.ai_model = txt(input.model)
+    fields.ai_pinned_by = txt(input.pinnedBy)
+    fields.ai_pinned_at = num(input.pinnedAt)
+    return { Create: { entity: input.id ?? newId(), kind: 'Block', fields } }
+  },
+  /** Marks a pinned Block as reviewed by a Member; '' takes the mark back. */
+  markReviewed(block: string, memberId: string): Op {
+    return set(block, 'ai_reviewed_by', memberId === '' ? 'Null' : txt(memberId))
+  },
   moveBlock(block: string, order: string): Op {
     return set(block, 'order', txt(orderKey(order)))
   },

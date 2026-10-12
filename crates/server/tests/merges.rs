@@ -8,7 +8,8 @@ use axum::http::{Method, Request, StatusCode, header};
 use common::*;
 use qoop_core::{MemberId, Workspace};
 use qoop_server::store::{
-    InviteRecord, MemberRecord, MemoryStore, SqliteStore, Store, StoreError, StoreResult,
+    AiKeyRecord, AiSettingsRecord, InviteRecord, MemberRecord, MemoryStore, SqliteStore, Store,
+    StoreError, StoreResult,
 };
 use serde_json::{Value, json};
 
@@ -1119,6 +1120,15 @@ impl Store for BreakableStore {
             return Err(StoreError::Backend("disk full at /secret/path".to_string()));
         }
         self.inner.save_workspace_accepting(ws, suggestion, by, at)
+    }
+    fn ai_settings(&self, m: MemberId) -> StoreResult<AiSettingsRecord> {
+        self.inner.ai_settings(m)
+    }
+    fn set_ai_key(&self, m: MemberId, k: Option<&AiKeyRecord>) -> StoreResult<bool> {
+        self.inner.set_ai_key(m, k)
+    }
+    fn set_ai_model(&self, m: MemberId, model: &str) -> StoreResult<bool> {
+        self.inner.set_ai_model(m, model)
     }
 }
 

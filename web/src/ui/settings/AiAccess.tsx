@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../shell/ConfirmDialog'
 import { describeError, errorStatus } from '../shell/errorMessages'
 import { Field } from '../shell/Field'
 import { useDelayedFlag } from '../shell/useDelayedFlag'
+import { AiSidebarCard } from './AiSidebarCard'
 import { ConnectCommand } from './ConnectCommand'
 import { SecretPanel } from './SecretPanel'
 import { checkName, describeCreateError, LIMIT_REACHED, NAME_MAX, TOKEN_LIMIT } from './tokenErrors'
@@ -173,6 +174,8 @@ export function AiAccess() {
             everything you can.
           </p>
         </header>
+
+        <AiSidebarCard />
 
         <section className="q-settings__card" aria-labelledby="q-tokens-h">
           <div className="q-settings__cardhead">

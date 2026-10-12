@@ -183,15 +183,30 @@ pub async fn bearer_member(
 
 // ---------------------------------------------------------------- rate limit
 
-/// Requests per access token within the last minute.
-#[derive(Default)]
+/// Requests per key (an access token, or a Member) within the last minute.
 pub struct RateLimit {
+    max: usize,
     recent: Mutex<HashMap<Uuid, VecDeque<i64>>>,
 }
 
+impl Default for RateLimit {
+    /// The limit of the tool endpoint: `RATE_MAX_REQUESTS` a minute.
+    fn default() -> RateLimit {
+        RateLimit::new(RATE_MAX_REQUESTS)
+    }
+}
+
 impl RateLimit {
-    /// Counts one request by `token` at `now`; false when it already made
-    /// `RATE_MAX_REQUESTS` within the window (a refused request is not counted).
+    /// A limit of `max` requests a minute per key.
+    pub fn new(max: usize) -> RateLimit {
+        RateLimit {
+            max,
+            recent: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Counts one request by `token` at `now`; false when it already made the maximum
+    /// within the window (a refused request is not counted).
     pub fn allow(&self, token: Uuid, now: i64) -> bool {
         let mut map = match self.recent.lock() {
             Ok(m) => m,
@@ -204,7 +219,7 @@ impl RateLimit {
         while list.front().is_some_and(|&t| t <= now - RATE_WINDOW_MS) {
             list.pop_front();
         }
-        if list.len() >= RATE_MAX_REQUESTS {
+        if list.len() >= self.max {
             return false;
         }
         list.push_back(now);

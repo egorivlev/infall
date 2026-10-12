@@ -597,6 +597,22 @@ impl Store for FailingStore {
             "disk full at /secret/path".to_string(),
         ))
     }
+    fn ai_settings(
+        &self,
+        m: MemberId,
+    ) -> qoop_server::store::StoreResult<qoop_server::store::AiSettingsRecord> {
+        self.0.ai_settings(m)
+    }
+    fn set_ai_key(
+        &self,
+        m: MemberId,
+        k: Option<&qoop_server::store::AiKeyRecord>,
+    ) -> qoop_server::store::StoreResult<bool> {
+        self.0.set_ai_key(m, k)
+    }
+    fn set_ai_model(&self, m: MemberId, model: &str) -> qoop_server::store::StoreResult<bool> {
+        self.0.set_ai_model(m, model)
+    }
 }
 
 #[tokio::test]
