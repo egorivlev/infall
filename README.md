@@ -34,10 +34,17 @@ npm --prefix web run dev
 
 Open http://localhost:5173. To serve the built UI from the server itself instead, run `npm --prefix web run build` and open http://localhost:8787.
 
+### The AI sidebar while developing
+
+- In a browser the sidebar needs the OpenRouter path. Put a secret into `.dev/server.env` (git-ignored; read by `scripts/dev-server.sh`):
+  `printf 'QOOP_SECRET_KEY=%s\n' "$(cargo run -q -p qoop-server -- gen-secret-key)" > .dev/server.env`, restart the server, then add your key under **AI access**.
+- The desktop app (which runs the sidebar on your own Claude Code) lives in [desktop/](desktop/README.md): `cd desktop/src-tauri && cargo run`, then enter `http://localhost:8787`.
+
 ## Check everything
 
 ```bash
-cargo test --workspace
+cargo test --workspace            # core + server
+(cd desktop/src-tauri && cargo test)  # desktop app, separate workspace
 ```
 
 ```bash
