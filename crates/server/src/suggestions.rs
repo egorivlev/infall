@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::app::{Shared, blocking};
 use crate::auth::MemberOrAdmin;
-use crate::boards::{changes_after, check_text_sizes, rejected};
+use crate::boards::{CheckedOps, changes_after, rejected};
 use crate::error::{ApiError, ApiJson, ApiQuery};
 use crate::live::Hub;
 use crate::store::{
@@ -319,7 +319,8 @@ pub async fn accept(
             "Send between 1 and {MAX_ACCEPT_OPS} ops."
         )));
     }
-    check_text_sizes(&body.ops)?;
+    // The same checks as `post_ops`: these ops are built by the client.
+    let ops = CheckedOps::new(body.ops, who.id())?;
 
     // As in `post_ops`: the write lock is held through persisting and broadcasting.
     let mut ws = st.workspace.write().await;
@@ -337,10 +338,11 @@ pub async fn accept(
     if !cards_of(&suggestion).all(|card| is_live_card(&board, card)) {
         return Err(ApiError::SuggestionStale);
     }
+    let ops = ops.on_board(&ws, before)?;
     let mut next = ws.clone();
     let at = st.clock.now();
     let head = next
-        .record_all(branch, who.id(), at, body.ops)
+        .record_all(branch, who.id(), at, ops)
         .map_err(rejected)?;
     let by = who.id();
     let store = st.store.clone();

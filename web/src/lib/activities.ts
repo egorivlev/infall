@@ -102,6 +102,20 @@ export function visualName(e: Entity | undefined): string {
   return t === '' ? 'Untitled Visual' : `Visual ${t}`
 }
 
+export function isRun(e: Entity | undefined): boolean {
+  return e !== undefined && e.kind === 'Block' && text(e.fields, 'type') === 'run'
+}
+
+/** What a Run goes by: "Run <name>", or "Untitled Run". */
+export function runName(e: Entity | undefined): string {
+  const t = e ? text(e.fields, 'title').trim() : ''
+  return t === '' ? 'Untitled Run' : `Run ${t}`
+}
+
+// A Simulation — a Visual or a Run — is spoken of by its own name, in a line of its own.
+const isSimulation = (e: Entity | undefined): boolean => isVisual(e) || isRun(e)
+const simulationName = (e: Entity): string => (isRun(e) ? runName(e) : visualName(e))
+
 type Laid = 'Card' | 'Frame' | 'Connection' // the kinds that sit on the Board itself
 type PageEdits = { added: number; removed: number; edited: number; reordered: number; pinned: number; reviewed: number }
 
@@ -111,9 +125,14 @@ function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'chan
   return now.deleted ? 'removed' : 'changed'
 }
 
-// A Visual is edited when its source, its title, or what it is changed.
+// A Visual is edited when its source, its title, or what it is changed; a Run when its code, its name, or what it is.
 function visualEdited(was: Entity, now: Entity): boolean {
   return ['text', 'title', 'type'].some((f) => !sameValue(was.fields, now.fields, f))
+}
+
+// A Run ends a run of Changes with another result than it began with: executed, or its output cleared.
+function resultChanged(was: Entity | undefined, now: Entity): boolean {
+  return isRun(now) && !sameValue(was?.fields ?? {}, now.fields, 'result')
 }
 
 // A Block pinned from an AI Conversation says who pinned it; it is reviewed once a Member put their id on it.
@@ -181,9 +200,9 @@ export function describeChanges(
       let e = pages.get(card)
       if (!e) pages.set(card, (e = { added: 0, removed: 0, edited: 0, reordered: 0, pinned: 0, reviewed: 0 }))
       const what = fate(was, now)
-      if (isVisual(now)) {
-        // A Visual has a line of its own; only its place in the Page is the Page's business.
-        if (what === 'changed' && was && !visualEdited(was, now) && !sameValue(was.fields, now.fields, 'order')) e.reordered++
+      if (isSimulation(now)) {
+        // A Visual or a Run has a line of its own; only its place in the Page is the Page's business.
+        if (what === 'changed' && was && !visualEdited(was, now) && !resultChanged(was, now) && !sameValue(was.fields, now.fields, 'order')) e.reordered++
       } else if (what === 'added') {
         // Pinned in this run: said in its own words. One that only came back reads as any block does.
         if (!was && isPinned(now)) e.pinned++
@@ -205,13 +224,17 @@ export function describeChanges(
     if (!now) continue
     if (now.kind === 'Block') {
       const card = ref(now.fields, 'card')
-      if (isVisual(now)) {
+      if (isSimulation(now)) {
         const what = fate(was, now)
-        const name = visualName(now)
+        const name = simulationName(now)
         const page = `the Page of ${titleOf(after[card])}`
         if (what === 'added') lines.push(`Added ${name} to ${page}`)
         else if (what === 'removed') lines.push(`Removed ${name} from ${page}`)
         else if (what === 'changed' && was && visualEdited(was, now)) lines.push(`Edited ${name} in ${page}`)
+        // An execution is said beside whatever else happened to the Run: who executed it is what a Run records.
+        if (what !== 'removed' && what !== 'none' && resultChanged(was, now)) {
+          lines.push('result' in now.fields ? `Executed ${name} in ${page}` : `Cleared the output of ${name} in ${page}`)
+        }
       }
       if (pagesSaid.has(card)) continue
       pagesSaid.add(card)

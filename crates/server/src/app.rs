@@ -121,7 +121,12 @@ pub fn router(st: Shared) -> Router {
         .route("/branches/{id}/restore", post(history::restore))
         .route("/branches/{id}/board", get(boards::get_board))
         .route("/branches/{id}/changes", get(boards::get_changes))
-        .route("/branches/{id}/ops", post(boards::post_ops))
+        // One maximal `result` of a Run must fit (contract §15); everything else keeps
+        // `BODY_LIMIT`.
+        .route(
+            "/branches/{id}/ops",
+            post(boards::post_ops).layer(DefaultBodyLimit::max(boards::OPS_BODY_LIMIT)),
+        )
         .route("/merges/plan", get(merges::plan))
         .route("/merges", post(merges::apply))
         .route("/todos", get(todos::list_todos).post(todos::create_todo))

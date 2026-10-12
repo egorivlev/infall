@@ -5,6 +5,8 @@
 //! tools read the Workspace under its read lock; the only thing they can write is a
 //! Suggestion.
 
+use std::collections::BTreeMap;
+
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header::{ALLOW, CONTENT_TYPE, ORIGIN, WWW_AUTHENTICATE};
@@ -13,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use qoop_core::{Board, BranchId, MemberId, Workspace};
 use serde_json::{Map, Value, json};
 
-use crate::app::{BODY_LIMIT, Shared};
+use crate::app::{BODY_LIMIT, Shared, blocking};
 use crate::auth::origin_allowed;
 use crate::error::ApiError;
 use crate::suggestions::{self, ConnectionInput, SourceInput};
@@ -274,7 +276,7 @@ pub fn definitions() -> Value {
         {
             "name": "get_card",
             "title": "Read a Card",
-            "description": format!("Reads one Card in full: {{ id, title, status, summary, frame?, page, sources, connections }}. `page` is the Card's Page as Markdown (TeX math allowed), cut after 20,000 characters with \"…\". `sources` are the papers and web pages attached to it ({{ title, authors, year, url, doi }}, only the fields that are set). `connections` are its links to other Cards: {{ other: {{ id, title }}, direction, kind, label? }}, where `kind` is related, directed or contradicts and `direction` is \"out\" or \"in\" for a directed Connection and \"none\" otherwise. {DATA_NOTE}"),
+            "description": format!("Reads one Card in full: {{ id, title, status, summary, frame?, page, sources, connections }}. `page` is the Card's Page as Markdown (TeX math allowed), cut after 20,000 characters with \"…\". A Page may hold Simulations: a Visual is given as its HTML/JavaScript source, and a Run as its code followed by what its last execution gave — which Member executed it and when, the exit code, whether the code has changed since, how many figures it made (images are never included) and the end of its captured output. You can read Runs but cannot create, change or execute them. `sources` are the papers and web pages attached to it ({{ title, authors, year, url, doi }}, only the fields that are set). `connections` are its links to other Cards: {{ other: {{ id, title }}, direction, kind, label? }}, where `kind` is related, directed or contradicts and `direction` is \"out\" or \"in\" for a directed Connection and \"none\" otherwise. {DATA_NOTE}"),
             "inputSchema": schema(json!({
                 "branch": branch,
                 "card": { "type": "string", "description": "The id of the Card, as returned by list_cards." },
@@ -461,7 +463,14 @@ async fn run(
         }
         "get_card" => {
             let card = args.required("card")?;
-            Ok(tools::get_card(&head_board(&ws, branch)?, card)?)
+            let board = head_board(&ws, branch)?;
+            // Who is on the team, to say who executed a Run.
+            let names: BTreeMap<MemberId, String> = blocking(st, |s| s.members())
+                .await?
+                .into_iter()
+                .map(|m| (m.id, m.name))
+                .collect();
+            Ok(tools::get_card(&board, card, &names)?)
         }
         "list_connections" => Ok(tools::list_connections(&head_board(&ws, branch)?)),
         "list_sources" => Ok(tools::list_sources(&head_board(&ws, branch)?)),

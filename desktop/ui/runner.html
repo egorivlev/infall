@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runner settings</title>
+    <link rel="stylesheet" href="runner.css" />
+  </head>
+  <body>
+    <main class="settings">
+      <h1>Runner settings</h1>
+      <p class="muted">
+        The Runner executes Runs on this computer, with your own rights, after you have approved
+        their code. These settings are kept on this computer only.
+      </p>
+      <form id="form" novalidate>
+        <h2 id="python-heading">Python</h2>
+        <p id="override" class="hint" hidden></p>
+        <p id="looking" class="muted" role="status">Looking for Python on this computer…</p>
+        <ul id="found" class="choices" role="radiogroup" aria-labelledby="python-heading"></ul>
+        <ul class="choices">
+          <li>
+            <input type="radio" name="python" id="other" value="" />
+            <label for="other">Another interpreter</label>
+          </li>
+        </ul>
+        <input
+          id="other-path"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="/opt/homebrew/bin/python3"
+          aria-label="Full path of another Python interpreter"
+          aria-describedby="other-hint"
+        />
+        <p id="other-hint" class="hint">
+          The full path of a Python 3 program. Qoop runs it once with --version to check.
+        </p>
+
+        <h2><label for="folder">Folder (optional)</label></h2>
+        <input
+          id="folder"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="/Users/you/research"
+          aria-describedby="folder-hint"
+        />
+        <p id="folder-hint" class="hint">
+          Runs execute in this folder, so their code can import your own modules and read your
+          data. Left empty, every Run gets a new, empty temporary folder.
+        </p>
+
+        <h2>Approvals</h2>
+        <div class="row">
+          <p id="remembered" class="muted">…</p>
+          <button id="forget" type="button" class="quiet" disabled>Forget them</button>
+        </div>
+
+        <p id="error" class="error" role="alert" hidden></p>
+        <div class="buttons">
+          <button id="cancel" type="button">Cancel</button>
+          <button id="save" type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </main>
+    <script src="runner.js"></script>
+  </body>
+</html>

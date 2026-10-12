@@ -8,6 +8,8 @@ import { sync } from './board-sync'
 import { isGuest, setBranches } from './branches-store'
 import { ApiError, request } from './http'
 import { buildAuto, buildConflicts, countLayoutKept, defaultCheckpointName, toDecisions } from './merge-view'
+import { membersStore, members as membersApi } from './people'
+import { readRunResult } from './run-result'
 import { sessionStore } from './session-store'
 import type {
   AutoLine,
@@ -49,6 +51,27 @@ type MergeResponse = { seq: number; changes: Change[]; checkpoint?: Checkpoint }
 type Kept = Map<string, { choice: Choice; print: string }>
 
 const branchPath = (id: string) => `/api/branches/${encodeURIComponent(id)}`
+
+// A Member's name, from the people the layer knows: the Member list, else the signed-in Member.
+function memberName(id: string): string | undefined {
+  const listed = membersStore.getState().members.find((m) => m.id === id)
+  if (listed) return listed.name
+  const s = sessionStore.getState()
+  return s.status === 'signed_in' && s.member.id === id ? s.member.name : undefined
+}
+
+// A Conflict on a Run's result is shown by who executed it: when one of them has no name here yet, the Member
+// list is asked for once. Names are a nicety: a failure leaves "Someone".
+async function meetExecutors(plan: MergePlan): Promise<void> {
+  const unknown = plan.conflicts.some((c) => {
+    if (!('Field' in c) || c.Field.field !== 'result') return false
+    return [c.Field.source, c.Field.target].some((value) => {
+      const by = readRunResult(value).result?.by
+      return by !== undefined && memberName(by) === undefined
+    })
+  })
+  if (unknown) await membersApi.reload().catch(() => {})
+}
 
 export function createMerge(boardSync: BoardSync) {
   const store = createStore<{ snapshot: MergeSnapshot }>(() => ({ snapshot: IDLE }))
@@ -136,6 +159,8 @@ export function createMerge(boardSync: BoardSync) {
       logUpTo(g, 'target', target.id, next.target.seq),
     ])
     if (g !== gen) return
+    await meetExecutors(next)
+    if (g !== gen) return
 
     const built = buildConflicts(next, {
       sourceName: source.name,
@@ -145,6 +170,7 @@ export function createMerge(boardSync: BoardSync) {
       base,
       sourceChanges: logs.source.slice(0, next.source.seq),
       targetChanges: logs.target.slice(0, next.target.seq),
+      memberName,
     })
     const conflicts = built.map(({ vm, print }) => {
       const before = kept.get(vm.id)

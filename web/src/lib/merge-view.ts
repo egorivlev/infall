@@ -1,6 +1,7 @@
 // Pure Merge logic: turning a plan and the two head Boards into what the review shows, and choices into Decisions.
-import { ends, isVisual, sourceName, STATUS_WORDS, titleOf, visualName } from './activities'
+import { ends, isRun, isVisual, runName, sourceName, STATUS_WORDS, titleOf, visualName } from './activities'
 import type { Entities } from './board-state'
+import { resultValueLine } from './run-result'
 import type {
   AutoLine,
   BranchInfo,
@@ -30,6 +31,10 @@ export type MergeWorld = {
   base: Entities | null
   sourceChanges: readonly Change[] // the source Branch's own Changes up to the planned moment
   targetChanges: readonly Change[]
+  /** The name of a Member by id, for the line that says a Run's result (who executed it). Unknown ids read "Someone". */
+  memberName?: (id: string) => string | undefined
+  /** The present time, for that line's date (the year is left out when it is this one). Default: now. */
+  now?: number
 }
 
 /** A Conflict ready to show (no choice yet), and a print of what it is about: a choice fits while the print stays. */
@@ -49,7 +54,8 @@ function isLayout(kind: Kind, field: string): boolean {
 }
 
 // A hand-written value is allowed for free text: titles, summaries, labels, a paragraph of a Page, a Visual's
-// source and title, a Source's fields.
+// source and title, a Run's code and name, a Source's fields. Never for a Run's `result`: it is a record of an
+// execution, taken from one side or the other (the server refuses anything else).
 function isEditable(kind: Kind, field: string): boolean {
   if (kind === 'Block') return field === 'text' || field === 'title'
   if (kind === 'Source') return SOURCE_FIELDS.includes(field)
@@ -79,33 +85,51 @@ function capital(s: string): string {
   return s === '' ? s : s[0]!.toUpperCase() + s.slice(1)
 }
 
-// The word a field goes by: a Connection's `from` / `to` read "start" / "end", a Visual's `text` "source".
-function fieldWord(kind: Kind, field: string, visual = false): string {
-  if (visual && field === 'text') return 'source'
+// What kind of Simulation a Block is, if it is one: its fields go by other words.
+type Sim = 'visual' | 'run' | null
+const simOf = (e: Entity | undefined): Sim => (isVisual(e) ? 'visual' : isRun(e) ? 'run' : null)
+
+// The word a field goes by: a Connection's `from` / `to` read "start" / "end", a Visual's `text` "source", a Run's
+// `text` / `title` / `result` "code" / "name" / "output".
+function fieldWord(kind: Kind, field: string, sim: Sim = null): string {
+  if (sim === 'visual' && field === 'text') return 'source'
+  if (sim === 'run' && field === 'text') return 'code'
+  if (sim === 'run' && field === 'title') return 'name'
+  if (kind === 'Block' && field === 'result') return 'output'
   if (kind === 'Connection' && field === 'from') return 'start'
   if (kind === 'Connection' && field === 'to') return 'end'
   if (kind === 'Source' && (field === 'url' || field === 'doi')) return field.toUpperCase()
   return field
 }
 
-// What the headline of a field Conflict calls the field.
-function headlineWord(kind: Kind, field: string, visual: boolean): string {
-  if (visual && field === 'text') return 'Visual'
-  if (visual && field === 'title') return 'Visual title'
-  return kind === 'Block' && field === 'text' ? 'Paragraph' : capital(fieldWord(kind, field))
+// The headline of a field Conflict.
+function fieldHeadline(kind: Kind, field: string, sim: Sim): string {
+  if (sim === 'run' && field === 'result') return 'Run executed on both'
+  const word =
+    sim === 'visual' && field === 'text'
+      ? 'Visual'
+      : sim === 'visual' && field === 'title'
+        ? 'Visual title'
+        : sim === 'run' && (field === 'text' || field === 'title')
+          ? `Run ${fieldWord(kind, field, sim)}`
+          : kind === 'Block' && field === 'text'
+            ? 'Paragraph'
+            : capital(fieldWord(kind, field))
+  return `${word} changed on both`
 }
 
 // The word an entity's kind goes by in a sentence. An Attachment is spoken of as the Source it attaches.
-function kindWord(kind: Kind, visual: boolean): string {
-  return kind === 'Block' ? (visual ? 'Visual' : 'block') : kind === 'Attachment' ? 'Source' : kind
+function kindWord(kind: Kind, sim: Sim): string {
+  return kind === 'Block' ? (sim === 'visual' ? 'Visual' : sim === 'run' ? 'Run' : 'block') : kind === 'Attachment' ? 'Source' : kind
 }
 
-// A block is named by its Page, a Visual by its title, an Attachment by its Source and Card.
+// A block is named by its Page, a Visual or a Run by its own name, an Attachment by its Source and Card.
 function titleIn(world: Entities, id: string): string {
   const e = world[id]
   if (!e) return 'Untitled'
   if (e.kind === 'Connection') return ends(e, world)
   if (isVisual(e)) return visualName(e)
+  if (isRun(e)) return runName(e)
   if (e.kind === 'Block') return `Page: ${titleOf(world[refOf(e, 'card')])}`
   if (e.kind === 'Source') return sourceName(e)
   if (e.kind === 'Attachment') return `${sourceName(world[refOf(e, 'source')])} on ${titleOf(world[refOf(e, 'card')])}`
@@ -117,8 +141,12 @@ function statusOf(value: Value): Status {
   return (STATUSES as readonly string[]).includes(s) ? (s as Status) : 'idea'
 }
 
-// One side of a field Conflict in plain words. `world` names the Cards a Connection end refers to.
-function describeValue(kind: Kind, field: string, value: Value, world: Entities): ConflictSide {
+type Saying = Pick<MergeWorld, 'memberName' | 'now'>
+
+// One side of a field Conflict in plain words. `world` names the Cards a Connection end refers to. A Run's result
+// is said in one line — who, when, how it ended, how much — never as the JSON it is stored as.
+function describeValue(kind: Kind, field: string, value: Value, world: Entities, saying: Saying = {}): ConflictSide {
+  if (kind === 'Block' && field === 'result') return { text: resultValueLine(value, saying.memberName, saying.now) }
   if (kind === 'Card' && field === 'status') {
     const status = statusOf(value)
     return { text: STATUS_WORDS[status], status }
@@ -182,7 +210,7 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
     const key = conflictKey(c)
     const entity = sourceWorld[key.entity]
     const entityKind: Kind = entity?.kind ?? 'Card'
-    const visual = isVisual(entity)
+    const sim = simOf(entity)
     const common = {
       id: conflictId(key),
       key,
@@ -198,9 +226,9 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
         vm: {
           ...common,
           type: 'field',
-          headline: `${headlineWord(entityKind, field, visual)} changed on both`,
-          source: { ...describeValue(entityKind, field, source, sourceWorld), ...lastTouch(w.sourceChanges, sourceFrom, touches) },
-          target: { ...describeValue(entityKind, field, target, targetWorld), ...lastTouch(w.targetChanges, targetFrom, touches) },
+          headline: fieldHeadline(entityKind, field, sim),
+          source: { ...describeValue(entityKind, field, source, sourceWorld, w), ...lastTouch(w.sourceChanges, sourceFrom, touches) },
+          target: { ...describeValue(entityKind, field, target, targetWorld, w), ...lastTouch(w.targetChanges, targetFrom, touches) },
           canEdit: isEditable(entityKind, field),
         },
         print: JSON.stringify([source, target]),
@@ -215,7 +243,7 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
         ? fieldNames(was.fields, live.fields).filter((n) => !isLayout(live.kind, n) && !same(was.fields[n], live.fields[n]))
         : []
     const edited = w.base === null || edits.length > 0
-    const withEdits = edits.length > 0 ? ` with its edits: ${edits.map((n) => fieldWord(entityKind, n, visual)).join(', ')}` : ''
+    const withEdits = edits.length > 0 ? ` with its edits: ${edits.map((n) => fieldWord(entityKind, n, sim)).join(', ')}` : ''
     const deleted = (changes: readonly Change[], from: number) =>
       lastTouch(changes, from, (op) => 'Delete' in op && op.Delete.entity === key.entity)
     const kept = (changes: readonly Change[], from: number) =>
@@ -233,10 +261,10 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
           }
         : {
             headline: `Deleted on ${gone}, ${edited ? 'edited' : 'kept'} on ${other}`,
-            remove: `Delete the ${kindWord(entityKind, visual)}`,
-            back: `Bring back the ${kindWord(entityKind, visual)}${withEdits}`,
-            keep: `Keep the ${kindWord(entityKind, visual)}${withEdits}`,
-            leave: `Leave the ${kindWord(entityKind, visual)} deleted`,
+            remove: `Delete the ${kindWord(entityKind, sim)}`,
+            back: `Bring back the ${kindWord(entityKind, sim)}${withEdits}`,
+            keep: `Keep the ${kindWord(entityKind, sim)}${withEdits}`,
+            leave: `Leave the ${kindWord(entityKind, sim)} deleted`,
           }
     return {
       vm: {

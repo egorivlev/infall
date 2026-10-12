@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::{Path, State};
 use qoop_core::{
-    Branch, BranchId, Change, Entity, EntityId, Moment, Op, Value as FieldValue, Workspace, WsError,
+    Branch, BranchId, Change, Entity, EntityId, MemberId, Moment, Op, Value as FieldValue,
+    Workspace, WsError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -15,13 +16,18 @@ use crate::app::Shared;
 use crate::auth::{MemberOrAdmin, SignedIn};
 use crate::error::{ApiError, ApiJson, ApiQuery};
 use crate::live::Hub;
+use crate::runs::{self, RESULT_FIELD};
 use crate::store::Role;
 
 /// The most ops one request may carry.
 pub const MAX_OPS: usize = 200;
 
-/// The most characters one Text value may hold.
+/// The most characters one Text value may hold. The `result` of a Run is the one exception
+/// (contract §15): it has its own limit and its own checks, in `runs`.
 pub const MAX_TEXT_CHARS: usize = 100_000;
+
+/// The request body limit of `POST /api/branches/{id}/ops`: room for one maximal `result`.
+pub const OPS_BODY_LIMIT: usize = 2 * 1024 * 1024;
 
 pub(crate) fn text_fits(value: &FieldValue) -> bool {
     match value {
@@ -31,11 +37,13 @@ pub(crate) fn text_fits(value: &FieldValue) -> bool {
     }
 }
 
-/// Refuses ops that carry a Text value over the limit.
-pub(crate) fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
+/// Refuses ops that carry a Text value over the limit. A `result` is not measured here.
+fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
     let fits = ops.iter().all(|op| match op {
-        Op::Create { fields, .. } => fields.values().all(text_fits),
-        Op::Set { value, .. } => text_fits(value),
+        Op::Create { fields, .. } => fields
+            .iter()
+            .all(|(field, value)| field == RESULT_FIELD || text_fits(value)),
+        Op::Set { field, value, .. } => field == RESULT_FIELD || text_fits(value),
         Op::Delete { .. } | Op::Undelete { .. } => true,
     });
     if fits {
@@ -44,6 +52,36 @@ pub(crate) fn check_text_sizes(ops: &[Op]) -> Result<(), ApiError> {
         Err(ApiError::BadRequest(format!(
             "A text may be at most {MAX_TEXT_CHARS} characters."
         )))
+    }
+}
+
+/// Ops a Member sent that have passed every check that needs no Board. They still owe the
+/// check that a result lands on a Run, which needs the Board at the head and so the write
+/// lock: `on_board` gives the ops back once that is done.
+pub(crate) struct CheckedOps {
+    ops: Vec<Op>,
+    carries_result: bool,
+}
+
+impl CheckedOps {
+    /// Checks what `actor` sent: the size of every Text, and every `result` of a Run.
+    pub(crate) fn new(ops: Vec<Op>, actor: MemberId) -> Result<CheckedOps, ApiError> {
+        check_text_sizes(&ops)?;
+        let carries_result = runs::check_results(&ops, actor)?;
+        Ok(CheckedOps {
+            ops,
+            carries_result,
+        })
+    }
+
+    /// The ops, once every result they carry is known to land on a Run of the Board at
+    /// `head`. Call it under the Workspace write lock, right before recording them.
+    pub(crate) fn on_board(self, ws: &Workspace, head: Moment) -> Result<Vec<Op>, ApiError> {
+        if self.carries_result {
+            let board = ws.board_at(head).map_err(ApiError::internal)?;
+            runs::check_set_on_runs(&self.ops, &board)?;
+        }
+        Ok(self.ops)
     }
 }
 
@@ -219,7 +257,7 @@ pub async fn post_ops(
             "Send between 1 and {MAX_OPS} ops."
         )));
     }
-    check_text_sizes(&body.ops)?;
+    let ops = CheckedOps::new(body.ops, who.id())?;
     let branch = Uuid::parse_str(&id)
         .map(BranchId)
         .map_err(|_| ApiError::NotFound)?;
@@ -228,10 +266,11 @@ pub async fn post_ops(
     // memory and subscribers in the same order.
     let mut ws = st.workspace.write().await;
     let before = ws.head(branch).map_err(|_| ApiError::NotFound)?;
+    let ops = ops.on_board(&ws, before)?;
     let mut next = ws.clone();
     let at = st.clock.now();
     let head = next
-        .record_all(branch, who.id(), at, body.ops)
+        .record_all(branch, who.id(), at, ops)
         .map_err(rejected)?;
     let next = crate::app::persist(&st, next).await?;
     *ws = next;

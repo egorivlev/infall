@@ -1,7 +1,7 @@
 import './page.css'
 import { memo, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
-import { ops, useBoard, usePage } from '../../lib'
+import { ops, useBoard, useHistory, usePage } from '../../lib'
 import type { CardVM, PageVM, Status } from '../../lib'
 import { boardBridge, pagePanel } from '../bridge'
 import { centre, containsPoint } from '../board/geometry'
@@ -148,6 +148,16 @@ function LockBanner({ editor }: { editor: NonNullable<PageVM['editor']> }) {
   )
 }
 
+/** The Simulations of a Page for the meta line: " · 1 Visual · 2 Runs"; nothing when there are none. */
+function simulations(blocks: PageVM['blocks']): string {
+  const visuals = blocks.filter((b) => b.type === 'visual').length
+  const runCount = blocks.filter((b) => b.type === 'run').length
+  return [visuals > 0 && count(visuals, 'Visual'), runCount > 0 && count(runCount, 'Run')]
+    .filter((part): part is string => Boolean(part))
+    .map((part) => ` · ${part}`)
+    .join('')
+}
+
 const MARK = { out: '→', in: '←', none: '—' } as const
 
 const Connections = memo(function Connections({ connections }: { connections: PageVM['connections'] }) {
@@ -188,6 +198,8 @@ export function PagePanel({ cardId, full, onClose }: Props) {
   const board = useBoard()
   const { card, editor } = vm
   const readOnly = board.readOnly
+  // The Board closes the Page while History shows an earlier moment; if one is ever shown, Runs are for reading only.
+  const previewing = useHistory().preview !== null
   const canEdit = !readOnly && !editor && card !== null
   const headingRef = useRef<HTMLHeadingElement>(null)
 
@@ -257,9 +269,10 @@ export function PagePanel({ cardId, full, onClose }: Props) {
               <Title card={card} canEdit={canEdit} headingRef={headingRef} />
               <p className="qp-meta">
                 {count(vm.blocks.length, 'block')} · {count(vm.sources.length, 'Source')} · {count(vm.connections.length, 'Connection')}
+                {simulations(vm.blocks)}
               </p>
             </div>
-            <Blocks cardId={cardId} blocks={vm.blocks} canEdit={canEdit} />
+            <Blocks cardId={cardId} blocks={vm.blocks} canEdit={canEdit} readOnly={readOnly || previewing} branchId={board.branch?.id} />
             <Sources cardId={cardId} sources={vm.sources} canEdit={canEdit} />
             {!readOnly && <PageTodos card={card} branchId={board.branch?.id} />}
             <Connections connections={vm.connections} />

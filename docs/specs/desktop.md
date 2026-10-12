@@ -89,7 +89,7 @@ The page can ask for a Run and can ask for the settings window to open. It canno
 ## Approval — the app's own window
 Before code is executed the app opens a window of its **own local UI** (like the first-run screen: bundled files, its own capability, no remote content) showing: the Run's title, the server it came from, the interpreter and the folder it will run in, and the **complete code** in a scrollable monospace view with line numbers, with "Run on this computer" and "Don't run" (the default; closing the window is "Don't run"). The text says plainly that the code will run with the Member's own rights and can read and change their files.
 
-- Approval is remembered per server origin and per `code_sha256` (a file in the app's config directory, newest 1 000): the same code runs again without asking; any change to the code — including the Member's own edit, which the app cannot tell from anyone else's — asks again.
+- Approval is remembered per server origin, per `code_sha256` and per configured folder (a file in the app's config directory, newest 1 000): the same code runs again in the same place without asking; code approved for a temporary folder asks again once a folder of the Member's own is set; any change to the code — including the Member's own edit, which the app cannot tell from anyone else's — asks again.
 - While the window is open the page gets `approval`; "Don't run" gives `error` / `declined`.
 - The code shown is the code executed: the app hashes and writes out exactly the bytes it displayed.
 

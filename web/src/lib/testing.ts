@@ -2,6 +2,8 @@
 import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
+import { sha256Hex } from './code-hash'
+import { checkRunResult, MAX_RESULT } from './run-result'
 import type {
   AccessToken,
   AiEvent,
@@ -19,6 +21,9 @@ import type {
   Op,
   Origin,
   QoopDesktop,
+  QoopRunner,
+  RunEvent,
+  RunResult,
   ServerFrame,
   Suggestion,
   Todo,
@@ -101,12 +106,167 @@ export type FakeRun = {
   fail(error?: unknown): void
 }
 
+type DoneEvent = Extract<RunEvent, { type: 'done' }>
+type RunError = Extract<RunEvent, { type: 'error' }>['reason']
+
+/** A 1×1 PNG in base64: a figure the fake server and the layer accept. */
+export const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+
+/** A result as the layer would record it for `code`, executed by `ME` unless `patch` says otherwise. */
+export function fakeRunResult(code: string, patch: Partial<RunResult> = {}): RunResult {
+  return { v: 1, by: ME.id, at: 0, code_sha256: sha256Hex(code), exit: 0, duration_ms: 1200, output: '', figures: [], ...patch }
+}
+
+/** One execution inside the fake Runner: what the page asked for, and the handles a test drives it with. */
+export type FakeExecution = {
+  request: Parameters<QoopRunner['run']>[0]
+  /** The bridge's promise has settled. */
+  ended: boolean
+  started: boolean
+  /** Everything `write` sent so far: what a `done` reports as the output unless told otherwise. */
+  output: string
+  /** Hands anything to the page as an event (to play a misbehaving app). Nothing arrives once it has ended. */
+  emit(event: unknown): void
+  /** The app shows the code and waits: `approval`. Leave it there to hold at the approval. */
+  approval(): void
+  /** `started`. */
+  start(): void
+  /** An `output` event. */
+  write(text: string): void
+  /** `done` (exit 0, the hash of the code it was given, the output written so far — or what `patch` says), then the promise resolves. */
+  done(patch?: Partial<DoneEvent>): void
+  /** `error` with that reason, then the promise resolves. */
+  error(reason: RunError, message?: string): void
+  /** The promise resolves without `done` or `error`: the app went silent. */
+  end(): void
+  /** The promise rejects. */
+  reject(error?: unknown): void
+}
+
+/**
+ * A fake `window.qoopDesktop.runner` (desktop.md, M8). Every `run` becomes an entry of `executions` that the test
+ * drives by hand; with `script` set, it is called with each new execution as soon as it is asked for (e.g.
+ * `(x) => { x.start(); x.write('hi\n'); x.done() }`). `cancel` answers as the app does: a started execution ends
+ * with a stopped `done` carrying what was written, one still at the approval with `declined` — unless
+ * `cancelStops` is false, which plays an app that does not react.
+ */
+export function fakeRunner(options: { python?: { path: string; version: string } | null; folder?: string } = {}) {
+  const executions: FakeExecution[] = []
+  const cancelled: string[] = []
+  const runner = {
+    /** What `status()` reports; null plays a Runner with no interpreter chosen. */
+    python: (options.python === undefined ? { path: '/usr/bin/python3', version: '3.12.3' } : options.python) as { path: string; version: string } | null,
+    folder: options.folder as string | undefined,
+    /** When true, `status()` rejects. */
+    statusFails: false,
+    statusCalls: 0,
+    configureCalls: 0,
+    /** Called while the settings window is "open": change `python` / `folder` here. */
+    onConfigure: null as (() => void) | null,
+    cancelStops: true,
+    script: null as ((execution: FakeExecution) => void) | null,
+    executions,
+    cancelled,
+    last(): FakeExecution {
+      const x = executions[executions.length - 1]
+      if (!x) throw new Error('fake Runner: nothing was executed')
+      return x
+    },
+    async status(): Promise<{ python?: { path: string; version: string }; folder?: string }> {
+      runner.statusCalls++
+      if (runner.statusFails) throw new Error('bridge down')
+      const status: { python?: { path: string; version: string }; folder?: string } = {}
+      if (runner.python) status.python = { ...runner.python }
+      if (runner.folder !== undefined) status.folder = runner.folder
+      return status
+    },
+    async configure(): Promise<void> {
+      runner.configureCalls++
+      runner.onConfigure?.()
+    },
+    run(request: FakeExecution['request'], onEvent: (event: RunEvent) => void): Promise<void> {
+      return new Promise<void>((resolve, reject) => {
+        const x: FakeExecution = {
+          request,
+          ended: false,
+          started: false,
+          output: '',
+          emit: (event) => {
+            if (!x.ended) onEvent(event as RunEvent)
+          },
+          approval: () => x.emit({ type: 'approval' }),
+          start: () => {
+            x.started = true
+            x.emit({ type: 'started' })
+          },
+          write: (text) => {
+            x.output += text
+            x.emit({ type: 'output', text })
+          },
+          done: (patch = {}) => {
+            x.emit({
+              type: 'done',
+              exit: 0,
+              stopped: false,
+              duration_ms: 1200,
+              code_sha256: sha256Hex(request.code),
+              output: x.output,
+              output_truncated: false,
+              figures: [],
+              env: { python: '3.12.3', os: 'macos', arch: 'arm64' },
+              ...patch,
+            })
+            x.end()
+          },
+          error: (reason, message = '') => {
+            x.emit({ type: 'error', reason, message })
+            x.end()
+          },
+          end: () => {
+            x.ended = true
+            resolve()
+          },
+          reject: (error = new Error('bridge failed')) => {
+            x.ended = true
+            reject(error)
+          },
+        }
+        executions.push(x)
+        runner.script?.(x)
+      })
+    },
+    async cancel(id: string): Promise<void> {
+      cancelled.push(id)
+      const x = executions.find((e) => e.request.id === id && !e.ended)
+      if (!x || !runner.cancelStops) return
+      if (x.started) x.done({ exit: null, stopped: true, figures: [] })
+      else x.error('declined')
+    },
+  }
+  return runner satisfies QoopRunner
+}
+
+export type FakeRunner = ReturnType<typeof fakeRunner>
+
+/**
+ * Puts a bridge on `window.qoopDesktop`, as the desktop app does, for code that reads it from the page (the
+ * default of `ai` and `runs`). Returns the function that takes it away again: call it when the test ends.
+ */
+export function installDesktop(desk: unknown): () => void {
+  const page = globalThis as { qoopDesktop?: unknown }
+  page.qoopDesktop = desk
+  return () => {
+    if (page.qoopDesktop === desk) delete page.qoopDesktop
+  }
+}
+
 /**
  * A fake `window.qoopDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
  * `emit` / `end` / `fail`; with `script` set, a run plays those events and ends by itself. `cancel` ends the run,
- * as the app does when it has terminated the process.
+ * as the app does when it has terminated the process. It has a Runner (`runner`, a `fakeRunner()` unless one is
+ * passed); `runner: false` plays an app from before M8.
  */
-export function fakeDesktop(options: { installed?: boolean; claudeVersion?: string } = {}) {
+export function fakeDesktop(options: { installed?: boolean; claudeVersion?: string; runner?: FakeRunner | false } = {}) {
   const runs: FakeRun[] = []
   const cancelled: string[] = []
   const desk = {
@@ -155,7 +315,9 @@ export function fakeDesktop(options: { installed?: boolean; claudeVersion?: stri
       },
     },
   }
-  return desk satisfies QoopDesktop
+  const out: typeof desk & { runner?: FakeRunner } = desk
+  if (options.runner !== false) out.runner = options.runner ?? fakeRunner()
+  return out satisfies QoopDesktop
 }
 
 /** One Branch inside the fake server. `base` is its Board at seq 0. */
@@ -218,7 +380,8 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
  * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
  * M3 (Merge), M4 (To-dos, and the frames about who edits a Page), M5 (access tokens, Suggestions — which only
  * `suggest` makes, as the tool layer would), M6 (a Guest gets the Board without deleted entities, 403 on Changes,
- * and `refreshFrame`), M7 (`/api/ai/*`: settings, and a chat whose event stream tests script with `aiScript`).
+ * and `refreshFrame`), M7 (`/api/ai/*`: settings, and a chat whose event stream tests script with `aiScript`),
+ * M8 (a `result` posted to `…/ops` is checked as api.md §15 says; a Merge refuses a hand-written `result`).
  * It does not compute a Merge: tests script what a
  * plan holds with `mergeScript`. It has no live connections either: tests hand the frames it builds to a FakeSocket.
  * `branch`, `entities`, `log`, `seq`, `commit`, `external` and `frameFor` speak about the first Branch (`main`)
@@ -410,6 +573,36 @@ export class FakeServer {
     }
   }
 
+  /**
+   * Why the server refuses a batch for what it does to `result` (api.md §15), or null: the value must be the JSON
+   * of a result, within the limits, recorded by the Member who sends it, on a Block that is a Run once the batch
+   * is applied.
+   */
+  resultProblem(b: FakeBranch, ops: Op[]): string | null {
+    const after = applyOps(b.entities, ops)
+    if (!after.ok) return null // refused as any batch that does not apply
+    for (const op of ops) {
+      const [entity, value] =
+        'Set' in op && op.Set.field === 'result' ? [op.Set.entity, op.Set.value] : 'Create' in op ? [op.Create.entity, op.Create.fields.result] : []
+      if (entity === undefined || value === undefined || value === 'Null') continue
+      if (!('Text' in value)) return 'A result must be text.'
+      if (value.Text.length > MAX_RESULT) return 'A result can hold at most 600000 characters.'
+      let json: unknown
+      try {
+        json = JSON.parse(value.Text)
+      } catch {
+        return 'A result must be JSON.'
+      }
+      const result = checkRunResult(json)
+      if (!result) return 'That is not the result of a Run.'
+      if (result.by !== this.actor.id) return 'A result is recorded by the Member who executed the Run.'
+      const type = after.entities[entity]?.fields.type
+      const isRun = after.entities[entity]?.kind === 'Block' && typeof type === 'object' && 'Text' in type && type.Text === 'run'
+      if (!isRun) return 'Only a Run has a result.'
+    }
+    return null
+  }
+
   private related(s: FakeBranch, t: FakeBranch): boolean {
     return s !== t && (s.info.parent?.branch === t.info.id || t.info.parent?.branch === s.info.id)
   }
@@ -452,6 +645,8 @@ export class FakeServer {
     for (const c of plan.conflicts) {
       const k = keyOf(c)
       const d = decisions.get(JSON.stringify([k.entity, k.field]))!
+      // A Run's result is taken from one side: a hand-written one is refused (api.md §15).
+      if ('Field' in c && c.Field.field === 'result' && typeof d === 'object') return fail(400, 'bad_decision', 'nope', k)
       if (d === 'TakeTarget') continue
       if ('Field' in c) {
         ops.push({ Set: { entity: k.entity, field: c.Field.field, value: d === 'TakeSource' ? c.Field.source : d.Custom } })
@@ -844,6 +1039,8 @@ export class FakeServer {
         return this.respond(fail(f.status, f.code))
       }
       if (guest) return this.respond(forbidden)
+      const problem = this.resultProblem(b, body.ops)
+      if (problem !== null) return this.respond(fail(400, 'bad_request', problem))
       const r = applyOps(b.entities, body.ops)
       if (!r.ok) return this.respond(fail(409, 'rejected', r.rejection.message, r.rejection))
       const changes = this.commit(body.ops, this.actor.id, id)

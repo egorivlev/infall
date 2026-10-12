@@ -318,6 +318,11 @@ export function createHistory(boardSync: BoardSync) {
 
 const instance = createHistory(sync)
 
+/** Internal: whether a moment in History is being previewed (what is shown is then not the present Board). */
+export function previewing(): boolean {
+  return instance.store.getState().snapshot.preview !== null
+}
+
 export const history = {
   open: instance.open,
   close: instance.close,

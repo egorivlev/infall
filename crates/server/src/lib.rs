@@ -15,6 +15,7 @@ pub mod live;
 pub mod mcp;
 pub mod merges;
 pub mod people;
+pub mod runs;
 pub mod secret;
 pub mod store;
 pub mod suggestions;

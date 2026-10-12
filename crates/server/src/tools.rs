@@ -5,10 +5,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qoop_core::{Board, Entity, EntityId, EntityKind, Value as FieldValue, Workspace};
+use qoop_core::{Board, Entity, EntityId, EntityKind, MemberId, Value as FieldValue, Workspace};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
+use crate::runs;
 use crate::store::{SuggestionKind, SuggestionRecord};
 
 /// The most Cards `list_cards` returns.
@@ -19,6 +20,8 @@ pub const MAX_CONNECTIONS: usize = 500;
 pub const MAX_SOURCES: usize = 500;
 /// The most characters of a Page `get_card` returns before cutting it with "…".
 pub const MAX_PAGE_CHARS: usize = 20_000;
+/// The most characters of a Run's captured output `get_card` returns: its end.
+pub const MAX_RUN_OUTPUT_CHARS: usize = 4_000;
 
 /// The size the UI draws a Card at when `w`/`h` are unset.
 const CARD_SIZE: (f64, f64) = (224.0, 132.0);
@@ -260,18 +263,156 @@ pub fn list_cards(board: &Board, query: Option<&str>, frame: Option<&str>) -> To
     Ok(json!({ "cards": cards, "truncated": truncated }))
 }
 
+/// A Member named in a sentence; someone no longer on the team has no name to give.
+fn member_name<'a>(names: &'a BTreeMap<MemberId, String>, by: &str) -> &'a str {
+    Uuid::parse_str(by)
+        .ok()
+        .and_then(|id| names.get(&MemberId(id)))
+        .map_or("someone no longer on the team", String::as_str)
+}
+
+/// Unix ms as `2026-11-22 14:03 UTC`.
+fn when(at_ms: f64) -> String {
+    // Saturating: a result may carry any non-negative number.
+    let secs = (at_ms / 1000.0).floor().min(253_402_300_799.0) as i64;
+    let (days, of_day) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Days since 1970-01-01 to a date of the Gregorian calendar (Hinnant's civil_from_days).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
+        of_day / 3_600,
+        of_day % 3_600 / 60
+    )
+}
+
+/// `body` as a fenced code block; the fence is longer than any run of backticks inside, so
+/// the content cannot close it.
+fn fenced(language: &str, body: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in body.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat((longest + 1).max(3));
+    let end = if body.ends_with('\n') { "" } else { "\n" };
+    format!("{fence}{language}\n{body}{end}{fence}")
+}
+
+/// A caption or name in a heading line: one line, in quotes; empty when there is none.
+fn quoted(title: &str) -> String {
+    let title: String = title
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    match title.trim() {
+        "" => String::new(),
+        t => format!(" \"{t}\""),
+    }
+}
+
+/// The last `max` characters of `s`.
+fn tail(s: &str, max: usize) -> &str {
+    match s.char_indices().rev().nth(max.saturating_sub(1)) {
+        Some((start, _)) if max > 0 => &s[start..],
+        _ => s,
+    }
+}
+
+/// What a model is told about the last execution of a Run: who, when, how it ended, whether
+/// the code changed since, how many figures, and the end of the output. Never the figures
+/// themselves and never the stored JSON.
+fn run_result(block: &Entity, names: &BTreeMap<MemberId, String>) -> String {
+    let raw = text(block, runs::RESULT_FIELD);
+    if raw.is_empty() {
+        return "This Run has not been executed yet: it has no captured output.".to_string();
+    }
+    let Ok(result) = runs::parse(raw) else {
+        return "This Run has a captured result that cannot be read.".to_string();
+    };
+    let ended = match (result.exit, result.stopped) {
+        (Some(code), _) => format!("It ended with exit code {code}."),
+        (None, true) => "The Member stopped it before it ended, so it has no exit code.".into(),
+        (None, false) => "It was killed before it ended, so it has no exit code.".into(),
+    };
+    let changed = if runs::code_sha256(text(block, "text")) == result.code_sha256 {
+        "The code has not changed since."
+    } else {
+        "The code has changed since, so this output is from an earlier version of the code."
+    };
+    let figures = match result.figures {
+        0 => "It produced no figures.".to_string(),
+        1 => "It produced 1 figure (an image, not included here).".to_string(),
+        n => format!("It produced {n} figures (images, not included here)."),
+    };
+    let mut lines = format!(
+        "Last executed by {} on {}. {ended} {changed} {figures}",
+        member_name(names, &result.by),
+        when(result.at),
+    );
+    if result.output.is_empty() {
+        lines.push_str(" It printed nothing.");
+        return lines;
+    }
+    let shown = tail(&result.output, MAX_RUN_OUTPUT_CHARS);
+    let mut intro = if shown.len() < result.output.len() {
+        format!("The last {MAX_RUN_OUTPUT_CHARS} characters of its captured output")
+    } else {
+        "Its captured output".to_string()
+    };
+    if result.output_truncated {
+        intro.push_str(" (the middle was dropped when it was captured)");
+    }
+    format!("{lines} {intro}:\n\n{}", fenced("text", shown))
+}
+
+/// One Block as the Markdown a model reads: a text Block as it is; a Visual and a Run under
+/// a line that says what they are, with their source in a code block; a Run also with what
+/// its last execution gave. `None` for a Block with nothing to show.
+fn block_markdown(block: &Entity, names: &BTreeMap<MemberId, String>) -> Option<String> {
+    let body = text(block, "text");
+    let title = quoted(text(block, "title"));
+    match text(block, "type") {
+        "run" => {
+            let code = if body.trim().is_empty() {
+                "It has no code yet.".to_string()
+            } else {
+                fenced("python", body)
+            };
+            Some(format!(
+                "Run{title} — a Simulation: experiment code a Member executes on their own computer, kept with the output captured the last time.\n\n{code}\n\n{}",
+                run_result(block, names)
+            ))
+        }
+        "visual" if !body.trim().is_empty() => Some(format!(
+            "Visual{title} — a Simulation: an interactive figure, given here as its HTML/JavaScript source.\n\n{}",
+            fenced("html", body)
+        )),
+        "visual" => None,
+        _ if body.trim().is_empty() => None,
+        _ => Some(body.to_string()),
+    }
+}
+
 /// The Markdown of a Card's Page: its visible Blocks in `order` (then id), joined by blank
 /// lines, cut at `MAX_PAGE_CHARS` characters with "…".
-fn page_of(board: &Board, card: EntityId) -> String {
-    let mut blocks: Vec<(&str, EntityId, &str)> = visible(board, EntityKind::Block)
+fn page_of(board: &Board, card: EntityId, names: &BTreeMap<MemberId, String>) -> String {
+    let mut blocks: Vec<(&str, EntityId, &Entity)> = visible(board, EntityKind::Block)
         .filter(|(_, b)| reference(b, "card") == Some(card))
-        .map(|(id, b)| (text(b, "order"), id, text(b, "text")))
+        .map(|(id, b)| (text(b, "order"), id, b))
         .collect();
     blocks.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
     let page = blocks
         .iter()
-        .map(|(_, _, text)| *text)
-        .filter(|t| !t.trim().is_empty())
+        .filter_map(|(_, _, block)| block_markdown(block, names))
         .collect::<Vec<_>>()
         .join("\n\n");
     match page.char_indices().nth(MAX_PAGE_CHARS) {
@@ -288,8 +429,9 @@ fn source_fields(source: &Entity) -> Map<String, Value> {
     m
 }
 
-/// `get_card`: one live Card with its Page, Sources and Connections.
-pub fn get_card(board: &Board, card: &str) -> ToolResult {
+/// `get_card`: one live Card with its Page, Sources and Connections. `names` are the people
+/// on the team, to say who executed a Run.
+pub fn get_card(board: &Board, card: &str, names: &BTreeMap<MemberId, String>) -> ToolResult {
     let id = live_card(board, card)?;
     let Some(entity) = board.get(id) else {
         return Err("There is no such Card.".to_string());
@@ -302,7 +444,7 @@ pub fn get_card(board: &Board, card: &str) -> ToolResult {
     if let Some(f) = frame_of(&frames(board), entity) {
         m.insert("frame".into(), json!(f));
     }
-    m.insert("page".into(), json!(page_of(board, id)));
+    m.insert("page".into(), json!(page_of(board, id, names)));
 
     // A Source attached twice is listed once.
     let attached: BTreeSet<EntityId> = visible(board, EntityKind::Attachment)
@@ -680,7 +822,7 @@ mod tests {
         b.apply(&Op::Delete { entity: dropped }).unwrap();
         b.apply(&Op::Delete { entity: gone }).unwrap();
 
-        let got = get_card(&b, &a.0.to_string()).unwrap();
+        let got = get_card(&b, &a.0.to_string(), &BTreeMap::new()).unwrap();
         assert_eq!(got["id"], json!(a));
         assert_eq!(got["title"], "A");
         assert_eq!(got["status"], "idea");
@@ -725,11 +867,11 @@ mod tests {
             "not an id".to_string(),
             String::new(),
         ] {
-            let err = get_card(&b, &raw).unwrap_err();
+            let err = get_card(&b, &raw, &BTreeMap::new()).unwrap_err();
             assert!(err.starts_with("There is no Card with id"), "{err}");
         }
         // What is echoed back is one short line.
-        let err = get_card(&b, &format!("x\n{}", "y".repeat(500))).unwrap_err();
+        let err = get_card(&b, &format!("x\n{}", "y".repeat(500)), &BTreeMap::new()).unwrap_err();
         assert!(!err.contains('\n'));
         assert!(err.chars().count() < 200);
     }
@@ -739,14 +881,14 @@ mod tests {
         let mut b = Board::new();
         let a = card(&mut b, "A", 0.0, 0.0);
         block(&mut b, a, "a", &"é".repeat(MAX_PAGE_CHARS - 2));
-        let exact = get_card(&b, &a.0.to_string()).unwrap();
+        let exact = get_card(&b, &a.0.to_string(), &BTreeMap::new()).unwrap();
         assert_eq!(
             exact["page"].as_str().unwrap().chars().count(),
             MAX_PAGE_CHARS - 2
         );
         // Two more characters of separator bring it to the limit exactly: still whole.
         block(&mut b, a, "b", "x");
-        let over = get_card(&b, &a.0.to_string()).unwrap();
+        let over = get_card(&b, &a.0.to_string(), &BTreeMap::new()).unwrap();
         let page = over["page"].as_str().unwrap();
         assert_eq!(page.chars().count(), MAX_PAGE_CHARS + 1);
         assert!(page.ends_with("\n\n…"));

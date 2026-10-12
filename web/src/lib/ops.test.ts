@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { newId, ops } from './ops'
+import { fakeRunResult, TINY_PNG } from './testing'
 
 describe('op builders', () => {
   it('newId is a uuid', () => {
@@ -205,5 +206,38 @@ describe('op builders: Pin (M7)', () => {
   it('markReviewed sets ai_reviewed_by; an empty id takes the mark back', () => {
     expect(ops.markReviewed('k', 'other')).toEqual({ Set: { entity: 'k', field: 'ai_reviewed_by', value: { Text: 'other' } } })
     expect(ops.markReviewed('k', '')).toEqual({ Set: { entity: 'k', field: 'ai_reviewed_by', value: 'Null' } })
+  })
+})
+
+describe('Runs (M8)', () => {
+  it('addBlock with type run makes a Run: text is its code, title its name', () => {
+    expect(ops.addBlock({ id: 'r', card: 'a', type: 'run', text: 'print(1)', title: 'Sweep', order: 'V' })).toEqual({
+      Create: {
+        entity: 'r',
+        kind: 'Block',
+        fields: { card: { Ref: 'a' }, type: { Text: 'run' }, order: { Text: 'V' }, text: { Text: 'print(1)' }, title: { Text: 'Sweep' } },
+      },
+    })
+    const empty = ops.addBlock({ card: 'a', type: 'run', text: '', order: 'V' })
+    if (!('Create' in empty)) throw new Error('not create')
+    expect(empty.Create.fields).toEqual({ card: { Ref: 'a' }, type: { Text: 'run' }, order: { Text: 'V' } })
+  })
+  it('setRunResult stores the result as one JSON text, keys in the order of the spec', () => {
+    const result = fakeRunResult('print(1)', { by: 'me', at: 7, output: 'hi', figures: [{ png: TINY_PNG }], stopped: true, exit: null })
+    const op = ops.setRunResult('r', result)
+    if (!('Set' in op) || op.Set.value === 'Null' || !('Text' in op.Set.value)) throw new Error('not a text Set')
+    expect(op.Set).toMatchObject({ entity: 'r', field: 'result' })
+    expect(JSON.parse(op.Set.value.Text)).toEqual(result)
+    expect(Object.keys(JSON.parse(op.Set.value.Text))).toEqual(['v', 'by', 'at', 'code_sha256', 'exit', 'duration_ms', 'output', 'figures', 'stopped'])
+  })
+  it('setRunResult with null clears it', () => {
+    expect(ops.setRunResult('r', null)).toEqual({ Set: { entity: 'r', field: 'result', value: 'Null' } })
+  })
+  it('setRunResult refuses what the server would refuse', () => {
+    const result = fakeRunResult('print(1)')
+    expect(() => ops.setRunResult('r', { ...result, code_sha256: 'x' })).toThrow(RangeError)
+    expect(() => ops.setRunResult('r', { ...result, output: 'x'.repeat(64_001) })).toThrow(RangeError)
+    expect(() => ops.setRunResult('r', { ...result, figures: [{ png: 'AAAA' }] })).toThrow(RangeError)
+    expect(() => ops.setRunResult('r', { ...result, extra: 1 } as never)).toThrow(RangeError)
   })
 })

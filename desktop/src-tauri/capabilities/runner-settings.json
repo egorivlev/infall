@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "runner-settings",
+  "description": "The app's own Runner settings window may list interpreters, save the Member's choice, forget remembered approvals and close itself. Nothing else, and no other window may do any of it.",
+  "local": true,
+  "windows": ["runner-settings"],
+  "permissions": [
+    "allow-runner-settings-view",
+    "allow-runner-settings-save",
+    "allow-runner-settings-forget",
+    "allow-runner-settings-close"
+  ]
+}

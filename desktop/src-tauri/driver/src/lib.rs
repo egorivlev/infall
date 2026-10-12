@@ -15,17 +15,18 @@ use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 pub use args::{
     CHILD_ENV, MCP_SERVER_NAME, QOOP_TOOLS, allowed_tools, build_args, mcp_config_json,
 };
 pub use events::{AiEvent, StreamParser, TOOL_PREFIX};
+use qoop_proc::{Group, is_executable_file, make_private_dir, own_process_group};
 
 /// The environment variable that overrides where `claude` is (used by tests with a stub).
 pub const BIN_ENV: &str = "QOOP_CLAUDE_BIN";
@@ -376,21 +377,6 @@ pub fn locate_in(
         .find(|candidate| is_executable_file(candidate))
 }
 
-fn is_executable_file(path: &Path) -> bool {
-    let Ok(meta) = fs::metadata(path) else {
-        return false;
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        meta.is_file() && meta.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        meta.is_file()
-    }
-}
-
 /// `2.1.265 (Claude Code)` → `2.1.265`.
 fn parse_version(text: &str) -> Option<String> {
     let word = text.split_whitespace().next()?;
@@ -497,17 +483,6 @@ fn prepare_root(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn make_private_dir(dir: &Path) -> io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(dir)
-}
-
 fn remove_any(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.is_dir() => fs::remove_dir_all(path),
@@ -572,120 +547,6 @@ struct Cleanup {
 impl Drop for Cleanup {
     fn drop(&mut self) {
         let _ = fresh_dir(&self.cwd);
-    }
-}
-
-// ---- the process group ------------------------------------------------------------------
-
-/// Puts the child in a process group of its own, so that it and everything it starts can be
-/// signalled together.
-fn own_process_group(command: &mut Command) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    #[cfg(not(unix))]
-    let _ = command;
-}
-
-/// A child that leads its own process group. Dropping it kills the whole group.
-struct Group {
-    child: Child,
-    reaped: bool,
-}
-
-impl Group {
-    fn new(child: Child) -> Self {
-        Self {
-            child,
-            reaped: false,
-        }
-    }
-
-    /// Signals the whole group. Only called while the leader has not been reaped, so the
-    /// group id cannot have been reused for another process.
-    #[cfg(unix)]
-    fn signal(&self, signal: libc::c_int) {
-        let Ok(pid) = libc::pid_t::try_from(self.child.id()) else {
-            return;
-        };
-        if pid > 1 {
-            // SAFETY: `kill` with a negative pid signals a process group; it touches no
-            // memory. An error (the group is already gone) is fine to ignore.
-            unsafe {
-                libc::kill(-pid, signal);
-            }
-        }
-    }
-
-    /// Has the leader exited? Looks without reaping it, so its id stays reserved.
-    #[cfg(unix)]
-    fn exited(&self) -> bool {
-        let pid = libc::id_t::from(self.child.id());
-        // SAFETY: `info` is a valid, zeroed `siginfo_t` that `waitid` only writes to.
-        // `WNOWAIT` leaves the child waitable for `Child::wait`.
-        unsafe {
-            let mut info: libc::siginfo_t = std::mem::zeroed();
-            let result = libc::waitid(
-                libc::P_PID,
-                pid,
-                &mut info,
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            );
-            result != 0 || info.si_pid() != 0
-        }
-    }
-
-    fn wait_exit(&self, grace: Duration) {
-        #[cfg(unix)]
-        {
-            let deadline = Instant::now() + grace;
-            while !self.exited() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-        #[cfg(not(unix))]
-        let _ = (grace, Instant::now());
-    }
-
-    fn kill_and_reap(&mut self) -> Option<ExitStatus> {
-        if self.reaped {
-            return None;
-        }
-        #[cfg(unix)]
-        self.signal(libc::SIGKILL);
-        #[cfg(not(unix))]
-        let _ = self.child.kill();
-        self.reaped = true;
-        self.child.wait().ok()
-    }
-
-    /// The run is over: give the process `grace` to exit by itself, then remove whatever is
-    /// left of its group. Returns the leader's exit status.
-    fn finish(&mut self, grace: Duration) -> Option<ExitStatus> {
-        if self.reaped {
-            return None;
-        }
-        self.wait_exit(grace);
-        self.kill_and_reap()
-    }
-
-    /// Stop now: ask politely, wait `grace`, then kill the whole group.
-    fn terminate(&mut self, grace: Duration) {
-        if self.reaped {
-            return;
-        }
-        #[cfg(unix)]
-        self.signal(libc::SIGTERM);
-        self.wait_exit(grace);
-        self.kill_and_reap();
-    }
-}
-
-impl Drop for Group {
-    fn drop(&mut self) {
-        self.kill_and_reap();
     }
 }
 

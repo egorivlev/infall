@@ -4,6 +4,8 @@ import type { Editors, Entities } from './board-state'
 import { applyOps, EMPTY_PAGE, toPage, toPageIndex, toSnapshotParts } from './board-state'
 import { previewAt } from './history'
 import { ops } from './ops'
+import { resultParses } from './run-result'
+import { fakeRunResult, TINY_PNG } from './testing'
 import type { Change, Op, Value } from './types'
 
 const card = (id: string, title = id.toUpperCase()): Op => ops.createCard({ id, x: 0, y: 0, title })
@@ -304,8 +306,8 @@ describe('Visuals (M6)', () => {
     expect(page(e, 'a').blocks).toHaveLength(4)
   })
   it('keeps a block of a kind it does not know in the store, but neither shows nor counts it', () => {
-    const e = board(typed('r1', { Text: 'run' }))
-    expect(e.r1).toEqual({ kind: 'Block', deleted: false, fields: { card: { Ref: 'b' }, order: { Text: 'W' }, text: { Text: 'r1' }, type: { Text: 'run' } } })
+    const e = board(typed('r1', { Text: 'sheet' }))
+    expect(e.r1).toEqual({ kind: 'Block', deleted: false, fields: { card: { Ref: 'b' }, order: { Text: 'W' }, text: { Text: 'r1' }, type: { Text: 'sheet' } } })
     expect(toPageIndex(e).blocks.get('b')!.map((b) => b.id)).toEqual(['kb'])
     expect(toSnapshotParts(e).cards.find((c) => c.id === 'b')!.blocks).toBe(1)
     // …and it can still be edited and removed like any entity
@@ -358,5 +360,99 @@ describe('Blocks pinned from an AI Conversation (M7)', () => {
     expect(third.blocks.get('a')!.at(-1)).not.toBe(second.blocks.get('a')!.at(-1))
     expect(third.blocks.get('b')).toBe(second.blocks.get('b'))
     expect(third.sources).toBe(second.sources)
+  })
+})
+
+describe('Runs (M8)', () => {
+  const runBlock = (id: string, cardId: string, order: string, title?: string, text = 'print(1)'): Op =>
+    ops.addBlock({ id, card: cardId, type: 'run', text, title, order })
+  const result = fakeRunResult('print(1)', { output: '1\n', figures: [{ png: TINY_PNG }] })
+  const blocksOf = (e: Entities, id = 'a') => toPageIndex(e).blocks.get(id) ?? []
+  const only = (e: Entities, id: string) => blocksOf(e).find((b) => b.id === id)!
+
+  it('reads a Run: its code, its name, and no result yet', () => {
+    expect(only(board(runBlock('r1', 'a', 'z', 'Threshold sweep')), 'r1')).toEqual({
+      id: 'r1',
+      card: 'a',
+      type: 'run',
+      text: 'print(1)',
+      title: 'Threshold sweep',
+      order: 'z',
+      run: { result: null, broken: false },
+    })
+    expect(only(board(runBlock('r1', 'a', 'z')), 'r1').title).toBe('')
+  })
+  it('gives `run` to Runs only, and keeps a title for Visuals and Runs but not for text', () => {
+    const e = board(runBlock('r1', 'a', 'z', 'R'), ops.addBlock({ id: 'v1', card: 'a', type: 'visual', text: 'x', title: 'V', order: 'zz' }), ops.setBlockTitle('k1', 'stray'))
+    expect(only(e, 'r1').run).toBeDefined()
+    expect(only(e, 'v1')).toMatchObject({ type: 'visual', title: 'V' })
+    expect('run' in only(e, 'v1')).toBe(false)
+    expect(only(e, 'k1')).toMatchObject({ type: 'text', title: '' })
+    expect('run' in only(e, 'k1')).toBe(false)
+  })
+  it('reads a recorded result, and a cleared one as none', () => {
+    const e = board(runBlock('r1', 'a', 'z'), ops.setRunResult('r1', result))
+    expect(only(e, 'r1').run).toEqual({ result, broken: false })
+    expect(only(replay(e, [ops.setRunResult('r1', null)]), 'r1').run).toEqual({ result: null, broken: false })
+  })
+  it.each([
+    ['text that is not JSON', { Text: 'Traceback (most recent call last)' }],
+    ['another version', { Text: JSON.stringify({ ...result, v: 2 }) }],
+    ['a result with an unknown key', { Text: JSON.stringify({ ...result, html: '<b>' }) }],
+    ['a figure that is not a PNG', { Text: JSON.stringify({ ...result, figures: [{ png: 'PHN2Zz4=' }] }) }],
+    ['a number', { Float: 1 }],
+  ] as [string, Value][])('shows %s as broken, never throwing', (_what, value) => {
+    const e = board(runBlock('r1', 'a', 'z'), { Set: { entity: 'r1', field: 'result', value } })
+    expect(only(e, 'r1').run).toEqual({ result: null, broken: true })
+  })
+  it('counts Runs among the blocks of a Card, on the Board and at an earlier moment', () => {
+    const e = board(runBlock('r1', 'a', 'z'), runBlock('r2', 'a', 'zz'))
+    expect(toSnapshotParts(e).cards.find((c) => c.id === 'a')!.blocks).toBe(5)
+    expect(toSnapshotParts(replay(e, [ops.remove('r2')])).cards.find((c) => c.id === 'a')!.blocks).toBe(4)
+  })
+  it('orders a Run among the other blocks by its order key', () => {
+    expect(blocksOf(board(runBlock('r1', 'a', 'H'))).map((b) => b.id)).toEqual(['k1', 'r1', 'k2', 'k3'])
+  })
+  it('keeps a Run, its `run` and its result the same objects while something else changes', () => {
+    const e1 = board(runBlock('r1', 'a', 'z'), ops.setRunResult('r1', { ...result, output: 'identity '.repeat(2000) }))
+    const i1 = toPageIndex(e1)
+    const before = i1.blocks.get('a')!.find((b) => b.id === 'r1')!
+    const parses = resultParses()
+    // Another Card moves, another block of the same Page is typed in, a Source is renamed: three passes.
+    const e2 = replay(e1, ops.move('b', 9, 9))
+    const i2 = toPageIndex(e2, i1)
+    const e3 = replay(e2, [ops.setBlockText('k1', 'typing')])
+    const i3 = toPageIndex(e3, i2)
+    const i4 = toPageIndex(replay(e3, [ops.setSourceField('s1', 'title', 'Renamed')]), i3)
+    expect(i2.blocks).toBe(i1.blocks)
+    const after = i4.blocks.get('a')!.find((b) => b.id === 'r1')!
+    expect(after).toBe(before)
+    expect(after.run!.result).toBe(before.run!.result)
+    expect(resultParses()).toBe(parses) // the stored JSON was not read again
+  })
+  it('does not parse again when the same result arrives in new objects, as a refetched Board brings it', () => {
+    const e1 = board(runBlock('r1', 'a', 'z'), ops.setRunResult('r1', { ...result, output: 'refetch '.repeat(2000) }))
+    const i1 = toPageIndex(e1)
+    const parses = resultParses()
+    const copy = JSON.parse(JSON.stringify(e1)) as Entities
+    const i2 = toPageIndex(copy, i1)
+    expect(resultParses()).toBe(parses)
+    expect(i2).toBe(i1)
+  })
+  it('gives a new Run object when its result, its code or its name changes', () => {
+    const e1 = board(runBlock('r1', 'a', 'z', 'R'), ops.setRunResult('r1', result))
+    const i1 = toPageIndex(e1)
+    const first = i1.blocks.get('a')!.find((b) => b.id === 'r1')!
+    const next = (op: Op) => toPageIndex(replay(e1, [op]), i1).blocks.get('a')!.find((b) => b.id === 'r1')!
+    expect(next(ops.setRunResult('r1', { ...result, at: 5 }))).not.toBe(first)
+    expect(next(ops.setRunResult('r1', null)).run).toEqual({ result: null, broken: false })
+    expect(next(ops.setBlockText('r1', 'print(2)'))).toMatchObject({ text: 'print(2)', run: { result } })
+    expect(next(ops.setBlockTitle('r1', 'Renamed')).title).toBe('Renamed')
+    expect(next(ops.setBlockText('k1', 'x'))).toBe(first)
+  })
+  it('shows a Run in the Page of its Card and in a preview of History', () => {
+    const e = board(runBlock('r1', 'a', 'z', 'R'))
+    expect(page(e, 'a').blocks.at(-1)).toMatchObject({ id: 'r1', type: 'run' })
+    expect(page(e, 'a').card!.blocks).toBe(4)
   })
 })

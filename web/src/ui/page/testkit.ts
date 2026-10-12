@@ -5,7 +5,7 @@
 import { useMemo } from 'react'
 import { vi } from 'vitest'
 import { create } from 'zustand'
-import type { BlockVM, CardVM, Member, PageVM, SessionSnapshot, SourceVM, Todo } from '../../lib'
+import type { BlockVM, CardVM, Member, PageVM, RunResult, RunsSnapshot, SessionSnapshot, SourceVM, Todo } from '../../lib'
 import { ANA, MEI, createFakeLib } from '../history/testkit'
 
 export { ANA, MEI }
@@ -42,6 +42,33 @@ export const visual = (id: string, cardId: string, order: string, title: string,
   title,
   order,
 })
+
+/** A Run: `code` is its Python; `result` the captured output of its last execution (null: never executed). */
+export const run = (id: string, cardId: string, order: string, title: string, code: string, result: RunResult | null = null, broken = false): BlockVM => ({
+  id,
+  card: cardId,
+  type: 'run',
+  text: code,
+  title,
+  order,
+  run: { result, broken },
+})
+
+/** A recorded result: by Mei, exit 0, 3.0 s, no figures. */
+export const runResult = (extra: Partial<RunResult> = {}): RunResult => ({
+  v: 1,
+  by: MEI.id,
+  at: new Date(new Date().getFullYear(), 10, 12, 14, 2).getTime(),
+  code_sha256: 'a'.repeat(64),
+  exit: 0,
+  duration_ms: 3000,
+  output: 'episode 500  reward 176.4\n',
+  figures: [],
+  ...extra,
+})
+
+/** What `useRuns()` says in a browser with nothing going on — the same as the real one under jsdom. */
+const NO_RUNS: RunsSnapshot = { runner: { available: false, reason: 'browser' }, live: null, last: null }
 
 export const source = (id: string, extra: Partial<SourceVM> = {}): SourceVM => ({
   id,
@@ -90,14 +117,18 @@ export function createFakePageLib() {
   const pageStore = create<PageState>(() => EMPTY)
   const todoStore = create<{ list: Todo[] }>(() => ({ list: [] }))
   const sessionStore = create<SessionSnapshot>(() => ({ status: 'signed_in', member: ANA }))
+  const runsStore = create<RunsSnapshot>(() => NO_RUNS)
+  /** What `useRunStale` answers per Block id; without an entry: false when there is a result, else null. */
+  const staleStore = create<{ by: Record<string, boolean | null> }>(() => ({ by: {} }))
   let made = 0
 
   const fakeOps = {
-    addBlock: (input: { id?: string; card: string; type?: 'text' | 'visual'; title?: string; text: string; order: string }) => ({
+    addBlock: (input: { id?: string; card: string; type?: 'text' | 'visual' | 'run'; title?: string; text: string; order: string }) => ({
       fake: 'addBlock',
       ...input,
     }),
     setBlockTitle: (id: string, title: string) => ({ fake: 'setBlockTitle', block: id, title }),
+    setRunResult: (id: string, result: RunResult | null) => ({ fake: 'setRunResult', block: id, result }),
     setBlockText: (id: string, text: string) => ({ fake: 'setBlockText', block: id, text }),
     moveBlock: (id: string, order: string) => ({ fake: 'moveBlock', block: id, order }),
     markReviewed: (id: string, memberId: string) => ({ fake: 'markReviewed', block: id, member: memberId }),
@@ -127,11 +158,17 @@ export function createFakePageLib() {
             ...s.blocks,
             op.type === 'visual'
               ? visual(String(op.id), String(op.card), String(op.order), String(op.title ?? ''), String(op.text))
-              : block(String(op.id), String(op.card), String(op.order), String(op.text)),
+              : op.type === 'run'
+                ? run(String(op.id), String(op.card), String(op.order), String(op.title ?? ''), String(op.text))
+                : block(String(op.id), String(op.card), String(op.order), String(op.text)),
           ],
         })
       case 'setBlockTitle':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, title: String(op.title) } : b)) })
+      case 'setRunResult':
+        return pageStore.setState({
+          blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, run: { result: (op.result as RunResult | null) ?? null, broken: false } } : b)),
+        })
       case 'setBlockText':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, text: String(op.text) } : b)) })
       case 'markReviewed':
@@ -201,6 +238,21 @@ export function createFakePageLib() {
     ),
   }
 
+  const runs = {
+    refresh: vi.fn(async (): Promise<void> => {}),
+    configure: vi.fn(async (): Promise<void> => {}),
+    run: vi.fn(async (_block: string): Promise<void> => {}),
+    stop: vi.fn((): void => {}),
+    saveAgain: vi.fn(async (): Promise<void> => {}),
+    dismiss: vi.fn((): void => {
+      runsStore.setState({ last: null })
+    }),
+  }
+  const useRunStale = (b: BlockVM): boolean | null => {
+    const by = staleStore((s) => s.by)
+    return b.id in by ? by[b.id]! : b.run?.result ? false : null
+  }
+
   const todos = {
     reload: vi.fn(async (): Promise<void> => {}),
     add: vi.fn(async (input: { owner: string; text: string; card?: Todo['card'] }): Promise<Todo> => {
@@ -250,6 +302,9 @@ export function createFakePageLib() {
     pageStore,
     todoStore,
     sessionStore,
+    runsStore,
+    staleStore,
+    runs,
     submit,
     page,
     todos,
@@ -260,7 +315,17 @@ export function createFakePageLib() {
       pageStore.setState(EMPTY, true)
       todoStore.setState({ list: [] }, true)
       sessionStore.setState({ status: 'signed_in', member: ANA }, true)
+      runsStore.setState(NO_RUNS, true)
+      staleStore.setState({ by: {} }, true)
       made = 0
+      for (const fn of Object.values(runs)) fn.mockReset()
+      runs.refresh.mockImplementation(async () => {})
+      runs.configure.mockImplementation(async () => {})
+      runs.run.mockImplementation(async () => {})
+      runs.saveAgain.mockImplementation(async () => {})
+      runs.dismiss.mockImplementation(() => {
+        runsStore.setState({ last: null })
+      })
       for (const group of [page, todos, people]) for (const fn of Object.values(group)) fn.mockClear()
       submit.mockClear()
       orderBetween.mockClear()
@@ -282,6 +347,9 @@ export function createFakePageLib() {
         useTodos: () => todoStore((s) => s.list),
         todos,
         useSession: () => sessionStore(),
+        useRuns: () => runsStore(),
+        runs,
+        useRunStale,
         members: people,
         orderBetween,
         normalizeDoi,

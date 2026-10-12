@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { describeChanges, groupActivities, replay } from './activities'
 import type { Entities } from './board-state'
 import { ops } from './ops'
+import { fakeRunResult } from './testing'
 import type { Change, Checkpoint, Op, Origin } from './types'
 
 const MIN = 60_000
@@ -474,5 +475,71 @@ describe('describeChanges: Pin (M7)', () => {
     expect(lines(many([ops.markReviewed('p1', 'me')]), reviewed)).toEqual([['No lasting changes']])
     // a review mark on a block that is not a pinned answer is not one
     expect(said([ops.markReviewed('k1', 'me')])).toEqual([['No lasting changes']])
+  })
+})
+
+describe('describeChanges: Runs (M8)', () => {
+  const block = (id: string, cardId: string, order: string, text = id) => ops.addBlock({ id, card: cardId, text, order })
+  const runBlock = (id: string, cardId: string, order: string, title?: string) =>
+    ops.addBlock({ id, card: cardId, type: 'run', text: 'print(1)', title, order })
+  const result = (at = 1) => fakeRunResult('print(1)', { at, output: 'x'.repeat(5000) })
+  // Card "Threshold" with a paragraph, the Run "Sweep" (never executed) and the Run "Fit" (executed once).
+  const base = boardOf([card('a', 'Threshold'), block('k1', 'a', 'G'), runBlock('r1', 'a', 'V', 'Sweep'), runBlock('r2', 'a', 'k', 'Fit'), ops.setRunResult('r2', result())])
+  const said = (list: Op[]) => lines(many(list), base)
+
+  it('names an added Run by its name', () => {
+    expect(said([runBlock('r3', 'a', 'z', 'Noise model')])).toEqual([['Added Run Noise model to the Page of Threshold']])
+    expect(said([runBlock('r3', 'a', 'z')])).toEqual([['Added Untitled Run to the Page of Threshold']])
+    expect(said([runBlock('r3', 'a', 'z'), ops.setBlockTitle('r3', 'Named later')])).toEqual([['Added Run Named later to the Page of Threshold']])
+  })
+  it('says a Run was edited when its code or its name changed', () => {
+    expect(said([ops.setBlockText('r1', 'p'), ops.setBlockText('r1', 'pr'), ops.setBlockText('r1', 'print(2)')])).toEqual([['Edited Run Sweep in the Page of Threshold']])
+    expect(said([ops.setBlockTitle('r1', 'Sweep, wide')])).toEqual([['Edited Run Sweep, wide in the Page of Threshold']])
+    expect(said([ops.setBlockTitle('r1', '')])).toEqual([['Edited Untitled Run in the Page of Threshold']])
+  })
+  it('says a Run was executed when a result was recorded, first or again', () => {
+    expect(said([ops.setRunResult('r1', result())])).toEqual([['Executed Run Sweep in the Page of Threshold']])
+    expect(said([ops.setRunResult('r2', result(2))])).toEqual([['Executed Run Fit in the Page of Threshold']])
+    expect(said([ops.setRunResult('r2', result(2)), ops.setRunResult('r2', result(3))])).toEqual([['Executed Run Fit in the Page of Threshold']])
+  })
+  it('says the output was cleared when the result was set to nothing', () => {
+    expect(said([ops.setRunResult('r2', null)])).toEqual([['Cleared the output of Run Fit in the Page of Threshold']])
+  })
+  it('never prints the stored result', () => {
+    const all = said([ops.setRunResult('r1', result()), ops.setRunResult('r2', null)]).flat().join(' ')
+    expect(all).not.toContain('code_sha256')
+    expect(all).not.toContain('xxxx')
+  })
+  it('says both when a Run was edited and executed, or added and executed, in one Activity', () => {
+    expect(said([ops.setBlockText('r1', 'print(2)'), ops.setRunResult('r1', result())])).toEqual([
+      ['Edited Run Sweep in the Page of Threshold', 'Executed Run Sweep in the Page of Threshold'],
+    ])
+    expect(said([runBlock('r3', 'a', 'z', 'New'), ops.setRunResult('r3', result())])).toEqual([
+      ['Added Run New to the Page of Threshold', 'Executed Run New in the Page of Threshold'],
+    ])
+  })
+  it('says nothing for a result recorded and cleared again, or put back as it was', () => {
+    expect(said([ops.setRunResult('r1', result()), ops.setRunResult('r1', null)])).toEqual([['No lasting changes']])
+    expect(said([ops.setRunResult('r2', null), ops.setRunResult('r2', result())])).toEqual([['No lasting changes']])
+  })
+  it('names a removed Run; one that came back reads as added, without saying it was executed', () => {
+    expect(said([ops.remove('r2')])).toEqual([['Removed Run Fit from the Page of Threshold']])
+    expect(said([ops.setRunResult('r1', result()), ops.remove('r1')])).toEqual([['Removed Run Sweep from the Page of Threshold']])
+    const gone = replay(base, [ops.remove('r2')])
+    expect(lines(many([ops.restore('r2')]), gone)).toEqual([['Added Run Fit to the Page of Threshold']])
+    expect(said([runBlock('r3', 'a', 'z', 'Brief'), ops.remove('r3')])).toEqual([['No lasting changes']])
+  })
+  it('keeps Runs out of the count of blocks and gives the Page its own line beside them', () => {
+    expect(said([block('k2', 'a', 'W'), runBlock('r3', 'a', 'z', 'New'), ops.setRunResult('r2', result(2))])).toEqual([
+      ['Added a block to the Page of Threshold', 'Added Run New to the Page of Threshold', 'Executed Run Fit in the Page of Threshold'],
+    ])
+  })
+  it('reads moving a Run within the Page as reordering, unless the Run has a line of its own', () => {
+    expect(said([ops.moveBlock('r1', 'A')])).toEqual([['Reordered the Page of Threshold']])
+    expect(said([ops.moveBlock('r1', 'A'), ops.setRunResult('r1', result())])).toEqual([['Executed Run Sweep in the Page of Threshold']])
+  })
+  it('leaves Visuals as they were', () => {
+    const visual = ops.addBlock({ id: 'v1', card: 'a', type: 'visual', text: '<p>', title: 'Demo', order: 'zz' })
+    expect(said([visual])).toEqual([['Added Visual Demo to the Page of Threshold']])
   })
 })

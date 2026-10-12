@@ -25,7 +25,11 @@
     return tauri.invoke(command, args);
   }
 
-  function send(request, onEvent) {
+  // Calls a command that reports through a stream of events, delivers the events to
+  // `onEvent` in the order the app sent them, and resolves once the command has returned
+  // and the last event has been delivered. `failure` is the event to deliver when the app
+  // cannot be reached or refuses the call.
+  function stream(command, args, onEvent, failure) {
     return new Promise(function (resolve) {
       var tauri = window.__TAURI_INTERNALS__;
       var finished = false; // the caller has been told the run ended
@@ -61,13 +65,13 @@
         if (returned && closed) finish();
       }
 
-      function fail(message) {
-        deliver({ type: 'error', message: message });
+      function fail(unreachable) {
+        deliver(failure(unreachable));
         finish();
       }
 
       if (!tauri || typeof tauri.invoke !== 'function' || typeof tauri.transformCallback !== 'function') {
-        fail('The desktop app is not reachable.');
+        fail(true);
         return;
       }
 
@@ -87,7 +91,8 @@
         }
       });
 
-      call('claude_send', { request: request, onEvent: '__CHANNEL__:' + callbackId }).then(
+      args.onEvent = '__CHANNEL__:' + callbackId;
+      call(command, args).then(
         function () {
           returned = true;
           settle();
@@ -96,9 +101,18 @@
         },
         function () {
           // Never the app's own words here: they could quote the request.
-          fail('The desktop app could not start Claude Code.');
+          fail(false);
         }
       );
+    });
+  }
+
+  function send(request, onEvent) {
+    return stream('claude_send', { request: request }, onEvent, function (unreachable) {
+      return {
+        type: 'error',
+        message: unreachable ? 'The desktop app is not reachable.' : 'The desktop app could not start Claude Code.'
+      };
     });
   }
 
@@ -116,8 +130,45 @@
     }
   });
 
+  // The Runner (docs/specs/desktop.md, M8). A page can read the status, ask for the app's
+  // own settings window, ask for a Run of some code, and cancel it. Which interpreter runs
+  // it, in which folder, and whether it runs at all is decided in the app's own windows.
+  var runner = Object.freeze({
+    status: function () {
+      return call('runner_status', {}).then(function (status) {
+        var result = {};
+        var python = status && status.python;
+        if (python && typeof python.path === 'string' && typeof python.version === 'string') {
+          result.python = { path: python.path, version: python.version };
+        }
+        if (status && typeof status.folder === 'string') result.folder = status.folder;
+        return result;
+      });
+    },
+    configure: function () {
+      return call('runner_configure', {}).then(function () {});
+    },
+    run: function (request, onEvent) {
+      var sent = {
+        id: String(request && request.id),
+        code: String(request && request.code),
+        title: String(request && request.title != null ? request.title : '')
+      };
+      return stream('runner_run', { request: sent }, onEvent, function (unreachable) {
+        return {
+          type: 'error',
+          reason: 'failed',
+          message: unreachable ? 'The desktop app is not reachable.' : 'The desktop app could not start the Run.'
+        };
+      });
+    },
+    cancel: function (id) {
+      return call('runner_cancel', { id: String(id) }).then(function () {});
+    }
+  });
+
   Object.defineProperty(window, 'qoopDesktop', {
-    value: Object.freeze({ version: VERSION, claude: claude }),
+    value: Object.freeze({ version: VERSION, claude: claude, runner: runner }),
     writable: false,
     configurable: false,
     enumerable: true

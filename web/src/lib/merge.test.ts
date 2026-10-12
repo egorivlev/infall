@@ -6,7 +6,7 @@ import { createMerge } from './merge'
 import { ops } from './ops'
 import { membersStore } from './people'
 import { sessionStore } from './session-store'
-import { FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, settle } from './testing'
+import { FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, fakeRunResult, settle } from './testing'
 import type { Conflict, MergePlan, Op, Value } from './types'
 
 let server: FakeServer
@@ -663,5 +663,76 @@ describe('a Merge with Pages and Sources', () => {
     expect(merged.blocks.map((b) => b.text)).toEqual(['Intro, from both', 'More'])
     expect(merged.sources.map((x) => x.title)).toEqual(['Kitaev 2003'])
     expect(merged.card).toMatchObject({ blocks: 2, sources: 1 })
+  })
+})
+
+describe('a Merge with a Run executed on both Branches (M8)', () => {
+  const CODE = 'print(1)'
+  const mine = fakeRunResult(CODE, { by: ME.id, at: new Date(2026, 10, 12, 14, 2).getTime(), output: 'main' })
+  const theirs = fakeRunResult(CODE, { by: OTHER.id, at: new Date(2026, 10, 13, 9, 30).getTime(), exit: 1, output: 'try!' })
+  const R = (r: typeof mine): Value => {
+    const op = ops.setRunResult('r1', r)
+    if (!('Set' in op)) throw new Error('not a Set')
+    return op.Set.value
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 22, 9, 0) })
+    const page = [ops.addBlock({ id: 'r1', card: 'a', type: 'run', text: CODE, title: 'Sweep', order: 'V' })]
+    server.commit(page, ME.id)
+    server.commit(page, ME.id, 'try')
+    server.actor = OTHER
+    server.commit([ops.setRunResult('r1', theirs)], OTHER.id, 'try')
+    server.actor = ME
+    server.commit([ops.setRunResult('r1', mine)], ME.id)
+    server.mergeScript = { auto: [], conflicts: [field('r1', 'result', 'Null', R(theirs), R(mine))] }
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows each side as one line with the name of who executed it, asking for the Member list once', async () => {
+    await merge.open('try', 'main')
+    expect(snap().status).toBe('ready')
+    expect(sent('GET', '/api/members')).toHaveLength(1)
+    expect(snap().conflicts[0]).toMatchObject({
+      id: 'r1:result',
+      entityTitle: 'Run Sweep',
+      headline: 'Run executed on both',
+      source: { text: 'Other · 13 Nov, 09:30 · exit 1 · 4 characters of output', author: OTHER.id },
+      target: { text: 'Me · 12 Nov, 14:02 · exit 0 · 4 characters of output', author: ME.id },
+      canEdit: false,
+    })
+  })
+  it('does not ask for the Member list when the names are known, and says Someone when it cannot be had', async () => {
+    membersStore.setState({ members: [ME, OTHER] })
+    await merge.open('try', 'main')
+    expect(sent('GET', '/api/members')).toHaveLength(0)
+    merge.close()
+    membersStore.setState({ members: [] })
+    server.members = []
+    await merge.open('try', 'main')
+    expect(snap().conflicts[0]!.source.text).toBe('Someone · 13 Nov, 09:30 · exit 1 · 4 characters of output')
+    expect(snap().conflicts[0]!.target.text).toBe('Me · 12 Nov, 14:02 · exit 0 · 4 characters of output') // the signed-in Member is always known
+  })
+  it('takes one side or the other, never a result written by hand', async () => {
+    await sync.open('main')
+    await merge.open('try', 'main')
+    merge.decide('r1:result', { custom: '{"v":1}' })
+    expect(snap().conflicts[0]!.choice).toBeNull()
+    merge.decide('r1:result', 'source')
+    await merge.apply()
+    expect(server.mergePosts[0]!.decisions).toEqual([[{ entity: 'r1', field: 'result' }, 'TakeSource']])
+    expect(snap().status).toBe('merged')
+    expect(sync.page('a').blocks.find((b) => b.id === 'r1')!.run).toEqual({ result: theirs, broken: false })
+  })
+  it('the fake server refuses a hand-written result as the real one does', async () => {
+    const plan = server.planFor('try', 'main')
+    const res = await server.fetch('/api/merges', {
+      method: 'POST',
+      body: JSON.stringify({ plan, decisions: [[{ entity: 'r1', field: 'result' }, { Custom: { Text: '{}' } }]], checkpoint: 'Before' }),
+    })
+    expect(res.status).toBe(400)
+    expect(JSON.parse(await res.text()).error.code).toBe('bad_decision')
   })
 })

@@ -12,6 +12,7 @@ import {
   toDecisions,
 } from './merge-view'
 import { ops } from './ops'
+import { fakeRunResult, TINY_PNG } from './testing'
 import type { BranchInfo, Change, Conflict, ConflictVM, MergePlan, Op, Value } from './types'
 
 const T = (s: string): Value => ({ Text: s })
@@ -522,6 +523,119 @@ describe('Pages and Sources in a Merge', () => {
       const list = [ops.addBlock({ id: 'v2', card: 'a', type: 'visual', text: 'x', title: 'New', order: 'm' }), ops.setBlockTitle('v1', 'Renamed')]
       const out = buildAuto(plan([], list), replay(VISUALS, list), VISUALS)
       expect(out.lines).toEqual([{ kind: 'Change', what: 'Page of Alpha · 2 blocks' }])
+    })
+  })
+  describe('Runs (M8)', () => {
+    const NOW = new Date(2026, 10, 22, 9, 0).getTime()
+    const at = (day: number, h: number, m: number) => new Date(2026, 10, day, h, m).getTime()
+    const names = (id: string) => ({ ana: 'Ana Ruiz', ben: 'Ben Okafor' })[id]
+    const res = (patch = {}) => fakeRunResult('print(1)', { by: 'ana', at: at(12, 14, 2), output: 'x'.repeat(1204), figures: [{ png: TINY_PNG }, { png: TINY_PNG }], ...patch })
+    const R = (r: ReturnType<typeof res>): Value => T(JSON.stringify(r))
+    const RUNS = replay(PAGES, [ops.addBlock({ id: 'r1', card: 'a', type: 'run', text: 'print(1)', title: 'Sweep', order: 'k' })])
+    const runsWorld = (sourceOps: Op[], targetOps: Op[], base: Entities = RUNS): MergeWorld => ({
+      sourceName: 'try',
+      targetName: 'main',
+      source: replay(base, sourceOps),
+      target: replay(base, targetOps),
+      base,
+      sourceChanges: log('sam', 200, sourceOps),
+      targetChanges: log('tess', 300, targetOps),
+      memberName: names,
+      now: NOW,
+    })
+
+    it('shows the code of a Run changed on both: named by its name, editable by hand', () => {
+      const w = runsWorld([ops.setBlockText('r1', 'print(2)')], [ops.setBlockText('r1', 'print(3)')])
+      expect(one(field('r1', 'text', T('print(1)'), T('print(2)'), T('print(3)')), w)).toEqual({
+        id: 'r1:text',
+        key: { entity: 'r1', field: 'text' },
+        type: 'field',
+        entityKind: 'Block',
+        entityTitle: 'Run Sweep',
+        field: 'text',
+        headline: 'Run code changed on both',
+        source: { text: 'print(2)', author: 'sam', at: 200 },
+        target: { text: 'print(3)', author: 'tess', at: 300 },
+        canEdit: true,
+        choice: null,
+      })
+    })
+    it('shows the name of a Run changed on both; without a name it is Untitled Run', () => {
+      const w = runsWorld([ops.setBlockTitle('r1', '')], [ops.setBlockTitle('r1', 'Sweep T')])
+      expect(one(field('r1', 'title', T('Sweep'), 'Null', T('Sweep T')), w)).toMatchObject({
+        entityTitle: 'Untitled Run',
+        headline: 'Run name changed on both',
+        source: { text: '(empty)' },
+        target: { text: 'Sweep T' },
+        canEdit: true,
+      })
+    })
+    it('shows a Run executed on both as one readable line per side, and not editable', () => {
+      const s = res()
+      const t = res({ by: 'ben', at: at(13, 9, 30), exit: 1, output: 'Traceback', figures: [] })
+      const w = runsWorld([ops.setRunResult('r1', s)], [ops.setRunResult('r1', t)])
+      const vm = one(field('r1', 'result', 'Null', R(s), R(t)), w)
+      expect(vm).toEqual({
+        id: 'r1:result',
+        key: { entity: 'r1', field: 'result' },
+        type: 'field',
+        entityKind: 'Block',
+        entityTitle: 'Run Sweep',
+        field: 'result',
+        headline: 'Run executed on both',
+        source: { text: 'Ana Ruiz · 12 Nov, 14:02 · exit 0 · 2 figures · 1 204 characters of output', author: 'sam', at: 200 },
+        target: { text: 'Ben Okafor · 13 Nov, 09:30 · exit 1 · 9 characters of output', author: 'tess', at: 300 },
+        canEdit: false,
+        choice: null,
+      })
+      expect(JSON.stringify(vm)).not.toContain('code_sha256')
+      expect(JSON.stringify(vm)).not.toContain(TINY_PNG)
+    })
+    it('says No output recorded for a side that cleared it, Someone for a Member without a name, and never throws on a broken value', () => {
+      const s = res({ by: 'zed' })
+      const w = runsWorld([ops.setRunResult('r1', s)], [])
+      const vm = one(field('r1', 'result', R(res()), R(s), 'Null'), w)
+      expect(vm.source.text).toBe('Someone · 12 Nov, 14:02 · exit 0 · 2 figures · 1 204 characters of output')
+      expect(vm.target.text).toBe('No output recorded')
+      expect(one(field('r1', 'result', 'Null', T('{"v":1'), T('oops')), w)).toMatchObject({
+        source: { text: 'This result cannot be shown' },
+        target: { text: 'This result cannot be shown' },
+        canEdit: false,
+      })
+    })
+    it('gives a print that changes with either result, so a choice is kept only for the same two', () => {
+      const s = res()
+      const w = runsWorld([], [])
+      const print = (source: Value, target: Value) => buildConflicts(plan([field('r1', 'result', 'Null', source, target)]), w)[0]!.print
+      expect(print(R(s), 'Null')).toBe(print(R(s), 'Null'))
+      expect(print(R(s), 'Null')).not.toBe(print(R(res({ at: 5 })), 'Null'))
+    })
+    it('says Run, code, name and output in edit vs delete', () => {
+      const w = runsWorld([ops.remove('r1')], [ops.setBlockText('r1', 'print(2)'), ops.setBlockTitle('r1', 'Sweep T'), ops.setRunResult('r1', res())])
+      const vm = one(evd('r1', 'Source'), w)
+      expect(vm).toMatchObject({
+        entityTitle: 'Run Sweep',
+        headline: 'Deleted on try, edited on main',
+        source: { text: 'Delete the Run' },
+        target: { text: 'Keep the Run with its edits: output, code, name' },
+        canEdit: false,
+      })
+      expect(vm.target.text).not.toContain('{')
+      const back = runsWorld([ops.setRunResult('r1', res())], [ops.remove('r1')])
+      expect(one(evd('r1', 'Target'), back)).toMatchObject({
+        source: { text: 'Bring back the Run with its edits: output' },
+        target: { text: 'Leave the Run deleted' },
+      })
+    })
+    it('counts a Run as a block of its Page in the automatic list, whatever changed, without printing the result', () => {
+      const list = [ops.addBlock({ id: 'r2', card: 'a', type: 'run', text: 'x', title: 'New', order: 'm' }), ops.setRunResult('r1', res())]
+      const out = buildAuto(plan([], list), replay(RUNS, list), RUNS)
+      expect(out.lines).toEqual([{ kind: 'Change', what: 'Page of Alpha · 2 blocks' }])
+      expect(out.summary).toBe('1 Change')
+    })
+    it('leaves a Visual and a paragraph as they were', () => {
+      const w = runsWorld([ops.setBlockText('p1', 'S')], [ops.setBlockText('p1', 'T')])
+      expect(one(field('p1', 'text', T('Intro'), T('S'), T('T')), w)).toMatchObject({ entityTitle: 'Page: Alpha', headline: 'Paragraph changed on both', canEdit: true })
     })
   })
   it('shows an emptied paragraph as (empty), and a hand-written one becomes a Custom text', () => {

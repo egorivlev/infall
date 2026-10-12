@@ -587,3 +587,219 @@
   cursor: pointer;
 }
 .qp-pin__review:hover { background: var(--q-hover); }
+
+/* ---- Runs (M8): code, and the output captured the last time someone executed it ----
+   No `overflow: hidden` on the frame: the "⋯" menu drops out of the header. Nothing inside needs
+   clipping — the header and the output share the frame's background, the code sits in the middle. */
+.qp-run {
+  container-type: inline-size;
+  min-width: 0;
+  border: 1px solid var(--q-line);
+  border-radius: 6px;
+  background: var(--q-surface);
+  color: var(--q-ink);
+  font: 13px/1.4 var(--q-sans);
+}
+.qp-block > .qp-run { margin: 6px 0; }
+.qp-run__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid var(--q-line-soft);
+  color: var(--q-ink-2);
+}
+.qp-run__glyph { flex: none; }
+.qp-run__kind {
+  flex: none;
+  font: 500 10px/1 var(--q-mono);
+  letter-spacing: .07em;
+  text-transform: uppercase; /* the label only */
+  color: var(--q-ink-2);
+}
+.qp-run__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.3 var(--q-mono);
+  color: var(--q-ink); /* a person's words: shown as written */
+}
+.qp-run__title.is-empty { color: var(--q-ink-3); }
+/* When the strip is narrow the environment gives way first, so the name stays readable. */
+.qp-run__env {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11px var(--q-mono);
+  color: var(--q-ink-3);
+}
+.qp-run__note { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--q-ink-3); }
+.qp-run__elapsed { flex: none; font: 12px var(--q-mono); font-variant-numeric: tabular-nums; color: var(--q-ink-2); }
+.qp-run__edit { flex: none; height: 24px; }
+.qp-run__more-wrap { position: relative; flex: none; display: inline-flex; }
+.qp-run__more-btn { width: 26px; height: 24px; padding: 0; color: var(--q-ink-2); font-size: 15px; line-height: 1; }
+.qp-run__menu { left: auto; right: 0; }
+.qp-run__go { flex: none; height: 26px; padding: 0 11px; border-radius: 4px; }
+.qp-run__go--stop { border-color: var(--q-line); }
+.qp-run__square { width: 8px; height: 8px; border-radius: 1px; background: currentColor; }
+/* Waiting, recording, or held back by another Run: the same button, kept focusable, visibly at rest. */
+.q-btn.qp-run__go[aria-disabled="true"],
+.q-btn.qp-run__go[aria-disabled="true"]:hover {
+  background: transparent;
+  border-color: var(--q-line);
+  color: var(--q-ink-3);
+  cursor: not-allowed;
+}
+
+/* Lines under the header: where code can run, what the app is waiting for, how the last execution ended. */
+.qp-run__strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--q-line-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--q-ink-2);
+}
+.qp-run__strip > svg { flex: none; margin-top: 1px; }
+.qp-run__strip-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.qp-run__strip > .q-btn { flex: none; height: 24px; }
+.qp-run__strip--info { background: var(--q-sunken); }
+.qp-run__strip--wait { background: color-mix(in oklch, var(--q-accent) 9%, var(--q-surface)); color: var(--q-ink); }
+.qp-run__strip--warn {
+  flex-wrap: wrap;
+  align-items: center;
+  background: color-mix(in oklch, var(--q-st-question) 11%, var(--q-surface));
+  border-bottom-color: color-mix(in oklch, var(--q-st-question) 40%, var(--q-line-soft));
+  color: var(--q-ink);
+}
+.qp-run__strip--warn > svg { color: var(--q-st-question); margin-top: 0; }
+
+/* The code: sunken, numbered, never wrapped. The gutter stays put while long lines scroll sideways. */
+.qp-run__code {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  padding: 8px 0;
+  overflow-x: auto;
+  background: var(--q-sunken);
+  font: 12px/1.62 var(--q-mono);
+  outline-offset: -2px;
+}
+.qp-run__code > pre { margin: 0; border: 0; font: inherit; }
+.qp-run__gutter {
+  position: sticky;
+  left: 0;
+  padding: 0 10px 0 0;
+  background: var(--q-sunken);
+  color: var(--q-ink-3);
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.qp-run__lines { padding: 0 12px 0 0; white-space: pre; tab-size: 4; color: var(--q-ink); }
+.qp-run__lines > code { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; }
+.qp-run__more {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 12px 0 44px;
+  border: 0;
+  border-top: 1px solid var(--q-line-soft);
+  background: var(--q-sunken);
+  color: var(--q-ink-2);
+  font: 11px var(--q-mono);
+  text-align: left;
+  cursor: pointer;
+}
+.qp-run__more:hover { color: var(--q-ink); }
+.qp-run__more:focus-visible { outline-offset: -2px; }
+.qp-run__nocode { padding: 10px 12px; background: var(--q-sunken); }
+
+/* The output: figures first, then the text, then who ran it. */
+.qp-run__out {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--q-line-soft);
+}
+.qp-run__out-head { display: flex; align-items: baseline; gap: 10px; }
+.qp-run__label { font: 500 10px/1 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; color: var(--q-ink-3); }
+.qp-run__live { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--q-ink-2); }
+.qp-run__live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--q-accent); }
+.qp-run__figs { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+/* Plots are drawn for a white page, so they sit on a white plate in both themes — the one fixed colour here. */
+.qp-run__fig {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--q-line-soft);
+  border-radius: var(--q-r-chip);
+  background: white;
+}
+.qp-run__text {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font: 11.5px/1.5 var(--q-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  color: var(--q-ink);
+}
+.qp-run__quiet { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--q-ink-3); }
+.qp-run__record { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--q-ink-2); }
+.qp-run__avatar { width: 16px; height: 16px; background: var(--who, var(--q-ink-3)); font-size: 8px; }
+/* The sentence keeps the avatar on its line and takes the room; the figures go right, or under it when narrow. */
+.qp-run__by { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.qp-run__record > .qp-spacer { display: none; }
+.qp-run__stale { color: var(--q-st-question); }
+.qp-run__stats { margin-left: auto; font: 11px var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qp-run__stopped { color: var(--q-ink-2); }
+.qp-run__exit { color: var(--q-danger); }
+
+/* A narrow frame (a phone, a slim panel): the extras go, and the action may take a line of its own. */
+@container (max-width: 430px) {
+  .qp-run__env, .qp-run__note { display: none; }
+  .qp-run__head { flex-wrap: wrap; gap: 6px 8px; }
+  .qp-run__title { flex: 1 1 6ch; }
+  .qp-run__head > .qp-spacer { display: none; }
+  .qp-run__go { margin-left: auto; }
+}
+
+.qp-run-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 12px;
+  border: 1px solid var(--q-accent);
+  border-radius: 6px;
+  background: var(--q-surface);
+}
+.qp-run-edit__name { font-family: var(--q-mono); font-size: 12.5px; }
+.qp-run-edit__code {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r);
+  background: var(--q-sunken);
+  color: var(--q-ink);
+  font: 12.5px/1.5 var(--q-mono);
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+.qp-run-edit__hints { display: flex; flex-direction: column; gap: 3px; }
+.qp-run-edit .qp-block__hint { margin: 0; }
+.qp-run-edit__buttons { display: flex; align-items: center; gap: 8px; }

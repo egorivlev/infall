@@ -1,19 +1,31 @@
 # Qoop desktop app
 
-A thin [Tauri v2](https://v2.tauri.app/) shell around the web UI that the Qoop server serves. It adds one thing (M7): the AI sidebar can run on the Member's own Claude Code. The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md) and [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md).
+A thin [Tauri v2](https://v2.tauri.app/) shell around the web UI that the Qoop server serves. It adds two things: the AI sidebar can run on the Member's own Claude Code (M7), and the **Runner** executes Runs on the Member's own computer (M8; see [The Runner](#the-runner) and [its security model](#the-runners-security-model-in-plain-words)). The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md) and [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md).
 
 ```
 desktop/
-  ui/                      the local first-run screen (plain HTML/CSS/JS, no build step)
+  ui/                      the app's own local windows (plain HTML/CSS/JS, no build step)
+    index.html, setup.*    the first-run screen
+    approval.html, .js     the Runner's approval window
+    runner.html, .js       the Runner settings window
   src-tauri/               the app (Rust); a Cargo workspace of its own, excluded from the root one
-    src/shell.rs           the Tauri layer: windows, menu, the five commands
+    src/shell.rs           the Tauri layer: windows, menu, the commands
     src/bridge.js          defines window.qoopDesktop on the server's pages
-    src/bridge.rs          who may call the bridge, what a request may contain
+    src/bridge.rs          who may call the bridge and the local windows' commands
     src/address.rs         server address rules, health check, navigation rule
     src/config.rs          the saved server address
-    capabilities/          what the local first-run screen may call
+    capabilities/          what each local window may call
     driver/                qoop-claude-driver: runs `claude`; no Tauri types
       tests/stub-claude.sh a stand-in `claude` for tests
+    runner/                qoop-runner: the Runner; no Tauri types
+      src/approvals.rs     the approval gate and the remembered approvals
+      src/inspect.rs       what the approval window shows of the code
+      src/exec.rs          the process, its output, figures, temporary directory
+      src/runner.py        the program that runs the code (standard library only)
+      src/python.rs        finding and checking interpreters, the shell's environment
+      src/settings.rs      the chosen interpreter and folder
+      tests/real_python.rs the Runner against a real Python
+    proc/                  qoop-proc: process groups and private folders, shared by both
 ```
 
 ## Prerequisites
@@ -22,6 +34,7 @@ desktop/
 - macOS: the Xcode Command Line Tools are enough (`xcode-select --install`); full Xcode is not needed for a development build. Linux and Windows need the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); those platforms have not been built or run (see "Unverified").
 - The Tauri CLI (`cargo tauri`) is **not** needed to build or run. It would only be needed to produce an installer bundle (`.app`/`.dmg`), which is not part of M7.
 - For the AI sidebar: Claude Code installed and signed in (`claude`), version 2.1.x. The flags below were read from 2.1.265.
+- For the Runner: a Python 3 (3.8 or newer) of the Member's own. matplotlib only if Runs draw figures. The Runner tests use whatever Python 3 they find (see "Tests").
 
 ## Build and run in development
 
@@ -38,7 +51,7 @@ Checks:
 
 ```sh
 cd desktop/src-tauri
-cargo test                                   # driver (with the stub claude) + app rules
+cargo test                                   # driver (stub claude) + Runner (real Python) + app rules
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
@@ -61,6 +74,7 @@ Tauri **2.12.7** (`tauri-build` 2.7.6, `wry` 0.57.3). Version 3 exists only as a
 |---|---|
 | Show the server's UI | The main window is created at run time with `WebviewUrl::External(<origin>)`. There are no windows in `tauri.conf.json`. |
 | First-run screen | A second, local window (`setup`) showing `desktop/ui/index.html`, with its own static capability (`capabilities/setup.json`): it may call `setup_current` and `setup_save`, nothing else. |
+| Approval window, Runner settings window | Local windows too (`runner-approval-<ticket>` showing `approval.html`, `runner-settings` showing `runner.html`), each with its own static capability (`capabilities/runner-approval.json`, `runner-settings.json`) that names only its own commands and only its own window labels. |
 | Give the bridge to one origin, known only at run time | `build.rs` declares the app's commands in an app manifest, so each has a permission (`allow-claude-send`, …) and nothing may call a command without a capability. When the main window is created, the app adds a capability **at run time**: `app.add_capability(CapabilityBuilder::new("qoop-bridge").remote("<origin>/*").window("main").permission("allow-claude-status")…)`. Tauri checks the calling page's URL against it on every call. |
 | Stream from Rust to the page | A Tauri `Channel<AiEvent>` passed to `claude_send`. No event-plugin permission is granted to the page. |
 | Put `window.qoopDesktop` on the page | `WebviewWindowBuilder::initialization_script`, which runs in the **main frame only** (the all-frames variant is a separate method and is not used). |
@@ -73,7 +87,7 @@ Every mechanism in this table was confirmed by reading the source of exactly the
 
 The server's pages are remote content and get no general access to the app. Layers, outermost first:
 
-1. **Only three commands, only one origin, only the main window.** The run-time capability above grants `claude_status`, `claude_send` and `claude_cancel` to `<origin>/*` in window `main`. For remote pages Tauri refuses every command that no capability grants, so the setup commands and every plugin command (events, windows, …) are refused.
+1. **Only seven commands, only one origin, only the main window.** The run-time capability above grants `claude_status`, `claude_send`, `claude_cancel` and, for the Runner, `runner_status`, `runner_configure`, `runner_run`, `runner_cancel` to `<origin>/*` in window `main`. For remote pages Tauri refuses every command that no capability grants, so the setup commands, the approval and settings commands and every plugin command (events, windows, …) are refused.
 2. **Top frame only.** Tauri's own IPC bootstrap (`window.__TAURI_INTERNALS__` and the per-run "invoke key" that every call must carry) and the bridge script are injected in the main frame only. A frame gets neither. The Visual sandbox frame (`/visual-frame`, `sandbox allow-scripts`) has an opaque origin, so it cannot reach into its parent to borrow them.
 3. **A second key of the app's own.** The bridge script holds a random key (new on every start) in a closure and sends it with each call; the commands refuse calls without it (`bridge::check_caller`). This does not depend on Tauri's invoke key.
 4. **A check inside every command**: the call must come from window `main` while that window's page is on the configured origin.
@@ -151,13 +165,68 @@ Deliberately **not** used:
 
 The app never reads or stores Claude credentials and makes no network request of its own except the health check of the server address.
 
+## The Runner
+
+A Run is a block of Python in a Page together with the output captured the last time someone executed it. The Runner is what executes it: on the Member's own computer, with the Member's own Python. The server never executes anything; the page receives the result from the app and records it through the server like any other edit.
+
+What the server's page can do (`window.qoopDesktop.runner`): read which interpreter and folder are set (`status`), ask for the app's settings window (`configure`), ask for a Run of some code (`run`), and cancel that Run (`cancel`). It cannot choose the interpreter or the folder, and it cannot approve anything.
+
+What happens on `run({ id, code, title }, onEvent)`:
+
+1. **Is there a Python?** The interpreter is the one chosen in **Qoop → Runner settings…**. Nothing is chosen until the Member chooses: the first Run opens that window, and gets `error`/`no_python` if it is closed without a choice.
+2. **Approval.** If exactly this code (by SHA-256) was approved before for this server, it goes straight on. Otherwise the page gets `approval` and the app opens its own window: the Run's title, the server, the interpreter, the folder, and the complete code with line numbers. "Don't run" is the default button; closing the window, Escape, and the page going away all mean "Don't run" (`error`/`declined`). "Run on this computer" becomes available once the code has been scrolled to its end and has been on screen for a second.
+3. **Execution.** The approved text is written to `main.py` in a new temporary directory (mode `0700`, files `0600`) and started as `<python> -u -X utf8 runner.py main.py` in a process group of its own. The working directory is the folder from the settings, or the temporary directory. The environment is the Member's shell environment plus `MPLBACKEND=Agg`, `PYTHONUNBUFFERED=1`, `PYTHONIOENCODING=utf-8` and `QOOP_RUN_DIR`. The page gets `started`, then `output` events (at most about ten a second, each at most 16 000 characters), then `done`.
+4. **Afterwards** the temporary directory is removed and whatever the code left running in its process group is killed.
+
+`runner.py` (bundled in the app, standard library only) runs the code as `__main__`: tracebacks say `File "main.py", line N` with the right numbers and lines, `sys.exit(n)` gives exit code `n`, the working directory is first on `sys.path`. The code is always read as UTF-8 and compiled from text, so an encoding declaration inside it cannot make Python read something else than what was shown. When the code ends, normally or not, `runner.py` saves the matplotlib figures that are still open (only if the code itself imported `matplotlib.pyplot`): the first three, as PNG, with fewer dots per inch if a file would be over 120 000 bytes (160 000 base64 characters), and one `[qoop] …` line in the output for each figure it had to leave out. It also notes the Python version and the versions of up to eight packages the code imports. `plt.show()` does nothing in a Run (there is no screen); leave figures open and they are captured.
+
+The result (`done`): exit code (`null` if stopped or killed by a signal), `stopped`, duration, the SHA-256 of the executed code, the output, the figures, and `env` (Python version, packages, `os`, `arch`). Standard output and standard error share one pipe, so their order is kept. The kept output is at most 64 000 characters (counted in UTF-16 units, so the limit holds however a reader counts): beyond that, the first and the last 32 000 are kept with one line in between saying how much is not shown, and `output_truncated` is set. Bytes that are not UTF-8 become U+FFFD.
+
+There is **no time limit**. `cancel(id)` asks the process group to stop (`SIGTERM`), waits half a second, then kills the group (`SIGKILL`): `done` with `stopped: true`, `exit: null`, the output so far, no figures. Closing the main window, reloading or leaving the page, "Change Server…" and quitting the app do the same. One Run at a time per app, counted from the moment it is asked for (`error`/`busy` otherwise; a Run asked for right after a cancel waits up to four seconds for the old one to be gone).
+
+**Runner settings** (app menu, or `runner.configure()` from the page; kept in `runner.json` in the app's config directory, per device):
+
+- *Python*: the interpreters found as `python3` or `python` on the `PATH` of the Member's shell, and in `~/.pyenv/shims`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`. Each is asked what it really is (so a pyenv shim is listed as the interpreter behind it) and listed once. Or the full path of another one, accepted when `<path> --version` answers `Python 3.…` within five seconds.
+- *Folder* (optional): typed as a path; must be an existing directory.
+- *Approvals*: how many are remembered, and a button to forget them all.
+
+The shell's environment is read once per start of the app by running `$SHELL -l -i -c` (then `-l -c`, then the app's own environment). The contract says "the way a login shell would"; the interactive flag is added because many set-ups, the machine this was built on included, put pyenv or conda into the file that only interactive shells read.
+
+`QOOP_PYTHON_BIN=/path/to/python` overrides the chosen interpreter (for tests and smoke runs). It does not touch approval. **Nothing switches approval off**: no environment variable, no flag, no debug build. Tests approve through the same Rust calls the approval window makes.
+
+## The Runner's security model, in plain words
+
+**What you are protected from.** Code in a Run may have been written or changed by someone else, and the page that asks for it to be run is remote content. Neither can make anything run on your computer by itself:
+
+- **Code runs only after you said yes to exactly that code**, in a window that belongs to the app. The page cannot draw that window, read it, click in it, or answer for you: the commands behind it are granted only to that window (Tauri capability), are checked again inside each command (window label and the app's own bundled page address), and the question a window can answer is fixed by its label. This was tried from a page in the smoke run: every such call was refused.
+- **What you see is what runs.** The app hashes and writes out the very text it displayed. Characters you could not see (zero-width, direction controls, control characters, unusual spaces, and so on) are drawn as marked codes such as `U+202E`, and a notice says so. Text is drawn strictly left to right in file order, so right-to-left text cannot rearrange code. Long lines are wrapped, never cut. Lines are numbered the way Python counts them. Titles and code are shown as text, never interpreted as HTML.
+- **A changed Run asks again.** Approval is remembered per server and per SHA-256 of the code (`runner-approvals.json` in the app's config directory, newest 1 000). One changed character, by anyone, including you, is new code.
+- **The page cannot choose where code runs.** Interpreter and folder come only from the settings window. The request has no field for them.
+- **An accidental yes is hard.** "Don't run" has the focus; Enter, Escape and closing the window all decline; "Run" is refused by the app until the window has had the code for a second, and stays disabled until you have scrolled to the end.
+- **Size is bounded.** Code over 100 000 characters is refused without a question.
+
+**What you are not protected from. Read this part.**
+
+- **There is no sandbox.** Approved code runs with your own rights: it can read, change and delete your files, use the network, and start other programs. Approval is the only barrier. Read the code.
+- **A remembered approval is permanent until the code changes or you forget it.** After you approved some code once, the server's page can run that same code again, at any time and any number of times, without asking. If the server or the page is compromised, it can replay everything you ever approved, though only that. The approval does not record the interpreter or the folder: code approved while Runs used a temporary folder runs without a question in a folder you set later. Use "Forget them" in Runner settings when in doubt.
+- **Look-alikes.** Letters from other alphabets that look like Latin ones, and Unicode letters that Python treats as the same as ASCII ones, are visible but not flagged. Code can also simply be misleading. The window shows the truth; it cannot read for you.
+- **Nagging.** A page can ask again after you declined, as often as it likes, and can open the settings window. Every question still needs your yes.
+- **The page learns** the path of your interpreter and folder (`status`), and everything the code prints or draws: the result goes to the server, to be shown to the team.
+- **Your environment is passed on.** The code gets the environment of your shell, including any secrets you keep in environment variables.
+- **A program can escape the stop.** Cancel kills the process group. A program that deliberately moves itself to another session (`os.setsid`, a daemon) is no longer in it. And if the app itself is killed hard (`kill -9`, a crash), a Run in progress keeps running.
+- **Other programs running as you** can edit the app's files in its config directory (for instance add approvals). They already have your rights.
+
 ## Tests
 
 `cargo test` in `desktop/src-tauri` runs:
 
 - `driver` unit tests: the event mapping, the exact argument vector, the config file contents, redaction.
 - `driver/tests/stub.rs`: the driver against `driver/tests/stub-claude.sh`, a shell script that records its arguments, standard input, working directory, environment and the MCP config file it was given, and prints canned streams (an answer with a tool call, an error, garbage lines, a crash, a hang, a process that ignores `SIGTERM`, one that lingers after its result). They assert: the token is in the file and not in the arguments; the file is `0600`, outside the working directory, and deleted afterwards; built-in tools are off and only the eight tools are allowed; the working directory is empty and emptied again; cancel stops the process and its child; the silence timeout (injected, short) ends the run; events map as specified.
-- app unit tests: server address rules, health check against a local socket, navigation rule, who may call the bridge, request validation, the saved address.
+- app unit tests: server address rules, health check against a local socket, navigation rule, who may call the bridge and the commands of the app's own windows, request validation, the saved address.
+- `runner` unit tests: the approval gate (nothing without a yes, remembered per server and hash, the newest 1 000, changed code asks again, decline, window closed, an answer only counts for the question it was given to, a yes that comes at once does not count), what the approval window is given (lines as Python counts them, invisible and direction characters, long lines, titles), settings, interpreter checks and lookup (with small stand-in programs), the shell environment, output handling (split multi-byte characters, non-UTF-8 bytes, head and tail, event spacing), and the checks on what a program leaves behind (links, sizes, PNG signature).
+- `runner/tests/real_python.rs`: the Runner **against a real Python interpreter**, nothing stubbed; the "Member" answers through the same calls the approval window makes. Output and its order, exit codes, tracebacks, `SystemExit`, Unicode, truncation, event rate, a matplotlib figure captured as a real PNG, more than three figures, a figure too large, packages, cancel killing a child and grandchild of the code, a program that ignores `SIGTERM`, busy, the settings flow, the folder, an encoding declaration that tries to smuggle code in, programs that sabotage their own process.
+
+  Which interpreter: `QOOP_TEST_PYTHON=/path/to/python3` if set; otherwise the first one the Runner's own lookup finds that has matplotlib, otherwise the first it finds. With none, each of these tests prints `SKIPPED: no Python 3 interpreter was found` and passes; without matplotlib the five figure tests print `SKIPPED: … has no matplotlib`. See the lines with `cargo test -- --nocapture`. Run here against 3.12.13 (with matplotlib 3.10.9: all 30 run) and against the system's 3.9.6 (no matplotlib: 25 run, 5 skipped).
 
 No test starts the real `claude`.
 
@@ -190,6 +259,21 @@ Other things not verified:
 - If the saved server is unreachable at start, the window shows the webview's own error page; use **Change Server…**.
 
 What was verified in a short smoke run of the debug build on macOS, against a local fake server sending the real server's Content-Security-Policy headers, with the stub `claude`: the window opens the configured origin; `window.qoopDesktop` exists in the top frame, is frozen, and reports the app version; `status()` returns the stub's version; `send()` delivers `delta`/`tool`/`done` in order and resolves after the last event; a second `send` during a run gets an `error`; `cancel()` stops a hanging run and its child process and `send` resolves; a request naming another tool endpoint is refused; calls with a wrong key, the setup commands and plugin commands are refused from the page; the sandboxed `/visual-frame` has neither `window.qoopDesktop` nor `window.__TAURI_INTERNALS__`, cannot read its parent, and its direct message to the IPC channel is dropped; a frame that loads while a run is streaming does not interrupt the run. The release build (`--features custom-protocol`) was started the same way and behaved the same.
+
+## Unverified: the Runner (M8)
+
+Verified by a smoke run of the debug build on macOS (Apple Silicon), against a local fake server sending the real server's Content-Security-Policy, with an isolated home folder, `QOOP_PYTHON_BIN` pointing at a real Python 3.12 with matplotlib, and two approvals placed in the app's approvals file beforehand (as an earlier yes would have): `window.qoopDesktop.runner` exists, is frozen, has `status`, `configure`, `run`, `cancel`; `status()` reports the interpreter; an approved Run delivers `started`, `output`, `done` in order with Unicode output, one PNG figure, packages and `env`; a second Run during the first gets `busy`; `cancel()` stops a Run (`stopped: true`); code over the limit gets `failed`; code not approved before gets `approval`, the app's approval window opens, loads its bundled page and reads the code through its own command; while it is open, the page's direct calls to the approval and settings commands (with and without a key) are all refused by Tauri, and bridge calls with a wrong key are refused by the app; after the page cancels, the Run ends `declined` and the code never ran; a reload during a Run kills its process, and the reloaded page can run again at once; `configure()` opens the settings window, which loads and lists the interpreters found.
+
+Not verified:
+
+1. **Nobody clicked in the two windows inside the real app.** No tool here could press buttons in the app (the operating system did not grant control of it). So "Run on this computer", "Don't run", closing the approval window, and choosing and saving in the settings window have not been operated in the app's own webview. What stands behind them was tested separately: the pages' behaviour in a browser (Chromium) with a stand-in for the app (text is never interpreted as HTML, the Run button stays off until the end of the code and the wait, Escape declines, errors show), and the Rust behind each button in the tests above. **Before relying on M8, approve one Run and decline one by hand.**
+2. **The look of the windows in the app's own webview** (WebKit): layout, dark mode, how marked characters and wrapped lines are drawn, whether the approval window comes to the front and stays on top.
+3. **Quitting the app during a Run**, closing the main window during a Run, and the menu item were not exercised in the running app (the kill itself is tested; the page-reload path, which uses the same call, was exercised).
+4. **Python 3.8.** The contract says 3.8 or newer; `runner.py` was run on 3.9.6 and 3.12.13 only.
+5. **Linux and Windows.** Not built. On Windows the process group, the file modes, the shell lookup and the no-follow file reads are Unix code paths that do not apply; the Runner must not be shipped there as it is.
+6. **Other shells than zsh** for reading the environment (fish, csh), and shell start-up files that wait for input: after eight seconds the app gives up on the interactive shell and tries the plain login shell, then its own environment.
+7. **conda and virtual environments** in the interpreter list: the lookup logic is tested with stand-ins; only pyenv and the system Python were found for real.
+8. **Very large or unusual figures** beyond the tests (animations, 3D, non-Agg backends set by the code).
 
 ## Open question: Anthropic's terms
 

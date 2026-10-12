@@ -1,0 +1,269 @@
+/* The Runner's two local windows: approval and settings. Same palette as the first-run
+   screen (setup.css). */
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf7;
+  --panel: #f3f1ea;
+  --text: #1b1c20;
+  --muted: #5d6068;
+  --line: #d9d7d0;
+  --accent: #1b1c20;
+  --accent-text: #fbfaf7;
+  --error: #a4281f;
+  --warn-bg: #fdf1d7;
+  --warn-line: #d9a514;
+  --warn-text: #4d3a00;
+  --mark-bg: #a4281f;
+  --mark-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181c;
+    --panel: #1f2126;
+    --text: #ecebe6;
+    --muted: #a3a6ae;
+    --line: #3a3c44;
+    --accent: #ecebe6;
+    --accent-text: #17181c;
+    --error: #ff9d92;
+    --warn-bg: #3a2f10;
+    --warn-line: #b88a12;
+    --warn-text: #f6e3ae;
+    --mark-bg: #ff9d92;
+    --mark-text: #17181c;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+h1 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h2 {
+  margin: 24px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+p {
+  margin: 0;
+}
+.muted,
+.hint {
+  color: var(--muted);
+}
+.hint {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.error {
+  margin-top: 12px;
+  color: var(--error);
+  font-size: 13px;
+}
+[hidden] {
+  display: none !important;
+}
+button {
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+}
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+button.quiet {
+  height: 30px;
+  padding: 0 12px;
+  border-color: var(--line);
+  font-weight: 500;
+  font-size: 13px;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button:focus-visible,
+input:focus-visible,
+.code:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input[type="text"] {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ---- approval -------------------------------------------------------------------- */
+.approval {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px 24px 16px;
+  gap: 12px;
+}
+.approval header p {
+  max-width: 70ch;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.facts .path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.notices {
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border: 1px solid var(--warn-line);
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+}
+.notices li + li {
+  margin-top: 4px;
+}
+.code {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 0;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  tab-size: 4;
+}
+.line {
+  display: grid;
+  grid-template-columns: 6ch minmax(0, 1fr);
+  column-gap: 12px;
+  padding-right: 12px;
+}
+.no {
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Every character in the order it is in the file, left to right, wrapped and never cut:
+   nothing can be off-screen to the right, and no character can reorder its neighbours. */
+.src {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  direction: ltr;
+  unicode-bidi: bidi-override;
+  min-height: 1.5em;
+}
+.hidden-char {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--mark-bg);
+  color: var(--mark-text);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  unicode-bidi: isolate;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.approval footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.approval footer .hint {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+/* ---- settings -------------------------------------------------------------------- */
+.settings {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 24px 28px 20px;
+}
+.choices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.choices li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+.choices label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.choices .path {
+  display: block;
+  color: var(--muted);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings .buttons {
+  margin-top: 24px;
+}

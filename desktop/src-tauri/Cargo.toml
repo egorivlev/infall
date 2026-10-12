@@ -1,8 +1,8 @@
 # The Qoop desktop app (docs/specs/desktop.md). Deliberately NOT a member of the
 # repository's root workspace: its own lock file and its own target directory.
 [workspace]
-members = [".", "driver"]
-default-members = [".", "driver"]
+members = [".", "driver", "proc", "runner"]
+default-members = [".", "driver", "proc", "runner"]
 resolver = "3"
 
 [package]
@@ -26,6 +26,7 @@ tauri-build = { version = "2.7", features = [] }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-opener = "2.7"
 qoop-claude-driver = { path = "driver" }
+qoop-runner = { path = "runner" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"

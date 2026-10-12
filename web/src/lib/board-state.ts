@@ -14,6 +14,7 @@ import type {
   SourceVM,
   Value,
 } from './types'
+import { readRunResult } from './run-result'
 import { CARD_H, CARD_W, CONNECTION_KINDS, STATUSES } from './types'
 
 export type Entities = Record<string, Entity>
@@ -141,11 +142,13 @@ function shallowEqual(a: object, b: object): boolean {
   })
 }
 
-// As above, and a Block's `ai` (a small record made anew on every pass) is compared key by key.
+// As above, and a Block's `ai` (a small record made anew on every pass) is compared key by key. A Run's `run` is
+// the same while it holds the same parsed result (the object itself: a result is never compared piece by piece).
 function sameBlock(a: BlockVM, b: BlockVM): boolean {
-  const { ai: aiA, ...restA } = a
-  const { ai: aiB, ...restB } = b
+  const { ai: aiA, run: runA, ...restA } = a
+  const { ai: aiB, run: runB, ...restB } = b
   if (!shallowEqual(restA, restB)) return false
+  if (runA !== runB && !(runA && runB && runA.result === runB.result && runA.broken === runB.broken)) return false
   return aiA === undefined || aiB === undefined ? aiA === aiB : sameKeys(aiA, aiB, Object.is)
 }
 
@@ -168,7 +171,7 @@ export function blockAi(fields: Fields): BlockVM['ai'] {
  */
 export function blockType(fields: Fields): BlockVM['type'] | null {
   const t = text(fields, 'type')
-  return t === '' || t === 'text' ? 'text' : t === 'visual' ? 'visual' : null
+  return t === '' || t === 'text' ? 'text' : t === 'visual' || t === 'run' ? t : null
 }
 
 function isLive(entities: Entities, id: string, kind: Kind): boolean {
@@ -325,7 +328,9 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
       if (type === null || !isLive(entities, card, 'Card')) continue
       let list = blocks.get(card)
       if (!list) blocks.set(card, (list = []))
-      const block: BlockVM = { id, card, type, text: text(f, 'text'), title: type === 'visual' ? text(f, 'title') : '', order: text(f, 'order') }
+      const block: BlockVM = { id, card, type, text: text(f, 'text'), title: type === 'text' ? '' : text(f, 'title'), order: text(f, 'order') }
+      // The stored result is parsed once per value (run-result.ts), so an unrelated change costs a lookup.
+      if (type === 'run') block.run = readRunResult(f.result)
       const ai = blockAi(f)
       if (ai) block.ai = ai
       list.push(block)

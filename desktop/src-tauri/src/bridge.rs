@@ -48,6 +48,56 @@ pub fn check_caller(
     }
 }
 
+/// The label of the Runner settings window (local UI).
+pub const SETTINGS_WINDOW: &str = "runner-settings";
+/// The label of an approval window is this followed by the ticket of the question it asks.
+pub const APPROVAL_PREFIX: &str = "runner-approval-";
+
+/// The label of the approval window for `ticket`.
+pub fn approval_window(ticket: u64) -> String {
+    format!("{APPROVAL_PREFIX}{ticket}")
+}
+
+/// Is `page` the app's own bundled file `file`? The app's files are served from
+/// `tauri://localhost` (macOS, Linux) or `http(s)://tauri.localhost` (Windows); nothing a
+/// server sends can have such an address.
+pub fn is_local_page(page: &Url, file: &str) -> bool {
+    let bundled = match page.scheme() {
+        "tauri" => page.host_str() == Some("localhost"),
+        "http" | "https" => page.host_str() == Some("tauri.localhost"),
+        _ => false,
+    };
+    bundled
+        && page.port().is_none()
+        && page.username().is_empty()
+        && page.password().is_none()
+        && page.path().strip_prefix('/') == Some(file)
+}
+
+/// The settings commands run only when called from the Runner settings window while it
+/// shows the app's own settings page. (Tauri's capability for that window is the first
+/// line of defence; this is the second.)
+pub fn check_settings_caller(window: &str, page: Option<&Url>) -> Result<(), String> {
+    if window == SETTINGS_WINDOW && page.is_some_and(|p| is_local_page(p, "runner.html")) {
+        Ok(())
+    } else {
+        Err("Not allowed.".into())
+    }
+}
+
+/// The approval commands run only when called from an approval window while it shows the
+/// app's own approval page. Returns the ticket that window was opened for: the question it
+/// may answer is taken from its label, never from what the call says.
+pub fn check_approval_caller(window: &str, page: Option<&Url>) -> Result<u64, String> {
+    let ticket = window
+        .strip_prefix(APPROVAL_PREFIX)
+        .and_then(|t| t.parse::<u64>().ok().filter(|n| n.to_string() == t));
+    match ticket {
+        Some(ticket) if page.is_some_and(|p| is_local_page(p, "approval.html")) => Ok(ticket),
+        _ => Err("Not allowed.".into()),
+    }
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len()
         && !a.is_empty()
@@ -210,6 +260,154 @@ mod tests {
             ),
             refused
         );
+    }
+
+    #[test]
+    fn only_the_apps_own_windows_may_call_the_local_commands() {
+        let refused = Err::<(), String>("Not allowed.".to_owned());
+        let no_ticket = Err::<u64, String>("Not allowed.".to_owned());
+        let approval = url("tauri://localhost/approval.html");
+        let settings = url("tauri://localhost/runner.html");
+
+        assert_eq!(
+            check_approval_caller("runner-approval-7", Some(&approval)),
+            Ok(7)
+        );
+        assert_eq!(
+            check_approval_caller(&approval_window(u64::MAX), Some(&approval)),
+            Ok(u64::MAX)
+        );
+        // Windows serves the app's files from http://tauri.localhost.
+        assert_eq!(
+            check_approval_caller(
+                "runner-approval-7",
+                Some(&url("http://tauri.localhost/approval.html"))
+            ),
+            Ok(7)
+        );
+        assert_eq!(
+            check_settings_caller("runner-settings", Some(&settings)),
+            Ok(())
+        );
+
+        // The main window — the server's pages — whatever it shows.
+        for page in [
+            "https://qoop.example.org/board/1",
+            "https://qoop.example.org/approval.html",
+            "tauri://localhost/approval.html",
+            "tauri://localhost/runner.html",
+        ] {
+            assert_eq!(
+                check_approval_caller("main", Some(&url(page))),
+                no_ticket,
+                "{page}"
+            );
+            assert_eq!(
+                check_settings_caller("main", Some(&url(page))),
+                refused,
+                "{page}"
+            );
+        }
+        // The other local windows: each may only call its own commands.
+        assert_eq!(check_approval_caller("setup", Some(&approval)), no_ticket);
+        assert_eq!(
+            check_approval_caller("runner-settings", Some(&approval)),
+            no_ticket
+        );
+        assert_eq!(check_settings_caller("setup", Some(&settings)), refused);
+        assert_eq!(
+            check_settings_caller("runner-approval-7", Some(&settings)),
+            refused
+        );
+        assert_eq!(
+            check_settings_caller("runner-settings-2", Some(&settings)),
+            refused
+        );
+        // A label that is not exactly the prefix and a ticket number.
+        for label in [
+            "runner-approval-",
+            "runner-approval",
+            "runner-approval-x",
+            "runner-approval-07",
+            "runner-approval-+7",
+            "runner-approval--7",
+            "runner-approval-7 ",
+            "runner-approval-7-8",
+            "runner-approval-18446744073709551616",
+            "xrunner-approval-7",
+            "",
+        ] {
+            assert_eq!(
+                check_approval_caller(label, Some(&approval)),
+                no_ticket,
+                "{label:?}"
+            );
+        }
+        // The right window showing anything but the app's own page for it.
+        for page in [
+            "https://qoop.example.org/approval.html",
+            "https://evil.example/approval.html",
+            "http://localhost/approval.html",
+            "http://tauri.localhost.evil.example/approval.html",
+            "https://tauri.localhost:8443/approval.html",
+            "https://user@tauri.localhost/approval.html",
+            "tauri://evil/approval.html",
+            "tauri://localhost/index.html",
+            "tauri://localhost/runner.html",
+            "tauri://localhost/x/approval.html",
+            "tauri://localhost//approval.html",
+            "tauri://localhost/",
+            "file:///approval.html",
+            "about:blank",
+            "data:text/html,approval.html",
+            "blob:tauri://localhost/approval.html",
+        ] {
+            assert_eq!(
+                check_approval_caller("runner-approval-7", Some(&url(page))),
+                no_ticket,
+                "{page}"
+            );
+        }
+        for page in [
+            "https://qoop.example.org/runner.html",
+            "tauri://localhost/approval.html",
+            "tauri://localhost/index.html",
+            "about:blank",
+        ] {
+            assert_eq!(
+                check_settings_caller("runner-settings", Some(&url(page))),
+                refused,
+                "{page}"
+            );
+        }
+        assert_eq!(check_approval_caller("runner-approval-7", None), no_ticket);
+        assert_eq!(check_settings_caller("runner-settings", None), refused);
+        // A query or fragment does not make it another page.
+        assert_eq!(
+            check_approval_caller(
+                "runner-approval-7",
+                Some(&url("tauri://localhost/approval.html?x=1#y"))
+            ),
+            Ok(7)
+        );
+    }
+
+    #[test]
+    fn the_script_offers_the_runner_and_nothing_that_approves() {
+        let js = script("http://localhost:8787", "0.1.0", KEY);
+        for command in [
+            "runner_status",
+            "runner_configure",
+            "runner_run",
+            "runner_cancel",
+        ] {
+            assert!(js.contains(&format!("'{command}'")), "{command}");
+        }
+        // The commands of the app's own windows are not even named in what a page gets.
+        for local in ["approval_", "runner_settings", "setup_"] {
+            assert!(!js.contains(local), "{local}");
+        }
+        assert!(js.contains("runner: runner"));
     }
 
     #[test]

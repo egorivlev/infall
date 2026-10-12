@@ -247,7 +247,7 @@ fn json_rejection(r: JsonRejection) -> ApiError {
             "Send the request body as application/json.".to_string()
         }
         _ if r.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            "The request body is larger than 1 MB.".to_string()
+            "The request body is too large.".to_string()
         }
         _ => "The request body could not be read.".to_string(),
     };

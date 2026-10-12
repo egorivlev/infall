@@ -15,6 +15,7 @@ use crate::boards::{BranchInfo, changes_after};
 use crate::error::{ApiError, ApiJson, ApiQuery};
 use crate::history::{MAX_CHECKPOINT_NAME_CHARS, clean_name};
 use crate::live::Hub;
+use crate::runs::RESULT_FIELD;
 
 /// A core value as the `detail` of an error.
 fn detail(value: &impl serde::Serialize) -> Result<Value, ApiError> {
@@ -82,7 +83,15 @@ pub async fn apply(
     MemberOrAdmin(who): MemberOrAdmin,
     ApiJson(body): ApiJson<ApplyMerge>,
 ) -> Result<Json<Value>, ApiError> {
-    // A hand-written value is a Text like any other: the same size limit as posted ops.
+    // The result of a Run is what a Runner captured, recorded under the name of the Member
+    // who executed it: a Conflict on it is decided by taking one side, never by hand.
+    if let Some((key, _)) = body.decisions.iter().find(|(key, decision)| {
+        key.field.as_deref() == Some(RESULT_FIELD) && matches!(decision, Decision::Custom(_))
+    }) {
+        return Err(bad_decision(key));
+    }
+    // Any other hand-written value is a Text like any other: the same size limit as
+    // posted ops.
     let too_long = body.decisions.iter().any(
         |(_, decision)| matches!(decision, Decision::Custom(value) if !crate::boards::text_fits(value)),
     );

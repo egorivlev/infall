@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run this code on your computer?</title>
+    <link rel="stylesheet" href="runner.css" />
+  </head>
+  <body>
+    <main class="approval">
+      <header>
+        <h1>Run this code on your computer?</h1>
+        <p>
+          This code will run on this computer with your own rights. It can read, change and delete
+          your files and use the network; Qoop does not fence it in. Someone else may have written
+          or changed it. Read it, and run it only if you trust it.
+        </p>
+      </header>
+      <dl class="facts">
+        <dt>Run</dt>
+        <dd id="title">…</dd>
+        <dt>From server</dt>
+        <dd id="origin" class="path">…</dd>
+        <dt>Python</dt>
+        <dd id="python" class="path">…</dd>
+        <dt>Folder</dt>
+        <dd id="folder" class="path">…</dd>
+        <dt>Code</dt>
+        <dd id="size">…</dd>
+      </dl>
+      <ul id="notices" class="notices" role="alert" hidden></ul>
+      <div id="code" class="code" tabindex="0" role="region" aria-label="The code that would run"></div>
+      <p id="error" class="error" role="alert" hidden></p>
+      <footer>
+        <p id="hint" class="hint" aria-live="polite"></p>
+        <div class="buttons">
+          <button id="run" type="button" disabled>Run on this computer</button>
+          <button id="dont" type="button" class="primary" autofocus>Don't run</button>
+        </div>
+      </footer>
+    </main>
+    <script src="approval.js"></script>
+  </body>
+</html>

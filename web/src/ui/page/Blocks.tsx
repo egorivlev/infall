@@ -11,6 +11,7 @@ import type { DraftResult } from './DraftArea'
 import { editLock } from './lock'
 import { MarkdownView } from './MarkdownView'
 import { PinFoot, PinHead } from './Pinned'
+import { RunBlock } from './runs/RunBlock'
 import { VisualBlock } from './visuals/VisualBlock'
 
 type BlockProps = {
@@ -141,10 +142,18 @@ const Block = memo(function Block({ block, index, last, editing, canEdit, handle
 
 const NONE: ReadonlySet<string> = new Set()
 
-type Props = { cardId: string; blocks: readonly BlockVM[]; canEdit: boolean }
+type Props = {
+  cardId: string
+  blocks: readonly BlockVM[]
+  canEdit: boolean
+  /** A Guest, or a moment in History: Runs show their code and captured output and nothing to press. Default: as `canEdit` is off. */
+  readOnly?: boolean
+  /** The open Branch, for Runs: an execution belongs to the Branch it was started on. */
+  branchId?: string
+}
 
 /** The Blocks of a Page, in order, with their editors. Holds the soft lock while any editor is open. */
-export function Blocks({ cardId, blocks, canEdit }: Props) {
+export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId }: Props) {
   const actions = useBoardActions()
   const rootRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLButtonElement>(null)
@@ -243,7 +252,7 @@ export function Blocks({ cardId, blocks, canEdit }: Props) {
     [actions],
   )
 
-  // A Visual's editor ended: the title and the source that changed go out together, as one batch.
+  // The editor of a Visual or a Run ended: the title and the text that changed go out together, as one batch.
   const finishVisual = useCallback(
     (id: string, result: VisualResult) => {
       setEditing((s) => {
@@ -262,14 +271,16 @@ export function Blocks({ cardId, blocks, canEdit }: Props) {
   )
 
   const addAt = useCallback<AddBlock>(
-    (index, template) => {
+    (index, start) => {
       const { blocks: list, cardId: card } = latest.current
       const id = newId()
       const order = orderBetween(list[index - 1]?.order, list[index]?.order)
       // The Board applies it locally at once, so the new Block is there when the editor opens.
-      const op = template
-        ? ops.addBlock({ id, card, type: 'visual', title: template.title, text: template.source, order })
-        : ops.addBlock({ id, card, text: '', order })
+      const op = !start
+        ? ops.addBlock({ id, card, text: '', order })
+        : 'run' in start
+          ? ops.addBlock({ id, card, type: 'run', title: start.title, text: start.source, order })
+          : ops.addBlock({ id, card, type: 'visual', title: start.title, text: start.source, order })
       void actions.submit([op])
       setEditing((s) => new Set(s).add(id))
     },
@@ -296,6 +307,17 @@ export function Blocks({ cardId, blocks, canEdit }: Props) {
           )}
           {b.type === 'visual' ? (
             <VisualBlock block={b} index={i} last={i === blocks.length - 1} editing={open.has(b.id)} canEdit={canEdit} handlers={handlers} />
+          ) : b.type === 'run' ? (
+            <RunBlock
+              block={b}
+              index={i}
+              last={i === blocks.length - 1}
+              editing={open.has(b.id)}
+              canEdit={canEdit}
+              readOnly={readOnly}
+              branchId={branchId}
+              handlers={handlers}
+            />
           ) : (
             <Block block={b} index={i} last={i === blocks.length - 1} editing={open.has(b.id)} canEdit={canEdit} handlers={handlers} />
           )}

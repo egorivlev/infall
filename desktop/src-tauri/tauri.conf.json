@@ -11,7 +11,7 @@
     "windows": [],
     "security": {
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost",
-      "capabilities": ["setup"]
+      "capabilities": ["setup", "runner-approval", "runner-settings"]
     }
   },
   "bundle": {

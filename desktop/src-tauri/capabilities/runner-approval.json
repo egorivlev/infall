@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "runner-approval",
+  "description": "The app's own approval window may read the code it asks about and give the Member's answer. Nothing else, and no other window may do either.",
+  "local": true,
+  "windows": ["runner-approval-*"],
+  "permissions": ["allow-approval-view", "allow-approval-decide"]
+}

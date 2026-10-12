@@ -1,5 +1,6 @@
 // Pure op builders. Output matches the wire format in docs/specs/api.md.
-import type { ConnectionKind, Fields, Op, Status, Value } from './types'
+import { encodeRunResult } from './run-result'
+import type { ConnectionKind, Fields, Op, RunResult, Status, Value } from './types'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -67,7 +68,7 @@ export const ops = {
   resize(entity: string, w: number, h: number): Op[] {
     return [set(entity, 'w', num(w)), set(entity, 'h', num(h))]
   },
-  addBlock(input: { id?: string; card: string; text: string; order: string; type?: 'text' | 'visual'; title?: string }): Op {
+  addBlock(input: { id?: string; card: string; text: string; order: string; type?: 'text' | 'visual' | 'run'; title?: string }): Op {
     const fields: Fields = { card: { Ref: input.card }, type: txt(input.type ?? 'text'), order: txt(orderKey(input.order)) }
     if (input.text !== '') fields.text = txt(input.text)
     if (input.title) fields.title = txt(input.title)
@@ -78,6 +79,13 @@ export const ops = {
   },
   setBlockTitle(block: string, title: string): Op {
     return set(block, 'title', title === '' ? 'Null' : txt(title))
+  },
+  /**
+   * Records the captured output of a Run's execution (api.md §15), or clears it with null. Throws `RangeError`
+   * when `result` is not a §15 result or its JSON is over 600 000 characters.
+   */
+  setRunResult(block: string, result: RunResult | null): Op {
+    return set(block, 'result', result === null ? 'Null' : txt(encodeRunResult(result)))
   },
   /** A text Block pinned from an AI Conversation: it carries what produced it, who pinned it, and when (unix ms). */
   pinBlock(input: { id?: string; card: string; text: string; order: string; model: string; pinnedBy: string; pinnedAt: number }): Op {

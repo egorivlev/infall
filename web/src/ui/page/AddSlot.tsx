@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, Ref } from 'react'
 import type { AddBlock } from './BlockTools'
+import { RUN_STARTER } from './runs/starter'
 import { TEMPLATES } from './visuals/templates'
 
 type Props = {
@@ -18,7 +19,7 @@ type Stage = 'closed' | 'kind' | 'starter'
 const BUTTON_CLASS = { between: 'qp-add', end: 'qp-add qp-add--end', first: 'q-btn q-btn--primary' } as const
 
 /**
- * "+ Add block": a small menu of the two kinds, Text and Visual; Visual goes on to the starters.
+ * "+ Add block": a small menu of the kinds — Text, Visual, Run; Visual goes on to the starters.
  * Arrow keys move, Esc closes and gives focus back to the button.
  */
 export const AddSlot = memo(function AddSlot({ index, label, variant = 'between', onAdd, ref }: Props) {
@@ -93,6 +94,17 @@ export const AddSlot = memo(function AddSlot({ index, label, variant = 'between'
           </button>
           <button type="button" role="menuitem" className="qp-menu__item" aria-haspopup="menu" onClick={() => setStage('starter')}>
             Visual
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="qp-menu__item"
+            onClick={() => {
+              setStage('closed')
+              onAdd(index, RUN_STARTER)
+            }}
+          >
+            Run
           </button>
         </div>
       )}

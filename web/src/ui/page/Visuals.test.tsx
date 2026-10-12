@@ -85,7 +85,7 @@ describe('Visuals: adding a block', () => {
   const openMenu = (name: string) => fireEvent.click(screen.getByRole('button', { name }))
   const choose = (name: string) => fireEvent.click(screen.getByRole('menuitem', { name }))
 
-  it('"+ Add block" offers Text and Visual; nothing is added until one is chosen', () => {
+  it('"+ Add block" offers Text, Visual and Run; nothing is added until one is chosen', () => {
     open()
     const add = screen.getByRole('button', { name: 'Add block at the end' })
     expect(add).toHaveAttribute('aria-haspopup', 'menu')
@@ -93,7 +93,7 @@ describe('Visuals: adding a block', () => {
     fireEvent.click(add)
     expect(add).toHaveAttribute('aria-expanded', 'true')
     const menu = screen.getByRole('menu', { name: 'Add block' })
-    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Text', 'Visual'])
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Text', 'Visual', 'Run'])
     expect(within(menu).getByRole('menuitem', { name: 'Text' })).toHaveFocus()
     expect(submit).not.toHaveBeenCalled()
   })
@@ -182,8 +182,13 @@ describe('Visuals: adding a block', () => {
     fireEvent.keyDown(text, { key: 'ArrowDown' })
     expect(vis).toHaveFocus()
     fireEvent.keyDown(vis, { key: 'ArrowDown' })
+    const runItem = screen.getByRole('menuitem', { name: 'Run' })
+    expect(runItem).toHaveFocus()
+    fireEvent.keyDown(runItem, { key: 'ArrowDown' })
     expect(text).toHaveFocus()
     fireEvent.keyDown(text, { key: 'ArrowUp' })
+    expect(runItem).toHaveFocus()
+    fireEvent.keyDown(runItem, { key: 'ArrowUp' })
     expect(vis).toHaveFocus()
     fireEvent.keyDown(vis, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()

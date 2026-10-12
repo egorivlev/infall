@@ -1,12 +1,13 @@
-//! The Tauri layer: windows, the menu, and the five commands. Everything with a rule in it
-//! lives in `address`, `bridge`, `config` and the `qoop-claude-driver` crate; this file only
-//! connects them to Tauri.
+//! The Tauri layer: windows, the menu, and the commands. Everything with a rule in it lives
+//! in `address`, `bridge`, `config` and the `qoop-claude-driver` and `qoop-runner` crates;
+//! this file only connects them to Tauri.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use qoop_claude_driver::{AiEvent, Cancel, Driver, Status};
+use qoop_runner::{ApprovalView, DecideError, Runner, SettingsView};
 use tauri::ipc::{CapabilityBuilder, Channel};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
@@ -16,11 +17,38 @@ use tauri::{
 };
 
 use crate::address::{self, Navigation};
-use crate::bridge::{self, MAIN_WINDOW, SendRequest};
+use crate::bridge::{self, MAIN_WINDOW, SETTINGS_WINDOW, SendRequest};
 use crate::config;
 
 const SETUP_WINDOW: &str = "setup";
 const CHANGE_SERVER: &str = "change-server";
+const RUNNER_SETTINGS: &str = "runner-settings";
+
+/// Whether the Runner settings window is open, for those who wait for it to close.
+#[derive(Default)]
+struct SettingsWindow {
+    open: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl SettingsWindow {
+    fn set(&self, open: bool) {
+        *self.open.lock().unwrap() = open;
+        self.changed.notify_all();
+    }
+
+    /// Returns when the window is closed, or when `cancel` is set.
+    fn wait_closed(&self, cancel: Option<&qoop_runner::Cancel>) {
+        let mut open = self.open.lock().unwrap();
+        while *open && !cancel.is_some_and(|c| c.is_cancelled()) {
+            open = self
+                .changed
+                .wait_timeout(open, Duration::from_millis(100))
+                .unwrap()
+                .0;
+        }
+    }
+}
 
 /// The run in progress, if any: one at a time per window, and there is one window.
 #[derive(Default, Clone)]
@@ -55,6 +83,15 @@ struct AppState {
     run: ActiveRun,
     /// When a blocked navigation last opened the system browser (ms since the epoch).
     last_external: AtomicU64,
+    runner_settings: Arc<SettingsWindow>,
+}
+
+/// The Runner. Managed on its own because it needs the app's config directory, which is
+/// only known once the app is being set up.
+type RunnerState = Arc<Runner>;
+
+fn runner(app: &AppHandle) -> RunnerState {
+    app.state::<RunnerState>().inner().clone()
 }
 
 fn random_key() -> String {
@@ -70,16 +107,33 @@ pub fn run() {
             bridge_key: random_key(),
             run: ActiveRun::default(),
             last_external: AtomicU64::new(0),
+            runner_settings: Arc::default(),
         })
         .invoke_handler(tauri::generate_handler![
             setup_current,
             setup_save,
             claude_status,
             claude_send,
-            claude_cancel
+            claude_cancel,
+            runner_status,
+            runner_configure,
+            runner_run,
+            runner_cancel,
+            approval_view,
+            approval_decide,
+            runner_settings_view,
+            runner_settings_save,
+            runner_settings_forget,
+            runner_settings_close
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            // The Runner keeps its settings and the remembered approvals in the app's own
+            // config directory. Without one there is nowhere safe to keep them: no fallback.
+            let dir = config_dir(&handle).ok_or("the app has no config directory")?;
+            app.manage::<RunnerState>(Arc::new(Runner::new(
+                qoop_runner::Options::from_process_env(dir),
+            )));
             build_menu(&handle)?;
             match config_dir(&handle).and_then(|dir| config::load(&dir)) {
                 Some(origin) => open_main(&handle, &origin)?,
@@ -87,21 +141,29 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == CHANGE_SERVER {
-                change_server(app);
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            CHANGE_SERVER => change_server(app),
+            RUNNER_SETTINGS => {
+                let _ = open_runner_settings(app);
             }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("the Qoop desktop app could not start");
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // Leave no `claude` behind: stop the run and wait for its process group to go.
+            // Leave no `claude` and no Run behind: stop them and wait for their process
+            // groups to go.
             let run = app.state::<AppState>().run.clone();
             run.cancel();
+            let runner = app.try_state::<RunnerState>().map(|r| r.inner().clone());
+            if let Some(runner) = &runner {
+                runner.cancel_all();
+            }
+            let busy = || !run.is_idle() || runner.as_ref().is_some_and(|r| !r.is_idle());
             let deadline = Instant::now() + Duration::from_secs(4);
-            while !run.is_idle() && Instant::now() < deadline {
+            while busy() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(20));
             }
         }
@@ -114,10 +176,13 @@ fn config_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
+    let runner_settings =
+        MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Qoop")
         .about(None)
         .separator()
         .item(&change)
+        .item(&runner_settings)
         .separator()
         .hide()
         .hide_others()
@@ -152,13 +217,10 @@ fn open_setup(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(SETUP_WINDOW) {
         return window.set_focus();
     }
-    WebviewWindowBuilder::new(app, SETUP_WINDOW, WebviewUrl::App("index.html".into()))
+    local_window(app, SETUP_WINDOW, "index.html")
         .title("Qoop")
         .inner_size(520.0, 420.0)
         .resizable(false)
-        // The local screen has nowhere else to go.
-        .on_navigation(|url| matches!(url.scheme(), "tauri" | "about") || is_local_asset(url))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()?;
     Ok(())
 }
@@ -174,16 +236,22 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
     let start =
         Url::parse(origin).map_err(|_| tauri::Error::InvalidWebviewUrl("server address"))?;
 
-    // The only access remote content gets: the three bridge commands, for pages of this one
+    // The only access remote content gets: the bridge commands, for pages of this one
     // origin, in this one window. (Tauri checks the calling page's URL against it on every
-    // call; a call from any other origin, or for any other command, is refused.)
+    // call; a call from any other origin, or for any other command, is refused.) For the
+    // Runner that is: read its status, ask for the settings window, ask for a Run, cancel
+    // it. The commands that choose an interpreter or approve code are not in this list.
     app.add_capability(
         CapabilityBuilder::new("qoop-bridge")
             .remote(format!("{origin}/*"))
             .window(MAIN_WINDOW)
             .permission("allow-claude-status")
             .permission("allow-claude-send")
-            .permission("allow-claude-cancel"),
+            .permission("allow-claude-cancel")
+            .permission("allow-runner-status")
+            .permission("allow-runner-configure")
+            .permission("allow-runner-run")
+            .permission("allow-runner-cancel"),
     )?;
     *state.origin.lock().unwrap() = Some(origin.to_owned());
 
@@ -213,9 +281,11 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
             NewWindowResponse::Deny
         })
         .on_page_load(|window, payload| {
-            // A page that is going away cannot receive the rest of its run.
+            // A page that is going away cannot receive the rest of its run, and a Run it
+            // asked for must not go on (or wait for approval) behind its back.
             if payload.event() == PageLoadEvent::Started {
                 window.state::<AppState>().run.cancel();
+                window.state::<RunnerState>().cancel_all();
             }
         });
     // The web inspector exists in debug builds only (the `devtools` feature is off).
@@ -224,15 +294,100 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
     let window = builder.build()?;
 
     let run = state.run.clone();
+    let runs = runner(app);
     window.on_window_event(move |event| {
         if matches!(
             event,
             WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
         ) {
             run.cancel();
+            runs.cancel_all();
         }
     });
     Ok(())
+}
+
+/// A window of the app's own local UI (desktop/ui): bundled files, no remote content, and
+/// nowhere else to go.
+fn local_window<'a>(
+    app: &'a AppHandle,
+    label: &str,
+    file: &str,
+) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App(file.into()))
+        .on_navigation(|url| matches!(url.scheme(), "tauri" | "about") || is_local_asset(url))
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+}
+
+/// The Runner settings window: which Python, which folder.
+fn open_runner_settings(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
+        return window.set_focus();
+    }
+    let open = app.state::<AppState>().runner_settings.clone();
+    open.set(true);
+    let built = local_window(app, SETTINGS_WINDOW, "runner.html")
+        .title("Runner settings")
+        .inner_size(620.0, 640.0)
+        .min_inner_size(480.0, 420.0)
+        .build();
+    match built {
+        Ok(window) => {
+            window.on_window_event(move |event| {
+                if matches!(event, WindowEvent::Destroyed) {
+                    open.set(false);
+                }
+            });
+            Ok(())
+        }
+        Err(error) => {
+            open.set(false);
+            Err(error)
+        }
+    }
+}
+
+/// The app's two Runner windows, as the Runner asks for them (from its own thread).
+struct RunnerWindows(AppHandle);
+
+impl qoop_runner::Ui for RunnerWindows {
+    fn configure(&self, cancel: &qoop_runner::Cancel) {
+        if open_runner_settings(&self.0).is_ok() {
+            self.0
+                .state::<AppState>()
+                .runner_settings
+                .wait_closed(Some(cancel));
+        }
+    }
+
+    /// The approval window for one question. Its label carries the ticket, and that is the
+    /// only question it can answer. Closing it is "Don't run".
+    fn show_approval(&self, ticket: u64) -> bool {
+        let built = local_window(&self.0, &bridge::approval_window(ticket), "approval.html")
+            .title("Run this code on your computer?")
+            .inner_size(820.0, 760.0)
+            .min_inner_size(560.0, 480.0)
+            .always_on_top(true)
+            .center()
+            .build();
+        let Ok(window) = built else {
+            return false;
+        };
+        let runs = runner(&self.0);
+        window.on_window_event(move |event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                runs.approval_closed(ticket);
+            }
+        });
+        let _ = window.set_focus();
+        true
+    }
+
+    fn close_approval(&self, ticket: u64) {
+        if let Some(window) = self.0.get_webview_window(&bridge::approval_window(ticket)) {
+            let _ = window.destroy();
+        }
+    }
 }
 
 /// Opens `url` in the system browser, at most once every two seconds.
@@ -265,6 +420,7 @@ fn change_server(app: &AppHandle) {
         && let Some(main) = app.get_webview_window(MAIN_WINDOW)
     {
         app.state::<AppState>().run.cancel();
+        runner(app).cancel_all();
         let _ = main.close();
     }
 }
@@ -416,5 +572,177 @@ fn claude_cancel(
     {
         cancel.cancel();
     }
+    Ok(())
+}
+
+// ---- the Runner, for the server's pages ------------------------------------------------
+//
+// A page can read the status, ask for the settings window, ask for a Run and cancel it.
+// None of these commands takes an interpreter, a folder or an approval.
+
+/// The interpreter and folder Runs would use.
+#[tauri::command]
+async fn runner_status(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<qoop_runner::Status, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let runner = runner(&app);
+    tauri::async_runtime::spawn_blocking(move || runner.status())
+        .await
+        .map_err(|_| "The Runner could not be asked.".to_owned())
+}
+
+/// Opens the app's own Runner settings window; returns when it has been closed.
+#[tauri::command]
+async fn runner_configure(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    open_runner_settings(&app).map_err(|_| "The window could not be opened.".to_owned())?;
+    let open = state.runner_settings.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || open.wait_closed(None)).await;
+    Ok(())
+}
+
+/// One Run. Every outcome is reported as an event; the command itself only fails when the
+/// caller is not allowed. The code is executed only if the Member approves it in the app's
+/// own window (or approved the same code from this server before): see `qoop_runner`.
+#[tauri::command]
+async fn runner_run(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    request: qoop_runner::RunRequest,
+    on_event: Channel<qoop_runner::RunEvent>,
+) -> Result<(), String> {
+    // The origin approvals are remembered for is the one the app was set up with, not
+    // anything the page says about itself.
+    let origin = check_bridge_caller(&webview, &state, &key)?;
+    let runner = runner(&app);
+    let windows = RunnerWindows(app.clone());
+    let events = on_event.clone();
+    let finished = tauri::async_runtime::spawn_blocking(move || {
+        runner.run(request, &origin, &windows, &mut |event| {
+            let _ = events.send(event);
+        });
+    })
+    .await;
+    if finished.is_err() {
+        let _ = on_event.send(qoop_runner::RunEvent::Error {
+            reason: qoop_runner::Reason::Failed,
+            message: "The Run could not be carried out.".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Stops the Run with this id, if it is the one in progress.
+#[tauri::command]
+fn runner_cancel(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    id: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    runner(&app).cancel(&id);
+    Ok(())
+}
+
+// ---- commands of the approval window ---------------------------------------------------
+//
+// Callable only from the app's own approval window (its capability, and the check below).
+// The question a window may see and answer is the one in its label.
+
+fn check_approval_caller(webview: &Webview) -> Result<u64, String> {
+    bridge::check_approval_caller(webview.label(), webview.url().ok().as_ref())
+}
+
+/// What the window shows: the code, where it came from, where it would run.
+#[tauri::command]
+fn approval_view(webview: Webview, app: AppHandle) -> Result<ApprovalView, String> {
+    let ticket = check_approval_caller(&webview)?;
+    runner(&app)
+        .approval_view(ticket)
+        .map(|view| (*view).clone())
+        .ok_or_else(|| "This question is no longer open.".to_owned())
+}
+
+/// The Member's answer. The window closes, except when "Run" came too soon to be meant.
+#[tauri::command]
+fn approval_decide(webview: Webview, app: AppHandle, run: bool) -> Result<(), String> {
+    let ticket = check_approval_caller(&webview)?;
+    if let Err(DecideError::TooSoon) = runner(&app).approval_decide(ticket, run) {
+        return Err("Read the code first, then choose.".to_owned());
+    }
+    // Answered, or no longer open: either way this window is done.
+    if let Some(window) = app.get_webview_window(webview.label()) {
+        let _ = window.destroy();
+    }
+    Ok(())
+}
+
+// ---- commands of the Runner settings window --------------------------------------------
+
+fn check_settings_caller(webview: &Webview) -> Result<(), String> {
+    bridge::check_settings_caller(webview.label(), webview.url().ok().as_ref())
+}
+
+fn close_runner_settings(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
+        let _ = window.close();
+    }
+}
+
+/// The current choice and the interpreters found on this computer (slow: it asks the
+/// Member's shell and each interpreter).
+#[tauri::command]
+async fn runner_settings_view(webview: Webview, app: AppHandle) -> Result<SettingsView, String> {
+    check_settings_caller(&webview)?;
+    let runner = runner(&app);
+    tauri::async_runtime::spawn_blocking(move || runner.settings_view())
+        .await
+        .map_err(|_| "Qoop could not look for Python on this computer.".to_owned())
+}
+
+/// Checks and saves the Member's choice, then closes the window.
+#[tauri::command]
+async fn runner_settings_save(
+    webview: Webview,
+    app: AppHandle,
+    python: Option<String>,
+    folder: Option<String>,
+) -> Result<(), String> {
+    check_settings_caller(&webview)?;
+    let runner = runner(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        runner.settings_save(python.as_deref(), folder.as_deref())
+    })
+    .await
+    .map_err(|_| "The settings could not be checked. Try again.".to_owned())??;
+    close_runner_settings(&app);
+    Ok(())
+}
+
+/// Forgets every remembered approval.
+#[tauri::command]
+fn runner_settings_forget(webview: Webview, app: AppHandle) -> Result<(), String> {
+    check_settings_caller(&webview)?;
+    runner(&app).forget_approvals()
+}
+
+/// Closes the window without saving.
+#[tauri::command]
+fn runner_settings_close(webview: Webview, app: AppHandle) -> Result<(), String> {
+    check_settings_caller(&webview)?;
+    close_runner_settings(&app);
     Ok(())
 }
