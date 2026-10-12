@@ -435,7 +435,10 @@ fn approved_code_runs_again_without_asking_and_changed_code_asks_again() {
     // Same code, same server: no question (and nobody there who could answer).
     let nobody = Member::new(&bench.runner, Answer::Nothing);
     let again = done(bench.run_as(&nobody, ORIGIN, code));
-    assert_eq!(again.kinds, ["started", "output", "done"]);
+    // The output may arrive in one piece or in several.
+    let mut kinds = again.kinds.clone();
+    kinds.dedup();
+    assert_eq!(kinds, ["started", "output", "done"]);
     assert_eq!(again.output, "42\n");
     assert_eq!(nobody.asked(), 0);
 
