@@ -74,7 +74,7 @@ pub enum SchemaError {
 }
 
 /// Types a Block may have.
-const BLOCK_TYPES: [&str; 2] = ["text", "visual"];
+const BLOCK_TYPES: [&str; 3] = ["text", "visual", "run"];
 
 /// Kinds a Connection may have; unset means `related`.
 const KINDS: [&str; 3] = ["related", "directed", "contradicts"];
@@ -104,6 +104,9 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
         // and who reviewed it (unset = not reviewed). Member ids are held as text.
         (Block, "ai_model" | "ai_pinned_by" | "ai_reviewed_by") => Some((Content, Type::Text)),
         (Block, "ai_pinned_at") => Some((Content, Type::Float)),
+        // The captured output of a Run, with who executed it, when and against which code:
+        // one opaque text value, so two Branches that both executed it meet in one Conflict.
+        (Block, "result") => Some((Content, Type::Text)),
         // Where a Block sits in its Page is layout: on a Merge the target's order wins.
         (Block, "order") => Some((Layout, Type::Text)),
         (Source, "url" | "doi" | "title" | "authors" | "year" | "note") => {

@@ -223,9 +223,10 @@ export type MergeSnapshot = {
 export type BlockVM = {
   id: string
   card: string
-  type: 'text' | 'visual' // unset on the wire means 'text'
-  text: string // Markdown for 'text'; HTML/JavaScript source for 'visual'
-  title: string // caption of a Visual; '' otherwise
+  type: 'text' | 'visual' | 'run' // unset on the wire means 'text'
+  text: string // Markdown for 'text'; HTML/JavaScript source for 'visual'; code for 'run'
+  title: string // caption of a Visual, name of a Run; '' otherwise
+  run?: { result: RunResult | null; broken: boolean } // set for 'run' (M8); `broken`: a result is stored but cannot be read
   order: string
   ai?: { model: string; pinnedBy: string; pinnedAt: number; reviewedBy?: string } // set when pinned from an AI Conversation (M7)
 }
@@ -314,6 +315,7 @@ export type QoopDesktop = {
     ): Promise<void>
     cancel(id: string): Promise<void>
   }
+  runner?: QoopRunner // M8; absent in an older app
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }
@@ -357,3 +359,70 @@ export type AiSnapshot = {
   current: AiConversation | null
   busy: boolean // an answer is streaming
 }
+
+// ---- M8: Runs and the Runner ----
+
+/** The captured output of a Run's last execution: the JSON held in a Run Block's `result` (api.md §15). */
+export type RunResult = {
+  v: 1
+  by: string // Member id
+  at: number // unix ms, when it ended
+  code_sha256: string
+  exit: number | null // null: stopped or killed
+  stopped?: boolean
+  duration_ms: number
+  output: string
+  output_truncated?: boolean
+  figures: { png: string }[] // base64 PNG
+  env?: { python?: string; packages?: Record<string, string>; os?: string; arch?: string }
+}
+
+export type RunEvent =
+  | { type: 'approval' }
+  | { type: 'started' }
+  | { type: 'output'; text: string }
+  | {
+      type: 'done'
+      exit: number | null
+      stopped: boolean
+      duration_ms: number
+      code_sha256: string
+      output: string
+      output_truncated: boolean
+      figures: { png: string }[]
+      env: { python?: string; packages?: Record<string, string>; os?: string; arch?: string }
+    }
+  | { type: 'error'; reason: 'declined' | 'no_python' | 'busy' | 'failed'; message: string }
+
+/** `window.qoopDesktop.runner` (docs/specs/desktop.md, M8). */
+export type QoopRunner = {
+  status(): Promise<{ python?: { path: string; version: string }; folder?: string }>
+  configure(): Promise<void>
+  run(request: { id: string; code: string; title: string }, onEvent: (event: RunEvent) => void): Promise<void>
+  cancel(id: string): Promise<void>
+}
+
+/** Whether this device can execute Runs, and why not. */
+export type RunnerSetup =
+  | { available: false; reason: 'loading' | 'browser' | 'guest' | 'old_app' }
+  | { available: true; python?: { path: string; version: string }; folder?: string }
+
+/** The one execution in flight in this window. */
+export type RunLive = {
+  block: string
+  branch: string // id of the Branch it was started on
+  state: 'approval' | 'running' | 'saving' // waiting for the Member in the app's window / executing / recording the result
+  output: string // live output so far
+  startedAt?: number // set once it is running
+}
+
+/** How the last execution in this window ended, until dismissed or the next one starts. */
+export type RunOutcome = {
+  block: string
+  branch: string
+  status: 'recorded' | 'declined' | 'failed' | 'unsaved'
+  message?: string // plain sentence for 'failed' and 'unsaved'
+  unsaved?: RunResult // the result that could not be recorded; `runs.saveAgain()` retries
+}
+
+export type RunsSnapshot = { runner: RunnerSetup; live: RunLive | null; last: RunOutcome | null }

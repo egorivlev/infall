@@ -371,3 +371,33 @@ Behaviour:
 - `stream.ts`: lines end in LF or CRLF (a lone CR is not a line end); a chunk may end anywhere, inside a UTF-8 character too; `:` comment lines, blank lines, other SSE fields, unreadable JSON and unknown event types are skipped; one event per `data:` line (no multi-line `data`); a last line without a line break is read. Not 2xx → the ApiError of the JSON error body (`http_<status>` when it is not JSON; a 401 ends the session); no answer → `status 0, code 'network'`; a stream that breaks → `status 0, code 'cut_off'` after the events before the break; abort → the generator ends quietly; leaving the loop early aborts the request.
 - Not handled: two tabs of one Member write the same storage value, the last write wins; a Claude Code `resume` that the CLI no longer knows keeps failing for that Conversation (start a new one); a desktop token revoked elsewhere during an app run is not noticed.
 - `testing.ts`: `fakeDesktop({ installed?, claudeVersion? })` — `runs` (each with `request`, `emit`, `end`, `fail`), `script`, `cancelled`, `statusFails`, `statusCalls`; the fake server has `aiEnabled`, `aiSettings`, `aiModels`, `aiFail`, `aiStatus()`, the six `/api/ai/*` routes, and for the chat `aiScript` (events, `{ raw }` bytes, `{ wait }` pauses), `aiChunk` (bytes per chunk), `aiDrop` (break instead of close), `aiAborted`; its `fetch` honours `signal` on those routes.
+
+## M8 — Runs and the Runner
+
+Types in `types.ts`: `RunResult`, `RunEvent`, `QoopRunner`, `RunnerSetup`, `RunLive`, `RunOutcome`, `RunsSnapshot`; `BlockVM.type` gains `'run'`, `BlockVM.run`; `QoopDesktop.runner`. Server side: `docs/specs/api.md` §15; desktop side: `docs/specs/desktop.md` "M8 — the Runner".
+
+```ts
+export function useRuns(): RunsSnapshot                 // referentially stable between changes
+export const runs: {
+  refresh(): Promise<void>                              // re-read the Runner's status; never throws
+  configure(): Promise<void>                            // opens the app's Runner settings window, then refreshes; no-op without a Runner
+  run(block: string): Promise<void>                     // executes that Run of the open Branch with its present code; resolves when it has ended and `last` says how. Rejects only when it cannot start: ApiError 409 `busy`, 409 `no_runner`, 404 `not_found` (no such live Run on the open Board), 400 `read_only` (a Guest, or a moment in History is being previewed), 400 `bad_request` (no code)
+  stop(): void                                          // stops the execution in flight; what was captured is recorded as a stopped result
+  saveAgain(): Promise<void>                            // records `last.unsaved` again (rejects like board.submit; 400 `bad_request` when there is none)
+  dismiss(): void                                       // clears `last`
+}
+export function codeHash(code: string): Promise<string> // lowercase hex SHA-256 of the UTF-8 bytes (WebCrypto)
+export function useRunStale(block: BlockVM): boolean | null   // true: the code changed since the recorded result; null: no result, or not known yet
+ops.addBlock({ …, type: 'run', title })                 // a Run; `text` is its code
+ops.setRunResult(block: string, result: RunResult | null): Op
+```
+
+Behaviour:
+
+- **Runner**: `browser` when `window.qoopDesktop` is absent; `old_app` when it is there without `runner`; `guest` for a Guest; otherwise available with what `runner.status()` says (re-read after `configure()` and after every execution).
+- **An execution**: one at a time per window. `run` takes the Block's `text` as it is on the open Branch at that moment, calls `qoopDesktop.runner.run` and mirrors its events into `live` (`approval` → `running` on `started`; `output` appended, `useRuns()` updating at most every animation frame; the live output is cut to its last 64 000 characters). On `done` it builds the `RunResult` — `by` the signed-in Member, `at` now, the rest from the event — and records it with `ops.setRunResult` on the Branch the execution **started on** (`saving`), then `last.status` is `recorded`. The code hash in the result is the app's, not recomputed.
+- **When it cannot be recorded** — the open Board is no longer that Branch, the Block is gone, the server refuses or is unreachable — `last` is `unsaved` with the result kept in memory and a plain sentence; `saveAgain()` retries (it needs that Branch open again). An unsaved result is lost when the window closes; nothing is written to storage.
+- `error` events: `declined` → `last.status` `declined` (no message needed); `no_python`, `busy`, `failed` → `failed` with the app's sentence. A `run` promise from the bridge that rejects or ends without `done`/`error` is `failed` ("The Runner stopped answering.").
+- **Reading**: `BlockVM.run.result` is the parsed `result` field when it has the §15 shape (`v: 1`), else null; `broken` is true when the field holds something that cannot be read (shown as "This result cannot be shown", never thrown). `CardVM.blocks` counts Runs.
+- **History** wording: "Added Run T to the Page of X", "Edited Run T in the Page of X" (code or name), "Removed Run T from the Page of X", and for a change of `result` "Executed Run T in the Page of X" ("Cleared the output of Run T …" when set to nothing); "Untitled Run" without a name. Rules otherwise as for Visuals (M6 notes).
+- **Merge** wording: Conflict on a Run's `text`: "Run code changed on both" (`canEdit`); on `title`: "Run name changed on both" (`canEdit`); on `result`: "Run executed on both" — **not** `canEdit`, and each side's value is given to the UI as one readable line ("Ana Ruiz · 12 Nov, 14:02 · exit 0 · 2 figures · 1 204 characters of output"; "No output recorded" for nothing), never the raw JSON. Wherever else Merge or History would print the raw value of `result`, the same line is used. `entityTitle` "Run T" / "Untitled Run".

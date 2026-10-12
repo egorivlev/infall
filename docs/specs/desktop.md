@@ -51,3 +51,60 @@ The path of the `claude` binary can be overridden with the environment variable 
 
 ## Not in M7
 Auto-update, code signing/notarisation, installers for other platforms, the Runner (M8), offline use.
+
+
+# M8 — the Runner
+
+The Runner is the part of the desktop app that executes Runs on the Member's own hardware (CONTEXT.md; api.md §15 for what a result is). **Executing a Run means running code that someone else may have written, with the Member's own rights on their own computer.** There is no sandbox in M8. Everything below exists so that this never happens without the Member having seen the code, in a window the web page cannot draw or click.
+
+## Bridge — `window.qoopDesktop.runner`
+Added to the M7 bridge under the same rules (configured origin, top frame, bridge key). The web UI treats a bridge without `runner` as an app that is too old.
+
+```ts
+type RunEvent =
+  | { type: "approval" }                           // the app is showing the code to the Member and waits
+  | { type: "started" }                            // the process is running
+  | { type: "output"; text: string }               // more standard output / standard error
+  | { type: "done";
+      exit: number | null;                         // null: stopped or killed
+      stopped: boolean;
+      duration_ms: number;
+      code_sha256: string;                         // of the code the app executed
+      output: string;                              // everything kept (≤ 64 000 characters)
+      output_truncated: boolean;
+      figures: { png: string }[];                  // base64, ≤ 3, each ≤ 160 000 characters
+      env: { python?: string; packages?: Record<string, string>; os?: string; arch?: string } }
+  | { type: "error"; reason: "declined" | "no_python" | "busy" | "failed"; message: string };
+
+type QoopRunner = {
+  status(): Promise<{ python?: { path: string; version: string }; folder?: string }>;
+  configure(): Promise<void>;                      // opens the app's own "Runner settings" window; resolves when it closes
+  run(request: { id: string; code: string; title: string }, onEvent: (e: RunEvent) => void): Promise<void>;   // resolves after `done` or `error`
+  cancel(id: string): Promise<void>;
+};
+```
+
+The page can ask for a Run and can ask for the settings window to open. It cannot choose the interpreter, the folder, or approve anything.
+
+## Approval — the app's own window
+Before code is executed the app opens a window of its **own local UI** (like the first-run screen: bundled files, its own capability, no remote content) showing: the Run's title, the server it came from, the interpreter and the folder it will run in, and the **complete code** in a scrollable monospace view with line numbers, with "Run on this computer" and "Don't run" (the default; closing the window is "Don't run"). The text says plainly that the code will run with the Member's own rights and can read and change their files.
+
+- Approval is remembered per server origin and per `code_sha256` (a file in the app's config directory, newest 1 000): the same code runs again without asking; any change to the code — including the Member's own edit, which the app cannot tell from anyone else's — asks again.
+- While the window is open the page gets `approval`; "Don't run" gives `error` / `declined`.
+- The code shown is the code executed: the app hashes and writes out exactly the bytes it displayed.
+
+## Runner settings — the app's own window
+Also local UI; reached from the app menu ("Runner settings…") and through `runner.configure()`. It sets, per device:
+- **Python**: the interpreters the app found (looking up `python3` and `python` the way a login shell would, so pyenv/conda/Homebrew ones are found although a GUI app has a bare `PATH`), each with its version, plus a field for the full path of another one (accepted when `<path> --version` answers like Python 3). Nothing is chosen until the Member chooses: the first Run with no choice made opens this window (`no_python` if it is closed without one).
+- **Folder** (optional): the directory Runs execute in, so code can import the Member's own modules and read their data. Unset: a fresh empty temporary directory per Run.
+
+## How a Run is executed
+- The code is written to `main.py` in a fresh owner-only temporary directory and started as `<python> -u -X utf8 <the app's bundled runner.py> <that main.py>`, working directory the configured folder or else that temporary directory, as a new process group. The environment is the login shell's, plus `MPLBACKEND=Agg`, `PYTHONUNBUFFERED=1`, `PYTHONIOENCODING=utf-8`, `QOOP_RUN_DIR=<temporary directory>`.
+- `runner.py` (bundled, standard library only, works on Python ≥ 3.8) runs the code as `__main__` (tracebacks name `main.py` with the right line numbers; `SystemExit` and its code are honoured; the working directory is on `sys.path`). When it ends — normally or with an exception — it saves every matplotlib figure still open (only if the code imported `matplotlib.pyplot`) as PNG into `QOOP_RUN_DIR`, first three, smaller dpi if a file would exceed the limit, a one-line note in the output for any it had to leave out; and writes `env.json`: the Python version and the versions of the top-level packages the code imports (at most 8).
+- Standard output and standard error go through one pipe, so their order is kept. `output` events are sent at most about ten times a second. Kept output is at most 64 000 characters: beyond that the beginning and the end are kept and one marker line says how much was dropped (`output_truncated`).
+- **No time limit** — experiments run for hours. `cancel` kills the whole process group (`done` with `stopped: true`, `exit: null`, whatever was captured so far, no figures). Quitting the app, closing the window or reloading the page kills it too. One Run at a time per app (`busy`).
+- The temporary directory is deleted afterwards. The app sends nothing anywhere: the page receives the events and records the result through the server.
+- The interpreter path can be overridden for tests with `QOOP_PYTHON_BIN`; approval can **not** be switched off by any environment variable or build flag — tests drive the approval through the Rust code behind the window.
+
+## Not in M8
+Sandboxing or containers; other languages; per-Run environments or dependency installation; streaming figures while it runs; GPU/hardware reporting; running on the server or on another Member's machine; native file pickers.

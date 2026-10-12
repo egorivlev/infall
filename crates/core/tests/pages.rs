@@ -247,3 +247,38 @@ fn a_pinned_block_carries_who_pinned_it_and_whether_it_was_reviewed() {
         Err(ApplyError::Schema(SchemaError::UnknownField { .. }))
     ));
 }
+
+#[test]
+fn a_run_is_a_block_with_code_and_one_captured_result() {
+    let mut board = Board::new();
+    let (a, create_a) = card("A");
+    board.apply(&create_a).unwrap();
+    let (r, create_r) = op_create(
+        EntityKind::Block,
+        &[
+            ("card", Value::Ref(a)),
+            ("type", text("run")),
+            ("title", text("policy_cartpole.py")),
+            ("text", text("print(1)")),
+            ("order", text("a0")),
+        ],
+    );
+    board.apply(&create_r).unwrap();
+    assert!(board.is_visible(r));
+    board
+        .apply(&set(r, "result", text("{\"v\":1,\"output\":\"1\\n\"}")))
+        .unwrap();
+    assert_eq!(
+        field_class(EntityKind::Block, "result"),
+        Some(FieldClass::Content)
+    );
+    // The result is text, and only Blocks have one.
+    assert!(matches!(
+        board.apply(&set(r, "result", Value::Float(1.0))),
+        Err(ApplyError::Schema(SchemaError::WrongType { .. }))
+    ));
+    assert!(matches!(
+        board.apply(&set(a, "result", text("{}"))),
+        Err(ApplyError::Schema(SchemaError::UnknownField { .. }))
+    ));
+}
