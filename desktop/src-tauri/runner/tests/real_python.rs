@@ -340,7 +340,9 @@ fn hello_runs_after_the_member_approved_it() {
     let member = Member::new(&bench.runner, Answer::Run);
     let run = done(bench.run_as(&member, ORIGIN, code));
 
-    assert_eq!(run.kinds, ["approval", "started", "output", "done"]);
+    let mut kinds = run.kinds.clone();
+    kinds.dedup(); // the output may arrive in several pieces
+    assert_eq!(kinds, ["approval", "started", "output", "done"]);
     assert_eq!(run.output, "hello from the Runner\n");
     assert_eq!(run.streamed.concat(), run.output);
     assert_eq!(run.exit, Some(0));
@@ -597,7 +599,9 @@ fn the_first_run_without_a_chosen_python_opens_the_settings() {
     let mut member = Member::new(&bench.runner, Answer::Run);
     member.choose = Some(python.path.clone());
     let run = done(bench.run_as(&member, ORIGIN, "print(1)"));
-    assert_eq!(run.kinds, ["approval", "started", "output", "done"]);
+    let mut kinds = run.kinds.clone();
+    kinds.dedup(); // the output may arrive in several pieces
+    assert_eq!(kinds, ["approval", "started", "output", "done"]);
     assert_eq!(member.configured.load(Ordering::SeqCst), 1);
     let status = bench.runner.status();
     assert_eq!(status.python.as_ref().unwrap().path, python.path);
