@@ -14,6 +14,7 @@ desktop/
     src/bridge.rs          who may call the bridge and the local windows' commands
     src/address.rs         server address rules, health check, navigation rule
     src/config.rs          the saved server address
+    icons/icon-1024.png    the one source image of the app icon (make-icon.py draws it)
     capabilities/          what each local window may call
     driver/                qoop-claude-driver: runs `claude`; no Tauri types
       tests/stub-claude.sh a stand-in `claude` for tests
@@ -33,7 +34,7 @@ desktop/
 
 - Rust 1.90 or newer (Tauri 2.12 needs it). Built and tested here with 1.96.
 - macOS: the Xcode Command Line Tools are enough (`xcode-select --install`); full Xcode is not needed for a development build. Linux and Windows need the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); those platforms have not been built or run (see "Unverified").
-- The Tauri CLI (`cargo tauri`) is **not** needed to build or run. It would only be needed to produce an installer bundle (`.app`/`.dmg`), which is not part of M7.
+- The Tauri CLI (`cargo tauri`) is **not** needed: not to build, not to run, and not for the macOS package, which `scripts/package-macos.sh` puts together itself (see [The macOS package](#the-macos-package)).
 - For the AI sidebar: Claude Code installed and signed in (`claude`), version 2.1.x. The flags below were read from 2.1.265.
 - For the Runner: a Python 3 (3.8 or newer) of the Member's own. matplotlib only if Runs draw figures. The Runner tests use whatever Python 3 they find (see "Tests").
 
@@ -66,6 +67,53 @@ cargo build --release --features custom-protocol
 Release builds have no web inspector: the `devtools` feature of the `tauri` crate is off, and Tauri only enables the inspector by itself in debug builds.
 
 To use a different `claude` (tests do this with the stub): `QOOP_CLAUDE_BIN=/path/to/claude cargo run`. Without it the app looks for `claude` on `PATH`, then in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin` (an app started from the Finder gets a short `PATH`).
+
+## The macOS package
+
+`scripts/package-macos.sh` (run from anywhere in a clean checkout) builds `dist/Qoop-<version>.dmg` and prints its SHA-256. `dist/` is not kept in git.
+
+```sh
+scripts/package-macos.sh
+```
+
+It needs what building the app needs (Rust, the Xcode Command Line Tools) and nothing else: `cargo`, `sips`, `iconutil`, `plutil`, `codesign`, `hdiutil`, `shasum`. What it does:
+
+1. Reads the version from `src-tauri/Cargo.toml` and the name, identifier and oldest supported macOS from `src-tauri/tauri.conf.json`. It stops if the two files disagree about the version.
+2. `cargo build --release --locked --features custom-protocol`, with the `[profile.release]` of `Cargo.toml`: symbols stripped, thin LTO, one codegen unit. This is for size only (a 9 MB program, a 4 MB disk image); optimisation level and panic behaviour are cargo's defaults.
+3. Puts `Qoop.app` together by hand: the program in `Contents/MacOS/`, `Contents/Info.plist` (identifier `app.qoop.desktop`, version, `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category Productivity), and `Contents/Resources/Qoop.icns` made from `src-tauri/icons/icon-1024.png` with `sips` and `iconutil`. Nothing else is in the bundle: the pages of `desktop/ui`, `bridge.js` and `runner.py` are inside the program, and it links only against libraries macOS ships.
+4. Signs it ad hoc (`codesign --sign -`), without entitlements and without the hardened runtime, and verifies the signature.
+5. Makes a compressed disk image holding `Qoop.app` and a link to `/Applications`, and verifies it.
+
+**Oldest macOS: 11.0** (`bundle.macOS.minimumSystemVersion` in `tauri.conf.json`; the build and the `Info.plist` both take it from there). The package is built for the kind of Mac it is built on, here Apple silicon, and no Apple silicon Mac runs anything older than macOS 11; it is also the oldest version Rust itself builds for on Apple silicon. Tauri's own default (10.13) would only matter for an Intel build. Run and tested on macOS 26.5 only; see "Unverified".
+
+**The icon.** `icons/icon-1024.png` is the source; the `.icns` is made from it on every packaging run and is not kept in git. `icons/icon.png` is a 256-pixel copy that Tauri builds into the program. `icons/make-icon.py` drew the source (the mark of the web UI's `Logo.tsx` in the dark theme's colours); it needs Pillow and is only needed to change the icon.
+
+**Not there:** a Developer ID signature, notarisation, updates of any kind (a new version is a new `.dmg`, installed over the old one by hand; the app does not look for one), an Intel or universal build, Windows and Linux packages, an app store. App data stays in `~/Library/Application Support/app.qoop.desktop/`, the same place a development build uses; nothing is migrated.
+
+### Installing it (for a Member)
+
+1. Get `Qoop-<version>.dmg` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare: `shasum -a 256 ~/Downloads/Qoop-<version>.dmg`.
+2. Open the `.dmg` and drag **Qoop** onto **Applications**. Eject the disk image.
+3. Open Qoop from Applications. The first time, macOS refuses (see below). After you have allowed it once, it opens like any other app.
+4. Qoop asks for the address of your team's server; your Admin has it.
+
+### The first start: allowing Qoop once
+
+A file that came from the internet is marked by macOS, and macOS only opens marked apps that Apple has checked ("notarised") for a developer with a paid Apple account. Qoop is not: nobody has paid for that account yet. So the first start is stopped with a warning that Apple could not verify Qoop (the sentence differs between macOS versions), with the buttons **Done** and **Move to Trash**. Click **Done**, then, on macOS 15 and 26:
+
+1. Choose Apple menu > **System Settings**, then click **Privacy & Security** in the sidebar.
+2. Scroll down to **Security**. There is a line saying Qoop was blocked. Click the button next to it (**Open Anyway**; Apple's own page for macOS 26 calls it **Open**, followed by **Open Anyway**). The button is only there for about an hour after you tried to open Qoop; if it is gone, try to open Qoop again.
+3. Enter your login password (or use Touch ID) when asked, and confirm that you want to open it.
+
+This is needed once per installed copy, so again after installing a new version. On macOS 14 and older, Control-click Qoop in Applications, choose **Open**, then **Open** again; on macOS 15 and newer that shortcut no longer exists. Apple's description: [Open a Mac app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
+
+If no warning appears at all, the file reached you without the mark (for example from a shared folder); nothing is wrong. If macOS says Qoop "is damaged", do not look for a way around it: the file changed on the way; get it again and compare the SHA-256.
+
+**What the warning means.** Apple has not looked at this app and does not know who made it. macOS cannot tell you whether it is the app your team built. That is all.
+
+**What it does not mean.** It does not mean macOS found something harmful. And allowing it does not switch anything off for other apps: the exception is for this one copy of Qoop.
+
+**What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: the ad hoc signature inside the app only makes it startable on Apple silicon; anyone can make one, and it proves nothing about where the app came from. Do not allow a Qoop that reached you some other way.
 
 ## What is where: Tauri mechanisms used
 
@@ -275,6 +323,19 @@ Not verified:
 6. **Other shells than zsh** for reading the environment (fish, csh), and shell start-up files that wait for input: after eight seconds the app gives up on the interactive shell and tries the plain login shell, then its own environment.
 7. **conda and virtual environments** in the interpreter list: the lookup logic is tested with stand-ins; only pyenv and the system Python were found for real.
 8. **Very large or unusual figures** beyond the tests (animations, 3D, non-Agg backends set by the code).
+
+## Unverified: the macOS package (M10)
+
+Verified on the machine it was built on (Apple silicon, macOS 26.5): the script runs from the working tree to a `.dmg`; `codesign --verify --deep --strict`, `plutil -lint` and `hdiutil verify` pass; the image holds `Qoop.app` and the link to `/Applications`; the program's oldest macOS is 11.0 (`vtool -show-build`) and it has no entitlements; the app copied out of the image starts from the Finder's launcher (`open`) with an isolated home folder, stays up and logs nothing, and writes its data only inside that home; started with a saved address of a local stand-in server over plain `http://localhost`, its main window loaded the page and `window.qoopDesktop` was there with version 0.1.0. `spctl --assess --type execute` says **rejected**, as it does for every ad hoc signed app: that is the verdict behind the first-start warning.
+
+Not verified:
+
+1. **The first-start warning itself and the way past it.** No copy carrying the download mark was opened here, so neither the warning nor the Privacy & Security step was seen on screen. The steps above follow Apple's help page for macOS 26 (read on 2026-11-23); the exact sentence of the warning, and whether the confirmation asks for a password or Touch ID, are not confirmed; the Control-click route for macOS 14 and older was not checked against anything. **Before handing the package out, download it once the way a Member will and walk the steps.**
+2. **Any other Mac.** Not started on another computer, on macOS 11 to 15, or under another account. 11.0 is what the build declares, not something that was tried. Intel Macs cannot run this package at all.
+3. **Dragging to Applications** in the Finder, and how the icon looks in the Dock, the Finder and the disk image window (the image has no background or arranged layout).
+4. **A build from a truly clean checkout** (fresh clone, empty `target/`): the script was run in the working tree, where the dependencies were already downloaded.
+5. **Installing a new version over an old one**, and the app's restart after "Change Server…" when it runs from `/Applications`.
+6. Nobody clicked anything in the packaged app (see the Runner's list above; the same holds here).
 
 ## Open question: Anthropic's terms
 

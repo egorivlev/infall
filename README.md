@@ -9,7 +9,9 @@ A self-hosted shared workspace where a small research team maps, extends, and tr
 | Versioning core — Changes, Branches, Checkpoints, Restore, Merge | `crates/core` | done, tested |
 | Server — accounts by invite, persistence, live updates | `crates/server` | M1 done |
 | Web app — sign-in, Members, the Board | `web/` | M1 done |
-| Deployment kit — systemd, Caddy, backups, hardening | `deploy/` | written; not yet run on a real VPS |
+| Deployment kit — systemd, Caddy, backups, hardening | `deploy/` | rehearsed on a clean Debian 12 in a container (`scripts/rehearse-deploy.sh`); not yet run on a real VPS |
+| Desktop app package for macOS | `scripts/package-macos.sh` | builds an ad hoc signed `.dmg`; not notarised |
+| First day for the Admin and a new Member | [docs/first-day.md](docs/first-day.md) | |
 | Design source | `design/` | reference |
 
 M1 covers one Branch (`main`) and the Board: Cards, Frames, Connections, with live updates. Branch switching, History, Merge review, Pages, To-dos and AI are later milestones; the core already supports the versioning underneath them.

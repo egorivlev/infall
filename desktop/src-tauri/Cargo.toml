@@ -13,6 +13,13 @@ rust-version = "1.90"
 publish = false
 description = "Qoop desktop app: a thin shell around the server's web UI"
 
+# The build that is packaged (scripts/package-macos.sh). Smaller, and nothing else: optimisation
+# level and panic behaviour stay cargo's defaults.
+[profile.release]
+strip = true        # no symbol table in the binary that is handed out
+lto = "thin"
+codegen-units = 1
+
 [features]
 # Release builds made with plain cargo need this (`cargo tauri build` turns it on by itself):
 # the app's own files are then served from inside the binary, never from a dev server.

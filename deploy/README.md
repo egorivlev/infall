@@ -2,7 +2,9 @@
 
 Qoop is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This guide takes a fresh Debian or Ubuntu VPS to a working server. It needs about an hour.
 
-Placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder.
+Placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
+
+This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
 
 ## 1. Prerequisites
 
@@ -22,6 +24,8 @@ sudo install -d -o qoop -g qoop -m 700 /var/backups/qoop
 sudo install -d -o root -g qoop -m 750 /etc/qoop
 ```
 
+(`adduser` warns that the home directory `/nonexistent` cannot be accessed. That is intended: the account has no home.)
+
 - `/opt/qoop` is owned by root, so the running server cannot rewrite its own program or UI files.
 - `/var/lib/qoop` (the database) is mode 700: nobody but `qoop` and root can read it.
 - `/etc/qoop` holds the config file, readable by `qoop` only.
@@ -38,24 +42,29 @@ sudo apt install -y build-essential pkg-config git curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept defaults, then: . "$HOME/.cargo/env"
 ```
 
-Install Node.js 20 or newer (the web build needs it) from [nodejs.org](https://nodejs.org/en/download) or your preferred method, then:
+Install Node.js 22 or newer (the web build needs it; 20.19 or newer also works) from [nodejs.org](https://nodejs.org/en/download) or your preferred method. The `nodejs` package of Debian 12 is version 18, which is too old. Then:
 
 ```sh
 git clone YOUR_REPOSITORY_URL qoop-src && cd qoop-src
-cargo build --release -p qoop-server
+cargo build --release --locked -p qoop-server
 (cd web && npm ci && npm run build)
 ```
+
+`--locked` builds with exactly the library versions the repository was tested with. The kit files are now in `qoop-src/deploy`.
 
 If `cargo` is killed for lack of memory on a 1 GB VPS, add swap first, or use 3b.
 
 ### 3b. Build elsewhere and copy
 
-On a Linux machine with the same distribution family, run the same two build commands (`cargo build --release -p qoop-server`, and `npm ci && npm run build` inside `web/`). Then copy the outputs up:
+On a Linux machine with the same distribution family and the same kind of processor as the VPS, run the same two build commands (`cargo build --release --locked -p qoop-server`, and `npm ci && npm run build` inside `web/`). Then copy the outputs and the kit files up:
 
 ```sh
 scp target/release/qoop-server you@qoop.example.org:/tmp/
 scp -r web/dist you@qoop.example.org:/tmp/qoop-web
+scp -r deploy you@qoop.example.org:/tmp/qoop-deploy
 ```
+
+`/tmp` is emptied when the VPS restarts. For step 10 and for later changes to the backup you copy them up again.
 
 ### Install the outputs
 
@@ -77,6 +86,8 @@ sudo chown -R root:root /opt/qoop/web
 
 ## 4. Configuration and the systemd service
 
+Go into the kit folder: `cd qoop-src/deploy` (3a) or `cd /tmp/qoop-deploy` (3b). Steps 4, 6 and 9 name its files without a path.
+
 ```sh
 sudo install -o root -g qoop -m 640 qoop.env.example /etc/qoop/qoop.env
 sudoedit /etc/qoop/qoop.env
@@ -97,9 +108,10 @@ Do not start it yet: the first Admin is created first.
 ```sh
 sudo -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
   /opt/qoop/qoop-server create-admin --email you@example.org --name "Your Name"
+sudo chmod 600 /var/lib/qoop/qoop.db
 ```
 
-It asks for a password (at least 12 characters) and does not show what you type. Use a password manager's generated password. The password is deliberately not a command-line option: arguments are visible to every user on the machine through `ps` and are saved in shell history. For the same reason do not put `QOOP_ADMIN_PASSWORD` in a file or in your shell. The command refuses if that email already exists.
+It asks for a password (at least 12 characters), twice, and does not show what you type. It prints `Created Admin Your Name <you@example.org>.` This command also creates the database file, and outside the service it is created readable by everyone (mode 644): the folder around it already keeps others out, and the `chmod` makes the file itself private as well, as the service and a restore do. Use a password manager's generated password. The password is deliberately not a command-line option: arguments are visible to every user on the machine through `ps` and are saved in shell history. For the same reason do not put `QOOP_ADMIN_PASSWORD` in a file or in your shell. The command refuses if that email already exists.
 
 ## 6. Install Caddy and start everything
 
@@ -109,9 +121,12 @@ This is the official Caddy package repository, so Caddy receives updates through
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update
 sudo apt install -y caddy
 ```
+
+(The `chmod` is for a shell that creates private files by default: without it `apt update` cannot read the key and fails with `NO_PUBKEY`.) Installing the package starts Caddy with a placeholder page.
 
 Put your domain into the Caddyfile and install it:
 
@@ -122,7 +137,7 @@ sudo systemctl start qoop
 sudo systemctl reload caddy
 ```
 
-(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile limits request bodies to 1 MB and adds an HSTS header; the server sets its own content-security headers.
+(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
 
 ## 7. First login and inviting the others
 
@@ -170,7 +185,7 @@ Everything lives in one file, so one encrypted daily copy is enough. The backups
 
    It prints `Public key: age1...`. That public key is what goes on the server. Store `qoop-backup-key.txt` in your password manager and keep a second copy somewhere offline: **if you lose it, the backups are unreadable.** Never copy it to the VPS.
 
-2. On the VPS:
+2. On the VPS, in the kit folder again (see step 4):
 
    ```sh
    sudo apt install -y sqlite3 age
