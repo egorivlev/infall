@@ -1,5 +1,5 @@
 //! The Runner against a real Python interpreter: approval, execution, output, figures,
-//! stopping. Nothing here is stubbed; the "Member" answers the approval through the same
+//! stopping, the monitor. Nothing here is stubbed; the "Member" answers the approval through the same
 //! calls the app's approval window makes.
 //!
 //! Which interpreter: `QOOP_TEST_PYTHON` if set, else the first one the Runner's own lookup
@@ -20,7 +20,8 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use qoop_runner::python::{self, EnvVars};
 use qoop_runner::{
-    ApprovalView, Cancel, DecideError, Options, Reason, RunEvent, RunRequest, Runner, Ui, inspect,
+    ApprovalView, Cancel, DecideError, Options, Reason, RunEvent, RunRequest, Runner, Ui, Usage,
+    inspect,
 };
 
 const ORIGIN: &str = "https://qoop.example.org";
@@ -233,8 +234,21 @@ struct Done {
     arch: Option<String>,
     /// The `output` events, in order.
     streamed: Vec<String>,
+    /// The `stats` events, in order.
+    stats: Vec<Usage>,
     /// The types of all events, in order.
     kinds: Vec<&'static str>,
+}
+
+impl Done {
+    /// The types of the events in order, without `stats` (a slow machine may get one in
+    /// even for a short Run) and with what arrived in several pieces named once.
+    fn order(&self) -> Vec<&'static str> {
+        let mut kinds = self.kinds.clone();
+        kinds.retain(|k| *k != "stats");
+        kinds.dedup();
+        kinds
+    }
 }
 
 fn kind(event: &RunEvent) -> &'static str {
@@ -242,6 +256,7 @@ fn kind(event: &RunEvent) -> &'static str {
         RunEvent::Approval => "approval",
         RunEvent::Started => "started",
         RunEvent::Output { .. } => "output",
+        RunEvent::Stats(_) => "stats",
         RunEvent::Done { .. } => "done",
         RunEvent::Error { .. } => "error",
     }
@@ -253,6 +268,13 @@ fn done(events: Vec<RunEvent>) -> Done {
         .iter()
         .filter_map(|e| match e {
             RunEvent::Output { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    let stats: Vec<Usage> = events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::Stats(usage) => Some(usage.clone()),
             _ => None,
         })
         .collect();
@@ -291,6 +313,7 @@ fn done(events: Vec<RunEvent>) -> Done {
         os: env.os,
         arch: env.arch,
         streamed,
+        stats,
         kinds,
     }
 }
@@ -340,9 +363,7 @@ fn hello_runs_after_the_member_approved_it() {
     let member = Member::new(&bench.runner, Answer::Run);
     let run = done(bench.run_as(&member, ORIGIN, code));
 
-    let mut kinds = run.kinds.clone();
-    kinds.dedup(); // the output may arrive in several pieces
-    assert_eq!(kinds, ["approval", "started", "output", "done"]);
+    assert_eq!(run.order(), ["approval", "started", "output", "done"]);
     assert_eq!(run.output, "hello from the Runner\n");
     assert_eq!(run.streamed.concat(), run.output);
     assert_eq!(run.exit, Some(0));
@@ -437,10 +458,7 @@ fn approved_code_runs_again_without_asking_and_changed_code_asks_again() {
     // Same code, same server: no question (and nobody there who could answer).
     let nobody = Member::new(&bench.runner, Answer::Nothing);
     let again = done(bench.run_as(&nobody, ORIGIN, code));
-    // The output may arrive in one piece or in several.
-    let mut kinds = again.kinds.clone();
-    kinds.dedup();
-    assert_eq!(kinds, ["started", "output", "done"]);
+    assert_eq!(again.order(), ["started", "output", "done"]);
     assert_eq!(again.output, "42\n");
     assert_eq!(nobody.asked(), 0);
 
@@ -599,9 +617,7 @@ fn the_first_run_without_a_chosen_python_opens_the_settings() {
     let mut member = Member::new(&bench.runner, Answer::Run);
     member.choose = Some(python.path.clone());
     let run = done(bench.run_as(&member, ORIGIN, "print(1)"));
-    let mut kinds = run.kinds.clone();
-    kinds.dedup(); // the output may arrive in several pieces
-    assert_eq!(kinds, ["approval", "started", "output", "done"]);
+    assert_eq!(run.order(), ["approval", "started", "output", "done"]);
     assert_eq!(member.configured.load(Ordering::SeqCst), 1);
     let status = bench.runner.status();
     assert_eq!(status.python.as_ref().unwrap().path, python.path);
@@ -1394,6 +1410,305 @@ fn a_run_is_busy_from_the_moment_it_waits_for_approval() {
     bench.runner.cancel_all();
     let events = first.join().unwrap();
     assert_eq!(failure(&events).0, Reason::Declined);
+}
+
+// ---- the monitor ---------------------------------------------------------------------------
+
+/// A step, and done of total.
+type Said<'a> = (Option<&'a str>, Option<(f64, f64)>);
+
+/// What the code said in each sample, with samples that say the same as the one before
+/// left out.
+fn said(stats: &[Usage]) -> Vec<Said<'_>> {
+    let mut all: Vec<_> = stats
+        .iter()
+        .map(|u| (u.step.as_deref(), u.progress.map(|p| (p.done, p.total))))
+        .collect();
+    all.dedup();
+    all
+}
+
+/// Every sample has the fields that are always there, with values that can be true.
+fn assert_plausible(stats: &[Usage]) {
+    for usage in stats {
+        assert!(usage.processes >= 1, "{usage:?}");
+        assert!(usage.cores >= 1, "{usage:?}");
+        assert!(
+            usage.cpu_percent >= 0.0 && usage.cpu_percent <= 100.0 * f64::from(usage.cores) + 50.0,
+            "{usage:?}"
+        );
+        assert!(usage.memory_bytes > 1024 * 1024, "{usage:?}");
+        assert!(usage.memory_total_bytes > 512 * 1024 * 1024, "{usage:?}");
+        assert!(usage.memory_bytes < usage.memory_total_bytes, "{usage:?}");
+        if let Some(gpu) = &usage.gpu {
+            assert!((0.0..=100.0).contains(&gpu.percent), "{usage:?}");
+            assert!(gpu.name.as_deref() != Some(""), "{usage:?}");
+        }
+    }
+}
+
+#[test]
+fn a_run_is_measured_about_once_a_second_while_it_executes() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    let member = Member::new(&bench.runner, Answer::Run);
+    // Holds 150 MB (written to, so that it is really there) and keeps one core busy.
+    let code = "import time\nblob = b'x' * (150 * 1024 * 1024)\nprint('holding', len(blob), flush=True)\nend = time.time() + 3.3\nwhile time.time() < end:\n    pass\nprint('over')\n";
+    let mut arrivals: Vec<(Instant, RunEvent)> = Vec::new();
+    bench.runner.run(
+        RunRequest {
+            id: "r".into(),
+            code: code.into(),
+            title: String::new(),
+        },
+        ORIGIN,
+        &member,
+        &mut |e| arrivals.push((Instant::now(), e)),
+    );
+    let kinds: Vec<_> = arrivals.iter().map(|(_, e)| kind(e)).collect();
+    let started = kinds.iter().position(|k| *k == "started").expect("started");
+    let samples: Vec<usize> = (0..kinds.len()).filter(|n| kinds[*n] == "stats").collect();
+    assert!(samples.len() >= 2 && samples.len() <= 5, "{kinds:?}");
+    // All of them while the process runs: after `started`, before `done`, which is last.
+    assert!(samples[0] > started, "{kinds:?}");
+    assert_eq!(kinds.last(), Some(&"done"));
+    assert_eq!(kinds.iter().filter(|k| **k == "done").count(), 1);
+    // The first within about a second, the others about a second apart.
+    let at = |n: usize| arrivals[n].0;
+    let first = at(samples[0]).duration_since(at(started));
+    assert!(first < Duration::from_millis(2500), "{first:?}");
+    for pair in samples.windows(2) {
+        let gap = at(pair[1]).duration_since(at(pair[0]));
+        assert!(
+            gap > Duration::from_millis(500) && gap < Duration::from_millis(2500),
+            "{gap:?}"
+        );
+    }
+
+    let run = done(arrivals.into_iter().map(|(_, e)| e).collect());
+    assert_eq!(run.exit, Some(0));
+    assert_plausible(&run.stats);
+    let busiest = run.stats.iter().map(|u| u.cpu_percent).fold(0.0, f64::max);
+    assert!(busiest > 25.0, "one busy core was measured as {busiest}%");
+    let largest = run.stats.iter().map(|u| u.memory_bytes).max().unwrap();
+    assert!(
+        largest > 150 * 1024 * 1024 && largest < 1024 * 1024 * 1024,
+        "150 MB were measured as {largest} bytes"
+    );
+    // The code said nothing, and showed no bar.
+    assert_eq!(said(&run.stats), [(None, None)]);
+    // Nothing of it is in the result.
+    assert_eq!(run.output, "holding 157286400\nover\n");
+}
+
+#[test]
+fn what_the_code_says_through_qoop_arrives_with_the_samples() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    // Each thing is said for a second and a half: long enough to be sampled. The loop says
+    // a thousand things at once: the last one is the one that counts.
+    let code = r#"import time
+import qoop
+qoop.step("thermalising")
+time.sleep(1.5)
+qoop.progress(3, 10)
+time.sleep(1.5)
+qoop.progress(7, 10, "sweep")
+time.sleep(1.5)
+for n in range(1000):
+    qoop.progress(n, 999)
+qoop.step(text="measuring")
+time.sleep(1.5)
+print(sorted(name for name in dir(qoop) if not name.startswith("_")))
+"#;
+    let run = bench.run(code);
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(run.output, "['progress', 'step']\n");
+    assert_plausible(&run.stats);
+    assert_eq!(
+        said(&run.stats),
+        [
+            (Some("thermalising"), None),
+            (Some("thermalising"), Some((3.0, 10.0))),
+            (Some("sweep"), Some((7.0, 10.0))),
+            (Some("measuring"), Some((999.0, 999.0))),
+        ]
+    );
+}
+
+#[test]
+fn a_progress_bar_in_the_output_says_how_far_when_qoop_was_not_used() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    // What tqdm writes: the bar again and again on one line of standard error.
+    let bars = r#"import sys, time
+print("start")
+for n in (15, 45):
+    sys.stderr.write("\rsweep:  %d%%|####5     | %d/100 [00:00<00:00, 749.48it/s]" % (n, n))
+    sys.stderr.flush()
+    time.sleep(1.5)
+"#;
+    let run = bench.run(bars);
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(
+        said(&run.stats),
+        [
+            (Some("sweep"), Some((15.0, 100.0))),
+            (Some("sweep"), Some((45.0, 100.0))),
+        ]
+    );
+    // The output is kept as it was written.
+    assert_eq!(
+        run.output,
+        "start\n\rsweep:  15%|####5     | 15/100 [00:00<00:00, 749.48it/s]\rsweep:  45%|####5     | 45/100 [00:00<00:00, 749.48it/s]"
+    );
+    assert_eq!(run.streamed.concat(), run.output);
+
+    // What the code says itself goes before what its bar shows.
+    let both = format!("import qoop\nqoop.step('by hand')\n{bars}");
+    let run = bench.run(&both);
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(said(&run.stats), [(Some("by hand"), None)]);
+}
+
+#[test]
+fn what_a_child_process_uses_is_counted() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    // The program itself only waits; its child holds 120 MB and keeps a core busy.
+    let code = r#"import subprocess, sys
+child = "import time\nblob = b'x' * (120 * 1024 * 1024)\nend = time.time() + 3.3\nwhile time.time() < end:\n    pass\n"
+print(subprocess.call([sys.executable, "-c", child]))
+"#;
+    let run = bench.run(code);
+    assert_eq!((run.exit, run.output.as_str()), (Some(0), "0\n"));
+    assert!(run.stats.len() >= 2, "{:?}", run.kinds);
+    assert_plausible(&run.stats);
+    let most = run.stats.iter().map(|u| u.processes).max().unwrap();
+    assert!(most >= 2, "{:?}", run.stats);
+    let busiest = run.stats.iter().map(|u| u.cpu_percent).fold(0.0, f64::max);
+    assert!(
+        busiest > 25.0,
+        "the child's busy core was measured as {busiest}%"
+    );
+    let largest = run.stats.iter().map(|u| u.memory_bytes).max().unwrap();
+    assert!(
+        largest > 120 * 1024 * 1024,
+        "the child's 120 MB were measured as {largest} bytes"
+    );
+}
+
+#[test]
+fn nonsense_said_through_qoop_is_ignored_and_never_fails_the_code() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    let code = r#"import os, shutil, sys, time
+import qoop
+
+class Odd:
+    def __float__(self):
+        raise RuntimeError("no number")
+    def __str__(self):
+        raise RuntimeError("no text")
+
+for value in (None, True, b"3", [], {}, Odd(), object(), float("nan"), float("inf"), -float("inf"), 10 ** 400, 1j):
+    qoop.progress(value, 10)
+    qoop.progress(1, value)
+    qoop.progress(value, value, value)
+    qoop.step(value)
+qoop.progress("3", "10")
+qoop.progress(1, 0)
+qoop.progress(1, -5)
+qoop.progress()
+qoop.progress(1)
+qoop.progress(1, 2, 3, 4)
+qoop.progress(1, 2, nonsense=True)
+qoop.step()
+qoop.step("a", "b")
+qoop.step("")
+qoop.step("\ud800 half a character")
+qoop.step("\x00\x1b[2J\n\n")
+qoop.step("x" * 10_000_000)
+time.sleep(1.3)
+# Something in the file's place, then no directory at all.
+said = os.path.join(os.environ["QOOP_RUN_DIR"], "qoop-progress.json")
+if os.path.exists(said):
+    os.remove(said)
+os.mkdir(said)
+qoop.progress(1, 2)
+time.sleep(0.3)
+qoop.progress(2, 2, "still fine")
+shutil.rmtree(os.environ["QOOP_RUN_DIR"], ignore_errors=True)
+qoop.step("into nothing")
+time.sleep(0.3)
+qoop.progress(1, 3)
+sys.modules["os"] = sys.modules["json"] = sys.modules["time"] = None
+qoop.step("without modules")
+time.sleep(0.3)
+qoop.progress(2, 3)
+print("fine")
+"#;
+    let run = bench.run(code);
+    // Nothing was raised, and nothing was printed that the code did not print.
+    assert_eq!((run.exit, run.output.as_str()), (Some(0), "fine\n"));
+    assert!(!run.stats.is_empty(), "{:?}", run.kinds);
+    assert_plausible(&run.stats);
+    // Of all that, two things were text: what is left of a line of control characters, and
+    // right after it a very long step, shown as far as a step goes.
+    let long = "x".repeat(120);
+    for usage in &run.stats {
+        assert_eq!(usage.progress, None, "{usage:?}");
+        assert!(
+            matches!(usage.step.as_deref(), None | Some("[2J")) || usage.step == Some(long.clone()),
+            "{usage:?}"
+        );
+    }
+    assert!(run.stats.iter().any(|u| u.step == Some(long.clone())));
+}
+
+#[test]
+fn cancel_is_as_prompt_while_the_run_is_measured() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    // Busy, with a child, and saying how far it is all the time; ready after the first
+    // samples were taken.
+    let code = r#"import subprocess, time
+import qoop
+child = subprocess.Popen(["sleep", "600"])
+begun = time.time()
+ready = False
+n = 0
+while True:
+    n += 1
+    qoop.progress(n % 1000, 1000, "spinning")
+    if not ready and time.time() - begun > 2.2:
+        ready = True
+        print("ready", flush=True)
+"#;
+    let mut cancelled = None;
+    let run = run_and_interrupt(&bench, code, "ready", |runner, _| {
+        cancelled = Some(Instant::now());
+        runner.cancel("long-run");
+    });
+    let took = cancelled.unwrap().elapsed();
+    assert!(took < Duration::from_secs(3), "the cancel took {took:?}");
+    assert!(run.stopped && run.exit.is_none());
+    // It was being measured when it was stopped, and nothing came after `done`.
+    assert!(!run.stats.is_empty(), "{:?}", run.kinds);
+    assert_plausible(&run.stats);
+    assert!(
+        run.stats
+            .iter()
+            .all(|u| u.step.as_deref() == Some("spinning"))
+    );
+    assert!(
+        run.stats.iter().any(|u| u.processes >= 2),
+        "{:?}",
+        run.stats
+    );
+    assert_eq!(run.kinds.last(), Some(&"done"));
+    assert_eq!(run.kinds.iter().filter(|k| **k == "done").count(), 1);
+    assert!(bench.runner.is_idle());
 }
 
 // ---- figures and environment ---------------------------------------------------------------

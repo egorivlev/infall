@@ -270,3 +270,21 @@ Design source: `design/QRunBlock.dc.html` (match its structure, spacing and type
 - Page meta line counts Runs ("1 Visual · 1 Run") where it already counts Visuals.
 - Merge review: nothing new in the UI — the sync layer gives readable lines for `result` and `canEdit: false`.
 - Accessibility: the block is a `group` labelled "Run <title>"; live output region `aria-live="off"` (too chatty) with state changes ("Run started", "Run finished", "Run stopped", "Run failed: …") announced through one polite status element; all buttons reachable in order header → code → output.
+
+## M9 — the Runner monitor
+
+A control in the top bar that exists only while `useRuns().live` is non-null (a Run is waiting for approval, executing or being recorded on this computer). It is how the Member sees what their computer is doing while they are on another Card or on the Board.
+
+- **Closed**: a compact button — a quiet pulsing dot (still under reduced motion), the Run's title (cut with an ellipsis), the running time in tabular figures (`0:42`, `1:02:03`). When progress is known, a thin progress line along its bottom edge. While `approval`: "Waiting for you…", no time.
+- **Open** (a popover under it; Esc and a click outside close it; focus returns to the button; it is a dialog-like region with a label, not a menu of commands):
+  - the Run's title and the Card it is on — a button that opens that Card's Page and scrolls to the Run;
+  - **Now**: `step` when the code reports one; otherwise "Running" / "Waiting for you in the Runner's window" / "Recording the result…";
+  - **Progress** (only when reported): a bar, "45 of 100", and "about 3 min left" from `eta_ms` (rounded honestly: seconds under a minute, minutes under an hour, then hours and minutes; "estimating…" while progress is known but `eta_ms` is not);
+  - **Processor**: "182 % · 1.8 of 10 cores" with a meter scaled to all cores;
+  - **Memory**: "1.2 GB of 24 GB" with a meter, and "peak 1.4 GB";
+  - **Graphics**: "76 % · whole computer" (+ name when given); when absent: "Not reported on this computer";
+  - **Running**: the time; **Left**: the estimate, or "No estimate — the code reports no progress" with one quiet line showing `qoop.progress(done, total)`;
+  - **Stop** (the same action as the Run block's Stop).
+  - With an M8 app (no `stats` after 3 s of running): the time, and "This version of the app does not report usage."
+- Meters are `role="meter"` with a text value; numbers never rely on colour alone; a meter turns to the warning colour at ≥ 90 % of memory. Values update about once a second and must not move the layout (tabular figures, fixed row heights). Not announced to screen readers on every tick.
+- Not shown to Guests, in the browser, or when nothing runs. One Run at a time, so one monitor.

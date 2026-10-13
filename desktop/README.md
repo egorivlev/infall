@@ -21,6 +21,7 @@ desktop/
       src/approvals.rs     the approval gate and the remembered approvals
       src/inspect.rs       what the approval window shows of the code
       src/exec.rs          the process, its output, figures, temporary directory
+      src/monitor.rs       the Runner monitor: usage samples, `qoop` and progress bars (M9)
       src/runner.py        the program that runs the code (standard library only)
       src/python.rs        finding and checking interpreters, the shell's environment
       src/settings.rs      the chosen interpreter and folder

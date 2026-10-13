@@ -108,3 +108,50 @@ Also local UI; reached from the app menu ("Runner settings…") and through `run
 
 ## Not in M8
 Sandboxing or containers; other languages; per-Run environments or dependency installation; streaming figures while it runs; GPU/hardware reporting; running on the server or on another Member's machine; native file pickers.
+
+# M9 — the Runner monitor
+
+While a Run executes, the Member sees what it is doing to their computer: processor, memory, graphics processor, how long it has run and — when the code says how far it is — how long it has left. Only the Member whose computer runs it sees this; nothing of it is recorded in the result or sent to the server.
+
+## Bridge — one more event
+```ts
+type RunEvent = /* M8 */ | ({ type: "stats" } & RunUsage);
+
+type RunUsage = {
+  cpu_percent: number;          // of the Run's own processes (its whole process group); 100 = one core fully busy
+  cores: number;                // logical cores of this computer
+  memory_bytes: number;         // resident memory of the Run's own processes
+  memory_total_bytes: number;   // of this computer
+  processes: number;            // processes in the Run's group
+  gpu?: { percent: number; name?: string };   // the WHOLE computer's graphics processor, not only the Run; absent when it cannot be read
+  step?: string;                // what the code says it is doing: one line, control characters removed, ≤ 120 characters
+  progress?: { done: number; total: number }; // total > 0, 0 ≤ done ≤ total, both finite
+};
+```
+- Sent after `started`, the first within about a second, then about once a second until the process ends; never after `done` / `error`. A page from M8 ignores the unknown event; an M8 app never sends it and the page then shows the running time only.
+- Measuring must not need more rights than the app has, must not start anything that asks for a password, and must never delay or break the Run: a sample that cannot be taken is skipped, a field that cannot be read is left out (`gpu`) — `cpu_percent`, `cores`, `memory_bytes`, `memory_total_bytes`, `processes` are always present.
+- How (Unix): processes of the Run's process group from `ps`; totals from the system (`sysctl` on macOS, `/proc` on Linux); graphics processor from `ioreg` (macOS, "Device Utilization %") or `nvidia-smi` when it is on the path (Linux), each with a short timeout. No new dependency.
+
+## What the code can say — `qoop`
+`runner.py` makes a module `qoop` importable by the Run's code (it exists only inside the Runner):
+```python
+import qoop
+qoop.step("thermalising")            # what is being done now
+qoop.progress(done, total)           # how far; total > 0
+qoop.progress(done, total, "sweep")  # both at once
+```
+- Calls are cheap and never raise or print, whatever they are given (bad values are ignored); they write one small file in `QOOP_RUN_DIR` (atomically, at most about five times a second, the last call always lands), which the app reads when it samples.
+- Code that does not call `qoop` but shows a `tqdm` bar still gets progress: when nothing was reported through `qoop`, the app reads the last progress bar in the output (`45%|… | 45/100 [`), and its description as `step`.
+- Code meant to run outside Qoop too can guard the import: `try: import qoop` / `except ImportError: qoop = None`.
+
+## Not in M9
+Per-process graphics-processor use; energy; network and disk; history of usage after the Run ended; usage recorded in the result; Windows.
+
+## Notes from the M9 implementation
+- Where: `runner/src/monitor.rs` (the sampler and every parser), `runner.py` (`qoop`), `exec.rs` (starts the sampler after `started`, stops it when the process has ended). The bridge needed no new command: `stats` travels through the same channel as the other events, as `{ type: "stats", …RunUsage }`.
+- Timing: the first sample is taken 0.8 s after the process started, then one a second. A Run shorter than that sends no `stats`. Samples are taken on a thread of their own; the loop that reads the output and watches for cancel only picks up finished samples and drops any that arrive once the process has ended.
+- `cpu_percent` is the processor time the group's processes used between two samples divided by the time between them (the first: since the start), not `ps`'s own `%cpu`, which is a slow average. Processor time comes from `ps -o time=` (hundredths of a second on macOS) and, where `/proc/<pid>/stat` exists, from there (Linux, where `ps` counts whole seconds). Processes that have ended and wait to be collected are not counted.
+- Tools are started by full path (`/bin/ps` or `/usr/bin/ps`, `/usr/sbin/sysctl`, `/usr/sbin/ioreg`; `nvidia-smi` from the absolute directories of the login shell's `PATH`, only when there is no `ioreg`), with an empty environment (`LC_ALL=C`), no input, 0.8 s to answer, then killed. `cores` is the standard library's count; total memory is read once (`/proc/meminfo`, else `sysctl -n hw.memsize`); a sample is skipped until it is known. A graphics processor that cannot be read three times in a row is not asked again in that Run. With several graphics processors the busiest is reported.
+- `qoop` writes `qoop-progress.json` (`{"step": …, "done": …, "total": …}`) in `QOOP_RUN_DIR`: at once if the last write is 0.2 s ago, else a timer thread writes the last state when the 0.2 s are over; once more when the code ends. Calls with the wrong arguments are ignored like wrong values. `qoop.step("")` takes the step away. The app reads the file without following links, at most 4 096 bytes, and checks it again (it is the Run's own program that wrote it).
+- Progress bars: `progress` and `step` are taken from the bar only when the file says neither. Scaled counts (`1.20k/5.00k`) are read; a bar without a total says nothing; a line longer than 600 bytes is not looked at. The kept output is untouched.
+- Not verified: anything on Linux (the `/proc` and `nvidia-smi` paths are tested only against text written by hand, not run), and Intel Macs with two graphics processors.

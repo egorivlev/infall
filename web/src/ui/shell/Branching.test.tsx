@@ -29,6 +29,7 @@ vi.mock('../../lib', () => ({
   useSession: () => h.session,
   useBoard: () => h.board,
   useSuggestions: () => [],
+  useRuns: () => ({ runner: { available: false, reason: 'browser' }, live: null, last: null }), // nothing runs: the top bar has no Runner monitor
   useMembers: () => h.people,
   useBranches: () => h.list,
   useHistory: () => h.hist,

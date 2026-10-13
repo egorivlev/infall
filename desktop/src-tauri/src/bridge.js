@@ -133,6 +133,9 @@
   // The Runner (docs/specs/desktop.md, M8). A page can read the status, ask for the app's
   // own settings window, ask for a Run of some code, and cancel it. Which interpreter runs
   // it, in which folder, and whether it runs at all is decided in the app's own windows.
+  // Events reach `onEvent` as the app sent them, the M9 one included:
+  // `{ type: 'stats', cpu_percent, cores, memory_bytes, memory_total_bytes, processes, gpu?,
+  // step?, progress? }`, about once a second while the process runs.
   var runner = Object.freeze({
     status: function () {
       return call('runner_status', {}).then(function (status) {

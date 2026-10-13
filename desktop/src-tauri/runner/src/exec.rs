@@ -20,8 +20,9 @@ use qoop_proc::{Group, own_process_group};
 use serde::Serialize;
 
 use crate::approvals::{Approved, Cancel};
+use crate::monitor::{Bars, Sampler, Usage};
 use crate::output::{Kept, Throttle, Utf8Stream};
-use crate::python::EnvVars;
+use crate::python::{self, EnvVars};
 
 /// The program that runs the code and saves its figures. Standard library only.
 pub const RUNNER_PY: &str = include_str!("runner.py");
@@ -57,12 +58,15 @@ pub struct Env {
 }
 
 /// What happens while the code is executed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Progress {
     /// The process is running.
     Started,
     /// More output.
     Output(String),
+    /// What the process is using now, and how far the code says it is. Never after the
+    /// process has ended.
+    Stats(Usage),
 }
 
 /// How the execution ended.
@@ -162,7 +166,7 @@ impl Drop for RunDir {
 
 /// Reads a regular file of at most `limit` bytes; never follows a link (the program could
 /// have put one there).
-fn read_small_file(path: &Path, limit: usize) -> Option<Vec<u8>> {
+pub(crate) fn read_small_file(path: &Path, limit: usize) -> Option<Vec<u8>> {
     let mut options = fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -299,6 +303,13 @@ impl Exec {
         drop(command);
         let mut group = Group::new(child);
         on_progress(Progress::Started);
+        // Measures on a thread of its own: nothing below ever waits for it.
+        let sampler = Sampler::start(
+            group.id(),
+            dir.path.clone(),
+            python::env_value(&self.env, "PATH"),
+            started,
+        );
 
         // Bounded: a program that prints faster than it can be read waits, as with any pipe.
         let (tx, rx) = mpsc::sync_channel::<Option<Vec<u8>>>(16);
@@ -320,6 +331,7 @@ impl Exec {
         let mut decoder = Utf8Stream::default();
         let mut kept = Kept::default();
         let mut throttle = Throttle::new();
+        let mut bars = Bars::default();
         let mut text = String::new();
         let mut eof = false;
         let mut stopped = false;
@@ -335,6 +347,7 @@ impl Exec {
                         decoder.push(&bytes, &mut text);
                         kept.push(&text);
                         throttle.push(&text);
+                        bars.push(&text);
                     }
                     Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
                     Err(RecvTimeoutError::Timeout) => {}
@@ -343,6 +356,19 @@ impl Exec {
             let now = Instant::now();
             if let Some(event) = throttle.due(now) {
                 on_progress(Progress::Output(event));
+            }
+            if ended.is_none()
+                && let Some(mut usage) = sampler.latest()
+            {
+                // Nothing said through `qoop`: a progress bar in the output says it.
+                if usage.step.is_none()
+                    && usage.progress.is_none()
+                    && let Some(bar) = bars.last()
+                {
+                    usage.step = bar.step;
+                    usage.progress = bar.progress;
+                }
+                on_progress(Progress::Stats(usage));
             }
             match &ended {
                 None => {
@@ -362,6 +388,9 @@ impl Exec {
                 // Something that left the group still holds the pipe: stop reading.
                 Some((_, _, read_until)) if now > *read_until => break,
                 Some(_) => {}
+            }
+            if ended.is_some() {
+                sampler.stop();
             }
         }
         let (status, duration, _) = ended.expect("the loop only ends after the process");

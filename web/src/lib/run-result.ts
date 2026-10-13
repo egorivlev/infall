@@ -1,6 +1,6 @@
 // The `result` of a Run (api.md §15): reading the stored JSON strictly, writing it, building it from what the
 // Runner reports, and saying it in one line where a raw value would otherwise be shown.
-import type { RunEvent, RunResult, Value } from './types'
+import type { RunEvent, RunResult, RunUsage, Value } from './types'
 
 export const MAX_RESULT = 600_000 // characters of the JSON text
 export const MAX_OUTPUT = 64_000
@@ -214,17 +214,57 @@ export function fitRunResult(result: RunResult): RunResult {
 
 const REASONS = ['declined', 'no_python', 'busy', 'failed'] as const
 export const UNREADABLE_RESULT = 'The Runner sent a result that cannot be read.'
+export const MAX_STEP = 120 // characters of what the code says it is doing
 
 function textOrNothing(v: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined
 }
 
+// The first `max` characters, never ending inside one.
+function firstChars(text: string, max: number): string {
+  return within(text, max) ? text : Array.from(text).slice(0, max).join('')
+}
+
 /**
- * What the bridge handed over, checked. Null for something that is not an event (it is skipped). A `done` whose
- * parts have the wrong types still ends the execution: it reads as a failure.
+ * One usage sample of the Runner (desktop.md, M9), checked: the five measures are always there, finite and not
+ * negative; `gpu`, `step` and `progress` are optional (left out or null). Anything else — a wrong type, a negative
+ * or non-finite number, a `progress` without a positive total — makes the whole sample null: a half-read sample
+ * would show numbers nobody measured. `done` over `total` is brought down to it, `step` is cut to 120 characters
+ * (an empty one says nothing and is left out), parts this build does not know are dropped.
+ */
+export function toRunUsage(raw: unknown): RunUsage | null {
+  if (!isRecord(raw)) return null
+  const { cpu_percent, cores, memory_bytes, memory_total_bytes, processes, gpu, step, progress } = raw
+  if (!amount(cpu_percent) || !amount(cores) || !amount(memory_bytes) || !amount(memory_total_bytes) || !amount(processes)) return null
+  const usage: RunUsage = { cpu_percent, cores, memory_bytes, memory_total_bytes, processes }
+  if (gpu !== undefined && gpu !== null) {
+    if (!isRecord(gpu) || !amount(gpu.percent)) return null
+    const name = gpu.name
+    if (name !== undefined && name !== null && typeof name !== 'string') return null
+    usage.gpu = typeof name === 'string' && name !== '' ? { percent: gpu.percent, name: firstChars(name, MAX_STEP) } : { percent: gpu.percent }
+  }
+  if (step !== undefined && step !== null) {
+    if (typeof step !== 'string') return null
+    if (step !== '') usage.step = firstChars(step, MAX_STEP)
+  }
+  if (progress !== undefined && progress !== null) {
+    if (!isRecord(progress) || !amount(progress.done) || !amount(progress.total) || progress.total <= 0) return null
+    usage.progress = { done: Math.min(progress.done, progress.total), total: progress.total }
+  }
+  return usage
+}
+
+/**
+ * What the bridge handed over, checked. Null for something that is not an event (it is skipped) — a `stats`
+ * sample that cannot be read included. A `done` whose parts have the wrong types still ends the execution: it
+ * reads as a failure.
  */
 export function toRunEvent(raw: unknown): RunEvent | null {
   if (!isRecord(raw)) return null
+  if (raw.type === 'stats') {
+    const usage = toRunUsage(raw)
+    return usage ? { type: 'stats', ...usage } : null
+  }
   if (raw.type === 'approval' || raw.type === 'started') return { type: raw.type }
   if (raw.type === 'output') return typeof raw.text === 'string' ? { type: 'output', text: raw.text } : null
   if (raw.type === 'error') {

@@ -17,6 +17,7 @@
 pub mod approvals;
 pub mod exec;
 pub mod inspect;
+pub mod monitor;
 pub mod output;
 pub mod python;
 pub mod settings;
@@ -30,6 +31,7 @@ use serde::{Deserialize, Serialize};
 pub use approvals::{ApprovalView, Cancel, DecideError};
 use approvals::{Decision, Details, Gate, Request, RequestError};
 use exec::{Env, Exec, Figure, Progress};
+pub use monitor::Usage;
 use python::EnvVars;
 pub use settings::Interpreter;
 
@@ -58,7 +60,7 @@ pub enum Reason {
 }
 
 /// What the page is told (desktop.md: `RunEvent`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunEvent {
     /// The app is showing the code to the Member and waits.
@@ -69,6 +71,8 @@ pub enum RunEvent {
     Output {
         text: String,
     },
+    /// What the Run is using now (M9): about once a second while the process runs.
+    Stats(Usage),
     Done {
         exit: Option<i32>,
         stopped: bool,
@@ -473,6 +477,7 @@ impl Runner {
             on_event(match progress {
                 Progress::Started => RunEvent::Started,
                 Progress::Output(text) => RunEvent::Output { text },
+                Progress::Stats(usage) => RunEvent::Stats(usage),
             });
         });
         match finished {
@@ -531,6 +536,28 @@ mod tests {
                 text: "hi\n".into()
             }),
             serde_json::json!({"type": "output", "text": "hi\n"})
+        );
+        // `stats` carries the usage's own fields beside the type, not inside another object.
+        let stats = RunEvent::Stats(Usage {
+            cpu_percent: 99.5,
+            cores: 8,
+            memory_bytes: 1024,
+            memory_total_bytes: 4096,
+            processes: 1,
+            gpu: None,
+            step: Some("sweep".into()),
+            progress: Some(monitor::HowFar {
+                done: 1.0,
+                total: 2.0,
+            }),
+        });
+        assert_eq!(
+            json(&stats),
+            serde_json::json!({
+                "type": "stats", "cpu_percent": 99.5, "cores": 8, "memory_bytes": 1024,
+                "memory_total_bytes": 4096, "processes": 1, "step": "sweep",
+                "progress": {"done": 1.0, "total": 2.0}
+            })
         );
         for (reason, name) in [
             (Reason::Declined, "declined"),

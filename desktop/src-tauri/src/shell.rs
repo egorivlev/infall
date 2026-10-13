@@ -328,7 +328,7 @@ fn open_runner_settings(app: &AppHandle) -> tauri::Result<()> {
     open.set(true);
     let built = local_window(app, SETTINGS_WINDOW, "runner.html")
         .title("Runner settings")
-        .inner_size(620.0, 640.0)
+        .inner_size(620.0, 700.0)
         .min_inner_size(480.0, 420.0)
         .build();
     match built {

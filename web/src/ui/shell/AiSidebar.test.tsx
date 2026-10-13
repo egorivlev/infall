@@ -16,6 +16,7 @@ vi.mock('../../lib', () => ({
   useBoard: () => h.board,
   useAi: () => h.ai,
   useSuggestions: () => [],
+  useRuns: () => ({ runner: { available: false, reason: 'browser' }, live: null, last: null }), // nothing runs: the top bar has no Runner monitor
   useMembers: () => [],
   useBranches: (): BranchInfo[] => [],
   useHistory: (): HistorySnapshot => ({ status: 'idle', head: 0, activities: [], checkpoints: [], preview: null }),

@@ -393,6 +393,26 @@ export type RunEvent =
       env: { python?: string; packages?: Record<string, string>; os?: string; arch?: string }
     }
   | { type: 'error'; reason: 'declined' | 'no_python' | 'busy' | 'failed'; message: string }
+  | ({ type: 'stats' } & RunUsage) // M9; about once a second while the process runs; never sent by an M8 app
+
+/** What a Run is using right now, as the Runner measured it (docs/specs/desktop.md, M9). */
+export type RunUsage = {
+  cpu_percent: number // of the Run's own processes; 100 = one core fully busy
+  cores: number // logical cores of this computer
+  memory_bytes: number // resident memory of the Run's own processes
+  memory_total_bytes: number // of this computer
+  processes: number // how many processes the Run has
+  gpu?: { percent: number; name?: string } // of the whole computer, not only the Run; absent when it cannot be read
+  step?: string // what the code says it is doing, one line, ≤ 120 characters
+  progress?: { done: number; total: number } // total > 0, 0 ≤ done ≤ total
+}
+
+/** The latest usage of the Run in flight, with what the lib derives from the samples so far. */
+export type RunStats = RunUsage & {
+  at: number // unix ms, when this sample arrived
+  peak_memory_bytes: number // the largest memory_bytes seen in this execution
+  eta_ms?: number // estimated time left; only while `progress` is moving
+}
 
 /** `window.qoopDesktop.runner` (docs/specs/desktop.md, M8). */
 export type QoopRunner = {
@@ -414,6 +434,7 @@ export type RunLive = {
   state: 'approval' | 'running' | 'saving' // waiting for the Member in the app's window / executing / recording the result
   output: string // live output so far
   startedAt?: number // set once it is running
+  stats?: RunStats // M9: the latest sample; absent before the first one and with an M8 app
 }
 
 /** How the last execution in this window ended, until dismissed or the next one starts. */

@@ -11,6 +11,7 @@ import {
   resultParses,
   resultValueLine,
   runResultLine,
+  MAX_STEP,
   toRunEvent,
   toRunResult,
   UNREADABLE_RESULT,
@@ -202,6 +203,62 @@ describe('toRunEvent', () => {
     const raw = { ...done(), stopped: 'no', gpu: 'yes', env: { python: '3.12', gpu: 'yes', packages: { numpy: '2.0', odd: 5 } }, figures: [{ png: TINY_PNG, w: 3 }] }
     expect(toRunEvent(raw)).toEqual(done({ env: { python: '3.12', packages: { numpy: '2.0' } }, figures: [{ png: TINY_PNG }] }))
     expect(toRunEvent({ ...done(), env: undefined })).toEqual(done())
+  })
+})
+
+describe('toRunEvent: stats (M9)', () => {
+  const usage = { cpu_percent: 182, cores: 10, memory_bytes: 1.2e9, memory_total_bytes: 24e9, processes: 3 }
+  const stats = (patch: Record<string, unknown> = {}) => toRunEvent({ type: 'stats', ...usage, ...patch })
+
+  it('passes a sample on, with only the parts it knows', () => {
+    expect(stats()).toEqual({ type: 'stats', ...usage })
+    const full = { gpu: { percent: 76, name: 'Apple M2 Pro' }, step: 'thermalising', progress: { done: 45, total: 100 } }
+    expect(stats(full)).toEqual({ type: 'stats', ...usage, ...full })
+    expect(stats({ gpu: { percent: 5, vendor: 'x' }, energy: 3, progress: { done: 1, total: 2, unit: 'it' } })).toEqual({
+      type: 'stats',
+      ...usage,
+      gpu: { percent: 5 },
+      progress: { done: 1, total: 2 },
+    })
+    expect(stats({ cpu_percent: 0, memory_bytes: 0, processes: 0 })).toMatchObject({ cpu_percent: 0, memory_bytes: 0, processes: 0 })
+  })
+  it('reads an optional part given as null, or an empty step, as left out', () => {
+    expect(stats({ gpu: null, step: null, progress: null })).toEqual({ type: 'stats', ...usage })
+    expect(stats({ step: '', gpu: { percent: 3, name: null } })).toEqual({ type: 'stats', ...usage, gpu: { percent: 3 } })
+    expect(stats({ gpu: { percent: 3, name: '' } })).toEqual({ type: 'stats', ...usage, gpu: { percent: 3 } })
+  })
+  it.each([
+    ['a measure missing', { cores: undefined }],
+    ['a measure that is not a number', { cpu_percent: '182' }],
+    ['a negative number', { memory_bytes: -1 }],
+    ['a number that is not finite', { memory_total_bytes: Infinity }],
+    ['NaN', { processes: NaN }],
+    ['a graphics reading that is not an object', { gpu: 76 }],
+    ['a graphics reading without its percent', { gpu: { name: 'M2' } }],
+    ['a negative graphics percent', { gpu: { percent: -1 } }],
+    ['a graphics name that is not text', { gpu: { percent: 1, name: 5 } }],
+    ['a step that is not text', { step: 5 }],
+    ['progress that is not an object', { progress: 0.45 }],
+    ['progress without a total', { progress: { done: 1 } }],
+    ['a total of zero', { progress: { done: 0, total: 0 } }],
+    ['a negative total', { progress: { done: 0, total: -5 } }],
+    ['a negative done', { progress: { done: -1, total: 5 } }],
+    ['a done that is not finite', { progress: { done: Infinity, total: 5 } }],
+    ['a total that is not finite', { progress: { done: 1, total: Infinity } }],
+  ])('drops the whole sample for %s', (_what, patch) => {
+    expect(stats(patch)).toBeNull()
+  })
+  it('brings a done over its total down to it', () => {
+    expect(stats({ progress: { done: 120, total: 100 } })).toMatchObject({ progress: { done: 100, total: 100 } })
+    expect(stats({ progress: { done: 100, total: 100 } })).toMatchObject({ progress: { done: 100, total: 100 } })
+  })
+  it('cuts a step to 120 characters, never inside one', () => {
+    const cut = stats({ step: 'x'.repeat(500) }) as { step: string }
+    expect(cut.step).toBe('x'.repeat(MAX_STEP))
+    expect(stats({ step: 'y'.repeat(MAX_STEP) })).toMatchObject({ step: 'y'.repeat(MAX_STEP) })
+    const astral = stats({ step: '𝛑'.repeat(200) }) as { step: string }
+    expect(Array.from(astral.step)).toHaveLength(MAX_STEP)
+    expect(astral.step).not.toMatch(LONE_SURROGATE)
   })
 })
 

@@ -6,6 +6,7 @@ import { CheckpointButton } from './CheckpointButton'
 import { GuestBadge } from './GuestBadge'
 import { HistoryButton } from './HistoryButton'
 import { Logo } from './Logo'
+import { RunMonitor } from './monitor/RunMonitor'
 import { Presence } from './Presence'
 import { SearchBox } from './SearchBox'
 import { ThemeToggle } from './ThemeToggle'
@@ -38,6 +39,9 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
           )}
         </div>
       )}
+      {/* There only while a Run is in flight on this computer — never for a Guest, who has no Runner. Before the
+          search field, which gives way first: in a window narrower than the bar the monitor stays in sight. */}
+      {!guest && <RunMonitor />}
       <div className="q-topbar__search">
         <SearchBox />
       </div>

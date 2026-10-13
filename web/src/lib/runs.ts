@@ -10,13 +10,15 @@ import { ApiError } from './http'
 import { newId, ops } from './ops'
 import { MAX_OUTPUT, toRunEvent, toRunResult, UNREADABLE_RESULT } from './run-result'
 import { sessionStore } from './session-store'
-import type { BlockVM, Member, QoopRunner, RunLive, RunnerSetup, RunOutcome, RunResult, RunsSnapshot, SessionSnapshot } from './types'
+import type { BlockVM, Member, QoopRunner, RunLive, RunnerSetup, RunOutcome, RunResult, RunsSnapshot, RunStats, RunUsage, SessionSnapshot } from './types'
 
 export const STOPPED_ANSWERING = 'The Runner stopped answering.'
 const COULD_NOT_RUN = 'The Run could not be executed.'
 const MAX_MESSAGE = 500
 /** How long a `done` may still arrive after the bridge's promise has settled, before the execution reads as failed. */
 export const GRACE_MS = 300
+/** How much time an estimate of the time left needs behind it before it is given. */
+export const ETA_AFTER_MS = 3000
 
 export type RunsOptions = {
   /** `window.qoopDesktop`, whatever it holds. Default: read from the page. */
@@ -35,6 +37,9 @@ export type RunsOptions = {
 
 type Found = { python?: { path: string; version: string }; folder?: string }
 
+/** The sample the rate of progress is measured from, and how far the latest sample with progress was. */
+export type ProgressBaseline = { at: number; done: number; total: number; latest: number }
+
 // The execution in flight. `over`: it has its outcome coming (a `done` or `error` was read, or it was let go) —
 // events after that are ignored.
 type Execution = {
@@ -47,6 +52,8 @@ type Execution = {
   state: RunLive['state']
   output: string
   startedAt: number | undefined
+  stats: RunStats | undefined // the latest usage sample (M9); stays as it was once the result is being recorded
+  baseline: ProgressBaseline | undefined
   over: boolean
   frame: unknown
   hasFrame: boolean
@@ -98,6 +105,34 @@ function tail(text: string): string {
   return first >= 0xdc00 && first <= 0xdfff ? cut.slice(1) : cut
 }
 
+/**
+ * A usage sample as `live.stats` shows it: with the largest memory so far, and the time left when the progress
+ * says enough. The estimate takes the rate since `baseline` — the first sample of this execution that carried
+ * progress — once that is `ETA_AFTER_MS` old and something was done since; before that, the rate since the Run
+ * started, once that is `ETA_AFTER_MS` ago. The baseline starts again from this sample when the total changed or
+ * `done` went down (the code began another count).
+ */
+export function nextStats(
+  usage: RunUsage,
+  at: number,
+  startedAt: number,
+  prev: RunStats | undefined,
+  baseline: ProgressBaseline | undefined,
+): { stats: RunStats; baseline: ProgressBaseline | undefined } {
+  const stats: RunStats = { ...usage, at, peak_memory_bytes: Math.max(usage.memory_bytes, prev?.peak_memory_bytes ?? 0) }
+  const p = usage.progress
+  if (!p) return { stats, baseline }
+  const from: ProgressBaseline =
+    !baseline || p.total !== baseline.total || p.done < baseline.latest ? { at, done: p.done, total: p.total, latest: p.done } : { ...baseline, latest: p.done }
+  if (p.done < p.total) {
+    let eta: number | undefined
+    if (p.done > from.done && at - from.at >= ETA_AFTER_MS) eta = ((p.total - p.done) * (at - from.at)) / (p.done - from.done)
+    else if (p.done > 0 && at - startedAt >= ETA_AFTER_MS) eta = ((p.total - p.done) * (at - startedAt)) / p.done
+    if (eta !== undefined && Number.isFinite(eta)) stats.eta_ms = eta
+  }
+  return { stats, baseline: from }
+}
+
 // Why a result could not be recorded, as a sentence for the Member.
 function notRecorded(e: unknown): string {
   if (e instanceof RangeError) return 'The output was not recorded: it is too large.'
@@ -122,7 +157,7 @@ export function createRuns(options: RunsOptions = {}) {
   const cancelFrame = options.cancelFrame ?? defaultCancelFrame
   const setTimer = options.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((h) => globalThis.clearTimeout(h as number))
-  const now = options.now ?? Date.now
+  const now = options.now ?? (() => Date.now())
 
   const store = createStore<RunsSnapshot>(() => ({ runner: LOADING, live: null, last: null }))
 
@@ -218,6 +253,7 @@ export function createRuns(options: RunsOptions = {}) {
     if (current !== x) return
     const next: RunLive = { block: x.block, branch: x.branch, state: x.state, output: x.output }
     if (x.startedAt !== undefined) next.startedAt = x.startedAt
+    if (x.stats !== undefined) next.stats = x.stats
     live = next
     publish()
   }
@@ -308,6 +344,15 @@ export function createRuns(options: RunsOptions = {}) {
           show(x)
         })
       }
+    } else if (event.type === 'stats') {
+      // Usage is of a process: nothing is kept from before `started` (the approval), and once `done` was read
+      // (`over`, above) the last sample stays as it is.
+      if (x.state !== 'running' || x.startedAt === undefined) return
+      const { type: _, ...usage } = event
+      const next = nextStats(usage, now(), x.startedAt, x.stats, x.baseline)
+      x.stats = next.stats
+      x.baseline = next.baseline
+      show(x)
     } else if (event.type === 'error') {
       end(x, event.reason === 'declined' ? { block: x.block, branch: x.branch, status: 'declined' } : failed(x, event.message))
     } else {
@@ -359,6 +404,8 @@ export function createRuns(options: RunsOptions = {}) {
       state: 'approval',
       output: '',
       startedAt: undefined,
+      stats: undefined,
+      baseline: undefined,
       over: false,
       frame: null,
       hasFrame: false,

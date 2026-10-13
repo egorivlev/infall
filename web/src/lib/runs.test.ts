@@ -5,10 +5,10 @@ import { ApiError } from './http'
 import { ops } from './ops'
 import { membersStore } from './people'
 import { MAX_RESULT } from './run-result'
-import { createRuns, GRACE_MS, STOPPED_ANSWERING } from './runs'
+import { createRuns, ETA_AFTER_MS, GRACE_MS, STOPPED_ANSWERING } from './runs'
 import type { RunsOptions } from './runs'
 import { sessionStore } from './session-store'
-import { FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, TINY_PNG, fakeDesktop, fakeRunner, fakeRunResult, installDesktop, settle } from './testing'
+import { FAKE_USAGE, FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, TINY_PNG, fakeDesktop, fakeRunner, fakeRunResult, installDesktop, settle } from './testing'
 import type { FakeRunner } from './testing'
 import type { BlockVM, RunResult } from './types'
 
@@ -948,6 +948,229 @@ describe('the session during an execution', () => {
     await running
     await settle()
     expect(runner.cancelled).toEqual([x.request.id])
+  })
+})
+
+describe('usage while it runs (M9)', () => {
+  /** `r1` running since 10 000; the clock stands there. */
+  async function running(r: ReturnType<typeof createRuns>) {
+    const started = await start(r)
+    clock = 10_000
+    started.x.start()
+    return started
+  }
+  const statsOf = (r: ReturnType<typeof createRuns>) => snap(r).live?.stats
+  /** A sample with that progress, arriving at `at`. */
+  const sample = (x: FakeRunner['executions'][number], at: number, done: number, total = 100) => {
+    clock = at
+    x.stats({ progress: { done, total } })
+  }
+
+  it('keeps the latest sample with when it arrived, published at once', async () => {
+    const r = await ready()
+    const { x } = await running(r)
+    expect(snap(r).live).not.toHaveProperty('stats')
+    clock = 10_900
+    x.stats()
+    expect(statsOf(r)).toEqual({ ...FAKE_USAGE, at: 10_900, peak_memory_bytes: FAKE_USAGE.memory_bytes })
+    clock = 11_900
+    x.stats({ cpu_percent: 412, processes: 4, gpu: { percent: 76, name: 'Apple M2 Pro' }, step: 'thermalising' })
+    expect(statsOf(r)).toEqual({
+      ...FAKE_USAGE,
+      cpu_percent: 412,
+      processes: 4,
+      gpu: { percent: 76, name: 'Apple M2 Pro' },
+      step: 'thermalising',
+      at: 11_900,
+      peak_memory_bytes: FAKE_USAGE.memory_bytes,
+    })
+    // A later sample replaces the earlier one whole: a step no longer reported is gone.
+    clock = 12_900
+    x.stats()
+    expect(statsOf(r)).not.toHaveProperty('step')
+    expect(statsOf(r)).not.toHaveProperty('gpu')
+    expect(frames.waiting).toBe(0)
+  })
+  it('remembers the largest memory of this execution', async () => {
+    const r = await ready()
+    const { x } = await running(r)
+    for (const [memory_bytes, peak] of [
+      [100, 100],
+      [900, 900],
+      [300, 900],
+      [1200, 1200],
+      [0, 1200],
+    ] as const) {
+      x.stats({ memory_bytes })
+      expect(statsOf(r)).toMatchObject({ memory_bytes, peak_memory_bytes: peak })
+    }
+  })
+  it('drops a sample it cannot read and keeps the one before', async () => {
+    const r = await ready()
+    const { x } = await running(r)
+    x.stats({ step: 'sweep 1' })
+    const before = snap(r).live
+    x.stats({ memory_bytes: -5 })
+    x.stats({ progress: { done: 1, total: 0 } })
+    x.emit({ type: 'stats' })
+    expect(snap(r).live).toBe(before)
+  })
+  it('has no stats with an app from before M9, whatever else happens', async () => {
+    const r = await ready()
+    const { running: promise, x } = await running(r)
+    x.write('working\n')
+    frames.run()
+    expect(snap(r).live).toEqual({ block: 'r1', branch: 'main-id', state: 'running', output: 'working\n', startedAt: 10_000 })
+    x.done()
+    expect(snap(r).live).toMatchObject({ state: 'saving' })
+    expect(snap(r).live).not.toHaveProperty('stats')
+    await promise
+  })
+  it('keeps nothing from the approval', async () => {
+    const r = await ready()
+    const { x } = await start(r)
+    x.approval()
+    x.stats({ memory_bytes: 9e9 })
+    expect(snap(r).live).toEqual({ block: 'r1', branch: 'main-id', state: 'approval', output: '' })
+    clock = 10_000
+    x.start()
+    expect(snap(r).live).not.toHaveProperty('stats')
+    x.stats({ memory_bytes: 100 })
+    expect(statsOf(r)).toMatchObject({ peak_memory_bytes: 100 })
+  })
+  it('keeps the last sample, as it was, while the result is recorded', async () => {
+    const r = await ready()
+    const { running: promise, x } = await running(r)
+    sample(x, 11_000, 10)
+    sample(x, 15_000, 50)
+    const last = statsOf(r)
+    expect(last).toMatchObject({ eta_ms: 5000 })
+    const gate = deferred()
+    const realFetch = server.fetch
+    vi.stubGlobal('fetch', async (...args: Parameters<typeof realFetch>) => {
+      await gate.promise
+      return realFetch(...args)
+    })
+    clock = 16_000
+    x.done()
+    expect(snap(r).live).toMatchObject({ state: 'saving' })
+    expect(statsOf(r)).toBe(last)
+    x.emit({ type: 'stats', ...FAKE_USAGE, memory_bytes: 5 }) // nothing arrives after `done`
+    expect(statsOf(r)).toBe(last)
+    gate.release()
+    await promise
+    expect(snap(r).live).toBeNull()
+    expect(stored()).not.toHaveProperty('stats')
+    expect(JSON.stringify(opsPosts().at(-1)!.body ?? '')).not.toContain('cpu_percent')
+  })
+  it('starts again with the next execution: no stats, a new peak, a new baseline', async () => {
+    const r = await ready()
+    const first = await running(r)
+    first.x.stats({ memory_bytes: 9000 })
+    sample(first.x, 11_000, 10)
+    sample(first.x, 15_000, 50)
+    first.x.done()
+    await first.running
+    const second = await start(r)
+    expect(snap(r).live).not.toHaveProperty('stats')
+    clock = 20_000
+    second.x.start()
+    expect(snap(r).live).not.toHaveProperty('stats')
+    clock = 21_000
+    second.x.stats({ memory_bytes: 100, progress: { done: 60, total: 100 } })
+    expect(statsOf(r)).toMatchObject({ peak_memory_bytes: 100 })
+    expect(statsOf(r)).not.toHaveProperty('eta_ms') // one second in: neither the baseline nor the start is old enough
+  })
+
+  describe('the time left', () => {
+    it('is absent without progress, and when everything is done', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      clock = 30_000
+      x.stats()
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+      sample(x, 31_000, 40)
+      sample(x, 36_000, 100)
+      expect(statsOf(r)).toMatchObject({ progress: { done: 100, total: 100 } })
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+    })
+    it('comes from the rate since the first sample with progress, once that is 3 s old', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      x.stats() // a sample without progress is not the baseline
+      sample(x, 11_000, 10)
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+      sample(x, 11_000 + ETA_AFTER_MS, 40)
+      // 30 done in 3 s; 60 to go
+      expect(statsOf(r)!.eta_ms).toBe(6000)
+      sample(x, 21_000, 60)
+      // 50 done in 10 s; 40 to go
+      expect(statsOf(r)!.eta_ms).toBe(8000)
+    })
+    it('before the baseline is 3 s old, comes from the rate since the Run started — once that is 3 s ago', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      // 2 s after the start: neither is old enough
+      sample(x, 12_000, 20)
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+      // 3 s after the start, 1 s after the baseline: 25 in 3 s; 75 to go
+      sample(x, 13_000, 25)
+      expect(statsOf(r)!.eta_ms).toBe(9000)
+      // just short of the baseline's 3 s: still the rate since the start (30 in 4.999 s)
+      sample(x, 14_999, 30)
+      expect(statsOf(r)!.eta_ms).toBeCloseTo((70 * 4999) / 30, 6)
+      // the baseline is 3 s old: 20 since it, in 3 s; 60 to go
+      sample(x, 15_000, 40)
+      expect(statsOf(r)!.eta_ms).toBe(9000)
+    })
+    it('falls back to the rate since the start when nothing was done since the baseline', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      clock = 40_000
+      x.stats() // the code reported nothing for 30 s
+      sample(x, 41_000, 50)
+      // the first sample with progress: 50 in 31 s; 50 to go
+      expect(statsOf(r)!.eta_ms).toBe(31_000)
+      sample(x, 46_000, 50)
+      // 5 s later and no further: still the rate since the start
+      expect(statsOf(r)!.eta_ms).toBe(36_000)
+    })
+    it('is absent while nothing is done at all', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      sample(x, 11_000, 0)
+      sample(x, 20_000, 0)
+      expect(statsOf(r)).toMatchObject({ progress: { done: 0, total: 100 } })
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+    })
+    it('starts its baseline again when the total changes', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      sample(x, 11_000, 10)
+      sample(x, 15_000, 50)
+      expect(statsOf(r)!.eta_ms).toBe(5000)
+      // another count begins: 8 of 40, 6 s after the start → the rate since the start (8 in 6 s; 32 to go)
+      sample(x, 16_000, 8, 40)
+      expect(statsOf(r)!.eta_ms).toBe(24_000)
+      // 3 s into the new baseline: 12 since it, in 3 s; 20 to go
+      sample(x, 19_000, 20, 40)
+      expect(statsOf(r)!.eta_ms).toBe(5000)
+    })
+    it('starts its baseline again when done goes down, a sample without progress in between included', async () => {
+      const r = await ready()
+      const { x } = await running(r)
+      sample(x, 11_000, 10)
+      sample(x, 15_000, 80)
+      clock = 16_000
+      x.stats()
+      expect(statsOf(r)).not.toHaveProperty('eta_ms')
+      // back to 20: measured from here, so for now the rate since the start (20 in 7 s; 80 to go)
+      sample(x, 17_000, 20)
+      expect(statsOf(r)!.eta_ms).toBe(28_000)
+      // 4 s into the new baseline: 40 since it; 40 to go
+      sample(x, 21_000, 60)
+      expect(statsOf(r)!.eta_ms).toBe(4000)
+    })
   })
 })
 

@@ -24,6 +24,7 @@ import type {
   QoopRunner,
   RunEvent,
   RunResult,
+  RunUsage,
   ServerFrame,
   Suggestion,
   Todo,
@@ -117,6 +118,9 @@ export function fakeRunResult(code: string, patch: Partial<RunResult> = {}): Run
   return { v: 1, by: ME.id, at: 0, code_sha256: sha256Hex(code), exit: 0, duration_ms: 1200, output: '', figures: [], ...patch }
 }
 
+/** What `FakeExecution.stats()` reports unless told otherwise. */
+export const FAKE_USAGE: RunUsage = { cpu_percent: 96, cores: 10, memory_bytes: 512 * 1024 ** 2, memory_total_bytes: 16 * 1024 ** 3, processes: 1 }
+
 /** One execution inside the fake Runner: what the page asked for, and the handles a test drives it with. */
 export type FakeExecution = {
   request: Parameters<QoopRunner['run']>[0]
@@ -133,6 +137,8 @@ export type FakeExecution = {
   start(): void
   /** An `output` event. */
   write(text: string): void
+  /** A `stats` event (M9): a quiet Run on a 10-core, 16 GB computer with no graphics reading, or what `patch` says. */
+  stats(patch?: Partial<RunUsage>): void
   /** `done` (exit 0, the hash of the code it was given, the output written so far — or what `patch` says), then the promise resolves. */
   done(patch?: Partial<DoneEvent>): void
   /** `error` with that reason, then the promise resolves. */
@@ -203,6 +209,7 @@ export function fakeRunner(options: { python?: { path: string; version: string }
             x.output += text
             x.emit({ type: 'output', text })
           },
+          stats: (patch = {}) => x.emit({ type: 'stats', ...FAKE_USAGE, ...patch }),
           done: (patch = {}) => {
             x.emit({
               type: 'done',
