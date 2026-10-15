@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds dist/Qoop-<version>.dmg: the desktop app as something to install on macOS
+# Builds dist/Sheaf-<version>.dmg: the desktop app as something to install on macOS
 # (docs/specs/release.md, section 1; desktop/README.md, "The macOS package").
 #
 #   scripts/package-macos.sh
@@ -62,7 +62,7 @@ say "Building (release, custom-protocol)"
 built="$app_src/target/release/$binary"
 [ -x "$built" ] || die "the build did not produce $built"
 
-# --- Assemble Qoop.app ------------------------------------------------------------------------
+# --- Assemble Sheaf.app ------------------------------------------------------------------------
 mkdir -p "$dist"
 stage="$(mktemp -d "$dist/.stage.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT

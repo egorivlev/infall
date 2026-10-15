@@ -1,6 +1,6 @@
-# Deploying Qoop on a VPS
+# Deploying Sheaf on a VPS
 
-Qoop is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This guide takes a fresh Debian or Ubuntu VPS to a working server. It needs about an hour.
+Sheaf is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This guide takes a fresh Debian or Ubuntu VPS to a working server. It needs about an hour.
 
 Placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
 
@@ -14,7 +14,7 @@ This guide has been followed, command by command, on a clean Debian 12 in a cont
 
 ## 2. Create the service user and directories
 
-A dedicated user with no login means a bug in Qoop cannot touch anything else on the machine.
+A dedicated user with no login means a bug in Sheaf cannot touch anything else on the machine.
 
 ```sh
 sudo adduser --system --group --no-create-home --home /nonexistent qoop
@@ -143,7 +143,7 @@ sudo systemctl reload caddy
 
 1. Open `https://qoop.example.org` and sign in with the Admin email and password.
 2. As Admin, create an invite for each person: their email, and role Member (the students) or Guest (with an end date, for outside readers such as a professor you only want to give temporary access).
-3. Qoop shows the invite link once, when you create it. Send it to that person over a channel you trust. It works one time and expires after 7 days.
+3. Sheaf shows the invite link once, when you create it. Send it to that person over a channel you trust. It works one time and expires after 7 days.
 4. They open the link, choose a name and a password of at least 12 characters, and are signed in.
 
 There is no open sign-up: nobody gets an account without an invite. To remove someone, delete their account in the people list; their past changes stay attributed to them.
@@ -265,15 +265,15 @@ What this setup does:
 
 - **TLS.** Caddy serves only HTTPS with an automatically renewed certificate, and HSTS tells browsers never to try plain HTTP. Traffic cannot be read or altered on the way.
 - **Invite-only accounts.** There is no sign-up page. Invites work once and expire in 7 days; passwords are stored hashed (Argon2id); repeated wrong logins are rate-limited.
-- **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS. Qoop listens on `127.0.0.1` only, so Caddy is the only way in, and SSH takes keys only.
-- **Contained service.** Qoop runs as an unprivileged user, in a systemd sandbox that can write only to its own database folder.
-- **Automatic security updates** for the operating system (not for Qoop or Caddy: update those yourselves, step 10 and `sudo apt upgrade`).
+- **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS. Sheaf listens on `127.0.0.1` only, so Caddy is the only way in, and SSH takes keys only.
+- **Contained service.** Sheaf runs as an unprivileged user, in a systemd sandbox that can write only to its own database folder.
+- **Automatic security updates** for the operating system (not for Sheaf or Caddy: update those yourselves, step 10 and `sudo apt upgrade`).
 - **Encrypted backups** whose decryption key is not on the server, plus an off-machine copy if you set one up.
 
 What it does not do:
 
 - It is not hardened against a targeted attacker. It stops opportunistic scanning and casual mistakes, not a determined attempt on the box.
-- Whoever administers the VPS can read everything: the database, the running process, and any API keys Members store in Qoop later. Hosting providers have the same technical ability. Do not put in anything you could not accept those people seeing, and keep the number of people with `sudo` and with the provider's account as small as possible.
+- Whoever administers the VPS can read everything: the database, the running process, and any API keys Members store in Sheaf later. Hosting providers have the same technical ability. Do not put in anything you could not accept those people seeing, and keep the number of people with `sudo` and with the provider's account as small as possible.
 - Anyone holding a Member's password or session can read what that Member can. Use a password manager and long unique passwords.
 - Password resets need shell access to the server (see "Forgot a password").
 - Losing the backup private key means losing the backups.

@@ -1,6 +1,6 @@
 # Server hardening checklist
 
-Do these on a fresh VPS before installing Qoop. Run commands as your normal sudo user. Keep your first SSH session open until step 2 is confirmed working from a second terminal, so a mistake cannot lock you out.
+Do these on a fresh VPS before installing Sheaf. Run commands as your normal sudo user. Keep your first SSH session open until step 2 is confirmed working from a second terminal, so a mistake cannot lock you out.
 
 ## 1. Firewall: allow only SSH, HTTP, HTTPS
 
@@ -57,7 +57,7 @@ sudo unattended-upgrade --dry-run -d 2>&1 | tail -n 5
 systemctl list-timers 'apt-daily*'
 ```
 
-Some updates (the kernel) apply only after a reboot. Check now and then: `ls /var/run/reboot-required` (if the file exists, run `sudo reboot` at a quiet moment; Qoop and Caddy start by themselves). Caddy and Qoop are not covered by this; run `sudo apt update && sudo apt upgrade` for Caddy monthly.
+Some updates (the kernel) apply only after a reboot. Check now and then: `ls /var/run/reboot-required` (if the file exists, run `sudo reboot` at a quiet moment; Sheaf and Caddy start by themselves). Caddy and Sheaf are not covered by this; run `sudo apt update && sudo apt upgrade` for Caddy monthly.
 
 ## 4. Confirm nothing else listens publicly
 
@@ -67,7 +67,7 @@ Why: this is the real test that the firewall and the loopback-only setting do wh
 sudo ss -tlnp
 ```
 
-Expected after Qoop is installed:
+Expected after Sheaf is installed:
 
 - `0.0.0.0:22` / `[::]:22` (sshd), `*:80` and `*:443` (caddy): public, intended.
 - `127.0.0.1:8787` (qoop-server): local only, intended.

@@ -1,6 +1,6 @@
 # /etc/systemd/system/qoop-backup.service
 [Unit]
-Description=Qoop encrypted database backup
+Description=Sheaf encrypted database backup
 After=network-online.target
 
 [Service]

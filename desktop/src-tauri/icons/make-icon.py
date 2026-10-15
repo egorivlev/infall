@@ -5,8 +5,8 @@ Only needed when the icon itself is to be changed; packaging does not run it
 (scripts/package-macos.sh makes the .icns from the committed icon-1024.png).
 Needs Pillow:  python3 make-icon.py
 
-The mark is the one of web/src/ui/shell/Logo.tsx (18-unit grid: a ring, the accent dot,
-the tail), in the dark theme's colours of design/qoop-theme.css, on a tile laid out on
+The mark is the one of web/src/ui/shell/Logo.tsx (18-unit grid: three stalks bound by
+an accent band), in the dark theme's colours of design/qoop-theme.css, on a tile laid out on
 Apple's macOS icon grid (824 pt tile in a 1024 pt canvas, transparent margin).
 After changing it, also refresh the 256 px copy Tauri embeds:
     sips -z 256 256 icon-1024.png --out icon.png
@@ -83,13 +83,21 @@ def main():
         d.ellipse((x - r * u, y - r * u, x + r * u, y + r * u), fill=fill)
 
     stroke = 1.4
-    x, y = pt(9, 9)
-    ro = (7.2 + stroke / 2) * u
-    d.ellipse((x - ro, y - ro, x + ro, y + ro), outline=INK, width=round(stroke * u))
-    d.line((pt(12.6, 12.6), pt(16, 16)), fill=INK, width=round(stroke * u))
-    disc(12.6, 12.6, stroke / 2, INK)
-    disc(16, 16, stroke / 2, INK)
-    disc(11.6, 6.4, 1.9, ACCENT)
+
+    def stalk(p0, p1, p2, p3):
+        """A cubic curve with round ends, drawn as overlapping discs."""
+        steps = 400
+        for i in range(steps + 1):
+            t = i / steps
+            m = 1 - t
+            x = m**3 * p0[0] + 3 * m * m * t * p1[0] + 3 * m * t * t * p2[0] + t**3 * p3[0]
+            y = m**3 * p0[1] + 3 * m * m * t * p1[1] + 3 * m * t * t * p2[1] + t**3 * p3[1]
+            disc(x, y, stroke / 2, INK)
+
+    stalk((4.5, 2), (7.2, 6.5), (7.2, 11.5), (4.5, 16))
+    stalk((9, 2), (9, 6.67), (9, 11.33), (9, 16))
+    stalk((13.5, 2), (10.8, 6.5), (10.8, 11.5), (13.5, 16))
+    d.rounded_rectangle((pt(4.6, 7.4), pt(13.4, 10.6)), radius=1 * u, fill=ACCENT)
 
     tile = tile.resize((SIZE, SIZE), Image.LANCZOS)
 

@@ -1,6 +1,6 @@
-# Qoop desktop app
+# Sheaf desktop app
 
-A thin [Tauri v2](https://v2.tauri.app/) shell around the web UI that the Qoop server serves. It adds two things: the AI sidebar can run on the Member's own Claude Code (M7), and the **Runner** executes Runs on the Member's own computer (M8; see [The Runner](#the-runner) and [its security model](#the-runners-security-model-in-plain-words)). The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md) and [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md).
+A thin [Tauri v2](https://v2.tauri.app/) shell around the web UI that the Sheaf server serves. It adds two things: the AI sidebar can run on the Member's own Claude Code (M7), and the **Runner** executes Runs on the Member's own computer (M8; see [The Runner](#the-runner) and [its security model](#the-runners-security-model-in-plain-words)). The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md) and [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md).
 
 ```
 desktop/
@@ -47,7 +47,7 @@ cd desktop/src-tauri
 cargo run
 ```
 
-On first start the app asks for the server address: enter `http://localhost:8787`. It checks `GET /api/health`, saves the address (macOS: `~/Library/Application Support/app.qoop.desktop/config.json`) and shows the server's UI. Later starts go straight there. **Qoop → Change Server…** brings the first-run screen back.
+On first start the app asks for the server address: enter `http://localhost:8787`. It checks `GET /api/health`, saves the address (macOS: `~/Library/Application Support/app.qoop.desktop/config.json`) and shows the server's UI. Later starts go straight there. **Sheaf → Change Server…** brings the first-run screen back.
 
 Checks:
 
@@ -70,7 +70,7 @@ To use a different `claude` (tests do this with the stub): `QOOP_CLAUDE_BIN=/pat
 
 ## The macOS package
 
-`scripts/package-macos.sh` (run from anywhere in a clean checkout) builds `dist/Qoop-<version>.dmg` and prints its SHA-256. `dist/` is not kept in git.
+`scripts/package-macos.sh` (run from anywhere in a clean checkout) builds `dist/Sheaf-<version>.dmg` and prints its SHA-256. `dist/` is not kept in git.
 
 ```sh
 scripts/package-macos.sh
@@ -80,9 +80,9 @@ It needs what building the app needs (Rust, the Xcode Command Line Tools) and no
 
 1. Reads the version from `src-tauri/Cargo.toml` and the name, identifier and oldest supported macOS from `src-tauri/tauri.conf.json`. It stops if the two files disagree about the version.
 2. `cargo build --release --locked --features custom-protocol`, with the `[profile.release]` of `Cargo.toml`: symbols stripped, thin LTO, one codegen unit. This is for size only (a 9 MB program, a 4 MB disk image); optimisation level and panic behaviour are cargo's defaults.
-3. Puts `Qoop.app` together by hand: the program in `Contents/MacOS/`, `Contents/Info.plist` (identifier `app.qoop.desktop`, version, `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category Productivity), and `Contents/Resources/Qoop.icns` made from `src-tauri/icons/icon-1024.png` with `sips` and `iconutil`. Nothing else is in the bundle: the pages of `desktop/ui`, `bridge.js` and `runner.py` are inside the program, and it links only against libraries macOS ships.
+3. Puts `Sheaf.app` together by hand: the program in `Contents/MacOS/`, `Contents/Info.plist` (identifier `app.qoop.desktop`, version, `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category Productivity), and `Contents/Resources/Sheaf.icns` made from `src-tauri/icons/icon-1024.png` with `sips` and `iconutil`. Nothing else is in the bundle: the pages of `desktop/ui`, `bridge.js` and `runner.py` are inside the program, and it links only against libraries macOS ships.
 4. Signs it ad hoc (`codesign --sign -`), without entitlements and without the hardened runtime, and verifies the signature.
-5. Makes a compressed disk image holding `Qoop.app` and a link to `/Applications`, and verifies it.
+5. Makes a compressed disk image holding `Sheaf.app` and a link to `/Applications`, and verifies it.
 
 **Oldest macOS: 11.0** (`bundle.macOS.minimumSystemVersion` in `tauri.conf.json`; the build and the `Info.plist` both take it from there). The package is built for the kind of Mac it is built on, here Apple silicon, and no Apple silicon Mac runs anything older than macOS 11; it is also the oldest version Rust itself builds for on Apple silicon. Tauri's own default (10.13) would only matter for an Intel build. Run and tested on macOS 26.5 only; see "Unverified".
 
@@ -92,28 +92,28 @@ It needs what building the app needs (Rust, the Xcode Command Line Tools) and no
 
 ### Installing it (for a Member)
 
-1. Get `Qoop-<version>.dmg` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare: `shasum -a 256 ~/Downloads/Qoop-<version>.dmg`.
-2. Open the `.dmg` and drag **Qoop** onto **Applications**. Eject the disk image.
-3. Open Qoop from Applications. The first time, macOS refuses (see below). After you have allowed it once, it opens like any other app.
-4. Qoop asks for the address of your team's server; your Admin has it.
+1. Get `Sheaf-<version>.dmg` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare: `shasum -a 256 ~/Downloads/Sheaf-<version>.dmg`.
+2. Open the `.dmg` and drag **Sheaf** onto **Applications**. Eject the disk image.
+3. Open Sheaf from Applications. The first time, macOS refuses (see below). After you have allowed it once, it opens like any other app.
+4. Sheaf asks for the address of your team's server; your Admin has it.
 
-### The first start: allowing Qoop once
+### The first start: allowing Sheaf once
 
-A file that came from the internet is marked by macOS, and macOS only opens marked apps that Apple has checked ("notarised") for a developer with a paid Apple account. Qoop is not: nobody has paid for that account yet. So the first start is stopped with a warning that Apple could not verify Qoop (the sentence differs between macOS versions), with the buttons **Done** and **Move to Trash**. Click **Done**, then, on macOS 15 and 26:
+A file that came from the internet is marked by macOS, and macOS only opens marked apps that Apple has checked ("notarised") for a developer with a paid Apple account. Sheaf is not: nobody has paid for that account yet. So the first start is stopped with a warning that Apple could not verify Sheaf (the sentence differs between macOS versions), with the buttons **Done** and **Move to Trash**. Click **Done**, then, on macOS 15 and 26:
 
 1. Choose Apple menu > **System Settings**, then click **Privacy & Security** in the sidebar.
-2. Scroll down to **Security**. There is a line saying Qoop was blocked. Click the button next to it (**Open Anyway**; Apple's own page for macOS 26 calls it **Open**, followed by **Open Anyway**). The button is only there for about an hour after you tried to open Qoop; if it is gone, try to open Qoop again.
+2. Scroll down to **Security**. There is a line saying Sheaf was blocked. Click the button next to it (**Open Anyway**; Apple's own page for macOS 26 calls it **Open**, followed by **Open Anyway**). The button is only there for about an hour after you tried to open Sheaf; if it is gone, try to open Sheaf again.
 3. Enter your login password (or use Touch ID) when asked, and confirm that you want to open it.
 
-This is needed once per installed copy, so again after installing a new version. On macOS 14 and older, Control-click Qoop in Applications, choose **Open**, then **Open** again; on macOS 15 and newer that shortcut no longer exists. Apple's description: [Open a Mac app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
+This is needed once per installed copy, so again after installing a new version. On macOS 14 and older, Control-click Sheaf in Applications, choose **Open**, then **Open** again; on macOS 15 and newer that shortcut no longer exists. Apple's description: [Open a Mac app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
 
-If no warning appears at all, the file reached you without the mark (for example from a shared folder); nothing is wrong. If macOS says Qoop "is damaged", do not look for a way around it: the file changed on the way; get it again and compare the SHA-256.
+If no warning appears at all, the file reached you without the mark (for example from a shared folder); nothing is wrong. If macOS says Sheaf "is damaged", do not look for a way around it: the file changed on the way; get it again and compare the SHA-256.
 
 **What the warning means.** Apple has not looked at this app and does not know who made it. macOS cannot tell you whether it is the app your team built. That is all.
 
-**What it does not mean.** It does not mean macOS found something harmful. And allowing it does not switch anything off for other apps: the exception is for this one copy of Qoop.
+**What it does not mean.** It does not mean macOS found something harmful. And allowing it does not switch anything off for other apps: the exception is for this one copy of Sheaf.
 
-**What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: the ad hoc signature inside the app only makes it startable on Apple silicon; anyone can make one, and it proves nothing about where the app came from. Do not allow a Qoop that reached you some other way.
+**What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: the ad hoc signature inside the app only makes it startable on Apple silicon; anyone can make one, and it proves nothing about where the app came from. Do not allow a Sheaf that reached you some other way.
 
 ## What is where: Tauri mechanisms used
 
@@ -183,10 +183,10 @@ with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` 
 | `--include-partial-messages` | Text arrives as it is written (→ `delta`). |
 | `--verbose` | Older versions required it with `stream-json` in print mode. 2.1.265 does not mention it; it is kept for those. |
 | `--input-format text` | The prompt on standard input is plain text (the default, made explicit). |
-| `--mcp-config <file>` | The Qoop tool endpoint: `{"mcpServers":{"qoop":{"type":"http","url":"<origin>/mcp","headers":{"Authorization":"Bearer <token>"}}}}`. The **token is only in this file**, never on the command line. The file is created with mode `0600` in a `0700` folder and deleted when the run ends, however it ends. |
+| `--mcp-config <file>` | The Sheaf tool endpoint: `{"mcpServers":{"qoop":{"type":"http","url":"<origin>/mcp","headers":{"Authorization":"Bearer <token>"}}}}`. The **token is only in this file**, never on the command line. The file is created with mode `0600` in a `0700` folder and deleted when the run ends, however it ends. |
 | `--strict-mcp-config` | Only the servers in that file; the Member's own MCP servers are not loaded. |
 | `--tools ""` | **Disables every built-in tool** (shell, file read/write/edit, web fetch, sub-agents, …). |
-| `--allowedTools mcp__qoop__…` | The eight Qoop tools may run without a permission prompt. |
+| `--allowedTools mcp__qoop__…` | The eight Sheaf tools may run without a permission prompt. |
 | `--permission-prompts none` | Anything that would ask for permission is refused: nobody is there to answer. |
 | `--permission-mode dontAsk` | The permission mode that does not ask. Together with the line above: what is not on the allow list does not run. |
 | `--setting-sources ""` | Loads none of the user, project and local settings files, and so none of the hooks, plugins, permissions and environment they configure. |
@@ -200,7 +200,7 @@ with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` 
 Deliberately **not** used:
 
 - `--bare`: it would switch off everything, but also the Member's login (it only accepts an API key), which is the whole point.
-- `--safe-mode`: it also drops the servers given with `--mcp-config` (seen in the code of 2.1.265: in safe mode only SDK-type servers are kept), so the Qoop tools would be gone.
+- `--safe-mode`: it also drops the servers given with `--mcp-config` (seen in the code of 2.1.265: in safe mode only SDK-type servers are kept), so the Sheaf tools would be gone.
 - `--no-session-persistence`: `resume` needs the session on disk.
 - `--dangerously-skip-permissions` or any bypass mode: never.
 
@@ -222,7 +222,7 @@ What the server's page can do (`window.qoopDesktop.runner`): read which interpre
 
 What happens on `run({ id, code, title }, onEvent)`:
 
-1. **Is there a Python?** The interpreter is the one chosen in **Qoop → Runner settings…**. Nothing is chosen until the Member chooses: the first Run opens that window, and gets `error`/`no_python` if it is closed without a choice.
+1. **Is there a Python?** The interpreter is the one chosen in **Sheaf → Runner settings…**. Nothing is chosen until the Member chooses: the first Run opens that window, and gets `error`/`no_python` if it is closed without a choice.
 2. **Approval.** If exactly this code (by SHA-256) was approved before for this server, it goes straight on. Otherwise the page gets `approval` and the app opens its own window: the Run's title, the server, the interpreter, the folder, and the complete code with line numbers. "Don't run" is the default button; closing the window, Escape, and the page going away all mean "Don't run" (`error`/`declined`). "Run on this computer" becomes available once the code has been scrolled to its end and has been on screen for a second.
 3. **Execution.** The approved text is written to `main.py` in a new temporary directory (mode `0700`, files `0600`) and started as `<python> -u -X utf8 runner.py main.py` in a process group of its own. The working directory is the folder from the settings, or the temporary directory. The environment is the Member's shell environment plus `MPLBACKEND=Agg`, `PYTHONUNBUFFERED=1`, `PYTHONIOENCODING=utf-8` and `QOOP_RUN_DIR`. The page gets `started`, then `output` events (at most about ten a second, each at most 16 000 characters), then `done`.
 4. **Afterwards** the temporary directory is removed and whatever the code left running in its process group is killed.
@@ -326,7 +326,7 @@ Not verified:
 
 ## Unverified: the macOS package (M10)
 
-Verified on the machine it was built on (Apple silicon, macOS 26.5): the script runs from the working tree to a `.dmg`; `codesign --verify --deep --strict`, `plutil -lint` and `hdiutil verify` pass; the image holds `Qoop.app` and the link to `/Applications`; the program's oldest macOS is 11.0 (`vtool -show-build`) and it has no entitlements; the app copied out of the image starts from the Finder's launcher (`open`) with an isolated home folder, stays up and logs nothing, and writes its data only inside that home; started with a saved address of a local stand-in server over plain `http://localhost`, its main window loaded the page and `window.qoopDesktop` was there with version 0.1.0. `spctl --assess --type execute` says **rejected**, as it does for every ad hoc signed app: that is the verdict behind the first-start warning.
+Verified on the machine it was built on (Apple silicon, macOS 26.5): the script runs from the working tree to a `.dmg`; `codesign --verify --deep --strict`, `plutil -lint` and `hdiutil verify` pass; the image holds `Sheaf.app` and the link to `/Applications`; the program's oldest macOS is 11.0 (`vtool -show-build`) and it has no entitlements; the app copied out of the image starts from the Finder's launcher (`open`) with an isolated home folder, stays up and logs nothing, and writes its data only inside that home; started with a saved address of a local stand-in server over plain `http://localhost`, its main window loaded the page and `window.qoopDesktop` was there with version 0.1.0. `spctl --assess --type execute` says **rejected**, as it does for every ad hoc signed app: that is the verdict behind the first-start warning.
 
 Not verified:
 
