@@ -15,14 +15,14 @@
 </helmet>
 <div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
   <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
-    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — Guest view, Login, Member settings</span>
+    <span style="font:600 28px 'Source Serif 4',serif;">Sheaf — Guest view, Login, Member settings</span>
     <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 10, 11 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Team.dc.html">To-dos, History, Branches</a> · <a href="Qoop Merge.dc.html">Merge</a></span>
   </div>
 
   <div id="10a" data-screen-label="10a Guest view" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">10a</span><span style="font-size:15px;font-weight:600;">Guest — read-only Board and Page</span><span style="font-size:13px;color:var(--q-ink-3);">No Branch switching, Checkpoints, History, To-dos, Suggestions, AI or Run. Visuals stay interactive.</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" guest="{{ true }}" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" guest="{{ true }}" hint-size="100%,66px"></dc-import></div>
       <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" guest="{{ true }}" hint-size="224px,100%"></dc-import></div>
       <div style="position:relative;overflow:hidden;">
         <dc-import name="QBoardCanvas" guest="{{ true }}" highlight="17" zoom="{{ 0.7 }}" cx="{{ 820 }}" cy="{{ 700 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import>
@@ -36,12 +36,12 @@
     <div style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;background-color:var(--q-canvas);background-image:radial-gradient(var(--q-grid) 1px, transparent 1.3px);background-size:20px 20px;display:flex;align-items:center;justify-content:center;">
       <div style="width:380px;display:flex;flex-direction:column;gap:22px;padding:32px 32px 26px;border-radius:8px;border:1px solid var(--q-line);background:var(--q-surface);box-shadow:var(--q-shadow);">
         <div style="display:flex;align-items:center;gap:10px;">
-          <svg width="26" height="26" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7.2" stroke="var(--q-ink)" stroke-width="1.3"></circle><circle cx="11.6" cy="6.4" r="1.9" fill="var(--q-accent)"></circle><path d="M12.6 12.6 L16 16" stroke="var(--q-ink)" stroke-width="1.3" stroke-linecap="round"></path></svg>
-          <span style="font-weight:600;font-size:18px;">Qoop</span>
+          <svg width="26" height="26" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 2 C7.2 6.5 7.2 11.5 4.5 16" stroke="var(--q-ink)" stroke-width="1.4" stroke-linecap="round"></path><path d="M9 2 V16" stroke="var(--q-ink)" stroke-width="1.4" stroke-linecap="round"></path><path d="M13.5 2 C10.8 6.5 10.8 11.5 13.5 16" stroke="var(--q-ink)" stroke-width="1.4" stroke-linecap="round"></path><rect x="4.6" y="7.4" width="8.8" height="3.2" rx="1" fill="var(--q-accent)"></rect></svg>
+          <span style="font-weight:600;font-size:18px;">Sheaf</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <span style="font:600 22px 'Source Serif 4',serif;">Sign in to QEC Lab</span>
-          <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">qoop.qec-lab.local · self-hosted · v0.9.2</span>
+          <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">sheaf.qec-lab.local · self-hosted · v0.9.2</span>
         </div>
         <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--q-ink-2);">Email
           <input value="mei.lin@qec-lab.org" style="height:36px;padding:0 11px;border-radius:5px;border:1px solid var(--q-line);background:var(--q-sunken);color:var(--q-ink);font:14px 'IBM Plex Sans',sans-serif;outline:none;">
@@ -60,8 +60,8 @@
 
   <div id="11b" data-screen-label="11b Member settings" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">11b</span><span style="font-size:15px;font-weight:600;">Member settings — Mei Lin</span><span style="font-size:13px;color:var(--q-ink-3);">AI key is optional and shows only its last four characters.</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,66px"></dc-import></div>
       <div style="background:var(--q-chrome);border-right:1px solid var(--q-chrome-line);padding:16px 8px;display:flex;flex-direction:column;gap:1px;font-size:13px;">
         <div style="padding:4px 10px 10px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Settings</div>
         <div style="padding:7px 10px;border-radius:5px;color:var(--q-ink-2);">Profile</div>
@@ -86,7 +86,7 @@
           <div style="height:1px;background:var(--q-line-soft);"></div>
           <div style="display:flex;flex-direction:column;gap:16px;">
             <div style="display:flex;align-items:baseline;gap:10px;"><span style="font:600 18px 'Source Serif 4',serif;">AI</span><span style="font-size:12px;color:var(--q-ink-3);">optional</span></div>
-            <span style="font-size:13px;line-height:1.55;color:var(--q-ink-2);text-wrap:pretty;">Qoop works fully without AI. In the desktop app the AI sidebar and Suggestions run on your own Claude subscription, through Claude Code on your machine — nothing to set here. An OpenRouter key is optional: it adds other models, and makes AI work in the browser.</span>
+            <span style="font-size:13px;line-height:1.55;color:var(--q-ink-2);text-wrap:pretty;">Sheaf works fully without AI. In the desktop app the AI sidebar and Suggestions run on your own Claude subscription, through Claude Code on your machine — nothing to set here. An OpenRouter key is optional: it adds other models, and makes AI work in the browser.</span>
             <div style="display:grid;grid-template-columns:140px 1fr;gap:14px 16px;align-items:center;font-size:13px;">
               <span style="color:var(--q-ink-2);">Provider</span>
               <span style="height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-radius:4px;border:1px solid var(--q-line);background:var(--q-sunken);max-width:280px;">OpenRouter</span>
@@ -103,7 +103,7 @@
             </div>
             <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:6px;border:1px solid var(--q-line-soft);background:var(--q-surface);font-size:12.5px;line-height:1.5;color:var(--q-ink-2);">
               <svg width="13" height="14" viewBox="0 0 12 13" fill="none" stroke="currentColor" stroke-width="1.2" style="flex:none;margin-top:2px;"><rect x="1.5" y="5.5" width="9" height="6.5" rx="1"></rect><path d="M3.5 5.5 V3.8 A2.5 2.5 0 0 1 8.5 3.8 V5.5"></path></svg>
-              <span>Your key is stored encrypted on qoop.qec-lab.local and is never shown in full again. Your Conversations are private — Members and Guests only see answers you Pin.</span>
+              <span>Your key is stored encrypted on sheaf.qec-lab.local and is never shown in full again. Your Conversations are private — Members and Guests only see answers you Pin.</span>
             </div>
           </div>
         </div>
@@ -113,8 +113,8 @@
 
   <div id="11c" data-screen-label="11c Admin invite" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">11c</span><span style="font-size:15px;font-weight:600;">Members &amp; invites — Admin only (Elena)</span><span style="font-size:13px;color:var(--q-ink-3);">Switch the invite role to Guest to set an access end date.</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,66px"></dc-import></div>
       <div style="background:var(--q-chrome);border-right:1px solid var(--q-chrome-line);padding:16px 8px;display:flex;flex-direction:column;gap:1px;font-size:13px;">
         <div style="padding:4px 10px 10px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Settings</div>
         <div style="padding:7px 10px;border-radius:5px;color:var(--q-ink-2);">Profile</div>

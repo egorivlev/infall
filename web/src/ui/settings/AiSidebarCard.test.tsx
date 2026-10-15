@@ -198,7 +198,7 @@ describe('AI sidebar card: the environment', () => {
   it('has the small print, naming this host', () => {
     open(NO_KEY)
     expect(document.querySelector('.q-ai__small')).toHaveTextContent(
-      `Your key is stored encrypted on ${window.location.host} and is never shown again. The server sends your question, and what the AI reads through Qoop's tools, to OpenRouter. Conversations are kept only on this device.`,
+      `Your key is stored encrypted on ${window.location.host} and is never shown again. The server sends your question, and what the AI reads through Sheaf's tools, to OpenRouter. Conversations are kept only on this device.`,
     )
   })
 })

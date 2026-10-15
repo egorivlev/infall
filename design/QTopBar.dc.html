@@ -1,97 +1,208 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheaf top bar</title>
 <script src="./support.js"></script>
 </head>
 <body>
 <x-dc>
-<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./qoop-theme.css"></helmet>
-<div style="position:relative;height:44px;display:flex;align-items:center;gap:8px;padding:0 10px 0 0;background:var(--q-chrome);border-bottom:1px solid var(--q-chrome-line);box-sizing:border-box;color:var(--q-ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;">
-  <sc-if value="{{ notMain }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--q-branch);"></div></sc-if>
-  <div style="width:224px;box-sizing:border-box;padding-left:14px;display:flex;align-items:center;gap:9px;height:100%;border-right:1px solid var(--q-chrome-line);flex:none;">
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7.2" stroke="var(--q-ink)" stroke-width="1.4"></circle><circle cx="11.6" cy="6.4" r="1.9" fill="var(--q-accent)"></circle><path d="M12.6 12.6 L16 16" stroke="var(--q-ink)" stroke-width="1.4" stroke-linecap="round"></path></svg>
-    <span style="font-weight:600;letter-spacing:.01em;">Qoop</span>
-    <span style="color:var(--q-ink-3);font-size:12px;">QEC Lab</span>
-  </div>
-  <sc-if value="{{ notGuest }}" hint-placeholder-val="{{ true }}">
-    <div style="position:relative;display:flex;align-items:center;gap:6px;">
-      <button onClick="{{ toggleSwitcher }}" title="Switch Branch" style="white-space:nowrap;display:flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 8px;border-radius:5px;border:1px solid var(--q-cur-branch);background:{{ pillBg }};color:var(--q-ink);font:inherit;cursor:pointer;">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--q-cur-branch)" stroke-width="1.4" stroke-linecap="round"><circle cx="3.5" cy="3" r="1.6"></circle><circle cx="3.5" cy="11" r="1.6"></circle><circle cx="10.5" cy="5" r="1.6"></circle><path d="M3.5 4.6 V9.4 M10.5 6.6 C10.5 9 3.5 8 3.5 9.4"></path></svg>
-        <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Branch</span>
-        <span style="font:600 13px/1 'IBM Plex Mono',monospace;color:var(--q-cur-branch);">{{ branch }}</span>
-        <sc-if value="{{ notMain }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:var(--q-ink-2);">from main · 14 Nov</span></sc-if>
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--q-ink-3)" stroke-width="1.4"><path d="M2 3.5 L5 6.5 L8 3.5"></path></svg>
-      </button>
-      <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
-        <div style="position:absolute;top:36px;left:0;width:340px;z-index:50;background:var(--q-raised);border:1px solid var(--q-line);border-radius:7px;box-shadow:var(--q-shadow);padding:6px;display:flex;flex-direction:column;gap:2px;">
-          <div style="padding:6px 8px 4px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Branches</div>
-          <sc-for list="{{ branches }}" as="b" hint-placeholder-count="3">
-            <div style="display:grid;grid-template-columns:16px 1fr auto;align-items:center;gap:8px;padding:7px 8px;border-radius:5px;background:{{ b.bg }};">
-              <span style="font-size:12px;color:var(--q-accent);">{{ b.check }}</span>
-              <div style="display:flex;flex-direction:column;gap:2px;">
-                <span style="font:500 13px/1.2 'IBM Plex Mono',monospace;color:{{ b.color }};">{{ b.name }}</span>
-                <span style="font-size:11px;color:var(--q-ink-3);">{{ b.meta }}</span>
-              </div>
-              <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">{{ b.ahead }}</span>
-            </div>
-          </sc-for>
-          <div style="height:1px;background:var(--q-line-soft);margin:4px 2px;"></div>
-          <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">New Branch from now…</div>
-          <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">New Branch from a Checkpoint…</div>
-          <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">Compare and Merge…</div>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="./qoop-theme.css">
+<style>
+  .qt-m{height:24px;padding:0 9px;border:0;border-radius:4px;background:transparent;color:var(--q-ink);font:12.5px 'IBM Plex Sans',sans-serif;cursor:pointer;white-space:nowrap}
+  .qt-m:hover,.qt-m[aria-expanded="true"]{background:var(--q-hover)}
+  .qt-b{display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--q-ink);font:13px 'IBM Plex Sans',sans-serif;cursor:pointer;white-space:nowrap}
+  .qt-b:hover{background:var(--q-hover)}
+  .qt-i{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--q-ink-2);cursor:pointer;padding:0}
+  .qt-i:hover:not(:disabled){background:var(--q-hover);color:var(--q-ink)}
+  .qt-i:disabled{opacity:.4;cursor:default}
+  .qt-mi{display:flex;width:100%;justify-content:space-between;align-items:center;gap:28px;padding:6px 10px;border:0;border-radius:4px;background:transparent;color:var(--q-ink);font:12.5px 'IBM Plex Sans',sans-serif;text-align:left;cursor:pointer;white-space:nowrap}
+  .qt-mi:hover{background:var(--q-hover)}
+  .qt-search{display:flex;align-items:center;gap:8px;width:100%;max-width:380px;height:22px;padding:0 8px;border-radius:4px;background:var(--q-sunken);border:1px solid var(--q-chrome-line);color:var(--q-ink-3);font:12px 'IBM Plex Sans',sans-serif;cursor:text;box-sizing:border-box}
+  .qt-search:hover{border-color:var(--q-line)}
+  .qt-drag{-webkit-app-region:drag;app-region:drag}
+  .qt-drag button,.qt-drag nav{-webkit-app-region:no-drag;app-region:no-drag}
+  .qt-wc{width:46px;display:flex;align-items:center;justify-content:center;border:0;padding:0;background:transparent;color:var(--q-ink-2);cursor:default}
+  .qt-wc:hover{background:var(--q-hover);color:var(--q-ink)}
+  .qt-wc.qt-close:hover{background:#c42b1c;color:#fff}
+  .qt-wc:focus-visible,.qt-m:focus-visible,.qt-b:focus-visible,.qt-i:focus-visible,.qt-mi:focus-visible,.qt-search:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
+</style>
+</helmet>
+<div ref="{{ setRoot }}" style="position:relative;height:66px;display:flex;flex-direction:column;box-sizing:border-box;color:var(--q-ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;">
+  <sc-if value="{{ notMain }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--q-branch);z-index:2;"></div></sc-if>
+
+  <!-- Row 1: window title bar (macOS traffic lights or Windows menus + caption buttons live here) -->
+  <div class="qt-drag" style="height:30px;flex:none;box-sizing:border-box;display:flex;align-items:center;padding-right:{{ row1PadR }};background:color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken));border-bottom:1px solid var(--q-chrome-line);">
+    <div style="width:224px;box-sizing:border-box;padding-left:{{ logoPadL }};display:flex;align-items:center;gap:8px;height:100%;border-right:1px solid var(--q-chrome-line);flex:none;">
+      <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
+        <div aria-hidden="true" style="display:flex;align-items:center;gap:8px;margin-right:10px;flex:none;">
+          <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,.22);"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#febc2e;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,.22);"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#28c840;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,.22);"></span>
         </div>
       </sc-if>
-      <button title="Create a named Checkpoint of this Branch" style="white-space:nowrap;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:5px;border:1px solid var(--q-chrome-line);background:transparent;color:var(--q-ink);font:inherit;cursor:pointer;">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M6 1 L11 6 L6 11 L1 6 Z"></path><circle cx="6" cy="6" r="1.2" fill="currentColor"></circle></svg>Checkpoint
-      </button>
-      <button title="History" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:5px;border:1px solid {{ histBorder }};background:{{ histBg }};color:var(--q-ink);font:inherit;cursor:pointer;">
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="6.5" cy="6.5" r="5"></circle><path d="M6.5 3.5 V6.5 L8.6 7.8"></path></svg>History
-      </button>
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 2 C7.2 6.5 7.2 11.5 4.5 16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 2 V16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><path d="M13.5 2 C10.8 6.5 10.8 11.5 13.5 16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><rect x="4.6" y="7.4" width="8.8" height="3.2" rx="1" fill="var(--q-accent)"></rect></svg>
+      <span style="font-weight:600;letter-spacing:.01em;">Sheaf</span>
+      <span style="color:var(--q-ink-3);font-size:12px;white-space:nowrap;">QEC Lab</span>
     </div>
-  </sc-if>
-  <sc-if value="{{ guest }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;align-items:center;gap:10px;padding-left:4px;">
-      <span style="font:600 13px 'IBM Plex Mono',monospace;color:var(--q-ink);">main</span>
-      <span style="font-size:12px;color:var(--q-ink-3);">read-only</span>
-    </div>
-  </sc-if>
-  <div style="flex:1;display:flex;justify-content:center;min-width:0;">
-    <div style="width:100%;max-width:380px;height:28px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:5px;background:var(--q-sunken);border:1px solid var(--q-chrome-line);color:var(--q-ink-3);box-sizing:border-box;">
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5.6" cy="5.6" r="4"></circle><path d="M8.6 8.6 L12 12"></path></svg>
-      <span style="flex:1;font-size:12.5px;">Search Cards, Pages, Sources</span>
-      <span style="font:11px 'IBM Plex Mono',monospace;border:1px solid var(--q-line);border-radius:3px;padding:1px 4px;">⌘K</span>
-    </div>
-  </div>
-  <sc-if value="{{ guest }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:5px;border:1px solid var(--q-st-question);color:var(--q-ink);font-size:12.5px;">
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--q-st-question)" stroke-width="1.3"><circle cx="6" cy="4" r="2.2"></circle><path d="M1.8 11 C2.4 8 9.6 8 10.2 11"></path></svg>
-      <span style="font-weight:600;">Guest</span><span style="color:var(--q-ink-2);">— access until 30 Nov</span>
-    </div>
-  </sc-if>
-  <div style="display:flex;align-items:center;gap:8px;">
-    <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">{{ presenceLabel }}</span>
-    <div style="display:flex;">
-      <sc-for list="{{ presence }}" as="p" hint-placeholder-count="3">
-        <span title="{{ p.name }}" style="width:24px;height:24px;margin-left:-5px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 10px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:{{ p.bg }};box-shadow:0 0 0 2px var(--q-chrome);">{{ p.i }}</span>
+    <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
+    <nav aria-label="Application menu" style="display:flex;align-items:center;gap:1px;padding-left:6px;flex:none;">
+      <sc-for list="{{ menus }}" as="m" hint-placeholder-count="7">
+        <div style="position:relative;">
+          <button type="button" class="qt-m" aria-haspopup="menu" aria-expanded="{{ m.expanded }}" onClick="{{ m.toggle }}" onMouseEnter="{{ m.hover }}">{{ m.name }}</button>
+          <sc-if value="{{ m.isOpen }}" hint-placeholder-val="{{ false }}">
+            <div role="menu" aria-label="{{ m.name }}" style="position:absolute;top:27px;left:0;min-width:236px;z-index:60;background:var(--q-raised);border:1px solid var(--q-line);border-radius:6px;box-shadow:var(--q-shadow);padding:4px;display:flex;flex-direction:column;">
+              <sc-for list="{{ m.items }}" as="it" hint-placeholder-count="4">
+                <sc-if value="{{ it.sep }}" hint-placeholder-val="{{ false }}"><div role="separator" style="height:1px;background:var(--q-line-soft);margin:4px 2px;"></div></sc-if>
+                <sc-if value="{{ it.notSep }}" hint-placeholder-val="{{ true }}">
+                  <button type="button" role="menuitem" class="qt-mi" onClick="{{ it.click }}"><span>{{ it.label }}</span><span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">{{ it.key }}</span></button>
+                </sc-if>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
       </sc-for>
+    </nav>
+    </sc-if>
+    <div style="flex:1;display:flex;justify-content:center;min-width:0;padding:0 16px;">
+      <button type="button" class="qt-search" aria-label="Search Cards, Pages and Sources">
+        <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5.6" cy="5.6" r="4"></circle><path d="M8.6 8.6 L12 12"></path></svg>
+        <span style="flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Search Cards, Pages, Sources</span>
+        <span style="font:10.5px 'IBM Plex Mono',monospace;border:1px solid var(--q-line);border-radius:3px;padding:0 4px;line-height:15px;">⌘K</span>
+      </button>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;flex:none;">
+      <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">{{ presenceLabel }}</span>
+      <div style="display:flex;padding-left:5px;">
+        <sc-for list="{{ presence }}" as="p" hint-placeholder-count="3">
+          <span title="{{ p.name }}" style="width:20px;height:20px;margin-left:-5px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 9px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:{{ p.bg }};box-shadow:0 0 0 2px color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken));">{{ p.i }}</span>
+        </sc-for>
+      </div>
+      <span style="width:1px;height:16px;background:var(--q-chrome-line);"></span>
+      <button type="button" class="qt-b" title="Account" aria-label="Account: {{ accountName }}" style="height:24px;padding:0 6px 0 4px;gap:7px;font-size:12px;">
+        <span style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 8px 'IBM Plex Sans',sans-serif;color:oklch(0.2 0.02 255);background:{{ accountBg }};">{{ accountInitials }}</span>
+        <span style="color:var(--q-ink-2);">{{ accountName }}</span>
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--q-ink-3)" stroke-width="1.4" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5"></path></svg>
+      </button>
+    </div>
+    <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:stretch;height:100%;margin-left:10px;flex:none;">
+        <button type="button" class="qt-wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5.5 H10"></path></svg></button>
+        <button type="button" class="qt-wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="qt-wc qt-close" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5"></path></svg></button>
+      </div>
+    </sc-if>
   </div>
-  <sc-if value="{{ notGuest }}" hint-placeholder-val="{{ true }}">
-    <button title="AI sidebar" style="display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:5px;border:1px solid {{ aiBorder }};background:{{ aiBg }};color:var(--q-ink);font:inherit;cursor:pointer;">
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1.5" width="11" height="10" rx="1.5"></rect><path d="M8.5 1.5 V11.5"></path></svg>AI
-    </button>
-  </sc-if>
+
+  <!-- Row 2: toolbar -->
+  <div style="height:36px;flex:none;box-sizing:border-box;display:flex;align-items:center;gap:4px;padding:0 10px;background:var(--q-chrome);border-bottom:1px solid var(--q-chrome-line);">
+    <sc-if value="{{ notGuest }}" hint-placeholder-val="{{ true }}">
+      <div style="position:relative;display:flex;align-items:center;gap:4px;">
+        <button type="button" class="qt-b" onClick="{{ toggleSwitcher }}" aria-haspopup="menu" aria-expanded="{{ open }}" title="Switch Branch" style="gap:8px;padding:0 9px 0 8px;border-color:var(--q-cur-branch);background:{{ pillBg }};">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--q-cur-branch)" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="3.5" cy="3" r="1.6"></circle><circle cx="3.5" cy="11" r="1.6"></circle><circle cx="10.5" cy="5" r="1.6"></circle><path d="M3.5 4.6 V9.4 M10.5 6.6 C10.5 9 3.5 8 3.5 9.4"></path></svg>
+          <span style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Branch</span>
+          <span style="font:600 13px/1 'IBM Plex Mono',monospace;color:var(--q-cur-branch);">{{ branch }}</span>
+          <sc-if value="{{ notMain }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:var(--q-ink-2);">from main · 14 Nov</span></sc-if>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--q-ink-3)" stroke-width="1.4" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5"></path></svg>
+        </button>
+        <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+          <div role="menu" aria-label="Branches" style="position:absolute;top:32px;left:0;width:340px;z-index:60;background:var(--q-raised);border:1px solid var(--q-line);border-radius:7px;box-shadow:var(--q-shadow);padding:6px;display:flex;flex-direction:column;gap:2px;">
+            <div style="padding:6px 8px 4px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--q-ink-3);">Branches</div>
+            <sc-for list="{{ branches }}" as="b" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:16px 1fr auto;align-items:center;gap:8px;padding:7px 8px;border-radius:5px;background:{{ b.bg }};">
+                <span style="font-size:12px;color:var(--q-accent);">{{ b.check }}</span>
+                <div style="display:flex;flex-direction:column;gap:2px;">
+                  <span style="font:500 13px/1.2 'IBM Plex Mono',monospace;color:{{ b.color }};">{{ b.name }}</span>
+                  <span style="font-size:11px;color:var(--q-ink-3);">{{ b.meta }}</span>
+                </div>
+                <span style="font:11px 'IBM Plex Mono',monospace;color:var(--q-ink-2);">{{ b.ahead }}</span>
+              </div>
+            </sc-for>
+            <div style="height:1px;background:var(--q-line-soft);margin:4px 2px;"></div>
+            <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">New Branch from now…</div>
+            <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">New Branch from a Checkpoint…</div>
+            <div style="padding:7px 8px;font-size:13px;color:var(--q-ink);">Compare and Merge…</div>
+          </div>
+        </sc-if>
+        <span style="width:1px;height:18px;background:var(--q-chrome-line);margin:0 4px;"></span>
+        <button type="button" class="qt-b" title="Create a named Checkpoint of this Branch">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M6 1 L11 6 L6 11 L1 6 Z"></path><circle cx="6" cy="6" r="1.2" fill="currentColor"></circle></svg>Checkpoint
+        </button>
+        <button type="button" class="qt-b" title="History" style="border-color:{{ histBorder }};background:{{ histBg }};">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5"></circle><path d="M6.5 3.5 V6.5 L8.6 7.8"></path></svg>History
+        </button>
+        <span style="width:1px;height:18px;background:var(--q-chrome-line);margin:0 4px;"></span>
+        <button type="button" class="qt-i" title="Undo (⌘Z)" aria-label="Undo">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.2 L2.6 5.6 L5 8"></path><path d="M2.8 5.6 H8.2 a3 3 0 0 1 0 6 H5"></path></svg>
+        </button>
+        <button type="button" class="qt-i" title="Redo (⇧⌘Z)" aria-label="Redo">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3.2 L11.4 5.6 L9 8"></path><path d="M11.2 5.6 H5.8 a3 3 0 0 0 0 6 H9"></path></svg>
+        </button>
+      </div>
+    </sc-if>
+    <sc-if value="{{ guest }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:10px;padding-left:4px;">
+        <span style="font:600 13px 'IBM Plex Mono',monospace;color:var(--q-ink);">main</span>
+        <span style="font-size:12px;color:var(--q-ink-3);">read-only</span>
+      </div>
+    </sc-if>
+    <div style="flex:1;"></div>
+    <sc-if value="{{ guest }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:8px;height:24px;padding:0 10px;border-radius:4px;border:1px solid var(--q-st-question);color:var(--q-ink);font-size:12px;">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--q-st-question)" stroke-width="1.3" aria-hidden="true"><circle cx="6" cy="4" r="2.2"></circle><path d="M1.8 11 C2.4 8 9.6 8 10.2 11"></path></svg>
+        <span style="font-weight:600;">Guest</span><span style="color:var(--q-ink-2);">— access until 30 Nov</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{ notGuest }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;gap:6px;padding-right:6px;font-size:12px;color:var(--q-ink-3);white-space:nowrap;">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--q-st-understood)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="5"></circle><path d="M3.8 6.2 L5.3 7.7 L8.2 4.5"></path></svg>All changes saved
+      </div>
+      <span style="width:1px;height:18px;background:var(--q-chrome-line);margin:0 4px;"></span>
+      <button type="button" class="qt-b" title="AI sidebar" aria-pressed="{{ aiOn }}" style="border-color:{{ aiBorder }};background:{{ aiBg }};">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1" y="1.5" width="11" height="10" rx="1.5"></rect><path d="M8.5 1.5 V11.5"></path></svg>AI
+      </button>
+    </sc-if>
+  </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:300},&quot;branch&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;main&quot;,&quot;try-QEC&quot;],&quot;default&quot;:&quot;main&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;guest&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;switcherOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;history&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;ai&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":300},"platform":{"editor":"enum","options":["mac","windows"],"default":"mac","tsType":"string"},"branch":{"editor":"enum","options":["main","try-QEC"],"default":"main","tsType":"string"},"guest":{"editor":"boolean","default":false,"tsType":"boolean"},"switcherOpen":{"editor":"boolean","default":false,"tsType":"boolean"},"menuOpen":{"editor":"enum","options":["none","File","Edit","View","Branch","Run","Window","Help"],"default":"none","tsType":"string"},"history":{"editor":"boolean","default":false,"tsType":"boolean"},"ai":{"editor":"boolean","default":false,"tsType":"boolean"}}'>
+const MENUS = [
+  { name: 'File', items: [['New Page', '⌘N'], ['New Card', '⇧⌘N'], ['Open…', '⌘O'], '-', ['Import Source…', ''], ['Export Board…', ''], '-', ['Settings…', '⌘,'], '-', ['Sign Out', '']] },
+  { name: 'Edit', items: [['Undo', '⌘Z'], ['Redo', '⇧⌘Z'], '-', ['Cut', '⌘X'], ['Copy', '⌘C'], ['Paste', '⌘V'], '-', ['Find…', '⌘F']] },
+  { name: 'View', items: [['Board', ''], ['Pages', ''], ['History', ''], ['AI Sidebar', ''], '-', ['Zoom In', '⌘+'], ['Zoom Out', '⌘−'], ['Fit to Content', '⌘0']] },
+  { name: 'Branch', items: [['New Branch from now…', ''], ['New Branch from a Checkpoint…', ''], ['Switch Branch…', ''], '-', ['Create Checkpoint', '⇧⌘S'], ['Compare and Merge…', '']] },
+  { name: 'Run', items: [['Run Page Code', '⌘↵'], ['Stop', '⌘.'], '-', ['Review Changed Code', '']] },
+  { name: 'Window', items: [['Reset Layout', ''], ['Collapse Rail', '⌘\\']] },
+  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Sheaf', '']] },
+];
+const GUEST_MENUS = [
+  { name: 'File', items: [['Export Board…', ''], '-', ['Sign In…', '']] },
+  { name: 'View', items: [['Board', ''], ['Pages', ''], '-', ['Zoom In', '⌘+'], ['Zoom Out', '⌘−'], ['Fit to Content', '⌘0']] },
+  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Sheaf', '']] },
+];
 class Component extends DCLogic {
-  state = { open: null };
+  state = { open: null, menu: undefined };
+  setRoot = (el) => { this.rootEl = el; };
+  closeAll = () => this.setState({ open: false, menu: null });
+  componentDidMount() {
+    this.onDown = (e) => { if (this.rootEl && !this.rootEl.contains(e.target)) this.closeAll(); };
+    this.onKey = (e) => { if (e.key === 'Escape') this.closeAll(); };
+    document.addEventListener('mousedown', this.onDown);
+    document.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount() {
+    document.removeEventListener('mousedown', this.onDown);
+    document.removeEventListener('keydown', this.onKey);
+  }
   renderVals() {
     const branch = this.props.branch || 'main';
     const guest = !!this.props.guest;
     const open = this.state.open ?? !!this.props.switcherOpen;
+    const pm = this.props.menuOpen;
+    const menu = this.state.menu !== undefined ? this.state.menu : (pm && pm !== 'none' ? pm : null);
     const M = { AR: ['Ana Ruiz', 'oklch(0.76 0.08 35)'], JW: ['Jonas Weber', 'oklch(0.76 0.08 240)'], ML: ['Mei Lin (you)', 'oklch(0.78 0.08 160)'], EV: ['Prof. Elena Varga', 'oklch(0.80 0.08 85)'], PN: ['Priya Nair (Guest)', 'oklch(0.80 0.03 255)'] };
     const ids = guest ? ['PN', 'EV'] : branch === 'main' ? ['EV', 'AR', 'ML'] : ['JW', 'ML'];
     const cur = (n) => n === branch;
@@ -100,14 +211,33 @@ class Component extends DCLogic {
       { name: 'try-QEC', meta: 'from Checkpoint “Reading group 14 Nov” · Mei, Jonas', ahead: '14 ahead · 5 behind' },
       { name: 'ana/cartpole-lr', meta: 'from now on 19 Nov · Ana', ahead: '3 ahead' },
     ].map(b => ({ ...b, check: cur(b.name) ? '✓' : '', bg: cur(b.name) ? 'var(--q-hover)' : 'transparent', color: b.name === 'main' ? 'var(--q-ink)' : 'var(--q-branch)' }));
+    const menus = (guest ? GUEST_MENUS : MENUS).map(m => ({
+      name: m.name,
+      isOpen: menu === m.name,
+      expanded: menu === m.name,
+      toggle: () => this.setState({ menu: menu === m.name ? null : m.name, open: false }),
+      hover: () => { if (menu && menu !== m.name) this.setState({ menu: m.name, open: false }); },
+      items: m.items.map(it => it === '-'
+        ? { sep: true, notSep: false, label: '', key: '', click: this.closeAll }
+        : { sep: false, notSep: true, label: it[0], key: it[1], click: this.closeAll }),
+    }));
+    const isWin = this.props.platform === 'windows';
     return {
-      branch, guest, notGuest: !guest, notMain: branch !== 'main' && !guest, open,
-      toggleSwitcher: () => this.setState({ open: !open }),
+      isWin, isMac: !isWin,
+      row1PadR: isWin ? '0' : '10px',
+      logoPadL: isWin ? '14px' : '13px',
+      branch, guest, notGuest: !guest, notMain: branch !== 'main' && !guest, open, menus,
+      setRoot: this.setRoot,
+      toggleSwitcher: () => this.setState({ open: !open, menu: null }),
       pillBg: branch === 'main' ? 'transparent' : 'color-mix(in oklch, var(--q-branch) 16%, transparent)',
-      histBg: this.props.history ? 'var(--q-hover)' : 'transparent', histBorder: this.props.history ? 'var(--q-line)' : 'var(--q-chrome-line)',
-      aiBg: this.props.ai ? 'var(--q-hover)' : 'transparent', aiBorder: this.props.ai ? 'var(--q-line)' : 'var(--q-chrome-line)',
+      histBg: this.props.history ? 'var(--q-hover)' : 'transparent', histBorder: this.props.history ? 'var(--q-line)' : 'transparent',
+      aiOn: !!this.props.ai,
+      aiBg: this.props.ai ? 'var(--q-hover)' : 'transparent', aiBorder: this.props.ai ? 'var(--q-line)' : 'transparent',
       presenceLabel: guest ? 'Viewing' : 'On ' + branch,
       presence: ids.map(i => ({ i, name: M[i][0], bg: M[i][1] })),
+      accountName: guest ? 'Priya Nair' : 'Mei Lin',
+      accountInitials: guest ? 'PN' : 'ML',
+      accountBg: guest ? M.PN[1] : M.ML[1],
       branches,
     };
   }

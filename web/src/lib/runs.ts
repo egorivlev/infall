@@ -383,7 +383,7 @@ export function createRuns(options: RunsOptions = {}) {
     if (me?.role === 'guest') throw new ApiError(400, 'read_only', 'Guests cannot execute Runs.')
     if (previewing()) throw new ApiError(400, 'read_only', 'An earlier moment is shown. Go back to now to execute a Run.')
     const bridge = me ? runnerOf(desktop()) : null
-    if (!me || !bridge) throw new ApiError(409, 'no_runner', 'Executing a Run needs the Qoop desktop app.')
+    if (!me || !bridge) throw new ApiError(409, 'no_runner', 'Executing a Run needs the Sheaf desktop app.')
     if (current) throw new ApiError(409, 'busy', 'Another Run is being executed in this window.')
     const target = board.internal.target()
     const block = target ? findRun(blockId) : undefined

@@ -98,7 +98,7 @@ function VisualEditor({ n, title, source, onFinish }: EditorProps) {
         />
       </div>
       <p className="qp-block__hint" id={hintId}>
-        HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Qoop. Use the --q-* colour variables to follow the theme.
+        HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Sheaf. Use the --q-* colour variables to follow the theme.
       </p>
       <div className="qp-visual-edit__buttons">
         <button type="button" className="q-btn q-btn--sm" title="Run the draft below (⌘Enter)" onClick={run}>

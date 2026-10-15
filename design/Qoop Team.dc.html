@@ -16,14 +16,14 @@
 <div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
 
   <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
-    <span style="font:600 28px 'Source Serif 4',serif;">Qoop — To-dos, History, Branches</span>
+    <span style="font:600 28px 'Source Serif 4',serif;">Sheaf — To-dos, History, Branches</span>
     <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 6, 7, 8 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Merge.dc.html">Merge</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
   </div>
 
   <div id="6a" data-screen-label="6a To-dos" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">6a</span><span style="font-size:15px;font-weight:600;">To-dos — one list per Member, visible to the team</span><span style="font-size:13px;color:var(--q-ink-3);">Tick your own; others’ are read-only but you can assign to them.</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,66px"></dc-import></div>
       <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="todos" hint-size="224px,100%"></dc-import></div>
       <div style="display:flex;flex-direction:column;min-height:0;background:var(--q-canvas);">
         <div style="display:flex;align-items:baseline;gap:14px;padding:22px 28px 16px;">
@@ -75,8 +75,8 @@
 
   <div id="7a" data-screen-label="7a History timeline" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">7a</span><span style="font-size:15px;font-weight:600;">History — scrub main’s Changes; the Board previews that moment</span><span style="font-size:13px;color:var(--q-ink-3);">Drag across the timeline.</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr 286px;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" history="{{ true }}" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr 286px;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" history="{{ true }}" hint-size="100%,66px"></dc-import></div>
       <div style="position:relative;grid-row:2 / 4;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
       <div style="position:relative;overflow:hidden;">
         <dc-import name="QBoardCanvas" upto="{{ upto }}" interactive="{{ false }}" hud="{{ false }}" pad="{{ 30 }}" hint-size="100%,100%" style="position:absolute;inset:0;"></dc-import>
@@ -146,8 +146,8 @@
 
   <div id="8a" data-screen-label="8a Branches" style="display:flex;flex-direction:column;gap:12px;">
     <div style="display:flex;gap:10px;align-items:baseline;"><span style="font:600 12px 'IBM Plex Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--q-ink);color:var(--q-sunken);">8a</span><span style="font-size:15px;font-weight:600;">Branches — how they diverged, create, compare, Merge</span></div>
-    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:44px 1fr;background:var(--q-canvas);">
-      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,44px"></dc-import></div>
+    <div data-branch="main" style="width:1440px;height:900px;position:relative;overflow:hidden;border:1px solid var(--q-line);border-radius:4px;display:grid;grid-template-columns:224px 1fr;grid-template-rows:66px 1fr;background:var(--q-canvas);">
+      <div style="grid-column:1 / -1;position:relative;z-index:5;"><dc-import name="QTopBar" branch="main" hint-size="100%,66px"></dc-import></div>
       <div style="position:relative;"><dc-import style="position:absolute;inset:0;" name="QRail" active="board" hint-size="224px,100%"></dc-import></div>
       <div style="display:grid;grid-template-columns:1fr 380px;min-height:0;">
         <div style="padding:24px 28px;display:flex;flex-direction:column;gap:20px;min-width:0;">

@@ -307,11 +307,11 @@ describe('deciding', () => {
     expect(b.queryByRole('button', { name: 'Noise-induced plateaus' })).toBeNull()
   })
 
-  it('existingSource: says that accepting attaches the Source already in Qoop', async () => {
+  it('existingSource: says that accepting attaches the Source already in Sheaf', async () => {
     fake.show(sourceSuggestion('s1', {}, { existingSource: 'src-7' }))
     renderPanel()
     await settle()
-    expect(within(block('s1')).getByText('Already in Qoop — accepting attaches the existing Source.')).toBeInTheDocument()
+    expect(within(block('s1')).getByText('Already in Sheaf — accepting attaches the existing Source.')).toBeInTheDocument()
     expect(within(block('s1')).getByRole('button', { name: 'Accept' })).toBeEnabled()
   })
 

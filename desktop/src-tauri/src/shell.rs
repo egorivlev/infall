@@ -178,7 +178,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
     let runner_settings =
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
-    let app_menu = SubmenuBuilder::new(app, "Qoop")
+    let app_menu = SubmenuBuilder::new(app, "Sheaf")
         .about(None)
         .separator()
         .item(&change)
@@ -218,7 +218,7 @@ fn open_setup(app: &AppHandle) -> tauri::Result<()> {
         return window.set_focus();
     }
     local_window(app, SETUP_WINDOW, "index.html")
-        .title("Qoop")
+        .title("Sheaf")
         .inner_size(520.0, 420.0)
         .resizable(false)
         .build()?;
@@ -251,7 +251,12 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
             .permission("allow-runner-status")
             .permission("allow-runner-configure")
             .permission("allow-runner-run")
-            .permission("allow-runner-cancel"),
+            .permission("allow-runner-cancel")
+            // The top bar's first row is the window's title bar (macOS has none of its own,
+            // see below): pressing on an empty part of it moves the window, a double click
+            // zooms it. Nothing else about the window is reachable.
+            .permission("core:window:allow-start-dragging")
+            .permission("core:window:allow-internal-toggle-maximize"),
     )?;
     *state.origin.lock().unwrap() = Some(origin.to_owned());
 
@@ -263,7 +268,7 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
     let nav_origin = origin.to_owned();
     let new_window_app = app.clone();
     let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(start))
-        .title("Qoop")
+        .title("Sheaf")
         .inner_size(1280.0, 860.0)
         .min_inner_size(900.0, 600.0)
         // Runs in the main frame only, before the page's own scripts.
@@ -288,6 +293,14 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
                 window.state::<RunnerState>().cancel_all();
             }
         });
+    // On macOS the page draws the title bar: its top row (30px) holds the traffic lights,
+    // centred in that row with the first circle 13px in (inset: x = 13 - 1 for the button frame,
+    // y = 30 - 14 for its height); the web UI leaves room for them.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(12.0, 16.0));
     // The web inspector exists in debug builds only (the `devtools` feature is off).
     #[cfg(debug_assertions)]
     let builder = builder.devtools(true);
@@ -710,7 +723,7 @@ async fn runner_settings_view(webview: Webview, app: AppHandle) -> Result<Settin
     let runner = runner(&app);
     tauri::async_runtime::spawn_blocking(move || runner.settings_view())
         .await
-        .map_err(|_| "Qoop could not look for Python on this computer.".to_owned())
+        .map_err(|_| "Sheaf could not look for Python on this computer.".to_owned())
 }
 
 /// Checks and saves the Member's choice, then closes the window.

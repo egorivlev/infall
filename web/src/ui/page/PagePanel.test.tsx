@@ -688,13 +688,13 @@ describe('Page panel: Sources', () => {
     expect(screen.queryByRole('alert')).toBeNull() // the error clears as soon as it is fixed
   })
 
-  it('finds a Source that is already in Qoop and attaches that one instead of making a duplicate', () => {
+  it('finds a Source that is already in Sheaf and attaches that one instead of making a duplicate', () => {
     open()
     fireEvent.click(screen.getByRole('button', { name: '+ Add Source' }))
     const f = form('Add Source')
     fireEvent.change(f.getByLabelText('URL or DOI'), { target: { value: 'doi:10.1103/PhysRevA.52.R2493' } })
     expect(page.findSource).toHaveBeenLastCalledWith({ doi: '10.1103/physreva.52.r2493' })
-    expect(f.getByRole('status')).toHaveTextContent('Already in Qoop: Scheme for reducing decoherence')
+    expect(f.getByRole('status')).toHaveTextContent('Already in Sheaf: Scheme for reducing decoherence')
     expect(f.queryByLabelText('Title')).toBeNull()
     expect(f.queryByRole('button', { name: 'Add Source' })).toBeNull()
     fireEvent.click(f.getByRole('button', { name: 'Attach' }))
@@ -767,7 +767,7 @@ describe('Page panel: Sources', () => {
     fireEvent.click(row('s1').getByRole('button', { name: /^Edit Source/ }))
     expect(form('Edit Source').queryByText(/on 2 Cards/)).toBeNull()
     fireEvent.change(form('Edit Source').getByLabelText('URL or DOI'), { target: { value: '10.1103/PhysRevA.52.R2493' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('Another Source in Qoop already has this URL or DOI: Scheme for reducing decoherence.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Another Source in Sheaf already has this URL or DOI: Scheme for reducing decoherence.')
     fireEvent.click(form('Edit Source').getByRole('button', { name: 'Update Source' }))
     expect(submit).not.toHaveBeenCalled()
     fireEvent.click(form('Edit Source').getByRole('button', { name: 'Cancel' }))

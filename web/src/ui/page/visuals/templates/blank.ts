@@ -1,7 +1,7 @@
 // Starter: a commented skeleton. Plain HTML for the Visual frame — no backticks or "${" inside.
 export const BLANK = String.raw`<!--
   A Visual is plain HTML, CSS and JavaScript that runs in a sandbox:
-  no network, no external files, no access to Qoop. Everything it needs is in this source.
+  no network, no external files, no access to Sheaf. Everything it needs is in this source.
 
   Colours: use the --q-* variables, so the Visual follows the light and the dark theme.
     --q-ink  --q-ink-2  --q-ink-3                      text, from strong to quiet

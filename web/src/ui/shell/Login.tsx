@@ -56,7 +56,7 @@ export function Login({ notice }: { notice?: string }) {
   }
 
   return (
-    <AccessCard title="Sign in to Qoop" subtitle={window.location.host}>
+    <AccessCard title="Sign in to Sheaf" subtitle={window.location.host}>
       {notice && (
         <p className="q-access__notice" role="status">
           {notice}

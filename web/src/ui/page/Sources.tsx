@@ -73,7 +73,7 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
   const onThisCard = existing ? attached.some((a) => a.id === existing.id) : false
   const clash = editing && found && found.id !== editing.id ? found : undefined
   const error = clash
-    ? `Another Source in Qoop already has this URL or DOI: ${clash.title || 'Untitled Source'}.`
+    ? `Another Source in Sheaf already has this URL or DOI: ${clash.title || 'Untitled Source'}.`
     : touched && !parsed
       ? NEEDS_ID
       : null
@@ -146,7 +146,7 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
       )}
       {existing ? (
         <p className="qp-source-form__found" role="status">
-          {onThisCard ? 'Already on this Card: ' : 'Already in Qoop: '}
+          {onThisCard ? 'Already on this Card: ' : 'Already in Sheaf: '}
           <b>{existing.title || 'Untitled Source'}</b>
         </p>
       ) : (

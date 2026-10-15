@@ -96,7 +96,7 @@ describe('AI access: the screen', () => {
   it('has the heading, the two intro paragraphs, what the AI can do, and the note — in the vocabulary', async () => {
     await renderLoaded()
     expect(screen.getByRole('heading', { level: 1, name: 'AI access' })).toBeInTheDocument()
-    expect(screen.getByText(/Qoop doesn't ship a model\. Connect the AI you already use/)).toBeInTheDocument()
+    expect(screen.getByText(/Sheaf doesn't ship a model\. Connect the AI you already use/)).toBeInTheDocument()
     expect(screen.getByText(/An access token lets an AI act as you, read-only plus Suggestions\. Treat it like a password/)).toBeInTheDocument()
     const can = within(screen.getByRole('region', { name: 'What the AI can do' })).getAllByRole('listitem').map((li) => li.textContent)
     expect(can).toEqual([

@@ -10,47 +10,73 @@ import { RunMonitor } from './monitor/RunMonitor'
 import { Presence } from './Presence'
 import { SearchBox } from './SearchBox'
 import { ThemeToggle } from './ThemeToggle'
+import { macDesktopWindow } from './windowChrome'
 
-/** `available` is false while the Branch in the URL does not exist: there is nothing to name or to read History of. */
+/**
+ * Two rows (design: QTopBar). The first is the window's title bar — in the macOS desktop app the traffic lights sit in
+ * its left corner and empty parts of it drag the window — with the name, search, who is here and the account. The
+ * second is the toolbar of the Branch that is open.
+ *
+ * `available` is false while the Branch in the URL does not exist: there is nothing to name or to read History of.
+ */
 export function TopBar({ member, branch, available }: { member: Member; branch: string; available: boolean }) {
   const guest = member.role === 'guest'
   return (
     <header className="q-topbar">
-      <div className="q-topbar__brand">
-        <Logo />
-        <span className="q-topbar__name">Qoop</span>
-      </div>
-      {guest ? (
-        <div className="q-branch q-branch--plain">
-          <span className="q-branch__name">{branch}</span>{' '}
-          <span className="q-branch__note" aria-hidden="true">
-            ·
-          </span>{' '}
-          <span className="q-branch__note">read-only</span>
+      <div className={macDesktopWindow() ? 'q-titlebar is-mac-window' : 'q-titlebar'} data-tauri-drag-region="deep">
+        <div className="q-topbar__brand">
+          <Logo size={16} />
+          <span className="q-topbar__name">Sheaf</span>
         </div>
-      ) : (
-        <div className="q-topbar__branch">
-          <BranchSwitcher branch={branch} />
-          {available && (
+        <div className="q-topbar__search">
+          <SearchBox />
+        </div>
+        <div className="q-topbar__people">
+          {/* A Guest is told nothing about who else is here. */}
+          {!guest && (
             <>
-              <CheckpointButton key={branch} />
-              <HistoryButton />
+              <Presence branch={branch} />
+              <span className="q-topbar__sep" aria-hidden="true" />
             </>
           )}
+          <ThemeToggle />
+          <AccountMenu member={member} />
         </div>
-      )}
-      {/* There only while a Run is in flight on this computer — never for a Guest, who has no Runner. Before the
-          search field, which gives way first: in a window narrower than the bar the monitor stays in sight. */}
-      {!guest && <RunMonitor />}
-      <div className="q-topbar__search">
-        <SearchBox />
       </div>
-      {/* A Guest is told nothing about who else is here: a badge with the end of their access instead. */}
-      {guest ? <GuestBadge member={member} /> : <Presence branch={branch} />}
-      {/* A Conversation is a Member's: Guests have no AI. */}
-      {!guest && <AiButton />}
-      <ThemeToggle />
-      <AccountMenu member={member} />
+      <div className="q-toolbar">
+        {guest ? (
+          <div className="q-branch q-branch--plain">
+            <span className="q-branch__name">{branch}</span>{' '}
+            <span className="q-branch__note" aria-hidden="true">
+              ·
+            </span>{' '}
+            <span className="q-branch__note">read-only</span>
+          </div>
+        ) : (
+          <div className="q-topbar__branch">
+            <BranchSwitcher branch={branch} />
+            {available && (
+              <>
+                <span className="q-topbar__sep" aria-hidden="true" />
+                <CheckpointButton key={branch} />
+                <HistoryButton />
+              </>
+            )}
+          </div>
+        )}
+        <div className="q-toolbar__fill" />
+        {/* There only while a Run is in flight on this computer — never for a Guest, who has no Runner. */}
+        {!guest && <RunMonitor />}
+        {guest ? (
+          <GuestBadge member={member} />
+        ) : (
+          <>
+            <span className="q-topbar__sep" aria-hidden="true" />
+            {/* A Conversation is a Member's: Guests have no AI. */}
+            <AiButton />
+          </>
+        )}
+      </div>
     </header>
   )
 }

@@ -1,4 +1,6 @@
-# Qoop UI — build brief for M1
+# Sheaf UI — build brief for M1
+
+> The product is called **Sheaf** in everything a person reads (the code, packages and design file names still say qoop).
 
 The design source is in [/design](../../../design) (`.dc.html` mock-ups: markup with `{{ holes }}` and a script block of sample data). Read the relevant file before building a screen and match it: `Qoop Design System`, `Qoop Board`, `QBoardCanvas`, `QTopBar`, `QRail`, `Qoop Access`. Tokens are already in `src/styles/tokens.css` (dark is default; `[data-theme="light"]`; any `[data-branch]` other than `main` tints the chrome).
 
@@ -28,8 +30,8 @@ Board, Frame, Card, Connection, Branch, Checkpoint, Member, Admin, Guest, Change
 Dead-end Cards look deliberately kept, not like errors: 135° hatch at ~9% mix, 5% tinted background, softened border, italic serif summary. No red, no strike-through. Build one `<StatusGlyph status size />` SVG component and reuse it everywhere.
 
 ## Chrome (shell)
-- Grid: top bar 44px across the top; left rail 224px; the rest is the work area. Min window 1280px wide; no mobile layout, but nothing may overflow horizontally at 1280.
-- Top bar (see `QTopBar`): logo + "Qoop"; Branch pill showing `main` (mono, 600) — in M1 it is display-only (no switcher menu; `title="Branches arrive in a later version"` is not needed, just make it non-interactive text in a bordered pill); search field "Search Cards" with ⌘K hint that filters Cards by title/summary and jumps to the chosen one; presence avatars ("On main" label + overlapping 24px circles with initials, `title` = name); theme toggle; account menu (name, role, "Sign out"; Admins also get "Members").
+- Grid: top bar 66px across the top (two rows, see "Top bar, two rows" below); left rail 224px; the rest is the work area. Min window 1280px wide; no mobile layout, but nothing may overflow horizontally at 1280.
+- Top bar (see `QTopBar`): logo + "Sheaf"; Branch pill showing `main` (mono, 600) — in M1 it is display-only (no switcher menu; `title="Branches arrive in a later version"` is not needed, just make it non-interactive text in a bordered pill); search field "Search Cards" with ⌘K hint that filters Cards by title/summary and jumps to the chosen one; presence avatars ("On main" label + overlapping 24px circles with initials, `title` = name); theme toggle; account menu (name, role, "Sign out"; Admins also get "Members").
 - Rail (see `QRail`): nav item "Board" (active) and, for Admins, "Members"; a "Frames" section listing each Frame with its Card count — click jumps the Board to that Frame; "+" adds a Frame; footer shows sync state from `useBoard().status`: "Synced" (green dot) / "Reconnecting…" (amber) / "Offline" and the host name.
 - Do **not** show History, Checkpoint, To-dos, Suggestions, Sources or AI controls — they do not exist yet.
 
@@ -288,3 +290,13 @@ A control in the top bar that exists only while `useRuns().live` is non-null (a 
   - With an M8 app (no `stats` after 3 s of running): the time, and "This version of the app does not report usage."
 - Meters are `role="meter"` with a text value; numbers never rely on colour alone; a meter turns to the warning colour at ≥ 90 % of memory. Values update about once a second and must not move the layout (tabular figures, fixed row heights). Not announced to screen readers on every tick.
 - Not shown to Guests, in the browser, or when nothing runs. One Run at a time, so one monitor.
+
+
+---
+
+# Top bar, two rows (design update, Nov 2026)
+
+`design/QTopBar.dc.html`. Replaces the single 44px bar.
+- **Row 1, 30px — the window's title bar** (`q-titlebar`, background `--q-chrome` mixed 68% with `--q-sunken`): 224px brand cell (Sheaf mark 16px + "Sheaf"), the search field centred (22px high, max 380px), then presence ("On <branch>" + 20px avatars), a divider, the theme toggle and the account button (18px avatar + name). In the macOS desktop app the window has no title bar of its own (Tauri `TitleBarStyle::Overlay`): the traffic lights sit at the left of this row, the brand cell leaves 75px for them, and the row is a `data-tauri-drag-region="deep"` (empty parts move the window; a double click zooms).
+- **Row 2, 36px — the Branch toolbar** (`q-toolbar`, `--q-chrome`): Branch switcher, divider, Checkpoint, History; on the right the Runner monitor (while a Run is in flight), a divider and AI. Guests: the plain "main · read-only" label and the Guest badge on the right. Toolbar buttons are 26px with a transparent border until hovered or pressed.
+- Not taken from the mock-up: Undo/Redo (there is no general undo yet), "All changes saved" (the rail already says "Synced"; never "saved"), the team name next to the logo (no such data), and the Windows menu bar + caption buttons (Windows keeps its native title bar).

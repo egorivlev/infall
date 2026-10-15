@@ -301,7 +301,7 @@ export function AiSidebarCard() {
               {or.key && <ModelPicker current={or.model} />}
               <p className="q-hint q-ai__small">
                 Your key is stored encrypted on <span className="q-ai__host">{host}</span> and is never shown again. The server sends your
-                question, and what the AI reads through Qoop's tools, to OpenRouter. Conversations are kept only on this device.
+                question, and what the AI reads through Sheaf's tools, to OpenRouter. Conversations are kept only on this device.
               </p>
             </>
           )}

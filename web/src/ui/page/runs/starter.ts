@@ -5,9 +5,9 @@ export const RUN_STARTER: RunStarter = {
   run: true,
   title: 'experiment.py',
   source: [
-    '# A Run: Python that runs on the computer of whoever presses Run, in the Qoop desktop app.',
+    '# A Run: Python that runs on the computer of whoever presses Run, in the Sheaf desktop app.',
     '# The output of the last time it ran, with any matplotlib figures, stays here for everyone to read.',
-    'print("hello from Qoop")',
+    'print("hello from Sheaf")',
     '',
   ].join('\n'),
 }

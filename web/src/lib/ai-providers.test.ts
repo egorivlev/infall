@@ -38,9 +38,9 @@ afterEach(() => {
 })
 
 describe('systemText', () => {
-  it('says what Qoop is, where the Member is looking, and the rules', () => {
+  it('says what Sheaf is, where the Member is looking, and the rules', () => {
     const text = systemText(SCOPE)
-    expect(text).toContain('Qoop')
+    expect(text).toContain('Sheaf')
     expect(text).toContain('the Branch "main"')
     expect(text).toContain('the Card "Threshold ≈ 1%" (id "card-1")')
     expect(text).toContain('Use the qoop tools to read.')

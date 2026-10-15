@@ -320,7 +320,7 @@ describe('when access ends (a request answers 401)', () => {
   it('returns a Guest to the login screen with the reason', () => {
     renderAs(PRIYA)
     answer401()
-    expect(screen.getByRole('heading', { name: 'Sign in to Qoop' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(ENDED)
   })
 
@@ -328,13 +328,13 @@ describe('when access ends (a request answers 401)', () => {
     seedBoard(false)
     renderAs(MEI)
     answer401()
-    expect(screen.getByRole('heading', { name: 'Sign in to Qoop' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
     expect(screen.queryByText(ENDED)).toBeNull()
   })
 
   it('says nothing when nobody was signed in', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'Sign in to Qoop' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
     expect(screen.queryByText(ENDED)).toBeNull()
   })
 
@@ -343,7 +343,7 @@ describe('when access ends (a request answers 401)', () => {
     renderAs(PRIYA)
     await user.click(screen.getByRole('button', { name: /Priya Nair/ }))
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
-    expect(await screen.findByRole('heading', { name: 'Sign in to Qoop' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
     expect(screen.queryByText(ENDED)).toBeNull()
   })
 
@@ -352,7 +352,7 @@ describe('when access ends (a request answers 401)', () => {
     renderAs(PRIYA)
     await user.click(screen.getByRole('button', { name: /Priya Nair/ }))
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
-    await screen.findByRole('heading', { name: 'Sign in to Qoop' })
+    await screen.findByRole('heading', { name: 'Sign in to Sheaf' })
     signIn(PRIYA)
     answer401()
     expect(screen.getByText(ENDED)).toBeInTheDocument()
@@ -366,7 +366,7 @@ describe('when access ends (a request answers 401)', () => {
     signIn(MEI)
     expect(screen.queryByText(ENDED)).toBeNull()
     answer401()
-    expect(screen.getByRole('heading', { name: 'Sign in to Qoop' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
     expect(screen.queryByText(ENDED)).toBeNull()
   })
 })
@@ -385,7 +385,7 @@ describe('accept-invite and login', () => {
     const line = screen.getByText("Read-only access to the team's Board until 30 Nov.")
     expect(line.compareDocumentPosition(screen.getByLabelText('Name')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Join Qoop' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Join Sheaf' })).toBeInTheDocument()
   })
 
   it('a Guest invite without a date (older server) still says read-only', async () => {

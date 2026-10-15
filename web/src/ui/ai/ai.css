@@ -135,5 +135,5 @@ a.qa-none__link, a.qa-none__link:hover { color: var(--q-accent-ink); text-decora
 
 /* Below 1100px the sidebar lies over the work area instead of taking a column from it (shell.css keeps the two-column grid). */
 @media (max-width: 1099px) {
-  .qa-side { position: fixed; top: 44px; right: 0; bottom: 0; z-index: 4; width: 376px; box-shadow: var(--q-shadow); }
+  .qa-side { position: fixed; top: var(--q-topbar-h, 66px); right: 0; bottom: 0; z-index: 4; width: 376px; box-shadow: var(--q-shadow); }
 }
