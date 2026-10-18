@@ -31,7 +31,7 @@ async function fill(user: ReturnType<typeof userEvent.setup>, email = 'mei@lab.o
 describe('Login', () => {
   it('states the screen, has the right autocomplete and no sign-up link', () => {
     render(<Login />)
-    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Infall' })).toBeInTheDocument()
     expect(screen.getByLabelText('Email')).toHaveAttribute('autocomplete', 'username')
     expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'current-password')
     expect(screen.getByText('Forgot your password? Ask your Admin.')).toBeInTheDocument()

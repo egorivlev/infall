@@ -7,8 +7,8 @@ export function AccessCard({ title, subtitle, children }: { title?: string; subt
     <main className="q-access">
       <div className="q-access__card">
         <div className="q-access__brand">
-          <Logo size={26} />
-          <span>Sheaf</span>
+          <Logo size={30} />
+          <span>Infall</span>
         </div>
         {title && (
           <div className="q-access__head">

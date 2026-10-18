@@ -190,7 +190,7 @@ describe('Runs: where code can run', () => {
     expect(inRow().getByText('Desktop app only')).toBeInTheDocument()
     expect(button('Run')).toBeDisabled()
     expect(button('Run')).toHaveAttribute('title', 'Running code needs the desktop app')
-    expect(inRow().getByText("Code can only run in the Sheaf desktop app. You're in the browser — this Run has not been executed yet.")).toBeInTheDocument()
+    expect(inRow().getByText("Code can only run in the Infall desktop app. You're in the browser — this Run has not been executed yet.")).toBeInTheDocument()
     expect(noButton('More for Run policy_cartpole.py')).toBeNull()
   })
 
@@ -198,7 +198,7 @@ describe('Runs: where code can run', () => {
     setResult(runResult())
     open()
     expect(
-      inRow().getByText("Code can only run in the Sheaf desktop app. You're in the browser — the captured output from the last Run is shown below."),
+      inRow().getByText("Code can only run in the Infall desktop app. You're in the browser — the captured output from the last Run is shown below."),
     ).toBeInTheDocument()
     expect(inRow().getByRole('group', { name: 'Output of Run policy_cartpole.py' })).toHaveTextContent('episode 500 reward 176.4')
   })
@@ -290,8 +290,8 @@ describe('Runs: an execution in this window', () => {
     fireEvent.click(go)
     expect(runs.run).not.toHaveBeenCalled()
     expect(runs.stop).not.toHaveBeenCalled()
-    expect(inRow().getByText('Check the Sheaf window that just opened: it shows this code and asks before running it.')).toBeInTheDocument()
-    expect(status()).toHaveTextContent('Waiting for you in the Sheaf window')
+    expect(inRow().getByText('Check the Infall window that just opened: it shows this code and asks before running it.')).toBeInTheDocument()
+    expect(status()).toHaveTextContent('Waiting for you in the Infall window')
     expect(inRow().queryByText('live')).toBeNull()
   })
 
@@ -936,7 +936,7 @@ describe('Runs: adding one', () => {
     expect(lines).toHaveLength(3)
     expect(lines[0]).toMatch(/^# A Run: /)
     expect(lines[1]).toMatch(/^# /)
-    expect(lines[2]).toBe('print("hello from Sheaf")')
+    expect(lines[2]).toBe('print("hello from Infall")')
   })
 
   it('a new Run left as it is stays on the Page', () => {

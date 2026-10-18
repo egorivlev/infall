@@ -1,7 +1,7 @@
 # /etc/systemd/system/qoop.service
-# Runs the Sheaf server as an unprivileged user that can write only to /var/lib/qoop.
+# Runs the Infall server as an unprivileged user that can write only to /var/lib/qoop.
 [Unit]
-Description=Sheaf research workspace server
+Description=Infall research workspace server
 After=network-online.target
 Wants=network-online.target
 

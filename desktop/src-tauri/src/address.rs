@@ -11,7 +11,7 @@ use url::Url;
 pub fn parse_server_address(input: &str) -> Result<String, String> {
     let input = input.trim();
     if input.is_empty() {
-        return Err("Enter the address of your Sheaf server.".into());
+        return Err("Enter the address of your Infall server.".into());
     }
     if input.chars().any(|c| c.is_control() || c.is_whitespace()) || input.len() > 300 {
         return Err("That does not look like a server address.".into());
@@ -81,7 +81,7 @@ pub fn check_health(origin: &str) -> Result<(), String> {
 }
 
 fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
-    const NOT_QOOP: &str = "That address answered, but not as a Sheaf server.";
+    const NOT_QOOP: &str = "That address answered, but not as an Infall server.";
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .max_redirects(0)
@@ -270,7 +270,7 @@ mod tests {
             let origin = serve(response);
             assert_eq!(
                 check_health_within(&origin, timeout),
-                Err("That address answered, but not as a Sheaf server.".into()),
+                Err("That address answered, but not as an Infall server.".into()),
                 "{response}"
             );
         }

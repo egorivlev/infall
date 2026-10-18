@@ -15,7 +15,7 @@
 .q-topbar { grid-column: 1 / -1; position: relative; z-index: 5; display: flex; flex-direction: column; min-width: 0; }
 [data-branch]:not([data-branch="main"]) .q-topbar::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2; background: var(--q-branch); }
 
-.q-titlebar { height: 30px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; background: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
+.q-titlebar { height: 30px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; --q-logo-cut: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); background: var(--q-logo-cut); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
 .q-topbar__brand { width: 224px; flex: none; height: 100%; display: flex; align-items: center; gap: var(--q-s2); padding-left: 13px; border-right: 1px solid var(--q-chrome-line); }
 /* macOS desktop app: the traffic lights (three 12px buttons, 8px apart, at x 13) are drawn here. */
 .q-titlebar.is-mac-window .q-topbar__brand { padding-left: 75px; }

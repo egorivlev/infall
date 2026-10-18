@@ -1,6 +1,6 @@
 # /etc/systemd/system/qoop-backup.timer
 [Unit]
-Description=Daily Sheaf backup
+Description=Daily Infall backup
 
 [Timer]
 OnCalendar=*-*-* 03:30:00

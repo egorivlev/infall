@@ -642,7 +642,7 @@ describe('no AI set up', () => {
     expect(screen.getByRole('heading', { name: "AI isn't set up for you" })).toBeInTheDocument()
     expect(
       screen.getByText(
-        "Sheaf doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser, add an OpenRouter key in AI settings.",
+        "Infall doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser, add an OpenRouter key in AI settings.",
       ),
     ).toBeInTheDocument()
     expect(screen.queryByText('Choose a model in AI settings.')).toBeNull()
@@ -663,7 +663,7 @@ describe('no AI set up', () => {
     show('server_off')
     expect(
       screen.getByText(
-        "Sheaf doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser it needs an OpenRouter key, which this server is not set up to store. Ask your Admin, or use the desktop app.",
+        "Infall doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser it needs an OpenRouter key, which this server is not set up to store. Ask your Admin, or use the desktop app.",
       ),
     ).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()

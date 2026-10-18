@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sheaf top bar</title>
+<title>Infall top bar</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -44,8 +44,8 @@
           <span style="width:12px;height:12px;border-radius:50%;background:#28c840;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,.22);"></span>
         </div>
       </sc-if>
-      <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4.5 2 C7.2 6.5 7.2 11.5 4.5 16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 2 V16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><path d="M13.5 2 C10.8 6.5 10.8 11.5 13.5 16" stroke="var(--q-ink)" stroke-width="1.6" stroke-linecap="round"></path><rect x="4.6" y="7.4" width="8.8" height="3.2" rx="1" fill="var(--q-accent)"></rect></svg>
-      <span style="font-weight:600;letter-spacing:.01em;">Sheaf</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><g transform="rotate(-12 12 12)"><circle cx="12" cy="12" r="6.6" fill="#000" stroke="#ffd98f" stroke-width="2.2"></circle><path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" style="stroke:color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken))" stroke-width="3.8" stroke-linecap="round"></path><path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke="#f2a03d" stroke-width="1.7" stroke-linecap="round"></path></g></svg>
+      <span style="font-weight:600;letter-spacing:.01em;">Infall</span>
       <span style="color:var(--q-ink-3);font-size:12px;white-space:nowrap;">QEC Lab</span>
     </div>
     <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
@@ -176,12 +176,12 @@ const MENUS = [
   { name: 'Branch', items: [['New Branch from now…', ''], ['New Branch from a Checkpoint…', ''], ['Switch Branch…', ''], '-', ['Create Checkpoint', '⇧⌘S'], ['Compare and Merge…', '']] },
   { name: 'Run', items: [['Run Page Code', '⌘↵'], ['Stop', '⌘.'], '-', ['Review Changed Code', '']] },
   { name: 'Window', items: [['Reset Layout', ''], ['Collapse Rail', '⌘\\']] },
-  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Sheaf', '']] },
+  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Infall', '']] },
 ];
 const GUEST_MENUS = [
   { name: 'File', items: [['Export Board…', ''], '-', ['Sign In…', '']] },
   { name: 'View', items: [['Board', ''], ['Pages', ''], '-', ['Zoom In', '⌘+'], ['Zoom Out', '⌘−'], ['Fit to Content', '⌘0']] },
-  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Sheaf', '']] },
+  { name: 'Help', items: [['Documentation', ''], ['Keyboard Shortcuts', '⌘/'], '-', ['About Infall', '']] },
 ];
 class Component extends DCLogic {
   state = { open: null, menu: undefined };

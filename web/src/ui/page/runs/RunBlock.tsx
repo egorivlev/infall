@@ -19,8 +19,8 @@ const MAX_FIGURES = 24
 /** How close to the end of the output still counts as "at the end" (px). */
 const END_SLACK = 16
 
-const APPROVAL_LINE = 'Check the Sheaf window that just opened: it shows this code and asks before running it.'
-const BROWSER_LINE = "Code can only run in the Sheaf desktop app. You're in the browser — "
+const APPROVAL_LINE = 'Check the Infall window that just opened: it shows this code and asks before running it.'
+const BROWSER_LINE = "Code can only run in the Infall desktop app. You're in the browser — "
 const OLD_APP_LINE = 'This version of the desktop app cannot run code. Update the app.'
 
 /** Why `runs.run` could not start, in plain words. */
@@ -29,7 +29,7 @@ function startSentence(e: unknown): string {
     case 'busy':
       return 'Another Run is in progress.'
     case 'no_runner':
-      return 'Running code needs the Sheaf desktop app.'
+      return 'Running code needs the Infall desktop app.'
     case 'not_found':
       return 'This Run is no longer on the Page.'
     case 'read_only':
@@ -434,7 +434,7 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
 
   // ---- what a screen reader is told when the state changes (one polite element) ----
   let announce = ''
-  if (phase === 'approval') announce = 'Waiting for you in the Sheaf window'
+  if (phase === 'approval') announce = 'Waiting for you in the Infall window'
   else if (isLive) announce = 'Run started'
   else if (startError) announce = `Run failed: ${startError}`
   else if (outcome?.status === 'recorded') announce = result?.stopped === true || result?.exit === null ? 'Run stopped' : 'Run finished'

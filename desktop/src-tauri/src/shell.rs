@@ -178,7 +178,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
     let runner_settings =
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
-    let app_menu = SubmenuBuilder::new(app, "Sheaf")
+    let app_menu = SubmenuBuilder::new(app, "Infall")
         .about(None)
         .separator()
         .item(&change)
@@ -218,7 +218,7 @@ fn open_setup(app: &AppHandle) -> tauri::Result<()> {
         return window.set_focus();
     }
     local_window(app, SETUP_WINDOW, "index.html")
-        .title("Sheaf")
+        .title("Infall")
         .inner_size(520.0, 420.0)
         .resizable(false)
         .build()?;
@@ -268,7 +268,7 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
     let nav_origin = origin.to_owned();
     let new_window_app = app.clone();
     let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(start))
-        .title("Sheaf")
+        .title("Infall")
         .inner_size(1280.0, 860.0)
         .min_inner_size(900.0, 600.0)
         // Runs in the main frame only, before the page's own scripts.
@@ -723,7 +723,7 @@ async fn runner_settings_view(webview: Webview, app: AppHandle) -> Result<Settin
     let runner = runner(&app);
     tauri::async_runtime::spawn_blocking(move || runner.settings_view())
         .await
-        .map_err(|_| "Sheaf could not look for Python on this computer.".to_owned())
+        .map_err(|_| "Infall could not look for Python on this computer.".to_owned())
 }
 
 /// Checks and saves the Member's choice, then closes the window.

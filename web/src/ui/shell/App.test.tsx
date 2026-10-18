@@ -101,7 +101,7 @@ describe('App routing', () => {
   it('shows Login when signed out', () => {
     h.session = { status: 'signed_out' }
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Infall' })).toBeInTheDocument()
   })
 
   it('keeps /invite/<token> public, even though signed out', async () => {
@@ -109,7 +109,7 @@ describe('App routing', () => {
     h.session = { status: 'signed_out' }
     render(<App />)
     expect(await screen.findByText('This invite is no longer valid. Ask your Admin for a new one.')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Sign in to Sheaf' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Sign in to Infall' })).toBeNull()
     expect(h.lookup).toHaveBeenCalledWith('x')
   })
 
@@ -117,7 +117,7 @@ describe('App routing', () => {
     go('/members')
     h.session = { status: 'signed_out' }
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'Sign in to Sheaf' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sign in to Infall' })).toBeInTheDocument()
   })
 
   it('redirects a non-Admin from /members to the Board', () => {

@@ -220,7 +220,7 @@ function SuggestionBlockImpl({ vm, me, people, owners, cards, branchId, previewi
 
       {pending && vm.stale && <p className="qs-item__note">The Card this was for is no longer on this Branch.</p>}
       {pending && !vm.stale && vm.existingSource && (
-        <p className="qs-item__note">Already in Sheaf — accepting attaches the existing Source.</p>
+        <p className="qs-item__note">Already in Infall — accepting attaches the existing Source.</p>
       )}
 
       {pending && (

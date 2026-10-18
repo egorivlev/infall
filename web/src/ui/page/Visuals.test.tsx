@@ -295,7 +295,7 @@ describe('Visuals: editing', () => {
     expect(Number(source.getAttribute('rows'))).toBeGreaterThanOrEqual(14)
     expect(source.getAttribute('spellcheck')).toBe('false')
     expect(row()).toHaveTextContent(
-      'HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Sheaf. Use the --q-* colour variables to follow the theme.',
+      'HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Infall. Use the --q-* colour variables to follow the theme.',
     )
     expect(source).toHaveAccessibleDescription(/Runs in a sandbox/)
     for (const name of ['Run', 'Done', 'Cancel']) expect(button(name)).toBeInTheDocument()

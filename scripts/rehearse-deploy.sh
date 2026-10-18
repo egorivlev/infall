@@ -6,7 +6,7 @@
 #   - builds the server for Linux in a throwaway Debian 12 container (guide 3a's
 #     commands) and uses web/dist built on this computer (guide 3b);
 #   - starts a clean Debian 12 container with systemd as its first process: this is
-#     "the VPS". It installs Sheaf there with the guide's commands and the kit files in
+#     "the VPS". It installs Infall there with the guide's commands and the kit files in
 #     deploy/, unchanged;
 #   - checks the service, HTTPS, the headers, the redirect, file rights, the sandbox
 #     and the request body limits;
@@ -793,7 +793,7 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# The whole machine restarts: do Sheaf, Caddy and the backup timer come back?
+# The whole machine restarts: do Infall, Caddy and the backup timer come back?
 # ---------------------------------------------------------------------------
 
 restart_machine() {
@@ -804,7 +804,7 @@ restart_machine() {
 . /root/rehearsal/lib.sh
 set -uo pipefail
 came_back() { wait_for_health && [ "$(systemctl is-active qoop)" = active ] && [ "$(systemctl is-active caddy)" = active ]; }
-check 'after a restart of the machine Sheaf and Caddy start by themselves and answer' came_back
+check 'after a restart of the machine Infall and Caddy start by themselves and answer' came_back
 check 'after a restart of the machine the backup timer is waiting again' is "$(systemctl is-active qoop-backup.timer)" active
 login "$R/admin-reboot.jar" admin@qoop.test "$R/admin-password"
 check 'the Admin signs in after the restart of the machine' is "$STATUS" 200

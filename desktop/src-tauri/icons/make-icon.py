@@ -5,8 +5,9 @@ Only needed when the icon itself is to be changed; packaging does not run it
 (scripts/package-macos.sh makes the .icns from the committed icon-1024.png).
 Needs Pillow:  python3 make-icon.py
 
-The mark is the one of web/src/ui/shell/Logo.tsx (18-unit grid: three stalks bound by
-an accent band), in the dark theme's colours of design/qoop-theme.css, on a tile laid out on
+The mark is the one of web/src/ui/shell/Logo.tsx (24-unit grid, turned by 12 degrees: a black
+hole inside its bright ring, the near side of the accretion disc crossing in front), on a tile
+in the dark theme's colours of design/qoop-theme.css, laid out on
 Apple's macOS icon grid (824 pt tile in a 1024 pt canvas, transparent margin).
 After changing it, also refresh the 256 px copy Tauri embeds:
     sips -z 256 256 icon-1024.png --out icon.png
@@ -15,7 +16,7 @@ After changing it, also refresh the 256 px copy Tauri embeds:
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 SIZE = 1024
 SS = 4  # supersampling
@@ -45,8 +46,10 @@ def oklch(l, c, h):
 
 SURFACE_TOP = oklch(0.265, 0.010, 255)  # --q-hover (dark)
 SURFACE_BOTTOM = oklch(0.165, 0.007, 255)  # --q-canvas (dark)
-INK = oklch(0.94, 0.006, 255)  # --q-ink (dark)
-ACCENT = oklch(0.80, 0.10, 195)  # --q-accent (dark)
+RING = (0xFF, 0xD9, 0x8F)  # the ring of light around the hole
+DISC = (0xF2, 0xA0, 0x3D)  # the accretion disc
+HOLE = (0, 0, 0)
+TILT = math.radians(-12)
 
 
 def main():
@@ -69,35 +72,38 @@ def main():
     tile.paste(gradient.resize((TILE * SS, TILE * SS)), (off, off))
     tile.putalpha(mask)
 
-    # The mark: Logo.tsx's 18-unit grid, scaled into the tile.
-    u = TILE * SS * 0.70 / 18
-    ox = off + (TILE * SS - 18 * u) / 2
+    # The mark: Logo.tsx's 24-unit grid, scaled into the tile and turned about its centre.
+    u = TILE * SS * 0.74 / 24
+    ox = off + (TILE * SS - 24 * u) / 2
     oy = ox
-    d = ImageDraw.Draw(tile)
 
     def pt(x, y):
-        return (ox + x * u, oy + y * u)
+        dx, dy = x - 12, y - 12
+        rx = dx * math.cos(TILT) - dy * math.sin(TILT)
+        ry = dx * math.sin(TILT) + dy * math.cos(TILT)
+        return (ox + (12 + rx) * u, oy + (12 + ry) * u)
 
-    def disc(cx, cy, r, fill):
+    def disc(draw, cx, cy, r, fill):
         x, y = pt(cx, cy)
-        d.ellipse((x - r * u, y - r * u, x + r * u, y + r * u), fill=fill)
+        draw.ellipse((x - r * u, y - r * u, x + r * u, y + r * u), fill=fill)
 
-    stroke = 1.4
-
-    def stalk(p0, p1, p2, p3):
-        """A cubic curve with round ends, drawn as overlapping discs."""
-        steps = 400
+    def near_side(draw, width, fill):
+        """The lower half of the disc's ellipse (10.8 by 2.6), round ends, as overlapping discs."""
+        steps = 900
         for i in range(steps + 1):
-            t = i / steps
-            m = 1 - t
-            x = m**3 * p0[0] + 3 * m * m * t * p1[0] + 3 * m * t * t * p2[0] + t**3 * p3[0]
-            y = m**3 * p0[1] + 3 * m * m * t * p1[1] + 3 * m * t * t * p2[1] + t**3 * p3[1]
-            disc(x, y, stroke / 2, INK)
+            a = math.pi * i / steps
+            disc(draw, 12 - 10.8 * math.cos(a), 12 + 2.6 * math.sin(a), width / 2, fill)
 
-    stalk((4.5, 2), (7.2, 6.5), (7.2, 11.5), (4.5, 16))
-    stalk((9, 2), (9, 6.67), (9, 11.33), (9, 16))
-    stalk((13.5, 2), (10.8, 6.5), (10.8, 11.5), (13.5, 16))
-    d.rounded_rectangle((pt(4.6, 7.4), pt(13.4, 10.6)), radius=1 * u, fill=ACCENT)
+    # The hole and its ring on a layer of their own, cut away around the disc, so the tile shows there.
+    hole = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    hd = ImageDraw.Draw(hole)
+    disc(hd, 12, 12, 6.6 + 1.1, RING + (255,))
+    disc(hd, 12, 12, 6.6 - 1.1, HOLE + (255,))
+    cut = Image.new("L", (n, n), 255)
+    near_side(ImageDraw.Draw(cut), 3.8, 0)
+    hole.putalpha(ImageChops.multiply(hole.getchannel("A"), cut))
+    tile.alpha_composite(hole)
+    near_side(ImageDraw.Draw(tile), 1.7, DISC + (255,))
 
     tile = tile.resize((SIZE, SIZE), Image.LANCZOS)
 

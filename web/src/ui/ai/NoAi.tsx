@@ -6,7 +6,7 @@ import { LockIcon, ScreenIcon } from './icons'
 
 type None = Extract<AiSetup, { provider: 'none' }>
 
-const SHIP = "Sheaf doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription."
+const SHIP = "Infall doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription."
 
 /** Why there is no AI to ask, and what to do about it (screen 4b). */
 export function NoAi({ setup }: { setup: None }) {

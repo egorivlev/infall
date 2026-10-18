@@ -1,12 +1,12 @@
 # M10 — first real use
 
-Until now Sheaf has only run on the computer it was written on. M10 changes nothing a Member can do in Sheaf; it makes Sheaf something the team can be given: an app that installs, a server that has been put on a clean machine by following the guide, and a backup that has been restored once.
+Until now Infall has only run on the computer it was written on. M10 changes nothing a Member can do in Infall; it makes Infall something the team can be given: an app that installs, a server that has been put on a clean machine by following the guide, and a backup that has been restored once.
 
 ## 1. The desktop app as something to install (macOS)
 
-- `scripts/package-macos.sh` builds `dist/Sheaf-<version>.dmg` from a clean checkout with the tools macOS and Rust already bring (`cargo`, `sips`, `iconutil`, `codesign`, `hdiutil`). No `tauri-cli`, no new dependencies.
+- `scripts/package-macos.sh` builds `dist/Infall-<version>.dmg` from a clean checkout with the tools macOS and Rust already bring (`cargo`, `sips`, `iconutil`, `codesign`, `hdiutil`). No `tauri-cli`, no new dependencies.
 - The build is a release build with the `custom-protocol` feature (the app's own files are served from inside the binary), without a web inspector.
-- The bundle is `Sheaf.app`: identifier `app.qoop.desktop`, version from `desktop/src-tauri/Cargo.toml`, a real icon (`.icns` made from one square source image kept in the repository), `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category "Productivity". It declares no entitlements it does not use.
+- The bundle is `Infall.app`: identifier `app.qoop.desktop`, version from `desktop/src-tauri/Cargo.toml`, a real icon (`.icns` made from one square source image kept in the repository), `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category "Productivity". It declares no entitlements it does not use.
 - It is signed ad hoc (`codesign -s -`), which Apple silicon requires for any program to start. It is **not** signed with a Developer ID and **not** notarised: that needs a paid Apple account. The first start therefore needs the Member to allow it once; `desktop/README.md` says how, in the words the Member sees on screen, and says plainly what this warning means and does not mean.
 - The script prints the SHA-256 of the `.dmg`, so that the person handing it out can say which file is the real one.
 - App data stays where it is today (`~/Library/Application Support/app.qoop.desktop/`): an installed app and a development build share it. Nothing is migrated.

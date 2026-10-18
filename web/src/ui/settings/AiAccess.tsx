@@ -166,7 +166,7 @@ export function AiAccess() {
         <header className="q-settings__head">
           <h1 className="q-settings__title">AI access</h1>
           <p className="q-settings__text">
-            Sheaf doesn't ship a model. Connect the AI you already use — it can read this team's Research Content and propose Sources and
+            Infall doesn't ship a model. Connect the AI you already use — it can read this team's Research Content and propose Sources and
             Connections as Suggestions. It cannot change anything by itself.
           </p>
           <p className="q-settings__text">

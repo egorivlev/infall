@@ -158,7 +158,7 @@ function InviteForm({ token, email, role, accessUntil, onGone }: FormProps) {
           onBlur={() => setErrors((x) => ({ ...x, password: checkPassword(password) }))}
         />
         <button type="submit" className="q-btn q-btn--primary q-btn--lg q-access__submit" aria-disabled={busy} aria-busy={busy}>
-          {busy ? 'Joining…' : 'Join Sheaf'}
+          {busy ? 'Joining…' : 'Join Infall'}
         </button>
         {formError && (
           <p className="q-error q-access__error" role="alert">

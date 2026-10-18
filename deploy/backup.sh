@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sheaf daily backup: consistent SQLite copy -> gzip -> age encryption ->
+# Infall daily backup: consistent SQLite copy -> gzip -> age encryption ->
 # dated local file -> prune old -> optional rclone copy off the machine.
 # Configuration comes from the environment (see qoop.env.example).
 set -eu

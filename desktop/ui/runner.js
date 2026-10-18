@@ -37,8 +37,8 @@
       count === 0
         ? 'No approved code is remembered: every Run asks first.'
         : count === 1
-          ? 'Sheaf remembers 1 approved piece of code and runs exactly that again without asking.'
-          : 'Sheaf remembers ' + count + ' approved pieces of code and runs exactly those again without asking.';
+          ? 'Infall remembers 1 approved piece of code and runs exactly that again without asking.'
+          : 'Infall remembers ' + count + ' approved pieces of code and runs exactly those again without asking.';
     forget.disabled = count === 0;
   }
 
@@ -74,7 +74,7 @@
     });
     looking.textContent =
       list.length === 0
-        ? 'Sheaf found no Python 3 on this computer. Enter the path of one below.'
+        ? 'Infall found no Python 3 on this computer. Enter the path of one below.'
         : current === null
           ? 'Nothing is chosen yet. Choose the Python that Runs should use.'
           : '';
@@ -149,6 +149,6 @@
   });
 
   invoke('runner_settings_view').then(render, function (reason) {
-    looking.textContent = typeof reason === 'string' ? reason : 'Sheaf could not look for Python on this computer.';
+    looking.textContent = typeof reason === 'string' ? reason : 'Infall could not look for Python on this computer.';
   });
 })();

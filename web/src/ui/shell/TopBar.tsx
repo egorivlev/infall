@@ -25,8 +25,8 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
     <header className="q-topbar">
       <div className={macDesktopWindow() ? 'q-titlebar is-mac-window' : 'q-titlebar'} data-tauri-drag-region="deep">
         <div className="q-topbar__brand">
-          <Logo size={16} />
-          <span className="q-topbar__name">Sheaf</span>
+          <Logo size={18} />
+          <span className="q-topbar__name">Infall</span>
         </div>
         <div className="q-topbar__search">
           <SearchBox />
