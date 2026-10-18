@@ -376,26 +376,38 @@ describe('over time', () => {
     expect(row('Left')).toHaveTextContent('finishing…')
   })
 
-  it('waits for the first sample, and after 3 s without one says the app reports no usage', async () => {
+  it('waits for the first sample, and after 10 s without one says only that there are no numbers yet', async () => {
     await opened()
-    expect(row('Processor')).toHaveTextContent('Measuring…')
-    expect(within(popover()).queryByText('This version of the app does not report usage.')).toBeNull()
+    const usage = ['Processor', 'Memory', 'Graphics']
+    for (const label of usage) expect(row(label)).toHaveTextContent('Measuring…')
     await pass(NO_USAGE_AFTER_MS - 1)
-    expect(within(popover()).queryByText('This version of the app does not report usage.')).toBeNull()
+    for (const label of usage) expect(row(label)).toHaveTextContent('Measuring…')
     await pass(1)
-    expect(within(popover()).getByText('This version of the app does not report usage.')).toBeInTheDocument()
-    for (const label of ['Processor', 'Memory', 'Graphics', 'Left']) noRow(label)
+    // The same rows, so nothing moves; and nothing is claimed about the app.
+    for (const label of usage) expect(row(label)).toHaveTextContent('No numbers yet')
+    expect(popover()).not.toHaveTextContent(/does not report/)
+    noRow('Left')
     expect(row('Now')).toHaveTextContent('Running')
-    expect(row('Running')).toHaveTextContent('0:03')
+    expect(row('Running')).toHaveTextContent('0:10')
     expect(within(popover()).getByRole('button', { name: 'Stop' })).toBeEnabled()
   })
 
-  it('does not say so when samples do arrive', async () => {
+  it('shows a first sample that comes late, and says nothing more about missing numbers', async () => {
+    const x = await opened()
+    await pass(NO_USAGE_AFTER_MS + 5000)
+    expect(row('Processor')).toHaveTextContent('No numbers yet')
+    await go(() => x.stats())
+    expect(popover()).not.toHaveTextContent('No numbers yet')
+    expect(row('Processor')).toHaveTextContent('96 % · 1.0 of 10 cores')
+    expect(row('Left')).toBeInTheDocument()
+  })
+
+  it('never says so when samples arrive in time', async () => {
     const x = await opened()
     await pass(900)
     await go(() => x.stats())
-    await pass(10_000)
-    expect(within(popover()).queryByText('This version of the app does not report usage.')).toBeNull()
+    await pass(NO_USAGE_AFTER_MS * 3)
+    expect(popover()).not.toHaveTextContent('No numbers yet')
     expect(row('Processor')).toHaveTextContent('96 % · 1.0 of 10 cores')
   })
 

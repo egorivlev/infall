@@ -8,6 +8,7 @@ import { initials } from './initials'
 import { Link } from './Link'
 import { AI_ACCESS_PATH } from './router'
 import { clearSigningOut, noteSigningOut } from './sessionEnd'
+import { startTour, tourBlock } from '../tutorial/start'
 import { useDismiss } from './useDismiss'
 
 const ROLE_LABEL = { admin: 'Admin', member: 'Member', guest: 'Guest' } as const
@@ -48,6 +49,16 @@ export function AccountMenu({ member }: { member: Member }) {
     }
   }
 
+  // Why the tour cannot be taken right now, if it cannot; looked at each time the menu opens.
+  const tourBlocked = open ? tourBlock() : null
+  const takeTour = () => {
+    if (tourBlocked !== null) return
+    setOpen(false)
+    // The menu goes away: focus waits on its button, and comes back to it when the tour ends.
+    triggerRef.current?.focus()
+    startTour(member, triggerRef.current)
+  }
+
   async function signOut() {
     if (busy) return
     setBusy(true)
@@ -69,6 +80,7 @@ export function AccountMenu({ member }: { member: Member }) {
         type="button"
         ref={triggerRef}
         className="q-account__trigger"
+        data-tour="account"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -96,6 +108,16 @@ export function AccountMenu({ member }: { member: Member }) {
               Members
             </Link>
           )}
+          <button
+            type="button"
+            role="menuitem"
+            className="q-menu__item"
+            aria-disabled={tourBlocked !== null}
+            title={tourBlocked === 'merge' ? 'Finish or leave the Merge first' : tourBlocked === 'narrow' ? 'Make the window wider to take the tour' : undefined}
+            onClick={takeTour}
+          >
+            Tour of Infall
+          </button>
           <button type="button" role="menuitem" className="q-menu__item" aria-disabled={busy} onClick={signOut}>
             {busy ? 'Signing out…' : 'Sign out'}
           </button>

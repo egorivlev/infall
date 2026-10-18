@@ -34,14 +34,14 @@ export function NoAi({ setup }: { setup: None }) {
             </button>
           </div>
           <p className="qa-none__p">
-            Or add an OpenRouter key in <Link href={AI_ACCESS_PATH}>AI settings</Link>.
+            Or add an OpenRouter key in <Link href={AI_ACCESS_PATH}>AI access</Link>.
           </p>
         </>
       )}
       {(reason === 'browser_no_key' || reason === 'no_model') && (
         <>
-          <p className="qa-none__p">{SHIP} In the browser, add an OpenRouter key in AI settings.</p>
-          {reason === 'no_model' && <p className="qa-none__p">Choose a model in AI settings.</p>}
+          <p className="qa-none__p">{SHIP} In the browser, add an OpenRouter key in AI access.</p>
+          {reason === 'no_model' && <p className="qa-none__p">Choose a model in AI access.</p>}
         </>
       )}
       {reason === 'server_off' && (
@@ -58,7 +58,7 @@ export function NoAi({ setup }: { setup: None }) {
       {(reason === 'browser_no_key' || reason === 'no_model') && (
         <div className="qa-none__actions">
           <Link href={AI_ACCESS_PATH} className="q-btn q-btn--primary qa-none__link">
-            Open AI settings
+            Open AI access
           </Link>
         </div>
       )}

@@ -632,8 +632,8 @@ describe('no AI set up', () => {
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(ai.refresh).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/Or add an OpenRouter key in/)).toHaveTextContent('Or add an OpenRouter key in AI settings.')
-    fireEvent.click(screen.getByRole('link', { name: 'AI settings' }))
+    expect(screen.getByText(/Or add an OpenRouter key in/)).toHaveTextContent('Or add an OpenRouter key in AI access.')
+    fireEvent.click(screen.getByRole('link', { name: 'AI access' }))
     expect(window.location.pathname).toBe('/settings/ai')
   })
 
@@ -642,11 +642,11 @@ describe('no AI set up', () => {
     expect(screen.getByRole('heading', { name: "AI isn't set up for you" })).toBeInTheDocument()
     expect(
       screen.getByText(
-        "Infall doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser, add an OpenRouter key in AI settings.",
+        "Infall doesn't ship a model. In the desktop app this sidebar runs on your own Claude subscription. In the browser, add an OpenRouter key in AI access.",
       ),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Choose a model in AI settings.')).toBeNull()
-    const link = screen.getByRole('link', { name: 'Open AI settings' })
+    expect(screen.queryByText('Choose a model in AI access.')).toBeNull()
+    const link = screen.getByRole('link', { name: 'Open AI access' })
     expect(link).toHaveAttribute('href', '/settings/ai')
     fireEvent.click(link)
     expect(window.location.pathname).toBe('/settings/ai')
@@ -655,8 +655,8 @@ describe('no AI set up', () => {
   it('a key but no model: choose one', () => {
     show('no_model')
     expect(screen.getByRole('heading', { name: "AI isn't set up for you" })).toBeInTheDocument()
-    expect(screen.getByText('Choose a model in AI settings.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open AI settings' })).toBeInTheDocument()
+    expect(screen.getByText('Choose a model in AI access.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open AI access' })).toBeInTheDocument()
   })
 
   it('a server that stores no keys: ask the Admin, no link', () => {

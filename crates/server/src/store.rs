@@ -482,7 +482,15 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     /// Opens (creating if needed) and migrates the database file.
+    ///
+    /// On unix a file this call creates is private to its owner (mode 0600), and so are the
+    /// `-wal` and `-shm` files SQLite keeps beside it, which take the mode of the database file.
+    /// The rights of a file that is already there are never changed: one that others can read
+    /// is left as it is — a second account may read it on purpose — and one line in the log
+    /// says so.
     pub fn open(path: &Path) -> StoreResult<SqliteStore> {
+        #[cfg(unix)]
+        private_file::prepare(path);
         let conn = Connection::open(path)?;
         Self::init(conn)
     }
@@ -512,6 +520,50 @@ impl SqliteStore {
 }
 
 /// Runs every migration step past the file's `user_version`, each in its own transaction.
+/// Keeping the database file to its owner (unix).
+#[cfg(unix)]
+mod private_file {
+    use std::fs::OpenOptions;
+    use std::io::ErrorKind;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::path::Path;
+
+    /// Creates the database file as an empty owner-only file if it is not there yet (SQLite
+    /// takes an empty file for a new database), or looks at the rights of the one that is.
+    /// Never fails: what cannot be done here is left to SQLite, which reports it.
+    pub fn prepare(path: &Path) {
+        // Not a file on disk: nothing, an in-memory database, or a `file:` URI.
+        let name = path.to_string_lossy();
+        if name.is_empty() || name == ":memory:" || name.starts_with("file:") {
+            return;
+        }
+        // `create_new` so that a file made by someone else in the meantime is not taken for ours.
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+        {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => warn_if_open(path),
+            Err(_) => {}
+        }
+    }
+
+    fn warn_if_open(path: &Path) {
+        let Ok(meta) = std::fs::metadata(path) else {
+            return;
+        };
+        let mode = meta.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            tracing::warn!(
+                "the database file {} can be opened by other accounts (mode {mode:o}); it was left as it is — `chmod 600` makes it private",
+                path.display()
+            );
+        }
+    }
+}
+
 fn migrate(conn: &mut Connection) -> StoreResult<()> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if current > SCHEMA_VERSION {

@@ -17,7 +17,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
   const canAdd = member.role !== 'guest' && !readOnly
   return (
     <aside className="q-rail">
-      <nav aria-label="Main" className="q-rail__nav">
+      <nav aria-label="Main" className="q-rail__nav" data-tour="rail">
         <Link href={branchPath(branch)} className="q-rail__item" aria-current={route === 'board' ? 'page' : undefined}>
           <Icon name="board" />
           <span>Board</span>

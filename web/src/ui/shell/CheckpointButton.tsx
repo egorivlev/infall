@@ -71,7 +71,7 @@ export function CheckpointButton() {
   }
 
   return (
-    <div className="q-cp" ref={boxRef}>
+    <div className="q-cp" ref={boxRef} data-tour="checkpoint">
       <button
         type="button"
         ref={triggerRef}

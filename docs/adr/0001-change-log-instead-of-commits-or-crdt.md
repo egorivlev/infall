@@ -1,6 +1,6 @@
 # Research Content is an append-only log of field-level Changes
 
-Qoop needs live updates between Members, full history with fall-back, and git-like Branches that Merge. We record every edit automatically as a field-level Change in an append-only log, and derive live sync, history, Restore, branching and three-way Merge from that one log. There is no commit step, and Restore appends undoing Changes rather than erasing history.
+Infall needs live updates between Members, full history with fall-back, and git-like Branches that Merge. We record every edit automatically as a field-level Change in an append-only log, and derive live sync, history, Restore, branching and three-way Merge from that one log. There is no commit step, and Restore appends undoing Changes rather than erasing history.
 
 ## Considered Options
 

@@ -25,7 +25,7 @@ export function AiSidebar({ branch }: { branch: string }) {
   const messages = current?.messages ?? NO_MESSAGES
 
   return (
-    <aside className="qa-side" aria-label="AI">
+    <aside className="qa-side" aria-label="AI" data-tour="ai-sidebar">
       <Header snapshot={snapshot} />
       <p className="qa-private">
         <LockIcon />

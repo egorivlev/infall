@@ -127,8 +127,8 @@ function goodMessages(messages: readonly AiMessage[]): ChatMessage[] {
 // Why a turn failed, as a sentence for the Member. Only an ApiError's own words are passed on.
 function sentence(e: unknown): string {
   if (!(e instanceof ApiError)) return NO_ANSWER
-  if (e.code === 'no_key') return 'Add an OpenRouter key in the AI settings first.'
-  if (e.code === 'no_model') return 'Choose a model in the AI settings first.'
+  if (e.code === 'no_key') return 'Add an OpenRouter key under AI access first.'
+  if (e.code === 'no_model') return 'Choose a model under AI access first.'
   if (e.code === 'ai_not_configured') return 'The AI is not set up on this server.'
   if (e.code === 'too_many_requests') return 'Too many questions in a minute. Wait a moment and try again.'
   return e.message.trim() === '' ? NO_ANSWER : e.message.slice(0, MAX_ERROR)

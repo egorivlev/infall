@@ -25,7 +25,7 @@ use crate::tools::{self, shown};
 /// Protocol versions this server speaks, newest first.
 const PROTOCOL_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
-const INSTRUCTIONS: &str = "Qoop is a shared research workspace: a team maps a topic as Cards on a Board, each with a Page of notes, attached Sources and Connections to other Cards, on one or more Branches. These tools read that Workspace; the only change you can make is to propose a Suggestion (a Source for a Card, or a Connection between two Cards), which is added only if a Member reviews and accepts it.";
+const INSTRUCTIONS: &str = "Infall is a shared research workspace: a team maps a topic as Cards on a Board, each with a Page of notes, attached Sources and Connections to other Cards, on one or more Branches. These tools read that Workspace; the only change you can make is to propose a Suggestion (a Source for a Card, or a Connection between two Cards), which is added only if a Member reviews and accepts it.";
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
@@ -82,7 +82,7 @@ fn unauthorized() -> Response {
     let mut res = http_error(
         StatusCode::UNAUTHORIZED,
         "not_signed_in",
-        "Send a Qoop access token as a Bearer token.",
+        "Send an Infall access token as a Bearer token.",
     );
     res.headers_mut()
         .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
@@ -258,7 +258,7 @@ pub fn definitions() -> Value {
         {
             "name": "list_branches",
             "title": "List Branches",
-            "description": "Lists the Branches of the Qoop Workspace. A Branch is a line of work on the research Board; \"main\" is the shared one and others are forked from a parent to try something out. Returns a JSON array of { name, parent?, changes } where `changes` is how many Changes the Branch has recorded. Use a `name` from here as the `branch` argument of the other tools.",
+            "description": "Lists the Branches of the Infall Workspace. A Branch is a line of work on the research Board; \"main\" is the shared one and others are forked from a parent to try something out. Returns a JSON array of { name, parent?, changes } where `changes` is how many Changes the Branch has recorded. Use a `name` from here as the `branch` argument of the other tools.",
             "inputSchema": schema(json!({}), &[]),
             "annotations": read_only,
         },

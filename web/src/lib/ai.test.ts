@@ -553,8 +553,8 @@ describe('stopping and failing', () => {
     const cases: [unknown, string][] = [
       [new ApiError(0, 'network', 'Cannot reach the server.'), 'Cannot reach the server.'],
       [new ApiError(0, 'cut_off', 'The answer was cut off.'), 'The answer was cut off.'],
-      [new ApiError(409, 'no_key', 'nope'), 'Add an OpenRouter key in the AI settings first.'],
-      [new ApiError(409, 'no_model', 'nope'), 'Choose a model in the AI settings first.'],
+      [new ApiError(409, 'no_key', 'nope'), 'Add an OpenRouter key under AI access first.'],
+      [new ApiError(409, 'no_model', 'nope'), 'Choose a model under AI access first.'],
       [new ApiError(503, 'ai_not_configured', 'nope'), 'The AI is not set up on this server.'],
       [new ApiError(429, 'too_many_requests', 'nope'), 'Too many questions in a minute. Wait a moment and try again.'],
       [new ApiError(0, 'desktop_failed', 'Claude Code could not be started.'), 'Claude Code could not be started.'],

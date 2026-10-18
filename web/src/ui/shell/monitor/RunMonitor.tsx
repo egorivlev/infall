@@ -9,8 +9,12 @@ import { useOnBoard } from '../useOnBoard'
 import { formatBytes, formatCount, formatEstimate, formatLeft, formatPercent, formatProcessor, fraction } from './format'
 import './monitor.css'
 
-/** How long a running Run may go without a usage sample before the app is taken for one that reports none. */
-export const NO_USAGE_AFTER_MS = 3000
+/**
+ * How long a running Run may go without a usage sample before the popover stops saying it is measuring.
+ * The Runner takes its first sample 0.8 s after the start and one a second after that, but a sample can take
+ * seconds on a busy computer and one that fails is skipped — so a few quiet seconds mean nothing yet.
+ */
+export const NO_USAGE_AFTER_MS = 10_000
 /** Memory use from which its meter turns to the warning colour. */
 const MEMORY_WARNING = 0.9
 
@@ -19,7 +23,9 @@ const NOW: Record<RunLive['state'], string> = {
   running: 'Running',
   saving: 'Recording the result…',
 }
-const NO_USAGE = 'This version of the app does not report usage.'
+const MEASURING = 'Measuring…'
+// What is known and no more: the app may be one that reports no usage, or its first sample may only be late.
+const NO_USAGE = 'No numbers yet'
 const NO_ESTIMATE = 'No estimate — the code reports no progress'
 const NO_GRAPHICS = 'Not reported on this computer'
 
@@ -113,7 +119,7 @@ function Usage({ stats }: { stats: RunStats }) {
 function Monitor({ live }: { live: RunLive }) {
   const { state, stats, startedAt } = live
   const [open, setOpen] = useState(false)
-  // True once a running Run has gone `NO_USAGE_AFTER_MS` without a sample: an app from before M9.
+  // True once a running Run has gone `NO_USAGE_AFTER_MS` without a sample. Only read while there is none.
   const [silent, setSilent] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -231,20 +237,19 @@ function Monitor({ live }: { live: RunLive }) {
             {stats ? (
               <Usage stats={stats} />
             ) : (
-              started &&
-              !silent && (
-                // The first sample is on its way: the rows are there already, so nothing moves when it arrives.
+              started && (
+                // No sample yet: the rows are there already, so nothing moves when one arrives — however late.
                 <>
                   <Row label="Processor">
-                    <span className="q-mon__text q-mon__quiet">Measuring…</span>
+                    <span className="q-mon__text q-mon__quiet">{silent ? NO_USAGE : MEASURING}</span>
                     <span className="q-mon__meter" aria-hidden="true" />
                   </Row>
                   <Row label="Memory">
-                    <span className="q-mon__text q-mon__quiet">Measuring…</span>
+                    <span className="q-mon__text q-mon__quiet">{silent ? NO_USAGE : MEASURING}</span>
                     <span className="q-mon__meter" aria-hidden="true" />
                   </Row>
                   <Row label="Graphics">
-                    <span className="q-mon__text q-mon__quiet">Measuring…</span>
+                    <span className="q-mon__text q-mon__quiet">{silent ? NO_USAGE : MEASURING}</span>
                     <span className="q-mon__meter" aria-hidden="true" />
                   </Row>
                 </>
@@ -270,7 +275,6 @@ function Monitor({ live }: { live: RunLive }) {
               </Row>
             )}
           </dl>
-          {started && !stats && silent && <p className="q-mon__note">{NO_USAGE}</p>}
           {started && (
             <div className="q-mon__actions">
               {/* The same action as the Run block's Stop; nothing to stop once the result is being recorded. */}

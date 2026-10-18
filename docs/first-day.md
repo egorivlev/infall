@@ -4,6 +4,8 @@ What the Admin and a new Member do by hand, in order, on the day someone joins. 
 
 `https://qoop.example.org` stands for your server's address.
 
+When this page is done, the next thing to read, for the Admin and the new Member alike, is [the tutorial](tutorial.md): fifteen minutes through each part of Infall, once.
+
 ## The Admin
 
 1. Open `https://qoop.example.org` and sign in ("Sign in to Infall": Email, Password).

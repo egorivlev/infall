@@ -102,7 +102,7 @@ impl ApiError {
             ForbiddenOrigin => (
                 StatusCode::FORBIDDEN,
                 "forbidden_origin",
-                "This request did not come from the Qoop app.".into(),
+                "This request did not come from the Infall app.".into(),
             ),
             NotFound => (
                 StatusCode::NOT_FOUND,

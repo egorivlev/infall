@@ -1,4 +1,4 @@
-# Qoop
+# Infall
 
 A self-hosted shared workspace where a small research team maps, extends, and tracks the state of a research project.
 
@@ -35,7 +35,7 @@ A Simulation consisting of experiment code together with the output captured the
 _Avoid_: Notebook, job, cell
 
 **Runner**:
-The part of the desktop app that executes Runs on the member's own hardware. A member using Qoop from a browser has no Runner, and can still read every Run's captured output.
+The part of the desktop app that executes Runs on the member's own hardware. A member using Infall from a browser has no Runner, and can still read every Run's captured output.
 _Avoid_: Kernel, agent, worker
 
 **Source**:

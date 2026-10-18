@@ -52,5 +52,4 @@
 /* Nearly out of memory: the warning colour, with the numbers beside it saying how much. */
 .q-mon__meter.is-warn .q-mon__fill { background: var(--q-st-question); }
 
-.q-mon__note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--q-ink-3); }
 .q-mon__actions { display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--q-line-soft); }

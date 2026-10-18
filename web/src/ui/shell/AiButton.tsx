@@ -18,7 +18,7 @@ export function AiButton() {
   }, [open])
 
   return (
-    <button ref={button} type="button" className="q-btn q-topbtn" title="AI sidebar" aria-pressed={open} onClick={() => aiPanel.toggle()}>
+    <button ref={button} type="button" className="q-btn q-topbtn" data-tour="ai" title="AI sidebar" aria-pressed={open} onClick={() => aiPanel.toggle()}>
       <Icon name="ai" size={13} />
       AI
     </button>

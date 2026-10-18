@@ -17,7 +17,7 @@ use tracing_subscriber::EnvFilter;
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
-#[command(name = "qoop-server", about = "The Qoop research workspace server")]
+#[command(name = "qoop-server", about = "The Infall research workspace server")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

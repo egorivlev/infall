@@ -8,7 +8,7 @@ type Props = {
 export function Toolbar({ readOnly, onAddCard, onAddFrame }: Props) {
   if (readOnly) return null
   return (
-    <div className="qb-toolbar" role="toolbar" aria-label="Add to the Board">
+    <div className="qb-toolbar" data-tour="add" role="toolbar" aria-label="Add to the Board">
       <button type="button" className="q-btn q-btn--sm qb-toolbar__btn" data-testid="toolbar-add-card" onClick={onAddCard}>
         + Card
       </button>

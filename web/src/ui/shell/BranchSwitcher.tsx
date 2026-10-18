@@ -69,6 +69,7 @@ export function BranchSwitcher({ branch }: { branch: string }) {
         type="button"
         ref={triggerRef}
         className="q-branch q-branch--button"
+        data-tour="branch"
         title={`Switch Branch — ${branch}`}
         aria-label={`Branch ${branch}`}
         aria-haspopup="menu"

@@ -209,10 +209,28 @@ async fn ui_or_not_found(ui: ServeDir<ServeFile>, req: Request) -> Response {
     if path == "/api" || path.starts_with("/api/") {
         return ApiError::NotFound.into_response();
     }
-    match ui.oneshot(req).await {
+    // Vite names the files under /assets/ after their content, so those may be kept for good.
+    let named_by_content = path.starts_with("/assets/");
+    let mut res = match ui.oneshot(req).await {
         Ok(res) => res.into_response(),
         Err(never) => match never {},
-    }
+    };
+    // Everything else — above all index.html, which names the current assets — is asked for
+    // again each time (a cheap `304` when unchanged): without this a browser, or the desktop
+    // app's web view, guesses how long to keep it and goes on showing the UI of before an update.
+    let is_html = res
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/html"));
+    let keep = if named_by_content && res.status().is_success() && !is_html {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    res.headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static(keep));
+    res
 }
 
 async fn api_not_found() -> ApiError {

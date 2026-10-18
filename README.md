@@ -1,4 +1,6 @@
-# Qoop
+# Infall
+
+The product is called **Infall**; code, packages and paths still say `qoop` (`qoop-server`, `QOOP_*`, `/etc/qoop`), from its first name.
 
 A self-hosted shared workspace where a small research team maps, extends, and tracks the state of a research project. Vocabulary: [CONTEXT.md](CONTEXT.md). Decisions: [docs/adr](docs/adr). Rules: [docs/specs](docs/specs).
 

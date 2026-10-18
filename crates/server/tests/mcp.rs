@@ -219,7 +219,7 @@ async fn initialize_negotiates_the_protocol_version() {
             json!({ "name": "qoop", "version": env!("CARGO_PKG_VERSION") })
         );
         let instructions = result["instructions"].as_str().unwrap();
-        assert!(instructions.contains("Qoop"));
+        assert!(instructions.contains("Infall"));
         assert!(instructions.contains("Suggestion"));
         assert!(instructions.contains("Member"));
     }

@@ -1,6 +1,6 @@
-# Qoop desktop app — contract (M7)
+# Infall desktop app — contract (M7)
 
-The desktop app ([ADR 0002](../adr/0002-desktop-app-primary-browser-fallback.md), [ADR 0003](../adr/0003-ai-through-members-claude-subscriptions.md)) is a thin Tauri shell around the same web UI the server serves. What it adds in M7 is one thing: the AI sidebar can run on the Member's own Claude Code. (The Runner is M8.)
+The desktop app ([ADR 0002](../adr/0002-desktop-app-primary-browser-fallback.md), [ADR 0003](../adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md)) is a thin Tauri shell around the same web UI the server serves. What it adds in M7 is one thing: the AI sidebar can run on the Member's own Claude Code. (The Runner is M8.)
 
 ## Shell
 - First start (or "Change server…" from the app menu): a small local screen asks for the server address (`https://…`; `http://` only for `localhost`/`127.0.0.1`), checks `GET <address>/api/health` answers `{ "ok": true }`, stores the address in the app's config directory, and loads the server's UI in the main window. Later starts go straight there.
@@ -37,10 +37,10 @@ type QoopDesktop = {
 ```
 
 ## How a run is executed
-The app starts the Member's own `claude` in print mode, in a fresh empty temporary directory, with **only** the Qoop tools:
+The app starts the Member's own `claude` in print mode, in a fresh empty temporary directory, with **only** the Infall tools:
 
 - output as a stream of JSON events with partial messages, mapped to `AiEvent` (assistant text → `delta`; a tool call → `tool` with the bare tool name; the final result → `done` with the session id and model; anything that fails → `error` with a plain sentence);
-- the Qoop `/mcp` server given through a config **file** written with owner-only permissions and deleted when the run ends (the token must never be on the command line, where other local processes could read it), with strict MCP config so the Member's other MCP servers are not loaded;
+- the Infall `/mcp` server given through a config **file** written with owner-only permissions and deleted when the run ends (the token must never be on the command line, where other local processes could read it), with strict MCP config so the Member's other MCP servers are not loaded;
 - **every built-in tool disabled** (no shell, no file read/write/edit, no web fetch, no sub-agents) and only the eight `mcp__qoop__*` tools allowed — text on a Board is written by other people and other AIs, and must not be able to make an AI act on the Member's machine;
 - the Member's own Claude Code settings, hooks, plugins, memory files and project instructions not loaded, as far as the CLI allows (document exactly which flags achieve what, and what could not be switched off);
 - the `system` text appended to the system prompt; `resume` passed when given; the prompt sent on standard input, not as an argument.
@@ -142,7 +142,7 @@ qoop.progress(done, total, "sweep")  # both at once
 ```
 - Calls are cheap and never raise or print, whatever they are given (bad values are ignored); they write one small file in `QOOP_RUN_DIR` (atomically, at most about five times a second, the last call always lands), which the app reads when it samples.
 - Code that does not call `qoop` but shows a `tqdm` bar still gets progress: when nothing was reported through `qoop`, the app reads the last progress bar in the output (`45%|… | 45/100 [`), and its description as `step`.
-- Code meant to run outside Qoop too can guard the import: `try: import qoop` / `except ImportError: qoop = None`.
+- Code meant to run outside Infall too can guard the import: `try: import qoop` / `except ImportError: qoop = None`.
 
 ## Not in M9
 Per-process graphics-processor use; energy; network and disk; history of usage after the Run ended; usage recorded in the result; Windows.

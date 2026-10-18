@@ -8,6 +8,7 @@ import { suggestionsPanel, useAiPanel, usePagePanel, useSuggestionsPanel } from 
 import { MergeReview } from '../merge'
 import { AiAccess } from '../settings'
 import { Todos } from '../todos'
+import { Tour } from '../tutorial'
 import { Branches } from './Branches'
 import { errorStatus } from './errorMessages'
 import { Link } from './Link'
@@ -116,12 +117,14 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
             <Link href="/">Go to main</Link>
           </div>
         ) : (
-          <div className="q-board-host">
+          <div className="q-board-host" data-tour="board">
             <BoardView />
           </div>
         )}
       </main>
       {aiOpen && <AiSidebar branch={branch} />}
+      {/* Keyed by Member: the offer and its answer are each person's own. */}
+      <Tour key={member.id} member={member} view={missing ? 'missing' : view} />
     </div>
   )
 }

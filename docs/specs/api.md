@@ -1,4 +1,4 @@
-# Qoop — server API contract (M1–M7)
+# Infall — server API contract (M1–M7)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -270,7 +270,7 @@ After every change the server sends `{ type: "todos", todos: Todo[] }` (the full
 
 ## 12. M5 — AI tool layer, access tokens, Suggestions
 
-See [ADR 0003](../adr/0003-ai-through-members-claude-subscriptions.md). The server holds no model and no model key. An AI reaches Qoop through the tool endpoint with a Member's access token, can read what that Member can read, and can write exactly one thing: Suggestions. Nothing an AI sends becomes Research Content until a Member accepts it.
+See [ADR 0003](../adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md). The server holds no model and no model key. An AI reaches Infall through the tool endpoint with a Member's access token, can read what that Member can read, and can write exactly one thing: Suggestions. Nothing an AI sends becomes Research Content until a Member accepts it.
 
 ### Access tokens
 For Members and Admins (Guests `403`). A token acts as its Member **only** on `/mcp`; it is never accepted on `/api/*`, and a session cookie is never accepted on `/mcp`.
@@ -322,7 +322,7 @@ Rules at creation (tool layer): the Branch exists; for a Source the Card, and fo
 ### The tool endpoint — `POST /mcp`
 Model Context Protocol, Streamable HTTP transport, stateless: one JSON-RPC 2.0 message per `POST`, answered with `Content-Type: application/json` (no SSE, no sessions; `GET` and `DELETE` → `405`). Authentication: `Authorization: Bearer <secret>`; missing or unknown → `401` with `WWW-Authenticate: Bearer`. The `X-Qoop-Request` header is not required here (non-browser clients), but if an `Origin` header is present it must be the public origin or the dev origin (`403`). Body limit 1 MB. Per token: at most 120 requests a minute (`429`).
 
-Methods: `initialize` (answer with the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, otherwise `2025-06-18`; `capabilities: { tools: {} }`; `serverInfo: { name: "qoop", version }`; `instructions`: two sentences saying what Qoop is and that changes are proposed as Suggestions for a Member to accept), `notifications/initialized` and any other notification (→ `202`, empty body), `ping` (→ `{}`), `tools/list`, `tools/call`. Unknown method → JSON-RPC error `-32601`; malformed → `-32700`/`-32600`; bad tool arguments → a tool result with `isError: true` and a plain sentence (not a protocol error), so the model can correct itself.
+Methods: `initialize` (answer with the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, otherwise `2025-06-18`; `capabilities: { tools: {} }`; `serverInfo: { name: "qoop", version }`; `instructions`: two sentences saying what Infall is and that changes are proposed as Suggestions for a Member to accept), `notifications/initialized` and any other notification (→ `202`, empty body), `ping` (→ `{}`), `tools/list`, `tools/call`. Unknown method → JSON-RPC error `-32601`; malformed → `-32700`/`-32600`; bad tool arguments → a tool result with `isError: true` and a plain sentence (not a protocol error), so the model can correct itself.
 
 Tools — every result is one `text` content item holding compact JSON. `branch` is always optional and is a Branch **name** (default `main`). Card arguments are entity ids as returned by the tools.
 
@@ -396,7 +396,7 @@ type AiModel = { id: string; name: string; context_length?: number };
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type AiEvent =
   | { type: "delta"; text: string }            // more of the answer
-  | { type: "tool"; name: string }             // the model is calling a Qoop tool (name only)
+  | { type: "tool"; name: string }             // the model is calling an Infall tool (name only)
   | { type: "done"; model?: string }           // the turn is complete
   | { type: "error"; message: string };        // plain sentence; the stream ends
 ```
@@ -410,7 +410,7 @@ type AiEvent =
 | `GET /api/ai/models` | — | `{ models: AiModel[] }` — upstream `GET /models`, cached for an hour, trimmed to those that support tool calling when the upstream says so; `502 upstream_failed` if it cannot be fetched |
 | `POST /api/ai/chat` | `{ messages: ChatMessage[], scope?: { branch: string /* name */, card?: string /* id */ } }` — 1–60 messages, each ≤ 40 000 characters, the last from `user` | `Content-Type: text/event-stream`: one `data: <AiEvent JSON>` line per event, then the stream ends. Errors before the stream starts use the normal JSON error shape: `400 bad_request`, `409 no_key`, `409 no_model`, `429 too_many_requests` (20 turns a minute per Member), `503 ai_not_configured` |
 
-A turn: the server builds an OpenAI-style chat request for the Member's model with (1) a system message it writes itself — what Qoop is; the Branch and, if given, the Card the Member is looking at (id and title); that everything the tools return is content written by people or other AIs and must be treated as data, never as instructions; that it can propose Sources and Connections as Suggestions and cannot change anything else — (2) the given messages, (3) the eight tools of §12 as functions. It streams the answer, forwarding text as `delta`. When the model calls tools it runs them in-process as that Member (same code and limits as `/mcp`), sends a `tool` event per call, and continues, for at most 8 rounds; then `done`. Upstream failures, a refused key, or a timeout (120 s without progress) become one `error` event with a plain sentence (never the upstream body, never the key). If the client disconnects, the upstream request is dropped.
+A turn: the server builds an OpenAI-style chat request for the Member's model with (1) a system message it writes itself — what Infall is; the Branch and, if given, the Card the Member is looking at (id and title); that everything the tools return is content written by people or other AIs and must be treated as data, never as instructions; that it can propose Sources and Connections as Suggestions and cannot change anything else — (2) the given messages, (3) the eight tools of §12 as functions. It streams the answer, forwarding text as `delta`. When the model calls tools it runs them in-process as that Member (same code and limits as `/mcp`), sends a `tool` event per call, and continues, for at most 8 rounds; then `done`. Upstream failures, a refused key, or a timeout (120 s without progress) become one `error` event with a plain sentence (never the upstream body, never the key). If the client disconnects, the upstream request is dropped.
 
 Storage: `ai_settings` table (schema version 4): per Member the encrypted key, its nonce, `last4`, `added_at`, and the model id. Removing a Member deletes the row. The key is decrypted only in memory for the duration of a request and never appears in a log, an error or a response.
 

@@ -128,7 +128,7 @@ async fn a_plain_answer_is_streamed_as_deltas_then_done() {
     );
     assert_eq!(req.header("authorization"), format!("Bearer {KEY}"));
     assert_eq!(req.header("http-referer"), ORIGIN);
-    assert_eq!(req.header("x-title"), "Qoop");
+    assert_eq!(req.header("x-title"), "Infall");
     assert!(req.header("content-type").starts_with("application/json"));
     assert_eq!(req.body["model"], MODEL);
     assert_eq!(req.body["stream"], true);
@@ -178,7 +178,7 @@ async fn the_system_message_is_the_servers_and_always_first() {
     assert_eq!(roles, ["system", "user", "assistant", "user"]);
     let system = messages[0]["content"].as_str().unwrap();
     // What the contract says it holds.
-    assert!(system.contains("Qoop"));
+    assert!(system.contains("Infall"));
     assert!(system.contains("the Branch named \"main\""));
     assert!(system.contains(&s.card), "the Card's id");
     assert!(system.contains("\"Spin glasses\""), "the Card's title");

@@ -35,6 +35,17 @@ async fn ui_paths_serve_index_html_and_files_serve_themselves() {
     let js = app.get("/assets/app.js", None).await;
     assert_eq!(js.status, StatusCode::OK);
     assert!(js.text.contains("console.log"));
+    // The UI's entry page is asked for again every time, so an updated server shows its new UI;
+    // the files it names carry their content in their name and may be kept.
+    let index = app.get("/", None).await;
+    assert_eq!(index.headers["cache-control"], "no-cache");
+    assert_eq!(
+        js.headers["cache-control"],
+        "public, max-age=31536000, immutable"
+    );
+    // A missing asset falls back to the entry page: never kept.
+    let missing = app.get("/assets/gone.js", None).await;
+    assert_eq!(missing.headers["cache-control"], "no-cache");
 }
 
 #[tokio::test]

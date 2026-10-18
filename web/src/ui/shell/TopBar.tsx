@@ -28,7 +28,7 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
           <Logo size={18} />
           <span className="q-topbar__name">Infall</span>
         </div>
-        <div className="q-topbar__search">
+        <div className="q-topbar__search" data-tour="search">
           <SearchBox />
         </div>
         <div className="q-topbar__people">

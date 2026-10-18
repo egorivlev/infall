@@ -39,6 +39,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
       className={`qb-card qb-card--${level}${selected ? ' is-selected' : ''}${dead ? ' is-dead' : ''}`}
       data-status={card.status}
       data-testid={`card-${id}`}
+      data-tour="card"
       style={{ ['--st' as string]: `var(--q-st-${STATUS_TOKEN[card.status]})` }}
     >
       <div className="qb-card__body">

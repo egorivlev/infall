@@ -16,7 +16,7 @@ export function HistoryButton() {
   }
 
   return (
-    <button type="button" className="q-btn q-topbtn" title="History of this Branch" aria-pressed={pressed} onClick={onClick}>
+    <button type="button" className="q-btn q-topbtn" data-tour="history" title="History of this Branch" aria-pressed={pressed} onClick={onClick}>
       <Icon name="history" size={13} />
       History
     </button>
