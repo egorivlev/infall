@@ -17,9 +17,13 @@ const block = (text: string, hashOf: string | null, id = 'r1'): BlockVM => ({
   run: { result: hashOf === null ? null : fakeRunResult(hashOf), broken: false },
 })
 
-async function hashed() {
+/**
+ * Waits until these codes are hashed and the hooks waiting for them have rendered again. It waits for the hashes
+ * themselves, not for a moment to pass: WebCrypto answers from another thread, whenever it gets to it.
+ */
+async function hashed(...codes: string[]) {
   await act(async () => {
-    await new Promise((r) => setTimeout(r, 0))
+    await Promise.all(codes.map((code) => codeHash(code)))
     await settle()
   })
 }
@@ -78,10 +82,10 @@ describe('useRunStale', () => {
   it('is unknown for a moment, then says whether the code is the one that was executed', async () => {
     const same = renderHook(() => useRunStale(block('print(1)', 'print(1)')))
     expect(same.result.current).toBeNull()
-    await hashed()
+    await hashed('print(1)')
     expect(same.result.current).toBe(false)
     const changed = renderHook(() => useRunStale(block('print(2)', 'print(1)', 'r2')))
-    await hashed()
+    await hashed('print(2)')
     expect(changed.result.current).toBe(true)
   })
   it('answers at once for a code it has hashed before', async () => {
@@ -96,32 +100,32 @@ describe('useRunStale', () => {
       seen.push(stale)
       return stale
     }, { initialProps: { b: block('print(1)', 'print(1)') } })
-    await hashed()
+    await hashed('print(1)')
     expect(hook.result.current).toBe(false)
     seen.length = 0
     hook.rerender({ b: block('print(12)', 'print(1)') })
     expect(hook.result.current).toBe(false) // not yet hashed: the answer before stands
-    await hashed()
+    await hashed('print(12)')
     expect(hook.result.current).toBe(true)
     hook.rerender({ b: block('print(123)', 'print(1)') })
-    await hashed()
+    await hashed('print(123)')
     hook.rerender({ b: block('print(1)', 'print(1)') })
     expect(hook.result.current).toBe(false) // typed back: known at once
     expect(seen).not.toContain(null)
   })
   it('does not carry an answer over to another result of the same Block', async () => {
     const hook = renderHook(({ b }) => useRunStale(b), { initialProps: { b: block('print(1)', 'print(0)') } })
-    await hashed()
+    await hashed('print(1)')
     expect(hook.result.current).toBe(true)
     // Executed again with new code, both arriving together: the old "changed" says nothing about the new result.
     hook.rerender({ b: block('print(2)', 'print(2)') })
     expect(hook.result.current).toBeNull()
-    await hashed()
+    await hashed('print(2)')
     expect(hook.result.current).toBe(false)
   })
   it('follows a result that is cleared and recorded again', async () => {
     const hook = renderHook(({ b }) => useRunStale(b), { initialProps: { b: block('print(1)', 'print(1)') } })
-    await hashed()
+    await hashed('print(1)')
     hook.rerender({ b: block('print(1)', null) })
     expect(hook.result.current).toBeNull()
     hook.rerender({ b: block('print(1)', 'print(1)') })
