@@ -119,6 +119,7 @@ impl RunDir {
                 nanos,
                 COUNTER.fetch_add(1, Ordering::Relaxed)
             ));
+            #[cfg_attr(not(unix), allow(unused_mut))]
             let mut builder = fs::DirBuilder::new();
             #[cfg(unix)]
             {
@@ -130,7 +131,9 @@ impl RunDir {
             match builder.create(&path) {
                 Ok(()) => {
                     // Symlinks in the path (macOS: /var → /private/var) resolved, so the
-                    // program sees the same path the app uses.
+                    // program sees the same path the app uses. Not on Windows, where the
+                    // resolved form is a `\\?\` path that not every program accepts.
+                    #[cfg(unix)]
                     let path = path.canonicalize().unwrap_or(path);
                     return Ok(Self { path });
                 }
@@ -173,6 +176,12 @@ pub(crate) fn read_small_file(path: &Path, limit: usize) -> Option<Vec<u8>> {
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_OPEN_REPARSE_POINT: opens a link itself, which is then not a regular file.
+        options.custom_flags(0x0020_0000);
     }
     let file = options.open(path).ok()?;
     let meta = file.metadata().ok()?;
@@ -265,7 +274,7 @@ impl Exec {
         cancel: &Cancel,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<Finished, String> {
-        const NO_FOLDER: &str = "Qoop could not prepare a temporary folder for the Run.";
+        const NO_FOLDER: &str = "Infall could not prepare a temporary folder for the Run.";
         // Dropped last, at every exit: the directory goes after the process group.
         let dir = RunDir::create(&self.temp_root).map_err(|_| NO_FOLDER)?;
         let main_py = dir

@@ -80,6 +80,12 @@ pub fn check_health(origin: &str) -> Result<(), String> {
     check_health_within(origin, Duration::from_secs(8))
 }
 
+/// The same check when the app starts with a saved address, with less patience: the window
+/// waits for it, and a server that is there answers at once.
+pub fn check_reachable(origin: &str) -> bool {
+    check_health_within(origin, Duration::from_secs(4)).is_ok()
+}
+
 fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
     const NOT_QOOP: &str = "That address answered, but not as an Infall server.";
     let agent: ureq::Agent = ureq::Agent::config_builder()

@@ -23,6 +23,8 @@ use crate::config;
 const SETUP_WINDOW: &str = "setup";
 const CHANGE_SERVER: &str = "change-server";
 const RUNNER_SETTINGS: &str = "runner-settings";
+#[cfg(target_os = "linux")]
+const QUIT: &str = "quit";
 
 /// Whether the Runner settings window is open, for those who wait for it to close.
 #[derive(Default)]
@@ -136,8 +138,11 @@ pub fn run() {
             )));
             build_menu(&handle)?;
             match config_dir(&handle).and_then(|dir| config::load(&dir)) {
-                Some(origin) => open_main(&handle, &origin)?,
-                None => open_setup(&handle)?,
+                // A server that cannot be reached would leave the main window blank, with
+                // nothing said: the local screen says it instead, and "Connect" tries again.
+                Some(origin) if address::check_reachable(&origin) => open_main(&handle, &origin)?,
+                Some(_) => open_setup(&handle, true)?,
+                None => open_setup(&handle, false)?,
             }
             Ok(())
         })
@@ -146,10 +151,12 @@ pub fn run() {
             RUNNER_SETTINGS => {
                 let _ = open_runner_settings(app);
             }
+            #[cfg(target_os = "linux")]
+            QUIT => app.exit(0),
             _ => {}
         })
         .build(tauri::generate_context!())
-        .expect("the Qoop desktop app could not start");
+        .expect("the Infall desktop app could not start");
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
@@ -174,6 +181,29 @@ fn config_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_config_dir().ok()
 }
 
+/// The menu on Linux, a bar in every window. GTK draws most of the predefined items of the
+/// menu below greyed out (Quit among them), and its copy and paste items do nothing without
+/// a library that fakes key presses: so only the app's own two items, and a Quit that works.
+/// Copy and paste work from the keyboard and the page's own context menu.
+#[cfg(target_os = "linux")]
+fn build_menu(app: &AppHandle) -> tauri::Result<()> {
+    let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
+    let runner_settings =
+        MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
+    let quit = MenuItemBuilder::with_id(QUIT, "Quit")
+        .accelerator("Ctrl+Q")
+        .build(app)?;
+    let app_menu = SubmenuBuilder::new(app, "Infall")
+        .item(&change)
+        .item(&runner_settings)
+        .separator()
+        .item(&quit)
+        .build()?;
+    app.set_menu(MenuBuilder::new(app).item(&app_menu).build()?)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
     let runner_settings =
@@ -212,12 +242,17 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The local first-run screen (desktop/ui): asks for the server address.
-fn open_setup(app: &AppHandle) -> tauri::Result<()> {
+/// The local first-run screen (desktop/ui): asks for the server address. With `unreachable`
+/// it opens saying that the saved address did not answer (desktop/ui/setup.js reads the flag).
+fn open_setup(app: &AppHandle, unreachable: bool) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(SETUP_WINDOW) {
         return window.set_focus();
     }
-    local_window(app, SETUP_WINDOW, "index.html")
+    let mut window = local_window(app, SETUP_WINDOW, "index.html");
+    if unreachable {
+        window = window.initialization_script("window.__infallUnreachable = true;");
+    }
+    window
         .title("Infall")
         .inner_size(520.0, 420.0)
         .resizable(false)
@@ -429,7 +464,7 @@ fn open_externally(app: &AppHandle, url: &Url, throttle: bool) {
 
 /// "Change Server…": back to the first-run screen.
 fn change_server(app: &AppHandle) {
-    if open_setup(app).is_ok()
+    if open_setup(app, false).is_ok()
         && let Some(main) = app.get_webview_window(MAIN_WINDOW)
     {
         app.state::<AppState>().run.cancel();

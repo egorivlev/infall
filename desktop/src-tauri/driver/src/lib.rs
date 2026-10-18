@@ -233,7 +233,7 @@ impl Driver {
             .and_then(|cwd| Ok((McpFile::create(&self.work_root, request)?, cwd)));
         let (mcp_file, cwd) = match prepared {
             Ok(prepared) => prepared,
-            Err(_) => return fail("Qoop could not prepare a temporary folder for Claude Code."),
+            Err(_) => return fail("Infall could not prepare a temporary folder for Claude Code."),
         };
         // Dropped in reverse order at every exit: first the process group (`child`, below),
         // then the working directory is emptied, then the MCP config file is deleted.
@@ -342,7 +342,10 @@ pub fn locate() -> Option<PathBuf> {
     locate_in(
         std::env::var_os(BIN_ENV).as_deref(),
         std::env::var_os("PATH").as_deref(),
-        std::env::var_os("HOME").as_deref().map(Path::new),
+        // Windows has no `HOME`; the home folder is `USERPROFILE` there.
+        std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .as_deref()
+            .map(Path::new),
     )
 }
 

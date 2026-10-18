@@ -33,7 +33,7 @@ desktop/
 ## Prerequisites
 
 - Rust 1.90 or newer (Tauri 2.12 needs it). Built and tested here with 1.96.
-- macOS: the Xcode Command Line Tools are enough (`xcode-select --install`); full Xcode is not needed for a development build. Linux and Windows need the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); those platforms have not been built or run (see "Unverified").
+- macOS: the Xcode Command Line Tools are enough (`xcode-select --install`); full Xcode is not needed for a development build. Linux and Windows need the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); for what was built and checked there, see "The Ubuntu package" and "The Windows installer".
 - The Tauri CLI (`cargo tauri`) is **not** needed: not to build, not to run, and not for the macOS package, which `scripts/package-macos.sh` puts together itself (see [The macOS package](#the-macos-package)).
 - For the AI sidebar: Claude Code installed and signed in (`claude`), version 2.1.x. The flags below were read from 2.1.265.
 - For the Runner: a Python 3 (3.8 or newer) of the Member's own. matplotlib only if Runs draw figures. The Runner tests use whatever Python 3 they find (see "Tests").
@@ -88,7 +88,7 @@ It needs what building the app needs (Rust, the Xcode Command Line Tools) and no
 
 **The icon.** `icons/icon-1024.png` is the source; the `.icns` is made from it on every packaging run and is not kept in git. `icons/icon.png` is a 256-pixel copy that Tauri builds into the program. `icons/make-icon.py` drew the source (the mark of the web UI's `Logo.tsx` in the dark theme's colours); it needs Pillow and is only needed to change the icon.
 
-**Not there:** a Developer ID signature, notarisation, updates of any kind (a new version is a new `.dmg`, installed over the old one by hand; the app does not look for one), an Intel or universal build, Windows and Linux packages, an app store. App data stays in `~/Library/Application Support/app.qoop.desktop/`, the same place a development build uses; nothing is migrated.
+**Not there:** a Developer ID signature, notarisation, updates of any kind (a new version is a new `.dmg`, installed over the old one by hand; the app does not look for one), an Intel or universal build, an app store. (Ubuntu and Windows have packages of their own, below.) App data stays in `~/Library/Application Support/app.qoop.desktop/`, the same place a development build uses; nothing is migrated.
 
 ### Installing it (for a Member)
 
@@ -114,6 +114,130 @@ If no warning appears at all, the file reached you without the mark (for example
 **What it does not mean.** It does not mean macOS found something harmful. And allowing it does not switch anything off for other apps: the exception is for this one copy of Infall.
 
 **What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: the ad hoc signature inside the app only makes it startable on Apple silicon; anyone can make one, and it proves nothing about where the app came from. Do not allow an Infall that reached you some other way.
+
+## The Windows installer
+
+`scripts/package-windows.sh` (run from anywhere in the checkout, on a Mac or a Linux machine; not on Windows) builds `dist/Infall-<version>-x64-setup.exe` for 64-bit Windows 10 and 11 and prints its SHA-256. **The result has never been started: there was no Windows to start it on.** What that leaves open is listed under [Unverified: the Windows installer](#unverified-the-windows-installer-m11); read it before handing the file to anyone. Where older sections of this page say what Windows "would" do, this section is the newer one.
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+brew install mingw-w64 makensis        # Debian/Ubuntu: apt install mingw-w64 nsis
+scripts/package-windows.sh
+```
+
+It cross-compiles with the GNU toolchain for Windows and puts the installer together with NSIS; neither asks anyone to accept a licence. Microsoft's own compiler and SDK are deliberately not used, because they do. The script checks for its tools first and says how to get each one that is missing (`cargo`, the Rust target, `x86_64-w64-mingw32-gcc`, `-windres`, `-objdump`, `makensis`, `python3` to read `tauri.conf.json`, `shasum` or `sha256sum`). No `tauri-cli`, no new Rust dependencies. What it does:
+
+1. Reads the version from `src-tauri/Cargo.toml` and the name and identifier from `src-tauri/tauri.conf.json`, and stops if the two files disagree about the version.
+2. `cargo build --release --locked --features custom-protocol --target x86_64-pc-windows-gnu` (output under `src-tauri/target/x86_64-pc-windows-gnu/`; about three minutes from nothing here). `tauri-build` compiles the icon (`icons/icon.ico`), the version information and the application manifest into the program with mingw's `windres`. Release builds are Windows-subsystem programs (`src/main.rs`), so no console window opens with the app.
+3. Checks the program with `objdump`: 64-bit, the Windows GUI subsystem, and every DLL it names is either part of Windows or `WebView2Loader.dll`. It stops at any other name, in particular the compiler's own libraries (`libgcc`, `libwinpthread`), which no Windows has. With Homebrew's mingw-w64 the C runtime it names is the Universal CRT (`api-ms-win-crt-*`), which is part of Windows 10 and 11.
+4. Runs `makensis` on an installer script that is written out in full inside the packaging script, and prints the SHA-256. Every run gives a different file, even from the same source (NSIS stores times): hand out one file and quote the SHA-256 of that one.
+
+**What the installer does.** It runs as the person who started it and never asks for administrator rights (`RequestExecutionLevel user`). It puts three files into `%LOCALAPPDATA%\Programs\Infall\`: `Infall.exe`, `WebView2Loader.dll` (Microsoft's small loader for WebView2, which programs built with this toolchain load from their own folder; it comes with the `webview2-com-sys` crate) and `uninstall.exe`. It adds **Infall** to that person's Start menu and one entry to their list of installed apps (under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\app.qoop.desktop`). Nothing else: no service, no autostart, no file association, nothing for other accounts of the computer. Installing a new version over an old one replaces the files; if Infall is open, the installer says so and waits.
+
+**WebView2.** Infall shows its window with Microsoft's WebView2 runtime. Windows 11 comes with it and Windows 10 normally has it through its updates. The installer looks for it where Microsoft documents it (the value `pv` under `…\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}` in `HKLM\SOFTWARE\WOW6432Node` and in `HKCU\Software`). If it is not there, the installer says so, names Microsoft's page (<https://developer.microsoft.com/microsoft-edge/webview2/>, "Evergreen Bootstrapper") and asks whether to install Infall anyway. It downloads nothing. Without WebView2, Infall does not start.
+
+**The icon.** `icons/icon.ico` (16 to 256 pixels) is made from `icons/icon-1024.png` by `python3 icons/make-icon.py --ico` and, unlike the `.icns`, is kept in git: `tauri-build` refuses to build for Windows without it. The program and the installer both use it.
+
+**Not there:** a code signature of any kind (so the warning below), updates (a new version is a new installer; the app does not look for one), a build for Windows on ARM or for 32-bit Windows (the installer refuses there), an install for all accounts, an MSI, the Microsoft Store.
+
+### Installing it on Windows (for a Member)
+
+1. Get `Infall-<version>-x64-setup.exe` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare. In PowerShell: `Get-FileHash .\Infall-<version>-x64-setup.exe` (or, in any prompt, `certutil -hashfile Infall-<version>-x64-setup.exe SHA256`).
+2. Open the file. The first time, Windows stops it with a blue window titled **Windows protected your PC**, saying that Microsoft Defender SmartScreen prevented an unrecognized app from starting, with one button, **Don't run**. Click **More info** in the text. The window now shows the file's name and **Publisher: Unknown publisher**, and a second button: **Run anyway**. Click it.
+3. The installer runs without further questions and offers to open Infall. Later, Infall is in the Start menu.
+4. Infall asks for the address of your team's server; your Admin has it.
+
+Your browser may warn before that, when the download ends (Edge says the file "isn't commonly downloaded" and offers to keep it in the menu next to that message). If Windows instead says that **Smart App Control** blocked the file, there is no button to allow it: Smart App Control only lets signed programs run, and this one is not signed. Do not switch Smart App Control off for Infall (Windows cannot switch it back on without being reinstalled); tell the person who gave you the file.
+
+**What the warning means.** Nobody has paid for the certificate that would put a publisher's name on the file, and too few people have run this exact file for Microsoft to have an opinion about it. Windows cannot tell you whether it is the installer your team built. That is all.
+
+**What it does not mean.** It does not mean Windows found something harmful. And "Run anyway" switches nothing off: it is an answer for this one file.
+
+**What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: it is the only thing that ties the file in your Downloads folder to the one they built. Do not run an Infall installer that reached you some other way.
+
+**To uninstall:** Settings > Apps > Installed apps (Windows 10: Apps & features) > Infall > Uninstall. It removes the three files, the folder if nothing else is in it, the Start menu entry and the list entry. It does **not** remove your data, which is in two places: `%APPDATA%\app.qoop.desktop\` (the server address in `config.json`, the Runner's `runner.json` and `runner-approvals.json`) and `%LOCALAPPDATA%\app.qoop.desktop\` (what the web view keeps, your sign-in among it). Delete those two folders by hand if you want them gone.
+
+### What the Runner does and does not do on Windows
+
+Read in the source, not seen running. The code paths meant are in `proc/src/lib.rs`, `runner/src/python.rs`, `runner/src/exec.rs` and `runner/src/monitor.rs`.
+
+- **Finding Python.** Runner settings list what answers like Python 3 as `python.exe`, `python3.exe` or `py.exe` (python.org's launcher, listed as the Python it would start) in the folders of `PATH`, then in `%LOCALAPPDATA%\Programs\Python\Python3…\` (where python.org's installer puts a Python for one person, also when it was not added to `PATH`) and in its `Launcher` folder. No shell is asked on Windows: the app uses the environment it was started with, which from the Start menu is the Member's own. Not looked for: conda and other Pythons that are on `PATH` only after something was "activated", and pyenv-win (its shims are batch files). Whether a Python from the Microsoft Store is listed is not known (its `python.exe` on `PATH` is a special kind of link). Any of these can be typed as a full path (`C:\…\python.exe`); it is accepted if `--version` answers `Python 3.…`. A conda Python started this way has not had its environment activated, and packages that need that may fail to import.
+- **Starting a Run** works as on macOS: `python.exe -u -X utf8 runner.py main.py` with the same environment additions, in a new folder under the Member's temporary folder, without a console window. **The owner-only file modes do not exist on Windows**: the Run's folder, the approvals file and the file holding the AI sidebar's token are protected only by what they inherit from the Member's profile folder, which other ordinary accounts cannot read by default.
+- **Stopping a Run and everything it started.** Windows has no process groups. Right after Python is started, the app puts it into a job object of its own, and stopping kills the job: Python and everything it has started since, at once. There is no polite request first (no `SIGTERM`, no half second): code cannot clean up, and `finally` blocks do not run. What is left running when the code ends by itself is killed the same way. What escapes: a program the code started in the instant before Python was in the job; anything the code has started by other means than starting it itself (a scheduled task, a service); and, as everywhere, a Run in progress when the app itself is killed hard keeps running. If Windows refuses the job, only Python itself is killed. The same holds for `claude`.
+- **Reading what the code left behind** (figures, versions) does not follow links, as on macOS (`FILE_FLAG_OPEN_REPARSE_POINT`).
+- **The Runner monitor shows nothing on Windows.** Its figures come from `ps`, `sysctl`, `ioreg` and `/proc`, none of which Windows has, and nothing was written to replace them: no processor, memory, process count or graphics figures. Because steps (`qoop.step`, `qoop.progress`) and progress bars travel with those figures, they do not arrive either. Output, figures, exit code and the result are not affected.
+- **The AI sidebar** looks for `claude.exe` on `PATH`, in `%USERPROFILE%\.local\bin` and `%USERPROFILE%\.claude\local`. A `claude.cmd` (an npm install) is not found; `QOOP_CLAUDE_BIN` can name another program; a batch file is not expected to work with these arguments. Whether Claude Code on Windows takes the same flags and prints the same stream is as unverified as on macOS, and more so.
+
+## The Ubuntu package
+
+`scripts/package-linux.sh` (run from anywhere in a checkout, on a Mac or a Linux machine) builds `dist/infall_<version>_amd64.deb`, checks it and prints its SHA-256. `dist/` is not kept in git.
+
+```sh
+scripts/package-linux.sh                 # amd64: most Ubuntu laptops
+scripts/package-linux.sh arm64           # arm64
+scripts/package-linux.sh amd64 arm64     # both
+scripts/package-linux.sh --no-verify …   # build only
+scripts/package-linux.sh --clean         # remove what the script keeps in Docker
+```
+
+It needs Docker and nothing else; everything happens in containers, so it gives the same package from a Mac and from a Linux machine. No `tauri-cli`. What it does:
+
+1. Reads the version from `src-tauri/Cargo.toml` and the name and identifier from `src-tauri/tauri.conf.json`, and stops if the two files disagree about the version. The package, the program and the icon are named after the product in lower case: `infall`.
+2. Builds an image `qoop-package-linux:22.04-<arch>`: Ubuntu 22.04, Rust (1.96.0; `QOOP_PACKAGE_RUST` changes it), and the libraries of the package's architecture (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `libdbus-1-dev`). The image is always of the building computer's own kind. For the other kind of processor (amd64 on an Apple silicon Mac) it **cross-compiles** with Ubuntu's multiarch libraries and `crossbuild-essential`, which is as fast as a native build; nothing is compiled under emulation.
+3. Copies `desktop/` into a container (the checkout is mounted read-only; `src-tauri/target` is neither read nor written) and runs `cargo build --release --locked --features custom-protocol --target <triple>`, with the same `[profile.release]` as the macOS package. Downloaded crates and build output are kept in the Docker volume `qoop-package-linux-cargo`.
+4. Puts the package together by hand with `dpkg-deb`: `/usr/bin/infall`, `/usr/share/applications/infall.desktop` (`Name=Infall`, `StartupWMClass=infall`, category Office) and `/usr/share/icons/hicolor/<size>/apps/infall.png` in eight sizes from 16 to 512, made from `src-tauri/icons/icon-1024.png`. Nothing else: no service, no maintainer scripts, no configuration files. `Depends` is what `dpkg-shlibdeps` finds the program linked against, on Ubuntu 22.04:
+
+   ```
+   libc6 (>= 2.34), libcairo2 (>= 1.10.0), libdbus-1-3 (>= 1.9.14), libgcc-s1 (>= 4.2), libgdk-pixbuf-2.0-0 (>= 2.36.9), libglib2.0-0 (>= 2.65.1), libgtk-3-0 (>= 3.21.5), libjavascriptcoregtk-4.1-0, libsoup-3.0-0 (>= 3.0.3), libwebkit2gtk-4.1-0 (>= 2.41.90)
+   ```
+
+   Ubuntu 24.04 renamed some of these (`libgtk-3-0t64`, `libglib2.0-0t64`, …), but its packages still provide the old names with their versions, so the same line installs there; no alternatives are needed, and the script checks that on every run. `Recommends: python3, xdg-utils, procps`: Infall works without Python and only Runs need it; `xdg-utils` opens links in the system browser; `procps` is the `ps` the Runner monitor reads.
+5. Checks the result (see below) and prints the SHA-256. All time stamps inside the package are the program's own, so packaging the same build again gives the same file.
+
+In Docker it creates only things named `qoop-package-linux…` (one image per architecture, one volume, containers that are removed when it ends) and pulls `ubuntu:22.04` and `ubuntu:24.04`. `--clean` removes the images and the volume again.
+
+**What the script checks.** For each package, in a clean `ubuntu:22.04` and a clean `ubuntu:24.04` container of the package's architecture: `apt-get install ./infall_….deb` succeeds; the files are there and there are no maintainer scripts; `ldd` finds every shared library; started as an ordinary user on a virtual display (Xvfb), the program shows a window named Infall with the window class `infall`, is still running after ten more seconds together with its page process, and has not panicked; it ends when asked to; `apt-get remove` leaves nothing in `/usr`. A package for the other kind of processor is checked in emulated containers (Docker's QEMU). If the Docker at hand cannot emulate, these checks are skipped and the script's summary says so. Emulating a WebKit app takes several times the memory of the real thing: in a Docker machine with 4 GB that also runs other containers, the emulated start was ended by the kernel for lack of memory (see "Unverified: the Ubuntu package"). Give Docker 8 GB, or build and check the package on a computer of its own kind.
+
+**How long it takes** (Apple silicon Mac, Docker in a colima machine with 2 processors and 4 GB): the first amd64 run 13 minutes without the checks (8 for the image, 5 for the build); the first arm64 run after it 4 minutes; a run with nothing changed builds in under a second, and after a change to the app's own code in about a minute. The checks download WebKitGTK into each clean container, so they take as long as the network does: here between 3 and 20 minutes per container. The script keeps about 6 GB in Docker (two images that share most of their content, and the volume).
+
+**Not there:** a signature, an apt repository, updates of any kind (a new version is a new `.deb` installed over the old one; the app does not look for one), Snap, Flatpak, AppImage, packages for other distributions.
+
+### Installing it on Ubuntu (for a Member)
+
+1. Get `infall_<version>_amd64.deb` from the person who built it (`arm64` only if your computer has an ARM processor; `dpkg --print-architecture` says which). To be sure it is the real file, ask them for its SHA-256 and compare: `sha256sum ~/Downloads/infall_<version>_amd64.deb`. The package is not signed: the SHA-256 and the person who gave it to you are all there is.
+2. Install it. The `./` matters: without it `apt` looks for a package of that name in Ubuntu's own archive.
+
+   ```sh
+   cd ~/Downloads
+   sudo apt install ./infall_<version>_amd64.deb
+   ```
+
+   `apt` shows the other packages it will add (WebKitGTK 4.1 and what it needs; a normal Ubuntu desktop already has most of it) and asks before it goes on.
+3. Open **Infall** from the applications overview, or run `infall` in a terminal. It asks for the address of your team's server; your Admin has it.
+
+**What it needs:** Ubuntu 22.04 or 24.04 with its updates installed (the package wants WebKitGTK 2.42 or newer, which both releases deliver as a security update), on a 64-bit Intel/AMD computer (`amd64`) or an ARM one (`arm64`). For Runs, a Python 3.8 or newer: Ubuntu's own `python3` is enough and is installed along with Infall unless you tell `apt` not to; matplotlib (`sudo apt install python3-matplotlib`, or your own environment) only if Runs draw figures. For the AI sidebar, Claude Code (`claude`) installed and signed in.
+
+**Removing it:** `sudo apt remove infall`. This removes exactly what the package installed. It does not remove your data.
+
+**Where the data is** (per person, the same places a development build uses; nothing is removed with the package):
+
+- `~/.config/app.qoop.desktop/`: the server address (`config.json`), the Runner's settings (`runner.json`) and the remembered approvals (`runner-approvals.json`). `$XDG_CONFIG_HOME` moves it.
+- `~/.local/share/app.qoop.desktop/`: what the page keeps (your sign-in, the web view's storage and cache). `$XDG_DATA_HOME` moves it.
+
+To forget everything: `rm -rf ~/.config/app.qoop.desktop ~/.local/share/app.qoop.desktop`.
+
+**The menu** is a bar in each window with one menu, **Infall**: Change Server…, Runner settings…, Quit (Ctrl+Q). GTK cannot draw most of the items the macOS menu has (it would show them greyed out, Quit included), so on Linux they are left out (`build_menu` in `src/shell.rs`); copy and paste work from the keyboard and the page's own context menu.
+
+### What the Runner does and does not do on Linux
+
+Read in the source, and where it says so below, seen working in the installed package on Ubuntu 24.04 (arm64) in a container. All of the Runner's process handling is the same Unix code as on macOS.
+
+- **Finding Python.** The same lookup as on macOS: `python3` and `python` on the `PATH` your shell gives (`$SHELL -l -i -c …`, then `-l -c`, then the app's own environment; without `$SHELL`: `/bin/zsh`, `/bin/bash`, `/bin/sh`, whichever exists first), then `~/.pyenv/shims`, `/opt/homebrew/bin` (never there on Linux, harmless), `/usr/local/bin`, `/usr/bin`. Seen: Runner settings listed Ubuntu's `/usr/bin/python3` (3.12.3), and saving the choice wrote `runner.json`. pyenv, conda and virtual environments are found if your shell puts them on `PATH`, exactly as on macOS; that was not tried on Linux.
+- **Running and stopping.** A Run is started in a process group of its own; Cancel sends `SIGTERM` to the group, then `SIGKILL` after half a second; when a Run ends, whatever it left running in its group is killed. Seen: an approved Run printed its output, reported `os: linux`, and the `sleep 600` it had started was killed when it ended. The same limits as on macOS hold: a program that moves itself into another session (`os.setsid`) escapes, and if the app is killed hard, a Run in progress keeps running.
+- **Usage figures in the Runner monitor.** Processor and memory work: the processes of the Run's group come from `ps` (`/bin/ps` or `/usr/bin/ps`, package `procps`), processor time from `/proc/<pid>/stat`, total memory from `/proc/meminfo`, cores from the system. Seen: about one sample a second with `cpu_percent` near 100 for a busy loop, `memory_bytes`, `processes: 2`. Without `ps` (a minimal system without `procps`) there are no samples at all, and the Run is otherwise unaffected. `cores` is the number of processors the app may use, which inside a container or under a CPU limit is less than the computer has.
+- **Graphics processor.** Only NVIDIA, and only if `nvidia-smi` is on the `PATH` your shell gives: then the busiest card's utilisation and name are shown (the parser is tested against written-down answers, not against a real card). AMD and Intel graphics have no figure: the monitor simply shows none. Memory of the graphics card is not shown on any platform.
+- **Figures, output, approval, the temporary folder (`0700`, files `0600`, links not followed)** are the same code as on macOS. The temporary folder is under `$TMPDIR` or `/tmp`.
+- Not adapted to Linux: the two example texts in the Runner settings window (`/opt/homebrew/bin/python3`, `/Users/you/research`) are the macOS ones. They are only greyed-out examples.
 
 ## What is where: Tauri mechanisms used
 
@@ -303,9 +427,9 @@ Other things not verified:
 
 - **Clicking through the first-run screen.** The window was started and stayed up without errors; its form was not operated. The address rules and the health check behind it are unit-tested.
 - **Opening the system browser**, the **Change Server…** menu item and the restart after it, and **stopping a run when the app quits** were not exercised (the code paths are simple; the kill itself is tested in the driver).
-- **Linux and Windows.** Only macOS (Apple Silicon) was built and run. The process-group kill is Unix code; on Windows only the `claude` process itself would be killed, and file modes do not apply. Installers, signing and auto-update are not in M7.
+- **Linux and Windows.** In M7 only macOS (Apple Silicon) was built and run. Since M11 there are packages for both; what was checked on each, and what the code does differently there, is in "The Ubuntu package", "The Windows installer" and their "Unverified" sections. Signing and auto-update are still not there.
 - If the app itself is killed hard (`kill -9`, a crash), a running `claude` is not stopped by it; it ends by itself.
-- If the saved server is unreachable at start, the window shows the webview's own error page; use **Change Server…**.
+- If the saved server does not answer when the app starts (within four seconds), the app opens its local screen instead of the main window, saying "Infall could not reach your server", with the saved address filled in: **Connect** tries again. (Until M11 the main window stayed blank.) A server that goes away while the app is open is not noticed by the app; the web UI says it is not synced.
 
 What was verified in a short smoke run of the debug build on macOS, against a local fake server sending the real server's Content-Security-Policy headers, with the stub `claude`: the window opens the configured origin; `window.qoopDesktop` exists in the top frame, is frozen, and reports the app version; `status()` returns the stub's version; `send()` delivers `delta`/`tool`/`done` in order and resolves after the last event; a second `send` during a run gets an `error`; `cancel()` stops a hanging run and its child process and `send` resolves; a request naming another tool endpoint is refused; calls with a wrong key, the setup commands and plugin commands are refused from the page; the sandboxed `/visual-frame` has neither `window.qoopDesktop` nor `window.__TAURI_INTERNALS__`, cannot read its parent, and its direct message to the IPC channel is dropped; a frame that loads while a run is streaming does not interrupt the run. The release build (`--features custom-protocol`) was started the same way and behaved the same.
 
@@ -319,7 +443,7 @@ Not verified:
 2. **The look of the windows in the app's own webview** (WebKit): layout, dark mode, how marked characters and wrapped lines are drawn, whether the approval window comes to the front and stays on top.
 3. **Quitting the app during a Run**, closing the main window during a Run, and the menu item were not exercised in the running app (the kill itself is tested; the page-reload path, which uses the same call, was exercised).
 4. **Python 3.8.** The contract says 3.8 or newer; `runner.py` was run on 3.9.6 and 3.12.13 only.
-5. **Linux and Windows.** Not built. On Windows the process group, the file modes, the shell lookup and the no-follow file reads are Unix code paths that do not apply; the Runner must not be shipped there as it is.
+5. **Linux and Windows.** Not built in M8. M11 built both and gave Windows its own code where the Unix paths do not apply (a job object instead of the process group, its own Python lookup, no-follow file reads); file modes still do not apply there. That Windows code has compiled and never run: see "Unverified: the Windows installer".
 6. **Other shells than zsh** for reading the environment (fish, csh), and shell start-up files that wait for input: after eight seconds the app gives up on the interactive shell and tries the plain login shell, then its own environment.
 7. **conda and virtual environments** in the interpreter list: the lookup logic is tested with stand-ins; only pyenv and the system Python were found for real.
 8. **Very large or unusual figures** beyond the tests (animations, 3D, non-Agg backends set by the code).
@@ -336,6 +460,45 @@ Not verified:
 4. **A build from a truly clean checkout** (fresh clone, empty `target/`): the script was run in the working tree, where the dependencies were already downloaded.
 5. **Installing a new version over an old one**, and the app's restart after "Change Server…" when it runs from `/Applications`.
 6. Nobody clicked anything in the packaged app (see the Runner's list above; the same holds here).
+
+## Unverified: the Windows installer (M11)
+
+**Infall has never been started on Windows.** Not the installer, not the program, not on any version. There was no Windows machine and no emulator where it was built. Everything a Member would see is therefore unverified, and the first person to run it is the test.
+
+Verified on the Mac that built it (Apple silicon, Rust 1.96, Homebrew mingw-w64 and makensis 3.13): the script runs from the working tree to `dist/Infall-0.1.0-x64-setup.exe` (3.0 MB); `cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` is clean; the program is a PE32+ x86-64 file of the Windows GUI subsystem with the icon, the version information (`ProductName` Infall, `FileVersion` 0.1.0) and the Common Controls manifest inside; its import table names only Windows' own DLLs and `WebView2Loader.dll` (`ADVAPI32`, `KERNEL32`, `ntdll`, `bcrypt`, `bcryptprimitives`, `WS2_32`, `combase`, `comctl32`, `dwmapi`, `gdi32`, `imm32`, `ole32`, `oleaut32`, `shell32`, `shlwapi`, `user32`, and the Universal CRT's `api-ms-win-crt-*` and two `api-ms-win-core-*`), nothing of the compiler's; `makensis` reports the installer's contents as `Infall.exe`, `WebView2Loader.dll` and the uninstaller, with the registry values and the shortcut named above, and the uninstall section deleting exactly those; the installer is a PE32 program asking for the invoker's rights. No tool here could open the finished installer to list it independently (`7z` is not installed); the list is what `makensis` said it packed.
+
+Not verified, in the order it would be met:
+
+1. **That the installer runs at all**, what SmartScreen really shows for this file (the words above are Windows' usual ones for an unsigned download, not something seen for Infall), and whether antivirus software objects to an unsigned NSIS installer, as some do.
+2. **The WebView2 check**: the registry places are Microsoft's documented ones; the question was never seen, on a computer with or without the runtime.
+3. **That the program starts.** A Rust program for `x86_64-pc-windows-gnu`, linked by Homebrew's mingw-w64 against the Universal CRT, loading `WebView2Loader.dll` from its own folder: each part is ordinary, the combination was only linked here, never run. If it does not start, nothing below matters.
+4. **Every window**: the first-run screen, the server's pages in WebView2 (the bridge reaches the app through `http://ipc.localhost` or Tauri's fallback when the page's security policy forbids that; neither was seen working), the approval window, Runner settings. The menu is a bar in each window on Windows; some of its predefined items (Hide, Services, …) do not exist there and what is shown in their place was not seen. How the page's top row sits under a Windows title bar was not seen either.
+5. **The Runner on Windows, all of it**: that interpreters are found, that a Run starts without a console window flashing, that output and figures arrive, and that stopping kills the job. The job object is four calls into `kernel32` written by hand and compiled, never executed. `runner.py` has never run on Windows.
+6. **The uninstaller**, the entry in Installed apps, installing over an older version, the Start menu entry and its icon at any size.
+7. **Windows 10** in particular (the Universal CRT and WebView2 are assumed present), Windows on ARM (the installer refuses), and accounts whose name or profile path has non-ASCII characters.
+8. **A build on Linux.** The script is written for it (Debian's mingw-w64 links the older `msvcrt.dll`, which the import check also accepts) but was only run on macOS.
+9. The Rust tests were run on macOS only; none of them runs on Windows, and most of the Runner's are Unix-only.
+
+## Unverified: the Ubuntu package (M11)
+
+Built on an Apple silicon Mac in Docker (colima, 2 processors, 4 GB). What was really seen:
+
+- **Both packages build**: `infall_0.1.0_amd64.deb` (cross-compiled, 3.0 MB, a 10.9 MB program) and `infall_0.1.0_arm64.deb` (2.7 MB). `desktop-file-validate` passes and `dpkg-shlibdeps` gives the `Depends` line above for both.
+- **amd64, emulated containers, by the script**: on Ubuntu 22.04 and on 24.04 the package installed with `apt`, every shared library resolved (`ldd`), and the program started and showed its window named Infall with window class `infall`. **Then both runs failed**: within the ten seconds the kernel ended the program for lack of memory (the emulated program had grown to 1 GB; the same program started natively stays at 160 MB). So "stays up" and "removes cleanly" are **not** confirmed for amd64, and the script, as it must, called the run failed.
+- **arm64, a native Ubuntu 24.04 container, by hand** with the same steps the script takes: installed with `apt`; started as an ordinary user under Xvfb and stayed up with steady memory; a screenshot showed the first-start screen drawn correctly with the Infall menu; Runner settings listed `/usr/bin/python3` and saved it; connected to a stand-in server on `http://localhost:8787` (no Content-Security-Policy), the main window loaded the page, `window.qoopDesktop` was there, frozen, version 0.1.0; a Run was approved by clicking in the approval window and delivered `started`, `output`, five `stats` samples, `done` with `os: linux`; the process it left behind was killed; Quit from the menu ended the app. App data appeared in the two folders named above.
+
+Not verified:
+
+1. **The script's own checks have not passed from start to end for either package.** amd64: see above. arm64: the script's check function was never run on the arm64 package (it was checked by hand, on 24.04 only; **not on 22.04**). The last changes to the script (`procps` in `Recommends`, images that share their first step, time stamps that make a rebuild give the same file) were made after the amd64 package in `dist/` was built and have not been run for amd64. **Before handing a package out, run the script once on a machine with enough memory (or of the package's own kind) and see every check say ok.**
+2. **A real Ubuntu desktop with a real display.** Nothing was started under GNOME, on Wayland, or with a real graphics driver. Not seen: the entry and icon in the applications overview, whether the running window is matched to the entry (`StartupWMClass=infall` follows what the window reported under Xvfb), window decorations, HiDPI, dark mode, the menu bar's look. WebKitGTK is known to show an empty window with some NVIDIA drivers; starting with `WEBKIT_DISABLE_DMABUF_RENDERER=1 infall` is the usual way around it, and was not needed or tried here.
+3. **amd64 beyond "it starts".** No click was made in an amd64 build; everything operated by hand was the arm64 build.
+4. **The tests on Linux.** `cargo test` and `cargo clippy` for Linux were started in a container and stopped by a full disk before any test ran. The release build for both Linux targets compiles without warnings; that is all.
+5. **The server's real pages on Linux**: the stand-in server sent no Content-Security-Policy. On Linux the page talks to the app through a custom address (`ipc://localhost`) and falls back to another channel if the page's policy forbids it; neither was observed against the real server. The web UI leaves room for the macOS window buttons; how its top bar looks in a Linux window was not seen.
+6. **The AI sidebar on Linux**: `claude` was not installed in the container (`status` said so correctly). The lookup also checks `~/.local/bin` and `~/.claude/local`.
+7. **Cancel of a Run, matplotlib figures, pyenv/conda, and `nvidia-smi`** on Linux: same code as macOS (the graphics parser is tested on written-down answers), not exercised on Linux.
+8. **Opening the system browser** (needs `xdg-utils`), **Change Server…** and the restart after it, and installing a new version over an old one.
+9. **Ubuntu 22.04 without updates** cannot install the package (it needs WebKitGTK 2.42 or newer, which 22.04 only has as an update); other distributions and Debian were not tried.
+10. **A build on a Linux machine** (amd64 host, arm64 cross-compiled): the script is written for it and it was never run there.
 
 ## Open question: Anthropic's terms
 

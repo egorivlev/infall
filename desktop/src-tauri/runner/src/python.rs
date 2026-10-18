@@ -21,10 +21,12 @@ pub type EnvVars = Vec<(OsString, OsString)>;
 
 /// How long `<path> --version` gets to answer.
 pub const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(unix)]
 const SHELL_TIMEOUT: Duration = Duration::from_secs(8);
 /// At most this many candidates are started when looking for interpreters.
 const MAX_CANDIDATES: usize = 12;
 
+#[cfg(unix)]
 const ENV_MARKER: &[u8] = b"\n__QOOP_ENV_BEGIN__\n";
 
 /// Runs `command` to its end and returns whether it succeeded and what it printed (at most
@@ -108,6 +110,7 @@ fn capture(
 
 // ---- the login shell's environment --------------------------------------------------------
 
+#[cfg(unix)]
 fn parse_env(output: &[u8]) -> Option<EnvVars> {
     let start = output
         .windows(ENV_MARKER.len())
@@ -133,17 +136,13 @@ fn os_string(bytes: &[u8]) -> OsString {
     OsStr::from_bytes(bytes).to_owned()
 }
 
-#[cfg(not(unix))]
-fn os_string(bytes: &[u8]) -> OsString {
-    OsString::from(String::from_utf8_lossy(bytes).into_owned())
-}
-
 /// Variables that describe the shell that was asked, not the Member's setup.
 fn tidy(mut vars: EnvVars) -> EnvVars {
     vars.retain(|(k, _)| !["PWD", "OLDPWD", "SHLVL", "_"].iter().any(|skip| k == skip));
     vars
 }
 
+#[cfg(unix)]
 fn shell_env(shell: &Path, flags: &[&str]) -> Option<EnvVars> {
     let mut command = Command::new(shell);
     command
@@ -160,7 +159,9 @@ fn shell_env(shell: &Path, flags: &[&str]) -> Option<EnvVars> {
 /// The environment the Member's shell gives to programs: `PATH` with pyenv, conda, Homebrew
 /// and whatever else their shell sets up. Asked of `$SHELL` started as an interactive login
 /// shell (many set-ups put pyenv or conda into the file only interactive shells read), then
-/// as a plain login shell; if neither answers, the app's own environment.
+/// as a plain login shell; if neither answers, the app's own environment. On Windows it is
+/// always the app's own environment: a program started from the Start menu already has the
+/// Member's whole `PATH` there.
 pub fn login_env() -> EnvVars {
     #[cfg(unix)]
     {
@@ -202,7 +203,7 @@ pub fn parse_version(output: &str) -> Option<String> {
 /// `~/x` → `<home>/x`.
 fn expand_home(path: &str, env: &EnvVars) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/")
-        && let Some((_, home)) = env.iter().find(|(k, _)| k == "HOME")
+        && let Some(home) = home_dir(env)
     {
         return Path::new(home).join(rest);
     }
@@ -227,7 +228,12 @@ pub fn validate(path: &str, env: &EnvVars) -> Result<Interpreter, String> {
     }
     let path = expand_home(typed, env);
     if !path.is_absolute() || typed.contains('\0') {
-        return Err("Enter the full path, starting with /.".into());
+        return Err(if cfg!(windows) {
+            "Enter the full path, starting with the drive (C:\\…)."
+        } else {
+            "Enter the full path, starting with /."
+        }
+        .into());
     }
     if path.is_dir() {
         return Err("That is a folder. Enter the path of the Python program itself.".into());
@@ -285,17 +291,42 @@ fn probe(path: &Path, env: &EnvVars) -> Option<(Interpreter, String)> {
     ))
 }
 
+/// The names an interpreter goes by in a directory. Windows: `py.exe` is the launcher
+/// python.org's installer adds; asked what it is, it answers for the Python it would start.
+const NAMES: &[&str] = if cfg!(windows) {
+    &["python.exe", "python3.exe", "py.exe"]
+} else {
+    &["python3", "python"]
+};
+
 /// The directories to look in: the shell's `PATH`, then the usual places.
 fn search_dirs(env: &EnvVars) -> Vec<PathBuf> {
-    let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
-    let mut dirs: Vec<PathBuf> = var("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
+    let mut dirs: Vec<PathBuf> = env_value(env, "PATH")
+        .map(|p| std::env::split_paths(p).collect())
         .unwrap_or_default();
-    if let Some(home) = var("HOME") {
-        dirs.push(Path::new(&home).join(".pyenv/shims"));
-    }
-    for usual in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
-        dirs.push(PathBuf::from(usual));
+    if cfg!(windows) {
+        // Where python.org's installer puts a Python for one person (`Python312`, …; it is
+        // only on `PATH` if the box was ticked), newest first, and its launcher.
+        if let Some(local) = env_value(env, "LOCALAPPDATA") {
+            let root = Path::new(local).join("Programs").join("Python");
+            let mut versions: Vec<String> = std::fs::read_dir(&root)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter(|name| name.starts_with("Python3"))
+                .collect();
+            versions.sort_by(|a, b| (b.len(), b).cmp(&(a.len(), a)));
+            dirs.extend(versions.iter().map(|name| root.join(name)));
+            dirs.push(root.join("Launcher"));
+        }
+    } else {
+        if let Some(home) = home_dir(env) {
+            dirs.push(Path::new(home).join(".pyenv/shims"));
+        }
+        for usual in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
+            dirs.push(PathBuf::from(usual));
+        }
     }
     dirs.retain(|d| d.is_absolute());
     dirs
@@ -307,7 +338,7 @@ pub fn find(env: &EnvVars) -> Vec<Interpreter> {
     let mut keys: Vec<String> = Vec::new();
     let mut found = Vec::new();
     'search: for dir in search_dirs(env) {
-        for name in ["python3", "python"] {
+        for name in NAMES {
             let candidate = dir.join(name);
             if !is_executable_file(&candidate) {
                 continue;
@@ -333,11 +364,22 @@ pub fn find(env: &EnvVars) -> Vec<Interpreter> {
     found
 }
 
-/// A value of `env`, for tests and messages.
+/// A value of `env`. Windows does not tell `Path` from `PATH`, so neither does this there.
 pub fn env_value<'a>(env: &'a EnvVars, name: &str) -> Option<&'a OsStr> {
     env.iter()
-        .find(|(k, _)| k == name)
+        .find(|(k, _)| {
+            if cfg!(windows) {
+                k.to_str().is_some_and(|k| k.eq_ignore_ascii_case(name))
+            } else {
+                k == name
+            }
+        })
         .map(|(_, v)| v.as_os_str())
+}
+
+/// The Member's home folder according to `env`.
+pub fn home_dir(env: &EnvVars) -> Option<&OsStr> {
+    env_value(env, if cfg!(windows) { "USERPROFILE" } else { "HOME" })
 }
 
 #[cfg(all(test, unix))]

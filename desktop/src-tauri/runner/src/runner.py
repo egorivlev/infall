@@ -1,6 +1,6 @@
-# Qoop Runner: executes one Run's code and records what it leaves behind.
+# Infall Runner: executes one Run's code and records what it leaves behind.
 #
-# Started by the Qoop desktop app as
+# Started by the Infall desktop app as
 #     <python> -u -X utf8 runner.py <main.py>
 # with QOOP_RUN_DIR set to the Run's temporary directory. Standard library only; works on
 # Python 3.8 and newer.
@@ -273,7 +273,7 @@ def _make_qoop(run_dir):
         except BaseException:
             pass
 
-    module = types.ModuleType("qoop", "What a Run's code can tell Qoop while it runs: step(text), progress(done, total).")
+    module = types.ModuleType("qoop", "What a Run's code can tell Infall while it runs: step(text), progress(done, total).")
     module.step = step
     module.progress = progress
     module.__all__ = ["step", "progress"]

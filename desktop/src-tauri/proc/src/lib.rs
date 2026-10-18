@@ -17,7 +17,9 @@ pub fn own_process_group(command: &mut Command) {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    job::no_console_window(command);
+    #[cfg(not(any(unix, windows)))]
     let _ = command;
 }
 
@@ -38,20 +40,30 @@ pub fn own_session(command: &mut Command) {
             });
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    job::no_console_window(command);
+    #[cfg(not(any(unix, windows)))]
     let _ = command;
 }
 
 /// A child that leads its own process group. Dropping it kills the whole group.
+///
+/// Windows has no process groups: there the child is put into a job object right after it
+/// was started, and killing the job kills it and everything it started from then on. There
+/// is no polite request on Windows; stopping is always a kill.
 pub struct Group {
     pub child: Child,
     reaped: bool,
+    #[cfg(windows)]
+    job: Option<job::Job>,
 }
 
 impl Group {
     /// `child` must have been started with [`own_process_group`] or [`own_session`].
     pub fn new(child: Child) -> Self {
         Self {
+            #[cfg(windows)]
+            job: job::Job::holding(&child),
             child,
             reaped: false,
         }
@@ -105,16 +117,11 @@ impl Group {
         self.reaped || !matches!(self.child.try_wait(), Ok(None))
     }
 
-    fn wait_exit(&self, grace: Duration) {
-        #[cfg(unix)]
-        {
-            let deadline = Instant::now() + grace;
-            while !self.exited() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
+    fn wait_exit(&mut self, grace: Duration) {
+        let deadline = Instant::now() + grace;
+        while !self.exited() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
         }
-        #[cfg(not(unix))]
-        let _ = (grace, Instant::now(), thread::yield_now);
     }
 
     /// Kills whatever is left of the group and collects the leader's exit status. `None`
@@ -126,7 +133,14 @@ impl Group {
         #[cfg(unix)]
         self.signal(libc::SIGKILL);
         #[cfg(not(unix))]
-        let _ = self.child.kill();
+        {
+            // Windows: everything in the job; then the process itself, in case there is no job.
+            #[cfg(windows)]
+            if let Some(job) = &self.job {
+                job.kill();
+            }
+            let _ = self.child.kill();
+        }
         self.reaped = true;
         self.child.wait().ok()
     }
@@ -147,8 +161,13 @@ impl Group {
             return None;
         }
         #[cfg(unix)]
-        self.signal(libc::SIGTERM);
-        self.wait_exit(grace);
+        {
+            self.signal(libc::SIGTERM);
+            self.wait_exit(grace);
+        }
+        // Nothing was asked, so there is nothing to wait for.
+        #[cfg(not(unix))]
+        let _ = grace;
         self.kill_and_reap()
     }
 }
@@ -184,5 +203,70 @@ pub fn is_executable_file(path: &Path) -> bool {
     #[cfg(not(unix))]
     {
         meta.is_file()
+    }
+}
+
+/// Windows: the job object that stands in for the process group, and starting console
+/// programs without a console window. Four calls into kernel32, which every Windows program
+/// links anyway; no crate is needed for them.
+#[cfg(windows)]
+mod job {
+    use std::os::windows::io::AsRawHandle;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Child, Command};
+
+    /// `CREATE_NO_WINDOW`: the app has no console, and without this flag Windows would open
+    /// a console window for every console program it starts (`python.exe`, `claude.exe`).
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    pub fn no_console_window(command: &mut Command) {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    // A `HANDLE` is pointer-sized; `isize` here, so that a `Job` can move between threads.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn CreateJobObjectW(attributes: *const u8, name: *const u16) -> isize;
+        fn AssignProcessToJobObject(job: isize, process: isize) -> i32;
+        fn TerminateJobObject(job: isize, exit_code: u32) -> i32;
+        fn CloseHandle(handle: isize) -> i32;
+    }
+
+    pub struct Job(isize);
+
+    impl Job {
+        /// A new job with `child` in it. Processes `child` starts from now on are in it
+        /// too; one it started in the instant before is not. `None` if Windows refuses,
+        /// and then only the process itself can be killed.
+        pub fn holding(child: &Child) -> Option<Self> {
+            // SAFETY: both arguments may be null (default security, no name). The process
+            // handle belongs to `child`, which outlives this call.
+            unsafe {
+                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if job == 0 {
+                    return None;
+                }
+                let job = Self(job);
+                (AssignProcessToJobObject(job.0, child.as_raw_handle() as isize) != 0)
+                    .then_some(job)
+            }
+        }
+
+        /// Ends every process in the job.
+        pub fn kill(&self) {
+            // SAFETY: the handle is a job this value owns. An error is fine to ignore.
+            unsafe {
+                TerminateJobObject(self.0, 1);
+            }
+        }
+    }
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            // SAFETY: the handle is owned by this value and closed only here.
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
     }
 }

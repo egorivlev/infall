@@ -335,7 +335,7 @@ fn a_work_folder_that_is_a_symlink_is_refused() {
     assert_eq!(
         events,
         vec![AiEvent::Error {
-            message: "Qoop could not prepare a temporary folder for Claude Code.".into()
+            message: "Infall could not prepare a temporary folder for Claude Code.".into()
         }]
     );
     assert!(!stub.record.join("argv").exists(), "the stub was started");

@@ -47,6 +47,14 @@
     );
   });
 
+  // Started with a saved address that did not answer (src-tauri/src/shell.rs sets the flag):
+  // say so, instead of the first-run words. "Connect" checks the address again.
+  if (window.__infallUnreachable === true) {
+    document.getElementById('title').textContent = 'Infall could not reach your server';
+    document.getElementById('lead').textContent =
+      'Check that this computer is online, then press Connect to try again. The address below is the one this app has been using.';
+  }
+
   invoke('setup_current').then(
     function (saved) {
       if (typeof saved === 'string' && !input.value) input.value = saved;

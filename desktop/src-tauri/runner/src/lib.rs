@@ -499,14 +499,19 @@ impl Runner {
 /// Checks the folder the Member typed: the full path of an existing directory.
 fn check_folder(typed: &str, env: &EnvVars) -> Result<String, String> {
     let path = match typed.strip_prefix("~/") {
-        Some(rest) => match python::env_value(env, "HOME") {
+        Some(rest) => match python::home_dir(env) {
             Some(home) => Path::new(home).join(rest),
             None => PathBuf::from(typed),
         },
         None => PathBuf::from(typed),
     };
     if !path.is_absolute() || typed.contains('\0') {
-        return Err("Enter the full path of the folder, starting with /.".into());
+        return Err(if cfg!(windows) {
+            "Enter the full path of the folder, starting with the drive (C:\\…)."
+        } else {
+            "Enter the full path of the folder, starting with /."
+        }
+        .into());
     }
     if !path.is_dir() {
         return Err("There is no folder at that path.".into());
