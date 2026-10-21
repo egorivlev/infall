@@ -350,6 +350,10 @@ pub async fn login(
     State(st): State<Shared>,
     ApiJson(body): ApiJson<LoginBody>,
 ) -> Result<Response, ApiError> {
+    crate::local::refuse(
+        &st,
+        "A Local Workspace is opened from the desktop app, never with a password.",
+    )?;
     let email = normalize_email(&body.email);
     let now = st.clock.now();
     if !st.throttle.try_begin(&email, now) {
@@ -380,6 +384,10 @@ pub async fn login(
 }
 
 pub async fn logout(State(st): State<Shared>, who: SignedIn) -> Result<Response, ApiError> {
+    crate::local::refuse(
+        &st,
+        "Signing out of a Local Workspace would leave no way back in.",
+    )?;
     blocking(&st, move |s| s.delete_session(&who.token_hash)).await?;
     let cookie = clearing_cookie(st.config.secure_cookies())?;
     Ok(([(SET_COOKIE, cookie)], Json(json!({}))).into_response())

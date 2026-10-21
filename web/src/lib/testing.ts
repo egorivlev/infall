@@ -457,6 +457,19 @@ export class FakeServer {
   aiDrop = false
   /** How many chat requests the client aborted. */
   aiAborted = 0
+  /** M12: what `GET /api/workspace` answers; null plays a server from before M12 (404). */
+  workspace: { kind: 'team' | 'local'; preset: string | null } | null = { kind: 'team', preset: null }
+  /** M12: the Tutorial's progress as last stored by `PUT /api/local/tutorial` (a Local Workspace only). */
+  tutorialState: unknown = null
+  /** One scripted failure for the next `/api/local/*` request. */
+  localFail: { status: number; code: string } | null = null
+  /**
+   * M13: what `POST /api/sources/lookup` answers. By default a registry that knows nothing (404); set an answer per
+   * DOI or arXiv id in `lookups`, or `lookupFail` for the next answer (502, 429, …). Guests get 403.
+   */
+  lookups: Record<string, { title: string; authors: string; year: string; doi: string | null; url: string | null }> = {}
+  lookupFail: { status: number; code: string; message: string } | null = null
+  lookupGate: Promise<void> | null = null
   private n = 0
 
   private get main(): FakeBranch {
@@ -964,6 +977,32 @@ export class FakeServer {
     return { ok: true, status: 200, body: this.aiStream(signal), text: async () => '' } as unknown as Response
   }
 
+  /** M12 (docs/specs/local.md, Contract B): the kind of Workspace, and the paths only a Local Workspace has. */
+  private localRoute(path: string, method: string, body: unknown): { status: number; body: unknown } {
+    if (path === '/api/workspace' && method === 'GET') return this.workspace ? { status: 200, body: this.workspace } : fail(404, 'not_found')
+    if (this.workspace?.kind !== 'local') return fail(404, 'not_found')
+    if (this.localFail) {
+      const f = this.localFail
+      this.localFail = null
+      return fail(f.status, f.code, 'That did not work.')
+    }
+    const b = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+    if (path === '/api/local/member' && method === 'PATCH') {
+      const name = typeof b.name === 'string' ? b.name.trim() : ''
+      if (name === '' || [...name].length > 100) return fail(400, 'bad_request', 'A name is 1 to 100 characters long.')
+      this.members = this.members.map((m) => (m.id === this.actor.id ? { ...m, name } : m))
+      this.actor = { ...this.actor, name }
+      return { status: 200, body: { name } }
+    }
+    if (path === '/api/local/tutorial' && method === 'GET') return { status: 200, body: { state: this.tutorialState } }
+    if (path === '/api/local/tutorial' && method === 'PUT') {
+      if (JSON.stringify(body).length > 16 * 1024) return fail(400, 'bad_request', 'The progress is over 16 KiB.')
+      this.tutorialState = b.state ?? null
+      return { status: 204, body: undefined }
+    }
+    return fail(404, 'not_found')
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -973,7 +1012,7 @@ export class FakeServer {
   }
 
   private json(status: number, body: unknown) {
-    const text = JSON.stringify(body)
+    const text = body === undefined ? '' : JSON.stringify(body)
     return { ok: status >= 200 && status < 300, status, text: async () => text } as Response
   }
 
@@ -987,6 +1026,21 @@ export class FakeServer {
     this.requests.push({ method, path, body })
     const guest = this.actor.role === 'guest'
     const forbidden = fail(403, 'forbidden')
+    if (path === '/api/workspace' || path.startsWith('/api/local/')) return this.respond(this.localRoute(path, method, body))
+    if (path === '/api/sources/lookup' && method === 'POST') {
+      if (guest) return this.respond(forbidden)
+      if (this.lookupGate) await this.lookupGate
+      if (this.lookupFail) {
+        const f = this.lookupFail
+        this.lookupFail = null
+        return this.respond(fail(f.status, f.code, f.message))
+      }
+      const doi = typeof body?.doi === 'string' ? body.doi : undefined
+      const arxiv = typeof body?.arxiv === 'string' ? body.arxiv : undefined
+      if ((doi === undefined) === (arxiv === undefined)) return this.respond(fail(400, 'bad_request', 'Give one DOI or one arXiv id.'))
+      const found = this.lookups[(doi ?? arxiv)!]
+      return found ? this.json(200, found) : this.respond(fail(404, 'not_found', 'The registry does not know this one.'))
+    }
     if (path === '/api/members') return this.json(200, { members: this.members })
     if (path === '/api/branches' && method === 'GET') {
       return this.json(200, { branches: this.all.map((b) => this.info(b)) })

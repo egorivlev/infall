@@ -12,13 +12,19 @@ import {
   useViewportStore,
 } from '@xyflow/react'
 import type { EdgeChangeset, NodeChangeset, OnConnectEnd, OnNodeDrag } from '@xyflow/react'
-import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory } from '../../lib'
+import { CARD_H, CARD_W, history, newId, ops, useBoard, useHistory, useSources } from '../../lib'
 import type { CardVM, ConnectionVM, FrameVM, Kind, Op } from '../../lib'
-import { boardFocus, pagePanel, suggestionsPanel, useBoardRequest, useHistoryPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
+import { boardBridge, boardFocus, pagePanel, suggestionsPanel, useBoardRequest, useHistoryPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { HistoryPanel } from '../history'
+import { prefs, stepBoardScale, usePrefs } from '../settings/prefs'
 import { PagePanel } from '../page'
+import { ImportBibtex } from '../page/bibtex/ImportBibtex'
+import { toBibtex } from '../page/bibtex/write'
+import { exportFile } from '../page/export/exportFile'
+import { fileName } from '../page/files'
 import { SuggestionsPanel } from '../suggestions'
 import { EmptyState, ErrorNote, LoadingNote } from './BoardMessage'
+import { boardScaleKey, typingIn } from './boardScaleKeys'
 import { ConnectionPopover } from './ConnectionPopover'
 import { ConnectionEdge } from './edges/ConnectionEdge'
 import { createEdgeBuilder, createNodeBuilder } from './elements'
@@ -40,6 +46,7 @@ import type { Rect } from './geometry'
 import { Inspector } from './Inspector'
 import { PreviewBanner } from './PreviewBanner'
 import { SuggestedConnection } from './SuggestedConnection'
+import { guardBoardSelection } from './textSelection'
 import { CardNode } from './nodes/CardNode'
 import { FrameNode } from './nodes/FrameNode'
 import { Toast } from './Toast'
@@ -56,7 +63,11 @@ const nodeTypes = { card: CardNode, frame: FrameNode }
 const edgeTypes = { connection: ConnectionEdge }
 const MULTI_KEYS = ['Shift', 'Meta', 'Control']
 const ZOOM_KEYS = ['Meta', 'Control']
-const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 }
+// The Board's own zoom range, at Board scale 100% (Settings → Board): React Flow's zoom is this times the Board scale.
+const MIN_ZOOM = 0.1
+const MAX_ZOOM = 2
+/** How long "Board 120%" stays after a Board scale key. */
+const SCALE_NOTE_MS = 1400
 // Padding is in screen px (React Flow 13); room for the toolbar above and the HUD below.
 const FIT_PADDING = { top: 64, bottom: 56, x: 48 }
 const CONNECTION_LINE_STYLE = { stroke: 'var(--q-accent)', strokeWidth: 1.4 }
@@ -175,6 +186,15 @@ function BoardCanvas() {
   const raised = useBoardUi((s) => s.statusMenu ?? s.editing?.id ?? null)
   const hasSize = useViewportStore((s) => s.width > 0 && s.height > 0)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // Settings → Board scale: how large the Board is drawn at its "100%". React Flow's zoom is the person's zoom
+  // times this; the zoom control shows the person's part only.
+  const base = usePrefs((s) => s.boardScale) / 100
+  const [defaultViewport] = useState(() => ({ x: 0, y: 0, zoom: base })) // the first one only
+  /** The canvas in its own pixels. Not the Board element's: the interface scale zooms that, and the canvas undoes it. */
+  const canvasSize = useCallback(() => {
+    const c = wrapRef.current?.querySelector<HTMLElement>('.react-flow')
+    return { w: c?.clientWidth ?? 0, h: c?.clientHeight ?? 0 }
+  }, [])
 
   // While History previews an earlier moment, the Board shows that moment instead, fully read-only.
   const preview = useHistory().preview
@@ -185,6 +205,11 @@ function BoardCanvas() {
   const latest = useLatest(view)
 
   useLayoutEffect(() => ui.setReadOnly(readOnly), [readOnly])
+  // No browser text selection may start on the Board or survive a press on it (see textSelection.ts).
+  useEffect(() => {
+    const el = wrapRef.current
+    return el ? guardBoardSelection(el) : undefined
+  }, [])
   // Entering the preview drops the selection and anything in progress; the viewport stays where it is.
   useLayoutEffect(() => {
     if (previewing) ui.reset()
@@ -239,16 +264,17 @@ function BoardCanvas() {
     (animate: boolean) => {
       const s = latest.current
       const b = fitBounds(s.cards, s.frames)
-      const el = wrapRef.current
-      if (!el) return
+      if (!wrapRef.current) return
+      const scale = usePrefs.getState().boardScale / 100
       if (!b) {
-        void rf.setViewport(DEFAULT_VIEWPORT, animate ? { duration: 160 } : undefined)
+        void rf.setViewport({ x: 0, y: 0, zoom: scale }, animate ? { duration: 160 } : undefined)
         return
       }
-      const vp = getViewportForBounds(b, el.clientWidth, el.clientHeight, 0.1, 1, FIT_PADDING)
+      const { w, h } = canvasSize()
+      const vp = getViewportForBounds(b, w, h, MIN_ZOOM * scale, scale, FIT_PADDING)
       void rf.setViewport(vp, animate ? { duration: 160 } : undefined)
     },
-    [rf, latest],
+    [rf, latest, canvasSize],
   )
 
   // Fit once, when the first content and the canvas size are both known.
@@ -263,19 +289,54 @@ function BoardCanvas() {
 
   const reveal = useCallback(
     (r: Rect, minZoom = 0) => {
-      const el = wrapRef.current
-      if (!el) return
+      if (!wrapRef.current) return
+      const { w, h } = canvasSize()
       const { x, y, zoom } = rf.getViewport()
       const left = -x / zoom
       const top = -y / zoom
-      const inside =
-        r.x >= left && r.y >= top && r.x + r.w <= left + el.clientWidth / zoom && r.y + r.h <= top + el.clientHeight / zoom
+      const inside = r.x >= left && r.y >= top && r.x + r.w <= left + w / zoom && r.y + r.h <= top + h / zoom
       if (inside && zoom >= minZoom) return
       const c = centre(r)
       void rf.setCenter(c.x, c.y, { zoom: Math.max(zoom, minZoom), duration: 160 })
     },
-    [rf],
+    [rf, canvasSize],
   )
+
+  // The Board scale changed (Settings, or the keys below): keep the person's zoom and what is in the middle of the view.
+  const baseRef = useRef(base)
+  useEffect(() => {
+    const was = baseRef.current
+    baseRef.current = base
+    if (was === base) return
+    const { w, h } = canvasSize()
+    const vp = rf.getViewport()
+    const zoom = (vp.zoom / was) * base
+    const fx = (w / 2 - vp.x) / vp.zoom
+    const fy = (h / 2 - vp.y) / vp.zoom
+    void rf.setViewport({ x: w / 2 - fx * zoom, y: h / 2 - fy * zoom, zoom })
+  }, [base, rf, canvasSize])
+
+  // Shift + "+" / "−" / 0 change the Board scale while the Board is shown, unless keys are going into a field.
+  const [scaleNote, setScaleNote] = useState<{ pct: number; n: number } | null>(null)
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.defaultPrevented || typingIn(e.target)) return
+      const dir = boardScaleKey(e)
+      if (dir === null) return
+      e.preventDefault()
+      const pct = stepBoardScale(usePrefs.getState().boardScale, dir)
+      prefs.set({ boardScale: pct })
+      setScaleNote((n) => ({ pct, n: (n?.n ?? 0) + 1 }))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  const noteKey = scaleNote?.n
+  useEffect(() => {
+    if (noteKey === undefined) return
+    const t = window.setTimeout(() => setScaleNote(null), SCALE_NOTE_MS)
+    return () => window.clearTimeout(t)
+  }, [noteKey])
 
   // A newly previewed Suggestion: if one of its two Cards is out of view, pan just enough to show both
   // (and zoom out only if they do not fit). The part of the Board under the inspector or the Page panel does not count.
@@ -289,12 +350,14 @@ function BoardCanvas() {
     const a = cards.find((c) => c.id === shownFrom)
     const b = cards.find((c) => c.id === shownTo)
     if (!a || !b) return
+    // In the canvas's pixels, which are screen pixels: the panels are measured on screen, not in zoomed CSS pixels.
     const covered =
-      (el.querySelector<HTMLElement>('.qb-inspector')?.offsetWidth ?? 0) +
-      (el.parentElement?.querySelector<HTMLElement>('.qp-panel')?.offsetWidth ?? 0)
-    const next = viewToShow(boundsOf(a, b), rf.getViewport(), el.clientWidth - covered, el.clientHeight)
+      (el.querySelector<HTMLElement>('.qb-inspector')?.getBoundingClientRect().width ?? 0) +
+      (el.parentElement?.querySelector<HTMLElement>('.qp-panel')?.getBoundingClientRect().width ?? 0)
+    const { w, h } = canvasSize()
+    const next = viewToShow(boundsOf(a, b), rf.getViewport(), w - covered, h)
     if (next) void rf.setViewport(next, { duration: 160 })
-  }, [shownId, shownFrom, shownTo, latest, rf])
+  }, [shownId, shownFrom, shownTo, latest, rf, canvasSize])
 
   // ---- creation ----
   const createCardAt = useCallback(
@@ -317,6 +380,28 @@ function BoardCanvas() {
     ui.select([id])
     ui.edit(id, 'title')
   }, [viewportCentre, actions])
+
+  // ---- M13: BibTeX in and out for the whole Branch ----
+  const allSources = useSources()
+  const [importing, setImporting] = useState(false)
+  const exportBibtex = useCallback(() => {
+    if (allSources.length === 0) {
+      toasts.show({ message: 'There are no Sources on this Branch yet, so there is nothing to export.' })
+      return
+    }
+    void exportFile(fileName(`Sources on ${snap.branch?.name ?? 'main'}`, 'bib'), toBibtex(allSources), 'application/x-bibtex')
+  }, [allSources, snap.branch?.name])
+  // The new Frame goes to the right of everything on the Board, so nothing ends up underneath it.
+  const importPlace = useCallback(() => {
+    const s = latest.current
+    const items = [...s.cards, ...s.frames]
+    if (items.length === 0) return viewportCentre()
+    return { x: Math.max(...items.map((i) => i.x + i.w)) + 96, y: Math.min(...items.map((i) => i.y)) }
+  }, [latest, viewportCentre])
+  const importTarget = useMemo(
+    () => ({ kind: 'board' as const, place: importPlace, onFrame: (id: string) => boardBridge.focus('frame', id) }),
+    [importPlace],
+  )
 
   const onDoubleClick = (e: ReactMouseEvent) => {
     if (!(e.target instanceof Element)) return
@@ -347,12 +432,14 @@ function BoardCanvas() {
       handled.current = request.nonce
       ui.select([target.id])
       const el = wrapRef.current
+      const scale = usePrefs.getState().boardScale / 100
       if (request.target === 'card') {
         const c = centre(target)
-        void rf.setCenter(c.x, c.y, { zoom: Math.max(rf.getZoom(), 0.8), duration: 200 })
+        void rf.setCenter(c.x, c.y, { zoom: Math.max(rf.getZoom(), 0.8 * scale), duration: 200 })
       } else if (el) {
         const b = { x: target.x, y: target.y - FRAME_TITLE_SPACE, width: target.w, height: target.h + FRAME_TITLE_SPACE }
-        void rf.setViewport(getViewportForBounds(b, el.clientWidth, el.clientHeight, 0.1, 1.2, FIT_PADDING), { duration: 200 })
+        const { w, h } = canvasSize()
+        void rf.setViewport(getViewportForBounds(b, w, h, MIN_ZOOM * scale, 1.2 * scale, FIT_PADDING), { duration: 200 })
       }
       el?.focus({ preventScroll: true })
       return
@@ -361,7 +448,7 @@ function BoardCanvas() {
     if (readOnly) return
     if (request.type === 'create-card') addCardAtCentre()
     else addFrameAtCentre()
-  }, [request, cardsById, framesById, rf, readOnly, addCardAtCentre, addFrameAtCentre])
+  }, [request, cardsById, framesById, rf, readOnly, addCardAtCentre, addFrameAtCentre, canvasSize])
 
   // ---- React Flow callbacks: selection and in-progress geometry stay local ----
   const onNodesChange = useCallback((changes: NodeChangeset<BoardNode>) => {
@@ -572,9 +659,9 @@ function BoardCanvas() {
         onPaneClick={onPaneClick}
         connectionMode={ConnectionMode.Loose}
         connectionLineStyle={CONNECTION_LINE_STYLE}
-        defaultViewport={DEFAULT_VIEWPORT}
-        minZoom={0.1}
-        maxZoom={2}
+        defaultViewport={defaultViewport}
+        minZoom={MIN_ZOOM * base}
+        maxZoom={MAX_ZOOM * base}
         panOnDrag
         panOnScroll
         zoomOnPinch
@@ -610,8 +697,20 @@ function BoardCanvas() {
         )}
       </ReactFlow>
 
-      <Toolbar readOnly={readOnly} onAddCard={addCardAtCentre} onAddFrame={addFrameAtCentre} />
+      <Toolbar
+        readOnly={readOnly}
+        onAddCard={addCardAtCentre}
+        onAddFrame={addFrameAtCentre}
+        onImportBibtex={previewing ? undefined : () => setImporting(true)}
+        onExportBibtex={previewing ? undefined : exportBibtex}
+      />
+      {importing && !readOnly && <ImportBibtex target={importTarget} onClose={() => setImporting(false)} />}
       <ZoomHud cards={cards.length} frames={frames.length} onFit={() => fit(true)} />
+      {scaleNote && (
+        <div className="qb-scale-note" key={scaleNote.n} role="status">
+          Board {scaleNote.pct}%
+        </div>
+      )}
       {preview && <PreviewBanner branch={snap.branch?.name ?? 'main'} at={preview.at} onBack={backToNow} />}
 
       {loading && <LoadingNote />}

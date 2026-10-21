@@ -1,14 +1,14 @@
 # Infall desktop app — contract (M7)
 
-The desktop app ([ADR 0002](../adr/0002-desktop-app-primary-browser-fallback.md), [ADR 0003](../adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md)) is a thin Tauri shell around the same web UI the server serves. What it adds in M7 is one thing: the AI sidebar can run on the Member's own Claude Code. (The Runner is M8.)
+The desktop app ([ADR 0002](../adr/0002-desktop-app-primary-browser-fallback.md), [ADR 0003](../adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md)) is a Tauri shell around the same web UI the server serves. What it adds in M7 is one thing: the AI sidebar can run on the Member's own Claude Code. (The Runner is M8.) Since M12 it is no longer only a shell: it carries the server itself, for Local Workspaces, and opens with a start screen instead of a question for a server address ([ADR 0004](../adr/0004-server-embedded-in-the-desktop-app-for-local-workspaces.md); [M12](#m12--workspaces-on-this-computer) below).
 
 ## Shell
-- First start (or "Change server…" from the app menu): a small local screen asks for the server address (`https://…`; `http://` only for `localhost`/`127.0.0.1`), checks `GET <address>/api/health` answers `{ "ok": true }`, stores the address in the app's config directory, and loads the server's UI in the main window. Later starts go straight there if the server answers its health check; if it does not, the same local screen opens saying that the server could not be reached, with the saved address, and "Connect" tries again.
-- The window shows only that origin. A navigation to any other origin is refused and opens nothing — a script in any frame, a Visual's sandbox included, can start one, and it looks the same as one the Member started. Only a link that asks for a new window (`target="_blank"`, which every external link in the UI uses and which a sandboxed frame cannot do) is handed to the system browser, at most once every two seconds. No address bar, no devtools in release builds.
+- (M7 to M11; replaced in M12 by the start screen, [below](#m12--workspaces-on-this-computer).) First start (or "Change server…" from the app menu): a small local screen asks for the server address (`https://…`; `http://` only for `localhost`/`127.0.0.1`), checks `GET <address>/api/health` answers `{ "ok": true }`, stores the address in the app's config directory, and loads the server's UI in the main window. Later starts go straight there if the server answers its health check; if it does not, the same local screen opens saying that the server could not be reached, with the saved address, and "Connect" tries again.
+- The window shows only that origin (since M12: the open Workspace's origin). A navigation to any other origin is refused and opens nothing — a script in any frame, a Visual's sandbox included, can start one, and it looks the same as one the Member started. Only a link that asks for a new window (`target="_blank"`, which every external link in the UI uses and which a sandboxed frame cannot do) is handed to the system browser, at most once every two seconds. No address bar, no devtools in release builds.
 - The server's pages are remote content: they get **no** general access to the app. The only thing exposed to that one origin is the bridge below; nothing is exposed to any other origin or to frames (the Visual sandbox frame included).
 
 ## Bridge — `window.qoopDesktop`
-Present only inside the desktop app, only on the configured server origin, only in the top frame. The web UI detects the app by its presence.
+Present only inside the desktop app, only on the configured server origin (since M12: the open Workspace's origin, a Local Workspace's `http://127.0.0.1:<port>` included), only in the top frame. The web UI detects the app by its presence.
 
 ```ts
 type AiEvent =
@@ -50,7 +50,7 @@ One run at a time per window; `cancel` terminates the process (and its children)
 The path of the `claude` binary can be overridden with the environment variable `QOOP_CLAUDE_BIN` (used by tests with a stub that prints a canned event stream).
 
 ## Not in M7
-Auto-update, code signing/notarisation, installers for other platforms, the Runner (M8), offline use.
+Auto-update, code signing/notarisation, installers for other platforms, the Runner (M8), offline use (since M12, a Local Workspace needs no network).
 
 
 # M8 — the Runner
@@ -155,3 +155,89 @@ Per-process graphics-processor use; energy; network and disk; history of usage a
 - `qoop` writes `qoop-progress.json` (`{"step": …, "done": …, "total": …}`) in `QOOP_RUN_DIR`: at once if the last write is 0.2 s ago, else a timer thread writes the last state when the 0.2 s are over; once more when the code ends. Calls with the wrong arguments are ignored like wrong values. `qoop.step("")` takes the step away. The app reads the file without following links, at most 4 096 bytes, and checks it again (it is the Run's own program that wrote it).
 - Progress bars: `progress` and `step` are taken from the bar only when the file says neither. Scaled counts (`1.20k/5.00k`) are read; a bar without a total says nothing; a line longer than 600 bytes is not looked at. The kept output is untouched.
 - Not verified: anything on Linux (the `/proc` and `nvidia-smi` paths are tested only against text written by hand, not run), and Intel Macs with two graphics processors.
+
+# M12 — Workspaces on this computer
+
+The contract is [local.md](local.md) (Contract A for the server inside the app, Contract C for the start screen's commands); the reasons are in [ADR 0004](../adr/0004-server-embedded-in-the-desktop-app-for-local-workspaces.md). This section says what the shell does with them.
+
+## The start screen
+- Shown at **every** start, in the window `setup` (the app's own local page `desktop/ui/index.html`; 920 × 640, at least 720 × 560). The one exception: right after the app started itself again to open a Workspace (see "One Workspace at a time"), it opens that Workspace directly, once.
+- **Your workspaces**: every Local Workspace and every remembered Team Workspace, the one opened most recently first, each with **Rename** and **Remove**. Removing asks first; for a Local Workspace it deletes its files for good, for a Team Workspace it forgets the address. The open Workspace cannot be removed.
+- **Create a workspace**: one tile per Preset (Tutorial, Blank, Literature review, Research project). A new Local Workspace is named after its Preset, made unique ("Tutorial 2"), and opens at once.
+- **Sign in to a Team Workspace**: a server address, with the M7 rules (`https://…`; `http://` only for `localhost` and `127.0.0.1`) and the same health check. The Team Workspace is remembered, named after the address's host, and opened. Signing in is then the server's own page, as before.
+- When the app comes back to the start screen because something failed (a Team Workspace that did not answer, a Local Workspace that could not be opened), the screen says so in one sentence.
+- The start screen may call only the six commands of Contract C (capability `setup`, that window only). It gets none of the bridge.
+
+## Where things are kept
+- The list of Workspaces: `workspaces.json` in the app's config directory. The address an earlier version kept (`config.json`, one server) becomes a Team Workspace entry the first time the list is read; `config.json` itself is left as it was.
+- Each Local Workspace: a directory `workspaces/<id>/` in the app's data directory, holding `workspace.sqlite` and, beside it, `workspace.sqlite.secret-key`, the key that seals OpenRouter keys at rest (owner-only on macOS and Linux; on Windows only what the folder inherits).
+- The web UI the app was built with (`web/dist`, inside the program since the build) is unpacked to `web/` in the data directory the first time a Local Workspace opens, and replaced whole when the program holds a different build.
+- Config and data directories: macOS `~/Library/Application Support/app.qoop.desktop/` (both); Linux `~/.config/app.qoop.desktop/` and `~/.local/share/app.qoop.desktop/`; Windows `%APPDATA%\app.qoop.desktop\` (both).
+- Nothing copies a Local Workspace anywhere else. There is no backup of it but the files themselves. (Until M13; since then the app keeps backups in the Workspace's folder and exports Workspace files: [M13](#m13--workspace-files-backups-saving-and-printing) below.)
+
+## Opening a Workspace
+- **Local**: the app unpacks the web UI if needed and starts the server in its own process (`start_local`: the database, the web UI's directory, the Preset, and the Member's name, which is the operating system's user name or else `Me`). The main window opens the server's `entry_url`, which signs the one Member in and goes on to the Board. No email or password is asked or shown.
+- **Team**: the health check, then the main window opens the server's address, as in M7.
+- The main window gets the bridge for exactly that origin (the run-time capability of M7, plus `switch_workspace`).
+
+## One Workspace at a time
+- **Switch Workspace…** (the app menu; on Linux the menu bar of each window) and `window.qoopDesktop.switchWorkspace()` both cancel a running `claude` and any Run, show the start screen, close the main window and stop the embedded server.
+- A capability given at run time cannot be taken back, and each Local Workspace has its own port, so its own origin. So when a second Workspace is opened in the same run of the app, the app notes which one, starts itself again and opens it then. To the Member this is the app closing and reopening once.
+- Quitting stops `claude`, any Run and the embedded server, within a few seconds.
+
+## The embedded server: what guards it
+- It listens on `127.0.0.1` only, on a port the operating system chooses, and only while a Local Workspace is open. The shell accepts nothing but `http://127.0.0.1:<port>` as its origin.
+- Every program on the computer, of any account, can connect to that port. Signing in needs the key in `entry_url`: 256 random bits made at each start, compared in constant time, gone when the server stops; a wrong or missing key is `404`. The key is only in the address the app gives its own window; it is not written to disk or printed. Signing in with a password, invites and signing out are refused in a Local Workspace ([local.md](local.md#contract-b--the-http-api-in-a-local-workspace-for-the-web-ui)), so there is no other way in.
+- The server's Origin checks apply unchanged, with `http://127.0.0.1:<port>` as the public origin.
+- What it does not guard against: programs running as the same user can read and change the Workspace's files directly, as they can any of that user's files.
+
+## Not in M12
+Moving a Local Workspace onto a server; more than one Workspace open at once; a Local Workspace with more than one Member; backups, export or sync of a Local Workspace.
+
+# M13 — Workspace files, backups, saving and printing
+
+The contract is [portability.md](portability.md) (Contract A for the server crate's `export_workspace` and `import_workspace`, Contract C for the start screen's commands, Contract D for the bridge). This section says what the shell does with them.
+
+## The start screen's new commands
+Added to the `setup` window's commands, under the M12 rules (allowed for that window only; a failure rejects with one plain sentence that can be shown as is):
+
+```ts
+workspace_export({ id: string }): string | null
+  // local only. The system's save dialog, suggested name "<Workspace name>.infall".
+  // Writes a Workspace file with export_workspace; resolves to the path written, or null when cancelled.
+workspace_import(): void
+  // The system's open dialog for a .infall file. Makes a new Local Workspace from it with
+  // import_workspace (name: the file's name without extension, made unique) and opens it.
+  // Resolves without doing anything when cancelled.
+workspace_reveal({ id: string }): void
+  // local only. Shows the Workspace's folder in the file manager.
+```
+
+`WorkspaceEntry` (local.md, Contract C) gains `lastBackup: number | null`: the time of the newest backup in unix ms, for a Local Workspace; `null` for a Team Workspace and while none is known.
+
+The start screen shows, per Local Workspace, **Export…** and **Show in folder**, and "Backed up <when>" when `lastBackup` is known; below the list, also when it is empty, **Import a workspace…**. After an export it says in one line where the file went.
+
+## The Workspace file
+- One file, extension `.infall`: a consistent copy of the Workspace's database, taken safely while it is open, without what is secret or tied to this computer: sessions, access tokens, AI settings with the OpenRouter key, the entry key. The key file beside the database (`workspace.sqlite.secret-key`) is not in it either.
+- Importing always makes a **new** Local Workspace (its own folder, its own new key file); it never writes over one. Its one Member is kept, name included. A file made by a newer schema than this build knows is refused, never half opened; a file that is not a Workspace file is refused with a sentence that says so.
+
+## Backups
+- When a Local Workspace is opened and its newest backup is older than 24 hours (or there is none), the shell writes a Workspace file into `workspaces/<id>/backups/` and then keeps the newest 7 there, deleting older ones. Same format as an export, so a backup is brought back with **Import a workspace…**.
+- No setting. A failed backup never stops the Workspace from opening.
+- The backups are inside the Workspace's folder, so **Remove** deletes them with the Workspace.
+
+## Bridge — saving a file
+Added to `window.qoopDesktop`, under the same rules as the rest of the bridge (configured origin, top frame, bridge key):
+
+```ts
+saveFile(file: { suggestedName: string; text: string }): Promise<boolean>
+  // The system's save dialog; writes the text as UTF-8. false when cancelled. At most 20 MB.
+```
+
+The page chooses the suggested name and the text, never the folder or the path: only the person, in the system's dialog, chooses where the file goes. The web UI checks that `saveFile` exists; without it (a browser, an older app) it downloads the file the browser's way. Used for a Page as Markdown and for BibTeX.
+
+## Printing
+The web UI calls `window.print()` for **Print…** on a Page, and the system's print dialog opens; the person makes a PDF from there. On macOS the web view ignores `window.print()`, so there the bridge script replaces it with a call to the bridge command `print_page`, which asks the web view to print (`bridge::OWN_PRINT`). On Linux and Windows the web view's own `window.print()` is used. The main window's bridge therefore grants ten commands: M12's eight, `save_file` and `print_page`.
+
+## Not in M13
+Moving a Local Workspace onto a server; backups of a Team Workspace by the app (the server's backups are the Admin's: deploy guide); a setting for how often or how many backups; backups anywhere but the Workspace's own folder; a bridge command for opening files (a `.bib` file reaches the page through the web view's own file chooser, as in a browser).

@@ -3,10 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" />
     <title>Infall</title>
+    <script>
+      // Before the first paint: the theme and scales from this device's settings (ui/settings/prefs.ts, key
+      // "infall-settings"), so a light theme or a larger interface never flashes in as dark or 100%. The app applies
+      // the same settings again once it has loaded; anything unreadable here is simply left to it.
+      try {
+        var s = JSON.parse(localStorage.getItem('infall-settings') || 'null')
+        var t = s && s.v === 1 ? s.theme : localStorage.getItem('qoop-theme')
+        if (t === 'system') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+        if (s && s.v === 1) {
+          var r = document.documentElement.style
+          if ([80, 90, 100, 110, 125, 150].indexOf(s.interfaceScale) >= 0) { r.setProperty('--q-ui-zoom', s.interfaceScale / 100); r.setProperty('--q-ui-unzoom', 100 / s.interfaceScale) }
+          if ([85, 90, 100, 110, 120, 130].indexOf(s.textSize) >= 0) r.setProperty('--q-text', s.textSize / 100)
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

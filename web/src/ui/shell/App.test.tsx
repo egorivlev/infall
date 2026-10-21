@@ -21,6 +21,8 @@ const noAi = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
+  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,
   ai: { refresh: async () => {}, models: async () => [] },
   useSession: () => h.session,
@@ -184,7 +186,7 @@ describe('Guest', () => {
 })
 
 describe('top bar and rail', () => {
-  it('tints by Branch, shows presence with names and initials, and Admin-only menu entries', async () => {
+  it('tints by Branch, shows presence with names and initials, and a short account menu', async () => {
     signedIn(ADMIN)
     go('/b/try-QEC')
     h.board = snapshot({ branch: { id: 'b', name: 'try-QEC', seq: 1, checkpoints: 0 } })
@@ -196,8 +198,8 @@ describe('top bar and rail', () => {
     await user.click(screen.getByRole('button', { name: /Elena Varga/ }))
     const menu = screen.getByRole('menu')
     expect(within(menu).getByText('Admin')).toBeInTheDocument()
-    expect(within(menu).getByRole('menuitem', { name: 'Members' })).toBeInTheDocument()
-    expect(within(menu).getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
+    // Name, Settings, the Tour, Sign out: Members is in the rail and in Settings → Workspace.
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out'])
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.getByRole('button', { name: /Elena Varga/ })).toHaveFocus()
@@ -245,9 +247,9 @@ describe('top bar and rail', () => {
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     await user.click(screen.getByRole('button', { name: /^Theme: Dark/ }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(window.localStorage.getItem('qoop-theme')).toBe('light')
+    expect(JSON.parse(window.localStorage.getItem('infall-settings')!)).toMatchObject({ v: 1, theme: 'light' })
     await user.click(screen.getByRole('button', { name: /^Theme: Light/ }))
-    expect(screen.getByRole('button', { name: /^Theme: Follow system/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Theme: Match system/ })).toBeInTheDocument()
   })
 })
 

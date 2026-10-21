@@ -1,7 +1,7 @@
 // The steps of the tour: what each one points at and what it says. The words are the project's (CONTEXT.md).
 // A step points at real controls, found by their `data-tour` attribute.
 import type { Role } from '../../lib'
-import { aiPanel, useAiPanel } from '../bridge'
+import { aiPanel, desktopSwitchWorkspace, useAiPanel } from '../bridge'
 
 export type TourStep = {
   id: string
@@ -19,9 +19,15 @@ export type TourStep = {
    * Never changes the Board, a Page or anything on the server.
    */
   enter?: () => (() => void) | void
+  /** A button of the step's own, beside Back and Next (the last step's "Go to the start screen" in the desktop app). */
+  action?: { label: string; run: () => void }
 }
 
-export type TourAudience = { role: Role; desktop: boolean }
+/**
+ * Who takes the tour, and where. `local`: a Local Workspace, which has no Members screen. `startScreen`: the desktop
+ * app can go back to its start screen (`window.qoopDesktop.switchWorkspace`), where a Tutorial Workspace is made.
+ */
+export type TourAudience = { role: Role; desktop: boolean; local?: boolean; startScreen?: boolean }
 
 /** True inside the desktop app, which is known by the bridge it puts on the page (as in lib/runs and windowChrome). */
 export function inDesktopApp(): boolean {
@@ -47,7 +53,28 @@ const SEARCH: TourStep = {
 
 const RUNS_FIRST = 'A Page can hold a Run: code, kept with the output of the last time someone ran it.'
 
-function memberSteps(role: Role, desktop: boolean): TourStep[] {
+function memberSteps(role: Role, desktop: boolean, local: boolean, startScreen: boolean): TourStep[] {
+  const more: TourStep = {
+    id: 'more',
+    title: 'Where to read more',
+    body: [
+      role === 'admin'
+        ? 'The written tutorial, docs/tutorial.md in the repository, goes through every part once in about fifteen minutes.'
+        : 'The written tutorial your Admin can give you goes through every part once in about fifteen minutes.',
+      'This tour stays here in the account menu, as “Tour of Infall”.',
+    ],
+    anchor: ['account'],
+  }
+  if (startScreen) {
+    more.body.push('To try every part yourself, make a Tutorial Workspace from the start screen.')
+    more.action = {
+      label: 'Go to the start screen',
+      run: () => {
+        const go = desktopSwitchWorkspace()
+        if (go) void go().catch(() => {})
+      },
+    }
+  }
   return [
     BOARD,
     {
@@ -84,7 +111,7 @@ function memberSteps(role: Role, desktop: boolean): TourStep[] {
       body: [
         'To-dos shows who is doing what.',
         'Suggestions holds Sources and Connections proposed by AI until someone accepts them.',
-        role === 'admin' ? 'Branches lists every Branch, and Members is where you invite people.' : 'Branches lists every Branch.',
+        role === 'admin' && !local ? 'Branches lists every Branch, and Members is where you invite people.' : 'Branches lists every Branch.',
       ],
       anchor: ['rail'],
     },
@@ -133,17 +160,7 @@ function memberSteps(role: Role, desktop: boolean): TourStep[] {
           ],
       anchor: ['card', 'board'], // a Run lives on a Card's Page
     },
-    {
-      id: 'more',
-      title: 'Where to read more',
-      body: [
-        role === 'admin'
-          ? 'The written tutorial, docs/tutorial.md in the repository, goes through every part once in about fifteen minutes.'
-          : 'The written tutorial your Admin can give you goes through every part once in about fifteen minutes.',
-        'This tour stays here in the account menu, as “Tour of Infall”.',
-      ],
-      anchor: ['account'],
-    },
+    more,
   ]
 }
 
@@ -168,8 +185,8 @@ function guestSteps(): TourStep[] {
 }
 
 /** Every step this person could get, in order. */
-export function stepsFor({ role, desktop }: TourAudience): TourStep[] {
-  return role === 'guest' ? guestSteps() : memberSteps(role, desktop)
+export function stepsFor({ role, desktop, local = false, startScreen = false }: TourAudience): TourStep[] {
+  return role === 'guest' ? guestSteps() : memberSteps(role, desktop, local, startScreen)
 }
 
 function find(name: string, root: ParentNode): Element | null {

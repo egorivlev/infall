@@ -1,5 +1,7 @@
 // Starting the tour: from the offer and from the account menu.
+import { workspace } from '../../lib'
 import type { Member } from '../../lib'
+import { desktopSwitchWorkspace } from '../bridge'
 import { boardPath, currentPath, navigate, parseRoute } from '../shell/router'
 import { writeAnswer } from './memory'
 import { availableSteps, inDesktopApp, stepsFor } from './steps'
@@ -31,7 +33,8 @@ export function startTour(member: Member, returnTo?: HTMLElement | null): void {
   const focus = returnTo ?? (active instanceof HTMLElement && active !== document.body ? active : null)
   const begin = () => {
     if (tourBlock() !== null || parseRoute(currentPath()).name !== 'board') return
-    const steps = availableSteps(stepsFor({ role: member.role, desktop: inDesktopApp() }))
+    const local = workspace.current().kind === 'local'
+    const steps = availableSteps(stepsFor({ role: member.role, desktop: inDesktopApp(), local, startScreen: desktopSwitchWorkspace() !== null }))
     if (tour.start(steps, focus)) writeAnswer(member.id, 'started')
   }
   if (parseRoute(currentPath()).name === 'board') return begin()

@@ -8,7 +8,7 @@
 //!    request;
 //! 2. the code goes through the approval [`Gate`](approvals::Gate): the Member approves
 //!    exactly this text in the app's own window, or approved the same text from the same
-//!    server before;
+//!    Workspace before;
 //! 3. only the resulting [`Approved`](approvals::Approved) can be executed.
 //!
 //! There are no Tauri types here. The app implements [`Ui`] (two windows) and forwards
@@ -38,6 +38,17 @@ pub use settings::Interpreter;
 /// The environment variable that overrides the interpreter (used by tests). It chooses the
 /// program, nothing more: the approval is asked exactly as without it.
 pub const PYTHON_ENV: &str = "QOOP_PYTHON_BIN";
+
+/// The Workspace a Run is asked for from, as the app knows it: nothing here comes from the
+/// page.
+#[derive(Debug, Clone)]
+pub struct Workspace {
+    /// What approvals are remembered under: a Team Workspace's origin; for a Local
+    /// Workspace, whose address can change between starts, `local:<id>`.
+    pub key: String,
+    /// How the approval window names it.
+    pub name: String,
+}
 
 /// The `request` argument of `qoopDesktop.runner.run`. Everything in it comes from the page.
 #[derive(Debug, Clone, Deserialize)]
@@ -289,6 +300,14 @@ impl Runner {
             .map_err(|_| "The settings could not be saved on this computer.".to_owned())
     }
 
+    /// Forgets the approvals remembered for one Workspace (`Workspace::key`): it is gone.
+    pub fn forget_approvals_for(&self, key: &str) -> Result<(), String> {
+        self.gate
+            .store()
+            .forget_workspace(key)
+            .map_err(|_| "The remembered approvals could not be changed.".to_owned())
+    }
+
     /// Forgets every remembered approval: every Run asks again.
     pub fn forget_approvals(&self) -> Result<(), String> {
         self.gate
@@ -339,12 +358,12 @@ impl Runner {
     /// One Run, from the request to its end. Every outcome is an event, and the last event
     /// is always `done` or `error`. Blocks until the process is gone.
     ///
-    /// `origin` is the server the main window shows, as the app knows it: approvals are
-    /// remembered for it.
+    /// `workspace` is the Workspace the main window shows, as the app knows it: approvals
+    /// are remembered for it.
     pub fn run(
         &self,
         request: RunRequest,
-        origin: &str,
+        workspace: &Workspace,
         ui: &dyn Ui,
         on_event: &mut dyn FnMut(RunEvent),
     ) {
@@ -419,10 +438,11 @@ impl Runner {
         // 2. The Member's approval of exactly this code.
         let details = Details {
             title,
+            from: workspace.name.clone(),
             python: python.path.clone(),
             folder: folder.clone(),
         };
-        let approved = match self.gate.request(origin, details, code) {
+        let approved = match self.gate.request(&workspace.key, details, code) {
             Err(RequestError::Code(message)) => return error(on_event, Reason::Failed, message),
             Err(RequestError::Busy) => {
                 return error(

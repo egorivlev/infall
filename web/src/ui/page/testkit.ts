@@ -5,7 +5,7 @@
 import { useMemo } from 'react'
 import { vi } from 'vitest'
 import { create } from 'zustand'
-import type { BlockVM, CardVM, Member, PageVM, RunResult, RunsSnapshot, SessionSnapshot, SourceVM, Todo } from '../../lib'
+import type { BlockVM, CardVM, LookupQuery, LookupResult, Member, PageVM, RunResult, RunsSnapshot, SessionSnapshot, SourceVM, Todo } from '../../lib'
 import { ANA, MEI, createFakeLib } from '../history/testkit'
 
 export { ANA, MEI }
@@ -273,6 +273,11 @@ export function createFakePageLib() {
 
   const people = { reload: vi.fn(async (): Promise<void> => {}), remove: vi.fn(async (): Promise<void> => {}) }
 
+  /** M13: Look up. Rejects by default (nothing is known); tests give it answers. */
+  const lookupSource = vi.fn(async (_q: LookupQuery): Promise<LookupResult> => {
+    throw new Error('lookupSource: no answer set in this test')
+  })
+
   /** Order keys in tests are plain numbers: '1', '2', '2.5'. */
   const orderBetween = vi.fn((before?: string, after?: string): string => {
     if (before !== undefined && after !== undefined) return String((Number(before) + Number(after)) / 2)
@@ -310,6 +315,7 @@ export function createFakePageLib() {
     todos,
     people,
     orderBetween,
+    lookupSource,
     reset() {
       base.reset()
       pageStore.setState(EMPTY, true)
@@ -329,6 +335,7 @@ export function createFakePageLib() {
       for (const group of [page, todos, people]) for (const fn of Object.values(group)) fn.mockClear()
       submit.mockClear()
       orderBetween.mockClear()
+      lookupSource.mockReset()
     },
     /** `vi.mock('../../lib', async (orig) => fake.module(await orig()))`. */
     module<T extends { ops: object }>(real: T) {
@@ -354,6 +361,7 @@ export function createFakePageLib() {
         orderBetween,
         normalizeDoi,
         normalizeUrl,
+        lookupSource: (q: LookupQuery) => lookupSource(q),
       }
     },
   }

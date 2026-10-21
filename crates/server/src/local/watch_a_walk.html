@@ -1,0 +1,92 @@
+<style>
+  .wrap { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
+  .row { display: flex; align-items: center; gap: 10px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .row label { flex: none; color: var(--q-ink-2); }
+  input[type=range] { flex: 1; min-width: 60px; margin: 0; accent-color: var(--q-accent); }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+  button { flex: none; height: 28px; padding: 0 12px; border: 1px solid var(--q-line); border-radius: 4px; background: var(--q-raised); color: var(--q-ink); font: inherit; cursor: pointer; }
+  button:hover { background: var(--q-hover); }
+  .value { flex: none; width: 44px; text-align: right; color: var(--q-ink-2); }
+  canvas { display: block; width: 100%; height: 260px; border: 1px solid var(--q-line-soft); border-radius: 5px; background: var(--q-surface); }
+  #status { margin: 0; min-height: 17px; font-size: 12px; line-height: 1.4; color: var(--q-ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .hint { margin: 0; font-size: 12px; color: var(--q-ink-3); }
+</style>
+
+<div class="wrap">
+  <canvas id="walk" role="img" aria-label="A random walk on a square lattice"></canvas>
+  <div class="row">
+    <label for="steps">steps</label>
+    <input id="steps" type="range" min="100" max="5000" step="100" value="1000">
+    <span class="value" id="stepsValue"></span>
+    <button id="again" type="button">New walk</button>
+  </div>
+  <p id="status" role="status"></p>
+  <p class="hint">Each step goes one unit up, down, left or right at random. The dot is where the walker is now; the ring has radius &radic;n, the distance a walker is from the start on average (root mean square) after n steps.</p>
+</div>
+
+<script>
+  var canvas = document.getElementById('walk'), ctx = canvas.getContext('2d');
+  var stepsInput = document.getElementById('steps'), timer = null, path = [], shown = 0;
+
+  function color(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function newWalk() {
+    var n = +stepsInput.value, x = 0, y = 0;
+    document.getElementById('stepsValue').textContent = n;
+    path = [[0, 0]];
+    for (var i = 0; i < n; i++) {
+      var r = Math.floor(Math.random() * 4);
+      if (r === 0) x++; else if (r === 1) x--; else if (r === 2) y++; else y--;
+      path.push([x, y]);
+    }
+    shown = 1;
+    if (timer) clearInterval(timer);
+    // About three seconds to draw the whole walk, whatever its length.
+    var perTick = Math.max(1, Math.round(n / 180));
+    timer = setInterval(function () {
+      shown = Math.min(path.length, shown + perTick);
+      draw();
+      if (shown === path.length) { clearInterval(timer); timer = null; }
+    }, 16);
+  }
+
+  function draw() {
+    var ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var n = path.length - 1, reach = Math.sqrt(n) * 1.6;
+    for (var i = 0; i < path.length; i++) {
+      reach = Math.max(reach, Math.abs(path[i][0]) + 1, Math.abs(path[i][1]) + 1);
+    }
+    var scale = Math.min(w, h) / 2 / reach, cx = w / 2, cy = h / 2;
+    function X(p) { return cx + p[0] * scale; }
+    function Y(p) { return cy - p[1] * scale; }
+
+    ctx.strokeStyle = color('--q-line');
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(cx, cy, Math.sqrt(n) * scale, 0, 2 * Math.PI); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = color('--q-accent'); ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(X(path[0]), Y(path[0]));
+    for (var k = 1; k < shown; k++) ctx.lineTo(X(path[k]), Y(path[k]));
+    ctx.stroke();
+
+    var here = path[shown - 1];
+    ctx.fillStyle = color('--q-ink-3');
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = color('--q-ink');
+    ctx.beginPath(); ctx.arc(X(here), Y(here), 4, 0, 2 * Math.PI); ctx.fill();
+
+    var r = Math.sqrt(here[0] * here[0] + here[1] * here[1]);
+    document.getElementById('status').textContent =
+      'step ' + (shown - 1) + ' of ' + n + ': distance from the start ' + r.toFixed(1) + ', √n = ' + Math.sqrt(shown - 1).toFixed(1);
+  }
+
+  stepsInput.addEventListener('input', newWalk);
+  document.getElementById('again').addEventListener('click', newWalk);
+  window.addEventListener('resize', draw);
+  newWalk();
+</script>

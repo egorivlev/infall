@@ -1,0 +1,93 @@
+/* M13 — getting work in and out of a Page: the Page's tools, Look up, BibTeX import, and printing. */
+
+/* ---- the Page's tools ("⋯" in the header) ---- */
+.qp-tools { position: relative; flex: none; display: inline-flex; }
+.qp-tools__btn { font-size: calc(15px * var(--q-text, 1)); line-height: 1; }
+.qp-tools__menu { left: auto; right: 0; }
+
+/* ---- Sources: Add, Import, Export on one row ---- */
+.qp-sources__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 14px;
+  border-top: 1px solid var(--q-line-soft);
+}
+.qp-sources__none + .qp-sources__tools { border-top: 0; }
+.qp-sources__tools .qp-sources__add { width: auto; flex: 0 1 auto; border-top: 0; }
+.qp-sources__spacer { flex: 1 1 0; }
+.qp-sources__tool { padding: 9px 0; font-size: calc(12px * var(--q-text, 1)); }
+.qp-sources__tool:last-child { margin-right: 12px; }
+.qp-sources__tool:focus-visible { outline-offset: 0; }
+
+/* ---- Look up, beside "URL or DOI" ---- */
+.qp-lookup { display: flex; gap: 8px; align-items: stretch; }
+.qp-lookup .q-input { flex: 1 1 auto; min-width: 0; }
+.qp-lookup__btn { flex: none; height: auto; min-height: 30px; }
+.qp-lookup__btn[aria-disabled="true"] { color: var(--q-ink-3); cursor: progress; }
+.qp-lookup__status:empty { display: none; }
+.qp-lookup__note { margin: 0; font-size: calc(12.5px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-2); }
+.qp-lookup__note.is-failed { color: var(--q-ink); padding-left: 8px; border-left: 2px solid var(--q-st-question); }
+.qp-lookup__differs { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--q-line); border-radius: var(--q-r); background: var(--q-sunken); }
+.qp-lookup__differs dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: calc(12.5px * var(--q-text, 1)); }
+.qp-lookup__differs dl > div { display: contents; }
+.qp-lookup__differs dt { color: var(--q-ink-3); }
+.qp-lookup__differs dd { margin: 0; color: var(--q-ink); overflow-wrap: anywhere; }
+.qp-lookup__choice { display: flex; gap: 8px; }
+
+/* ---- Import BibTeX (a modal; fits the 900×600 window at 150 % interface scale) ---- */
+.qp-import { width: 560px; max-height: calc(100% - 32px); overflow-y: auto; }
+/* In a short window the dialog scrolls; its buttons stay in view at the bottom. */
+.qp-import > .q-dialog__actions { position: sticky; bottom: -24px; margin: 0 -24px -24px; padding: 12px 24px 24px; background: var(--q-raised); }
+.qp-import__file { font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); max-width: 100%; }
+.qp-import__file:focus-visible { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+.qp-import__text { font-family: var(--q-mono); font-size: calc(12px * var(--q-text, 1)); min-height: 96px; white-space: pre; overflow-wrap: normal; }
+.qp-import__found { margin: 0; font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); line-height: 1.45; }
+.qp-import__progress { display: flex; flex-direction: column; gap: 6px; }
+.qp-import__progress progress { width: 100%; height: 6px; accent-color: var(--q-accent); }
+.qp-import__progress p, .qp-import__report p { margin: 0; font-size: calc(13px * var(--q-text, 1)); line-height: 1.5; }
+.qp-import__report { display: flex; flex-direction: column; gap: 2px; }
+.qp-import__problems { font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); }
+.qp-import__problems summary { cursor: pointer; }
+.qp-import__problems ul { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; font-family: var(--q-mono); font-size: calc(11.5px * var(--q-text, 1)); line-height: 1.5; }
+
+/* ---- Print: the Page alone, black on white, whatever the theme and the interface scale ---- */
+.qp-print { display: none; }
+
+@media print {
+  /* Settings → Interface scale and Text size are for the screen; paper has its own size. */
+  :root { --q-ui-zoom: 1 !important; --q-ui-unzoom: 1 !important; --q-text: 1 !important; color-scheme: light; }
+  html, body, #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  body { zoom: 1 !important; }
+  /* While the print copy is there, it is the only thing printed. */
+  body:has(> .qp-print) > :not(.qp-print) { display: none !important; }
+
+  .qp-print {
+    --q-ink: #000; --q-ink-2: #222; --q-ink-3: #444; --q-line: #999; --q-line-soft: #ccc;
+    --q-sunken: #fff; --q-surface: #fff; --q-raised: #fff; --q-page: #fff; --q-accent: #000; --q-hover: #fff;
+    display: block;
+    color: #000;
+    background: #fff;
+    font: calc(11px * var(--q-text, 1))/1.55 var(--q-serif);
+  }
+  .qp-print a { color: #000; text-decoration: underline; }
+  .qp-print__title { margin: 0 0 6px; font: 600 calc(22px * var(--q-text, 1))/1.25 var(--q-serif); }
+  .qp-print__summary { margin: 0 0 14px; color: #222; font-style: italic; }
+  .qp-print__block { margin: 0 0 10px; }
+  .qp-print .qp-md > :first-child { margin-top: 0; }
+  .qp-print pre, .qp-print code { font-family: var(--q-mono); }
+  .qp-print pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+  .qp-print .katex-display { overflow: visible; }
+  .qp-print__note, .qp-print__small { margin: 4px 0; font: italic calc(10px * var(--q-text, 1))/1.45 var(--q-sans); color: #333; }
+  .qp-print__run { border: 1px solid #999; border-radius: 4px; padding: 8px 10px; }
+  .qp-print__runhead { margin: 0 0 6px; font: 500 calc(9.5px * var(--q-text, 1))/1 var(--q-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .qp-print__code { margin: 0; padding: 6px 8px; border: 1px solid #ccc; font-size: calc(9px * var(--q-text, 1)); line-height: 1.5; }
+  .qp-print__out { margin-top: 6px; }
+  .qp-print__output { margin: 6px 0 0; font-size: calc(9px * var(--q-text, 1)); line-height: 1.45; }
+  .qp-print__figure { display: block; max-width: 100%; margin: 6px 0; break-inside: avoid; }
+  .qp-print__pin { padding-left: 10px; border-left: 2px dashed #666; }
+  .qp-print__head { margin: 18px 0 6px; font: 600 calc(13px * var(--q-text, 1))/1.3 var(--q-sans); }
+  .qp-print__sources ol { margin: 0; padding-left: 20px; }
+  .qp-print__sources li { margin: 0 0 4px; overflow-wrap: anywhere; }
+  @page { margin: 18mm 16mm; }
+}

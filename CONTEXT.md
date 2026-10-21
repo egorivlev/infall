@@ -4,6 +4,36 @@ A self-hosted shared workspace where a small research team maps, extends, and tr
 
 ## Language
 
+### Workspaces
+
+**Workspace**:
+One team's whole Infall: its Research Content, its Members, and its To-dos. A person may have several Workspaces; each is entirely separate from the others.
+_Avoid_: Project, instance, server
+
+**Team Workspace**:
+A Workspace kept on a server the team runs, which Members sign in to.
+_Avoid_: Remote workspace, cloud workspace
+
+**Local Workspace**:
+A Workspace kept only on one person's computer by the desktop app. It has exactly one Member and needs no server and no sign-in.
+_Avoid_: Offline mode, personal workspace, solo mode
+
+**Preset**:
+The starting Research Content a new Local Workspace is created with: Blank, Tutorial, Literature review, or Research project. After creation it is ordinary Research Content with no tie to the Preset.
+_Avoid_: Template, sample, starter
+
+**Tutorial Workspace**:
+A Local Workspace created from the Tutorial Preset, the only place the Tutorial runs.
+_Avoid_: Demo, sandbox, mock server
+
+**Tutorial**:
+A hands-on sequence of steps in a Tutorial Workspace, each asking the person to use one part of Infall and moving on once they have. It makes real Changes.
+_Avoid_: Onboarding, walkthrough, wizard
+
+**Tour**:
+A read-only sequence of pointers at the controls of any Workspace. It never makes a Change.
+_Avoid_: Tutorial, walkthrough
+
 ### Content
 
 **Board**:
@@ -54,7 +84,7 @@ _Avoid_: Recommendation, proposal
 
 **Research Content**:
 The body of knowledge the team has assembled: the board, its cards, and everything a card expands into (articles, simulations, links). The only thing that is versioned.
-_Avoid_: Project state, workspace
+_Avoid_: Project state
 
 **Branch**:
 An alternative line of Research Content that can diverge from and be merged back into another Branch. Represents a research direction being explored.

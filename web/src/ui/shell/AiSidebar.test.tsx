@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
+  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useSession: () => h.session,
   useBoard: () => h.board,
   useAi: () => h.ai,

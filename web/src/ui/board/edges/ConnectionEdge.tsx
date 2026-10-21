@@ -38,7 +38,7 @@ function ConnectionEdgeImpl({ id, source, target, data, selected }: EdgeProps<Co
       {conn.label && level !== 'tile' && (
         <EdgeLabelRenderer>
           <div
-            className={`qb-conn-label nopan${selected ? ' is-selected' : ''}`}
+            className={`qb-conn-label${selected ? ' is-selected' : ''}`}
             style={{ transform: `translate(-50%, -50%) translate(${r.mx}px, ${r.my}px)` }}
             onClick={(e) => {
               e.stopPropagation()

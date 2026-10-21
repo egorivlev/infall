@@ -1,14 +1,16 @@
-# M11 — the tutorial
+# M11 — the Tour and the written tutorial
 
-A new team member opens Infall and sees a Board they did not build. M11 gives them two things: a short tour inside the app that points at the real controls, and a written tutorial they can read next to it. Neither changes what Infall can do, and neither writes anything to the Board.
+A new team member opens Infall and sees a Board they did not build. M11 gives them two things: a short Tour inside the app that points at the real controls, and a written tutorial they can read next to it. Neither changes what Infall can do, and neither writes anything to the Board.
 
-## 1. The tour (in the app)
+Words are CONTEXT.md's. The **Tour** (section 1) is read-only and points at controls. The **Tutorial** is something else: hands-on steps in a Tutorial Workspace that wait for the Member to do each thing, added in M12 and specified in [local.md](local.md#the-tutorial-web-ui), not here. The Tutorial runs only in a Tutorial Workspace; every other Workspace keeps the Tour as specified below. The written tutorial (section 2) is a page in `docs/`, neither of the two.
+
+## 1. The Tour (in the app)
 
 ### What it is
 
-A sequence of steps. Each step is a small popover anchored to one real control, with a ring around that control: a title, one to three plain sentences, "Step 3 of 11", and **Back**, **Next** (on the last step: **Done**) and **Skip the tour**. Nothing else is dimmed or blocked: the Member can use the app while the tour is open, and the popover follows its control.
+A sequence of steps. Each step is a small popover anchored to one real control, with a ring around that control: a title, one to three plain sentences, "Step 3 of 11", and **Back**, **Next** (on the last step: **Done**) and **Skip the tour**. Nothing else is dimmed or blocked: the Member can use the app while the Tour is open, and the popover follows its control.
 
-The tour never changes the Board, a Page or anything on the server. It only opens and closes what the Member could open themselves (a panel, a route), and only when a step needs it.
+The Tour never changes the Board, a Page or anything on the server. It only opens and closes what the Member could open themselves (a panel, a route), and only when a step needs it.
 
 ### When it shows
 
@@ -31,7 +33,7 @@ For a Member or an Admin, in this order. The text of each step is written by the
 8. **Checkpoint and History** — name a moment; go back and look.
 9. **The AI sidebar** — asks about the Board; private Conversation; "Pin to Page".
 10. **Runs** — code on a Page runs in the desktop app only, on the Member's own computer, after they approve it. In a browser the step says that the result of the last Run is shown instead.
-11. **Where to read more** — the written tutorial, and that this tour is in the account menu.
+11. **Where to read more** — the written tutorial, and that this tour is in the account menu. In the desktop app (M12, [local.md](local.md#the-tutorial-web-ui)) it also says that a Tutorial Workspace can be made from the start screen, with a button that goes there.
 
 A Guest gets a shorter tour (Board, a Card and its Page, Search, and that a Guest reads and does not change): no step may point at something a Guest cannot see.
 
@@ -48,7 +50,7 @@ A step whose control is not on screen right now (a narrow window, a control that
 
 ### Not in M11
 
-Steps that wait for the Member to do something, a sample Board, videos, progress kept on the server, translation.
+Steps that wait for the Member to do something, a sample Board, videos, progress kept on the server, translation. (M12 adds the first three for the Tutorial in a Tutorial Workspace, [local.md](local.md#the-tutorial-web-ui); the Tour itself still has none of them.)
 
 ## 2. The written tutorial
 
@@ -56,4 +58,5 @@ Steps that wait for the Member to do something, a sample Board, videos, progress
 
 - Every control is named exactly as the screen names it; every sentence was checked against the source or the running app.
 - It says what is not there (no general undo; Runs only in the desktop app; one Run at a time) where a reader would otherwise look for it.
-- `docs/first-day.md` links to it as the next thing to read, and the tour's last step names it.
+- `docs/first-day.md` links to it as the next thing to read, and the Tour's last step names it.
+- Since M12 it starts with the way in for someone without a team (the desktop app, a Tutorial Workspace) and says which parts do not exist in a Local Workspace (Members, invites, Guests).

@@ -1,5 +1,5 @@
 //! Approval: code is executed only after the Member said yes to exactly that code in the
-//! app's own window, or said yes to the same code from the same server before.
+//! app's own window, or said yes to the same code from the same Workspace before.
 //!
 //! The window is only a face for this module: it reads [`Gate::view`] and calls
 //! [`Gate::decide`]. Tests do the same, so they exercise the rule itself. Nothing else
@@ -44,7 +44,10 @@ impl Cancel {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Entry {
-    origin: String,
+    /// The Workspace's key (`crate::Workspace::key`). Kept under its first name, `origin`:
+    /// a Team Workspace's key is its origin, so what earlier versions remembered still holds.
+    #[serde(rename = "origin")]
+    workspace: String,
     sha256: String,
     /// Unix milliseconds.
     at: u64,
@@ -57,7 +60,7 @@ struct Stored {
     approved: Vec<Entry>,
 }
 
-/// The approvals remembered on this device: which code (by SHA-256) from which server.
+/// The approvals remembered on this device: which code (by SHA-256) from which Workspace.
 pub struct Store {
     path: PathBuf,
 }
@@ -77,7 +80,7 @@ impl Store {
             return Vec::new();
         };
         let mut entries = stored.approved;
-        entries.retain(|e| is_sha256(&e.sha256) && !e.origin.is_empty());
+        entries.retain(|e| is_sha256(&e.sha256) && !e.workspace.is_empty());
         entries.truncate(MAX_REMEMBERED);
         entries
     }
@@ -105,21 +108,21 @@ impl Store {
         fs::rename(tmp, &self.path)
     }
 
-    /// Was this code approved before for this server?
-    pub fn contains(&self, origin: &str, sha256: &str) -> bool {
+    /// Was this code approved before for this Workspace?
+    pub fn contains(&self, workspace: &str, sha256: &str) -> bool {
         self.load()
             .iter()
-            .any(|e| e.origin == origin && e.sha256 == sha256)
+            .any(|e| e.workspace == workspace && e.sha256 == sha256)
     }
 
     /// Remembers an approval as the newest one.
-    pub fn remember(&self, origin: &str, sha256: &str) -> io::Result<()> {
+    pub fn remember(&self, workspace: &str, sha256: &str) -> io::Result<()> {
         let mut entries = self.load();
-        entries.retain(|e| !(e.origin == origin && e.sha256 == sha256));
+        entries.retain(|e| !(e.workspace == workspace && e.sha256 == sha256));
         entries.insert(
             0,
             Entry {
-                origin: origin.to_owned(),
+                workspace: workspace.to_owned(),
                 sha256: sha256.to_owned(),
                 at: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -134,6 +137,17 @@ impl Store {
     /// How many approvals are remembered.
     pub fn count(&self) -> usize {
         self.load().len()
+    }
+
+    /// Forgets the approvals of one Workspace.
+    pub fn forget_workspace(&self, workspace: &str) -> io::Result<()> {
+        let mut entries = self.load();
+        let before = entries.len();
+        entries.retain(|e| e.workspace != workspace);
+        if entries.len() == before {
+            return Ok(());
+        }
+        self.save(&entries)
     }
 
     /// Forgets every approval: every Run asks again.
@@ -166,6 +180,9 @@ fn remembered_key(code_sha256: &str, folder: Option<&str>) -> String {
 pub struct Details {
     /// The Run's title, as the page gave it.
     pub title: String,
+    /// The Workspace it comes from, as the window names it: a Team Workspace's server, a
+    /// Local Workspace's name.
+    pub from: String,
     /// The interpreter that will execute the code.
     pub python: String,
     /// The folder it will run in; `None` for a new temporary folder.
@@ -176,6 +193,8 @@ pub struct Details {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ApprovalView {
     pub title: String,
+    /// Where the code comes from ([`Details::from`]). Named `origin` for the approval
+    /// window, which shows it under "From server".
     pub origin: String,
     pub python: String,
     pub folder: Option<String>,
@@ -208,7 +227,7 @@ impl Approved {
 
 /// The answer to [`Gate::request`].
 pub enum Request {
-    /// This code was approved before for this server.
+    /// This code was approved before for this Workspace.
     Approved(Approved),
     /// The Member has to be asked: show the window for this ticket, then [`Gate::wait`].
     Ask(u64),
@@ -239,7 +258,7 @@ pub enum DecideError {
 
 struct Pending {
     ticket: u64,
-    origin: String,
+    workspace: String,
     code: Arc<str>,
     sha256: String,
     /// What the approval is remembered under: see [`remembered_key`].
@@ -280,10 +299,10 @@ impl Gate {
         &self.store
     }
 
-    /// Asks for `code` from the server at `origin` to be executed.
+    /// Asks for `code` from the Workspace with the key `workspace` to be executed.
     pub fn request(
         &self,
-        origin: &str,
+        workspace: &str,
         details: Details,
         code: String,
     ) -> Result<Request, RequestError> {
@@ -291,7 +310,7 @@ impl Gate {
         let sha256 = inspect::sha256_hex(&code);
         let code: Arc<str> = Arc::from(code);
         let key = remembered_key(&sha256, details.folder.as_deref());
-        if self.store.contains(origin, &key) {
+        if self.store.contains(workspace, &key) {
             return Ok(Request::Approved(Approved { code, sha256 }));
         }
         let mut state = self.state.lock().unwrap();
@@ -303,7 +322,7 @@ impl Gate {
         let shown = inspect::inspect(&code);
         let view = ApprovalView {
             title: inspect::display_title(&details.title),
-            origin: origin.to_owned(),
+            origin: details.from,
             python: details.python,
             folder: details.folder,
             lines: shown.lines,
@@ -315,7 +334,7 @@ impl Gate {
         };
         state.pending = Some(Pending {
             ticket,
-            origin: origin.to_owned(),
+            workspace: workspace.to_owned(),
             code,
             sha256,
             key,
@@ -354,7 +373,7 @@ impl Gate {
                 return Err(DecideError::TooSoon);
             }
             // If this cannot be written the Run still goes ahead; it will just ask again.
-            let _ = self.store.remember(&pending.origin, &pending.key);
+            let _ = self.store.remember(&pending.workspace, &pending.key);
         }
         pending.verdict = Some(run);
         self.changed.notify_all();
@@ -412,6 +431,7 @@ mod tests {
     fn details() -> Details {
         Details {
             title: "Bell state".into(),
+            from: ORIGIN.into(),
             python: "/usr/bin/python3".into(),
             folder: None,
         }
@@ -654,7 +674,7 @@ mod tests {
         let entries: Vec<Entry> = (0..MAX_REMEMBERED)
             .rev()
             .map(|n| Entry {
-                origin: ORIGIN.into(),
+                workspace: ORIGIN.into(),
                 sha256: sha(n),
                 at: n as u64,
             })
@@ -681,7 +701,7 @@ mod tests {
         // A file with more than a thousand entries (edited by hand) is read as a thousand.
         let many: Vec<Entry> = (0..MAX_REMEMBERED + 50)
             .map(|n| Entry {
-                origin: ORIGIN.into(),
+                workspace: ORIGIN.into(),
                 sha256: sha(n),
                 at: 0,
             })
@@ -770,5 +790,70 @@ mod tests {
         assert!(matches!(answer(&gate, ticket, true), Decision::Approved(_)));
         assert!(!asks(&gate, Some("/Users/me/research")));
         assert!(asks(&gate, Some("/Users/me/other")));
+    }
+
+    #[test]
+    fn a_local_workspace_is_named_in_the_window_and_remembered_by_its_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = gate(dir.path());
+        let code = "print('walk')\n";
+        let local = "local:0123abcd";
+        let named = || Details {
+            from: "Tutorial (on this computer)".into(),
+            ..details()
+        };
+        let Ok(Request::Ask(ticket)) = gate.request(local, named(), code.to_owned()) else {
+            panic!("the first time asks");
+        };
+        // The window names the Workspace, not the address it happens to have.
+        assert_eq!(
+            gate.view(ticket).unwrap().origin,
+            "Tutorial (on this computer)"
+        );
+        assert!(matches!(answer(&gate, ticket, true), Decision::Approved(_)));
+        // Remembered under the key, whatever name or address comes with it next time.
+        assert!(matches!(
+            gate.request(local, details(), code.to_owned()),
+            Ok(Request::Approved(_))
+        ));
+        // Not for another Local Workspace, nor for a server.
+        assert!(!remembered(&gate, "local:ffff0000", code));
+        assert!(!remembered(&gate, "http://127.0.0.1:53124", code));
+    }
+
+    #[test]
+    fn a_workspaces_approvals_can_be_forgotten_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        let sha = inspect::sha256_hex("print(1)");
+        store.remember("local:aaaa", &sha).unwrap();
+        store.remember("local:bbbb", &sha).unwrap();
+        store.remember(ORIGIN, &sha).unwrap();
+        store.forget_workspace("local:aaaa").unwrap();
+        assert!(!store.contains("local:aaaa", &sha));
+        assert!(store.contains("local:bbbb", &sha));
+        assert!(store.contains(ORIGIN, &sha));
+        // Nothing to forget is not an error.
+        store.forget_workspace("local:cccc").unwrap();
+        assert_eq!(store.count(), 2);
+    }
+
+    #[test]
+    fn what_an_earlier_version_remembered_for_a_server_still_holds() {
+        let dir = tempfile::tempdir().unwrap();
+        let sha = inspect::sha256_hex("print(1)");
+        fs::write(
+            dir.path().join(FILE),
+            format!(r#"{{"v":1,"approved":[{{"origin":"{ORIGIN}","sha256":"{sha}","at":1}}]}}"#),
+        )
+        .unwrap();
+        let store = Store::new(dir.path());
+        assert!(store.contains(ORIGIN, &sha));
+        store.remember(OTHER, &sha).unwrap();
+        let text = fs::read_to_string(dir.path().join(FILE)).unwrap();
+        assert!(
+            text.contains(r#""origin":"https://qoop.example.org""#),
+            "{text}"
+        );
     }
 }

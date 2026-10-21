@@ -22,6 +22,7 @@ export function SuggestionsItem({ onBoard }: { onBoard: boolean }) {
     <button
       type="button"
       className="q-rail__item"
+      data-tour="suggestions"
       aria-pressed={pressed}
       aria-label={`Suggestions, ${pending} pending`}
       title="Suggestions for this Branch"

@@ -21,10 +21,19 @@ use base64::Engine;
 use qoop_runner::python::{self, EnvVars};
 use qoop_runner::{
     ApprovalView, Cancel, DecideError, Options, Reason, RunEvent, RunRequest, Runner, Ui, Usage,
-    inspect,
+    Workspace, inspect,
 };
 
 const ORIGIN: &str = "https://qoop.example.org";
+
+/// A Team Workspace: approvals are remembered under its origin, which is also what the
+/// approval window shows.
+fn workspace() -> Workspace {
+    Workspace {
+        key: ORIGIN.to_owned(),
+        name: ORIGIN.to_owned(),
+    }
+}
 
 struct TestPython {
     path: String,
@@ -198,7 +207,10 @@ impl Bench {
                 code: code.to_owned(),
                 title: "Test Run".into(),
             },
-            origin,
+            &Workspace {
+                key: origin.to_owned(),
+                name: origin.to_owned(),
+            },
             member,
             &mut |e| events.push(e),
         );
@@ -475,7 +487,7 @@ fn approved_code_runs_again_without_asking_and_changed_code_asks_again() {
             code: code.into(),
             title: String::new(),
         },
-        ORIGIN,
+        &workspace(),
         &nobody,
         &mut |e| events.push(e),
     );
@@ -535,7 +547,7 @@ fn a_yes_that_comes_at_once_does_not_count() {
             code: "print('ok')".into(),
             title: String::new(),
         },
-        ORIGIN,
+        &workspace(),
         &member,
         &mut |e| events.push(e),
     );
@@ -575,7 +587,7 @@ fn code_that_cannot_be_shown_is_refused_before_any_window() {
                 code: "print(1)".into(),
                 title: String::new(),
             },
-            ORIGIN,
+            &workspace(),
             &member,
             &mut |e| events.push(e),
         );
@@ -1094,7 +1106,7 @@ fn output_arrives_while_the_code_runs_about_ten_times_a_second() {
             code: "import time\nfor n in range(100):\n    print(n)\n    time.sleep(0.015)\n".into(),
             title: String::new(),
         },
-        ORIGIN,
+        &workspace(),
         &member,
         &mut |e| match e {
             RunEvent::Output { text } => arrivals.push((Instant::now(), text)),
@@ -1188,7 +1200,7 @@ fn run_and_interrupt(
                 code,
                 title: "Long".into(),
             },
-            ORIGIN,
+            &workspace(),
             &member,
             &mut |e| {
                 if let RunEvent::Output { text } = &e {
@@ -1320,7 +1332,7 @@ fn one_run_at_a_time() {
                 code: "print('second')".into(),
                 title: String::new(),
             },
-            ORIGIN,
+            &workspace(),
             &member,
             &mut |e| events.push(e),
         );
@@ -1357,7 +1369,7 @@ fn a_run_asked_for_right_after_a_cancel_waits_for_the_old_one_to_go() {
                 code: "print('next')".into(),
                 title: String::new(),
             },
-            ORIGIN,
+            &workspace(),
             &member,
             &mut |e| events.push(e),
         );
@@ -1381,7 +1393,7 @@ fn a_run_is_busy_from_the_moment_it_waits_for_approval() {
                 code: "print('a')".into(),
                 title: String::new(),
             },
-            ORIGIN,
+            &workspace(),
             &member,
             &mut |e| events.push(e),
         );
@@ -1401,7 +1413,7 @@ fn a_run_is_busy_from_the_moment_it_waits_for_approval() {
             code: "print('b')".into(),
             title: String::new(),
         },
-        ORIGIN,
+        &workspace(),
         &member,
         &mut |e| events.push(e),
     );
@@ -1461,7 +1473,7 @@ fn a_run_is_measured_about_once_a_second_while_it_executes() {
             code: code.into(),
             title: String::new(),
         },
-        ORIGIN,
+        &workspace(),
         &member,
         &mut |e| arrivals.push((Instant::now(), e)),
     );

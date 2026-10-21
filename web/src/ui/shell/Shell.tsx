@@ -1,43 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
-import { board, branches, members } from '../../lib'
+import { board, branches, members, useWorkspace, workspace } from '../../lib'
 import type { Member } from '../../lib'
 import { AiSidebar } from '../ai'
 import { BoardView } from '../board'
 import { sidePanelsFit } from '../board/geometry'
 import { suggestionsPanel, useAiPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { MergeReview } from '../merge'
-import { AiAccess } from '../settings'
+import { Settings } from '../settings'
 import { Todos } from '../todos'
-import { Tour } from '../tutorial'
+import { Tour, Tutorial, TUTORIAL_PRESET } from '../tutorial'
 import { Branches } from './Branches'
 import { errorStatus } from './errorMessages'
 import { Link } from './Link'
 import { Members } from './Members'
 import { Rail } from './Rail'
-import { branchPath, MAIN, navigate, rememberBranch } from './router'
+import { branchPath, currentPath, MAIN, navigate, parseRoute, rememberBranch, SETTINGS_PATH } from './router'
 import type { Route } from './router'
 import { TopBar } from './TopBar'
 
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
 
-export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos' | 'ai-access'
+export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos' | 'settings'
 
 /** What this person may see for a route; anything else falls back to the Board. */
-function viewFor(route: Route, member: Member): ShellView {
-  if (route.name === 'members') return member.role === 'admin' ? 'members' : 'board'
+function viewFor(route: Route, member: Member, local: boolean): ShellView {
+  // A Local Workspace has one Member and nobody to invite: no Members screen.
+  if (route.name === 'members') return member.role === 'admin' && !local ? 'members' : 'board'
   if (route.name === 'branches') return member.role === 'guest' ? 'board' : 'branches'
   if (route.name === 'merge') return member.role === 'guest' ? 'board' : 'merge'
   if (route.name === 'todos') return member.role === 'guest' ? 'board' : 'todos' // To-dos are for the team, not for Guests
-  if (route.name === 'ai-access') return member.role === 'guest' ? 'board' : 'ai-access' // a Guest has no access tokens
+  if (route.name === 'settings') {
+    // A Guest has no access tokens and runs nothing: those two sections are not theirs.
+    if (member.role === 'guest' && (route.section === 'ai' || route.section === 'runs')) return 'board'
+    return 'settings'
+  }
   return 'board' // the invite link means nothing once signed in
 }
 
 export function Shell({ member, route }: { member: Member; route: Route }) {
   const isGuest = member.role === 'guest'
-  const view = viewFor(route, member)
+  const ws = useWorkspace()
+  const local = ws.kind === 'local'
+  const tutorialWorkspace = local && ws.preset === TUTORIAL_PRESET
+  const view = viewFor(route, member, local)
 
-  // The Branch in the URL is the truth. Screens without one (/branches, /members, /todos, /settings/ai) keep the last Branch open.
+  // What kind of Workspace this is: asked once per session; until it answers, it reads as a Team Workspace.
+  useEffect(() => {
+    void workspace.load()
+  }, [member.id])
+
+  // The Branch in the URL is the truth. Screens without one (/branches, /members, /todos, /settings) keep the last Branch open.
   // Guests can read main only.
   const routeBranch = route.name === 'board' ? (isGuest ? MAIN : route.branch) : null
   const [lastBranch, setLastBranch] = useState(routeBranch ?? MAIN)
@@ -82,6 +95,17 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
 
   const missing = unknown === branch
 
+  // ⌘, / Ctrl+, opens Settings from anywhere (a field included: it types nothing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== ',' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.defaultPrevented) return
+      e.preventDefault()
+      if (parseRoute(currentPath()).name !== 'settings') navigate(SETTINGS_PATH)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // The AI sidebar takes a column from the work area on every screen. Guests have none.
   const aiOpen = useAiPanel((s) => s.open) && !isGuest
   // The Board decides which of its side panels stays when both are opened; it cannot see the sidebar take its room.
@@ -106,9 +130,8 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
           <Branches current={branch} />
         ) : view === 'todos' ? (
           <Todos me={member} />
-        ) : view === 'ai-access' ? (
-          // Keyed by Member: a token shown to one person never survives into another's session.
-          <AiAccess key={member.id} />
+        ) : view === 'settings' && route.name === 'settings' ? (
+          <Settings member={member} section={route.section} />
         ) : view === 'merge' && route.name === 'merge' ? (
           <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
         ) : missing ? (
@@ -123,8 +146,9 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
         )}
       </main>
       {aiOpen && <AiSidebar branch={branch} />}
-      {/* Keyed by Member: the offer and its answer are each person's own. */}
-      <Tour key={member.id} member={member} view={missing ? 'missing' : view} />
+      {/* Keyed by Member: the offer and its answer are each person's own. A Tutorial Workspace has the Tutorial instead of the offer. */}
+      <Tour key={member.id} member={member} view={missing ? 'missing' : view} offer={!tutorialWorkspace} />
+      {tutorialWorkspace && <Tutorial key={member.id} />}
     </div>
   )
 }

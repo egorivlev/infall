@@ -11,27 +11,50 @@
 #   the Rust target      rustup target add x86_64-pc-windows-gnu
 #   the GNU toolchain    macOS: brew install mingw-w64       Debian/Ubuntu: apt install mingw-w64
 #   NSIS                 macOS: brew install makensis        Debian/Ubuntu: apt install nsis
+#   Node.js and npm      22 (20.19 or newer also works), for the web UI: https://nodejs.org
 #
 # None of these asks anyone to accept a licence. Microsoft's own compiler and SDK are
 # deliberately not used: they do.
 #
+# The app compiles the Infall server (crates/server) into itself. Its C parts are compiled by
+# x86_64-w64-mingw32-gcc, the same compiler as above: SQLite (rusqlite's bundled copy) and
+# AWS-LC (aws-lc-sys, the cryptography under rustls, which reqwest uses). Nothing else is needed
+# for them, and this was tried on a Mac with neither cmake nor nasm installed:
+#   - no cmake: aws-lc-sys builds with the `cc` crate, because it ships ready-made bindings for
+#     x86_64-pc-windows-gnu;
+#   - no nasm: AWS-LC's Windows x86-64 assembly is written for nasm, but rustls turns on
+#     aws-lc-rs's `prebuilt-nasm` feature, so aws-lc-sys links object files that come with the
+#     crate when `nasm` is not on PATH (when it is, it assembles them itself).
+#
 # What it does:
+#   - builds the web UI: `npm ci` and `npm run build` in web/, which replace web/node_modules
+#     and web/dist in this checkout. The web UI is the same files on every platform, so it is
+#     built here, not for Windows. The app embeds web/dist when it is compiled (it serves it
+#     from its own server for Local Workspaces, docs/specs/local.md), so the script stops if
+#     web/dist/index.html is not there afterwards;
 #   - `cargo build --release --locked --features custom-protocol --target x86_64-pc-windows-gnu`
 #     (output in desktop/src-tauri/target/x86_64-pc-windows-gnu/). The program's icon, version
 #     information and manifest are compiled in by tauri-build with mingw's windres, from
 #     desktop/src-tauri/icons/icon.ico and tauri.conf.json;
-#   - checks the program: 64-bit, no console window, and every DLL it asks for is either part
-#     of Windows or WebView2Loader.dll, which the installer ships next to it;
+#   - checks the program: 64-bit, no console window, every DLL it asks for is either part
+#     of Windows or WebView2Loader.dll, which the installer ships next to it, and it holds the
+#     web UI that was just built (the name of web/dist's hashed script must be inside it);
 #   - puts the installer together with NSIS: for the current person, no administrator rights,
 #     a Start menu entry, an uninstaller with its entry in Windows' list of installed apps;
 #   - prints the SHA-256.
 #
 # Not signed. The result cannot be started on the machine that builds it, and this script does
 # not pretend otherwise: see "Unverified: the Windows installer" in desktop/README.md.
+# In particular, what the M11 installer got wrong (it only asked for a server address) is checked
+# here only as far as a file can be read: the program holds the server and the web UI it would
+# serve. That it starts with no server and no network, shows the start screen and opens a Local
+# Workspace has NOT been checked on Windows; scripts/package-macos.sh and
+# scripts/package-linux.sh check the same source on their platforms.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_src="$root/desktop/src-tauri"
+web="$root/web"
 conf="$app_src/tauri.conf.json"
 icon="$app_src/icons/icon.ico"
 dist="$root/dist"
@@ -51,6 +74,8 @@ missing=()
 need() { command -v "$1" >/dev/null || missing+=("'$1' was not found. Get it with: $2"); }
 need cargo "https://rustup.rs"
 need python3 "your system's Python 3 package"
+need node "https://nodejs.org (22, or 20.19 or newer)"
+need npm "https://nodejs.org (it comes with Node.js)"
 need "$mingw-gcc" "$get_mingw"
 need "$mingw-windres" "$get_mingw"
 need "$mingw-objdump" "$get_mingw"
@@ -74,6 +99,16 @@ if [ "${#missing[@]}" -gt 0 ]; then
     exit 1
 fi
 [ -f "$icon" ] || die "the icon $icon is missing (python3 icons/make-icon.py --ico makes it)"
+# Vite 8 needs Node.js ^20.19 or >= 22.12.
+node_version="$(node -p 'process.versions.node')"
+node_major="${node_version%%.*}"
+node_minor="${node_version#*.}"
+node_minor="${node_minor%%.*}"
+case "$node_major" in
+    20) [ "$node_minor" -ge 19 ] ;;
+    22) [ "$node_minor" -ge 12 ] ;;
+    *) [ "$node_major" -gt 22 ] ;;
+esac || die "Node.js $node_version is too old for the web UI build; it needs 22.12 or newer (or 20.19 or newer)"
 
 # --- What is being packaged -------------------------------------------------------------------
 # The version is the one in Cargo.toml ([package]); tauri.conf.json must say the same, because
@@ -110,6 +145,21 @@ publisher="$(printf '%s' "$identifier" | cut -d. -f2)"
 
 setup="$dist/$name-$version-x64-setup.exe"
 say "$name $version ($identifier), Windows 10 and 11, x64"
+
+# --- The web UI -------------------------------------------------------------------------------
+# Built from web/package-lock.json exactly (npm ci). Whatever was in web/dist before is removed
+# first, so an old build can never pass for this one.
+say "Building the web UI (Node.js $node_version, npm ci, npm run build)"
+rm -rf "$web/dist"
+(
+    cd "$web"
+    npm ci --no-audit --no-fund --loglevel=error
+    npm run build
+)
+[ -f "$web/dist/index.html" ] || die "the web UI build did not produce web/dist/index.html"
+# The hashed name of the page's script: it must end up inside the program.
+web_marker="$(sed -n 's/.*src="\/\(assets\/[^"]*\.js\)".*/\1/p' "$web/dist/index.html" | head -n 1)"
+[ -n "$web_marker" ] || die "web/dist/index.html names no script under assets/; this script is out of date"
 
 # --- Build ------------------------------------------------------------------------------------
 # custom-protocol: the app's own files (desktop/ui) are served from inside the binary.
@@ -162,6 +212,9 @@ for dll in $imports; do
     esac
 done
 [ "$shipped" = 1 ] || die "the program does not ask for WebView2Loader.dll; this script is out of date"
+LC_ALL=C grep -qaF "$web_marker" "$built" \
+    || die "the program does not hold the web UI that was just built (no $web_marker inside it)"
+echo "    the program holds the web UI ($web_marker)"
 
 # --- The installer ----------------------------------------------------------------------------
 mkdir -p "$dist"
@@ -298,8 +351,9 @@ Section "Install"
     WriteRegDWORD HKCU "${UNINSTALL_KEY}" "EstimatedSize" "$0"
 SectionEnd
 
-; Removes exactly what the section above put there. The app's data (the saved server address,
-; the Runner's settings and approvals, what the web view keeps) is left alone.
+; Removes exactly what the section above put there. The app's data (the list of Workspaces, the
+; Local Workspaces themselves, the Runner's settings and approvals, what the web view keeps) is
+; left alone: a Local Workspace exists nowhere else.
 Section "Uninstall"
     !insertmacro CloseAppFirst
     Delete "$INSTDIR\${NAME}.exe"

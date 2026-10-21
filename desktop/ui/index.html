@@ -7,28 +7,200 @@
     <link rel="stylesheet" href="setup.css" />
   </head>
   <body>
-    <main>
-      <h1 id="title">Connect to your Infall server</h1>
-      <p id="lead" class="lead">Enter the address your team uses to open Infall. You only do this once.</p>
-      <form id="form" novalidate>
-        <label for="address">Server address</label>
-        <input
-          id="address"
-          name="address"
-          type="url"
-          inputmode="url"
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          placeholder="https://infall.example.org"
-          aria-describedby="hint error"
-          required
-        />
-        <p id="hint" class="hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
-        <p id="error" class="error" role="alert" hidden></p>
-        <button id="connect" type="submit">Connect</button>
-      </form>
+    <header class="brand">
+      <svg class="mark" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+        <g transform="rotate(-12 12 12)">
+          <circle cx="12" cy="12" r="6.6" fill="#000" stroke="#ffd98f" stroke-width="2.2" />
+          <path class="mark-cut" d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke-width="3.8" stroke-linecap="round" />
+          <path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke="#f2a03d" stroke-width="1.7" stroke-linecap="round" />
+        </g>
+      </svg>
+      <span class="brand-name">Infall</span>
+    </header>
+
+    <main class="start">
+      <h1 class="visually-hidden">Open a Workspace</h1>
+      <p id="live" class="visually-hidden" role="status" aria-live="polite"></p>
+
+      <div id="notice" class="notice" role="alert" hidden>
+        <p id="notice-text"></p>
+        <button id="notice-dismiss" type="button" class="quiet">Dismiss</button>
+      </div>
+
+      <div class="columns">
+        <div class="primary-column">
+          <section id="recent" class="section recent" aria-labelledby="recent-heading" hidden>
+            <div class="section-head">
+              <h2 id="recent-heading" tabindex="-1">Your workspaces</h2>
+              <span id="recent-count" class="count"></span>
+            </div>
+            <p id="recent-error" class="recent-error" role="alert" hidden>
+              <span id="recent-error-text"></span>
+              <button id="recent-retry" type="button" class="quiet">Try again</button>
+            </p>
+            <ul id="recent-list" class="recent-list" aria-labelledby="recent-heading"></ul>
+            <div id="import-slot-recent" class="import-slot"></div>
+          </section>
+
+          <section class="section create" aria-labelledby="create-heading">
+            <div class="section-head">
+              <h2 id="create-heading">Create a workspace</h2>
+            </div>
+            <ul class="tiles" aria-labelledby="create-heading">
+              <li>
+                <button type="button" class="tile tile-first" data-preset="tutorial" data-name="Tutorial"
+                  aria-label="Create a Tutorial workspace" aria-describedby="tile-tutorial-desc">
+                  <span class="tile-top">
+                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                      <rect x="6" y="6" width="11" height="7" rx="1.5" class="g-card" />
+                      <rect x="23" y="15" width="11" height="7" rx="1.5" class="g-card" />
+                      <path d="M17 9.5 C21 9.5 19 18.5 23 18.5" class="g-line" />
+                      <circle cx="11.5" cy="19" r="2.2" class="g-accent" />
+                    </svg>
+                    <span class="chip">New to Infall</span>
+                  </span>
+                  <span class="tile-name">Tutorial</span>
+                  <span id="tile-tutorial-desc" class="tile-desc">A sample Board and a hands-on Tutorial through every part of Infall.</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="tile" data-preset="blank" data-name="Blank"
+                  aria-label="Create a Blank workspace" aria-describedby="tile-blank-desc">
+                  <span class="tile-top">
+                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame g-dashed" />
+                    </svg>
+                  </span>
+                  <span class="tile-name">Blank</span>
+                  <span id="tile-blank-desc" class="tile-desc">An empty Board, ready for your own Cards.</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="tile" data-preset="literature-review" data-name="Literature review"
+                  aria-label="Create a Literature review workspace" aria-describedby="tile-lit-desc">
+                  <span class="tile-top">
+                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                      <rect x="5" y="5" width="6" height="18" rx="1" class="g-card" />
+                      <rect x="13" y="5" width="6" height="18" rx="1" class="g-card" />
+                      <rect x="21" y="5" width="6" height="18" rx="1" class="g-card" />
+                      <rect x="29" y="5" width="6" height="18" rx="1" class="g-card" />
+                    </svg>
+                  </span>
+                  <span class="tile-name">Literature review</span>
+                  <span id="tile-lit-desc" class="tile-desc">Frames for To read, Reading, Key findings and Open questions.</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="tile" data-preset="research-project" data-name="Research project"
+                  aria-label="Create a Research project workspace" aria-describedby="tile-research-desc">
+                  <span class="tile-top">
+                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                      <rect x="5" y="5" width="13" height="8" rx="1" class="g-card" />
+                      <rect x="22" y="5" width="13" height="8" rx="1" class="g-card" />
+                      <rect x="5" y="15" width="13" height="8" rx="1" class="g-card" />
+                      <rect x="22" y="15" width="13" height="8" rx="1" class="g-card" />
+                      <path d="M26 18 L31 19 L26 20 Z" class="g-accent" />
+                    </svg>
+                  </span>
+                  <span class="tile-name">Research project</span>
+                  <span id="tile-research-desc" class="tile-desc">Frames for Questions, Hypotheses, Experiments and Results, with an example Run.</span>
+                </button>
+              </li>
+            </ul>
+            <p id="create-status" class="visually-hidden" role="status"></p>
+            <p id="create-error" class="error" role="alert" hidden></p>
+            <p class="quiet-line">A Local Workspace stays on this computer. It needs no server and no sign-in.</p>
+            <div id="import-slot-create" class="import-slot">
+              <div id="import" class="import">
+                <div class="import-line">
+                  <button id="import-btn" type="button" class="quiet" aria-describedby="import-hint import-error">Import a workspace…</button>
+                  <span id="import-hint" class="import-hint">Opens a Workspace file (.infall) as a new Local Workspace.</span>
+                </div>
+                <p id="import-error" class="error" role="alert" hidden></p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-column" aria-labelledby="signin-heading">
+          <section class="panel">
+            <h2 id="signin-heading">Sign in to a Team Workspace</h2>
+            <p class="panel-lead">A Team Workspace lives on a server someone on your team runs. Ask them for its address.</p>
+            <form id="signin-form" novalidate>
+              <label for="address">Server address</label>
+              <input
+                id="address"
+                name="address"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                placeholder="https://infall.example.org"
+                aria-describedby="address-hint address-error"
+                required
+              />
+              <p id="address-hint" class="hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
+              <p id="address-error" class="error" role="alert" hidden></p>
+              <button id="signin" type="submit" class="primary">Sign in</button>
+            </form>
+          </section>
+        </aside>
+      </div>
     </main>
+
+    <template id="entry-template">
+      <li class="entry">
+        <div class="entry-row">
+          <button type="button" class="entry-open">
+            <span class="entry-name"></span>
+            <span class="entry-meta">
+              <span class="kind"></span>
+              <span class="entry-where"></span>
+              <span class="entry-when"></span>
+              <span class="entry-backup" hidden></span>
+            </span>
+          </button>
+          <form class="entry-rename" novalidate hidden>
+            <label class="visually-hidden"></label>
+            <input type="text" class="entry-input" autocomplete="off" spellcheck="false" maxlength="200" />
+            <button type="submit" class="quiet commit">Rename</button>
+            <button type="button" class="quiet cancel">Cancel</button>
+          </form>
+          <div class="entry-actions">
+            <button type="button" class="quiet more" aria-haspopup="menu" aria-expanded="false">
+              <svg class="more-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <circle cx="3.5" cy="8" r="1.4" />
+                <circle cx="8" cy="8" r="1.4" />
+                <circle cx="12.5" cy="8" r="1.4" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="menu" role="menu" hidden>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-rename">Rename</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-export" data-local>Export…</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-reveal" data-local>Show in folder</button>
+          <div role="separator" class="menu-sep"></div>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-remove">Remove…</button>
+        </div>
+        <p class="entry-status" hidden></p>
+        <p class="error entry-error" role="alert" hidden></p>
+        <div class="confirm" role="alertdialog" hidden>
+          <p class="confirm-title"></p>
+          <p class="confirm-body"></p>
+          <div class="confirm-buttons">
+            <button type="button" class="quiet keep">Keep it</button>
+            <button type="button" class="quiet export-first" hidden>Export first…</button>
+            <button type="button" class="danger go"></button>
+          </div>
+        </div>
+      </li>
+    </template>
+
     <script src="setup.js"></script>
   </body>
 </html>

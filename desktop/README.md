@@ -1,19 +1,21 @@
 # Infall desktop app
 
-A thin [Tauri v2](https://v2.tauri.app/) shell around the web UI that the Infall server serves. It adds two things: the AI sidebar can run on the Member's own Claude Code (M7), and the **Runner** executes Runs on the Member's own computer (M8; see [The Runner](#the-runner) and [its security model](#the-runners-security-model-in-plain-words)). The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md) and [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md).
+A [Tauri v2](https://v2.tauri.app/) app around the web UI that the Infall server serves, with the server itself inside. It opens a Workspace of either kind: a **Local Workspace**, which lives on this computer and is served by the server inside the app (M12; see [Workspaces on this computer](#workspaces-on-this-computer)), or a **Team Workspace** on a team's server. On top of the web UI it adds two things: the AI sidebar can run on the Member's own Claude Code (M7), and the **Runner** executes Runs on the Member's own computer (M8; see [The Runner](#the-runner) and [its security model](#the-runners-security-model-in-plain-words)). The contract is [`docs/specs/desktop.md`](../docs/specs/desktop.md) and, for Local Workspaces, [`docs/specs/local.md`](../docs/specs/local.md); the reasons are in ADR [0002](../docs/adr/0002-desktop-app-primary-browser-fallback.md), [0003](../docs/adr/0003-ai-through-subscriptions-and-a-shared-tool-layer.md) and [0004](../docs/adr/0004-server-embedded-in-the-desktop-app-for-local-workspaces.md).
 
 ```
 desktop/
   ui/                      the app's own local windows (plain HTML/CSS/JS, no build step)
-    index.html, setup.*    the first-run screen
+    index.html, setup.*    the start screen
     approval.html, .js     the Runner's approval window
     runner.html, .js       the Runner settings window
   src-tauri/               the app (Rust); a Cargo workspace of its own, excluded from the root one
-    src/shell.rs           the Tauri layer: windows, menu, the commands
-    src/bridge.js          defines window.qoopDesktop on the server's pages
+    build.rs               declares the commands; puts the built web UI (web/dist) inside the program
+    src/shell.rs           the Tauri layer: windows, menu, the commands, opening a Workspace
+    src/bridge.js          defines window.qoopDesktop on the open Workspace's pages
     src/bridge.rs          who may call the bridge and the local windows' commands
     src/address.rs         server address rules, health check, navigation rule
-    src/config.rs          the saved server address
+    src/workspaces.rs      the list of Workspaces and where each Local Workspace's files are
+    src/webui.rs           unpacks the web UI for the server inside the app
     icons/icon-1024.png    the one source image of the app icon (make-icon.py draws it)
     capabilities/          what each local window may call
     driver/                qoop-claude-driver: runs `claude`; no Tauri types
@@ -33,6 +35,7 @@ desktop/
 ## Prerequisites
 
 - Rust 1.90 or newer (Tauri 2.12 needs it). Built and tested here with 1.96.
+- Node.js 22 (20.19 or newer also works) with npm, to build the web UI first: the app carries it (`build.rs` stops with a message if `web/dist/index.html` is missing). The app also compiles the server (`crates/server`), whose C parts (SQLite, AWS-LC) need a C compiler; on macOS the Command Line Tools' one is enough, and no cmake or nasm is needed on any platform built here.
 - macOS: the Xcode Command Line Tools are enough (`xcode-select --install`); full Xcode is not needed for a development build. Linux and Windows need the usual [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); for what was built and checked there, see "The Ubuntu package" and "The Windows installer".
 - The Tauri CLI (`cargo tauri`) is **not** needed: not to build, not to run, and not for the macOS package, which `scripts/package-macos.sh` puts together itself (see [The macOS package](#the-macos-package)).
 - For the AI sidebar: Claude Code installed and signed in (`claude`), version 2.1.x. The flags below were read from 2.1.265.
@@ -40,20 +43,21 @@ desktop/
 
 ## Build and run in development
 
-Start the server and its UI as usual (`cargo run -p qoop-server` from the repository root; it listens on `http://localhost:8787`). Then:
+Build the web UI once (and again after changing it), then start the app:
 
 ```sh
+npm --prefix web ci && npm --prefix web run build
 cd desktop/src-tauri
 cargo run
 ```
 
-On first start the app asks for the server address: enter `http://localhost:8787`. It checks `GET /api/health`, saves the address (macOS: `~/Library/Application Support/app.qoop.desktop/config.json`) and shows the server's UI. Later starts go straight there. **Infall → Change Server…** brings the first-run screen back.
+Every start shows the start screen. Under **Create a workspace**, a tile makes a Local Workspace and opens it; it is served by the server inside the app, from the web UI that was built into it, so a change to `web/` shows only after building both again. To use a development server instead, start it as usual (`cargo run -p qoop-server` from the repository root; it listens on `http://localhost:8787`) and enter `http://localhost:8787` under **Sign in to a Team Workspace**. The app checks `GET /api/health`, remembers the Workspace (macOS: `~/Library/Application Support/app.qoop.desktop/workspaces.json`) and shows the server's UI. **Infall → Switch Workspace…** brings the start screen back.
 
 Checks:
 
 ```sh
 cd desktop/src-tauri
-cargo test                                   # driver (stub claude) + Runner (real Python) + app rules
+cargo test                                   # driver (stub claude) + Runner (real Python) + app rules + Workspaces
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
@@ -68,6 +72,24 @@ Release builds have no web inspector: the `devtools` feature of the `tauri` crat
 
 To use a different `claude` (tests do this with the stub): `QOOP_CLAUDE_BIN=/path/to/claude cargo run`. Without it the app looks for `claude` on `PATH`, then in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin` (an app started from the Finder gets a short `PATH`).
 
+## Workspaces on this computer
+
+Since M12 the app opens with a **start screen** at every start (`desktop/ui/index.html`; the commands behind it are Contract C of [`local.md`](../docs/specs/local.md)). It has three parts:
+
+- **Your workspaces**: every Workspace this app knows, the one opened most recently first. Click a name to open it; the **⋯** in its row has **Rename** and **Remove…** (since M13 also **Export…** and **Show in folder** for a Local Workspace). Removing asks first; for a Local Workspace it deletes its files for good, for a Team Workspace it only forgets the address. **Export…** writes a Workspace file, `<name>.infall`, where you choose, and the row then says "Workspace file saved to …"; **Show in folder** opens the Workspace's folder. Once a backup exists the row says when ("backed up today at …"). Removing a Local Workspace offers **Export first…**. Below the list (under **Create a workspace** while there is none), **Import a workspace…** makes a new Local Workspace from a `.infall` file and opens it; it never replaces one. A Workspace file holds no sign-ins, no access tokens and no AI settings (so no OpenRouter key). How to use them: [the tutorial](../docs/tutorial.md#12-getting-work-in-and-out), part 12; the contract: [`portability.md`](../docs/specs/portability.md) and [`desktop.md`](../docs/specs/desktop.md#m13--workspace-files-backups-saving-and-printing).
+- **Create a workspace**: four tiles, **Tutorial** (a sample Board and a hands-on Tutorial through every part of Infall), **Blank**, **Literature review** and **Research project**. Each makes a Local Workspace and opens it.
+- **Sign in to a Team Workspace**: the **Server address** of a team's server and **Sign in**, with the same address rules and health check as before. The app remembers it under the address's host name.
+
+**A Local Workspace** is served by the Infall server compiled into the app (`crates/server`, started in the app's own process by `qoop_server::local::start_local`), on `127.0.0.1` at a port the system chooses, from the web UI that was built into the program (`build.rs` embeds `web/dist`; `src/webui.rs` unpacks it). It has one Member, named after your login name on this computer (`$USER`, on Windows `%USERNAME%`; `Me` if there is none), who is signed in without being asked anything; the name can be changed in the menu under your name. Members, invites, Guests, passwords and signing out do not exist there. The Workspace needs no network: the web UI carries its own fonts. **Look up** in the Source form is the one thing in it that reaches out, and only when pressed ([privacy](../docs/privacy.md)).
+
+**One Workspace at a time.** **Infall → Switch Workspace…** (and the Tutorial's **Back to workspaces**) stops what is running (a `claude` run, a Run, the server of a Local Workspace), closes the main window and shows the start screen. The bridge is granted to the open Workspace's origin, and Tauri cannot take a grant back; so when you open a second Workspace in the same run of the app, the app starts itself again and opens that Workspace then. You see the app close and open once.
+
+**Where the files are.** The list of Workspaces is `workspaces.json` in the app's config directory. Each Local Workspace is a folder `workspaces/<id>/` in the app's data directory: `workspace.sqlite` and, beside it, `workspace.sqlite.secret-key` (the key that seals an OpenRouter key added in that Workspace; owner-only on macOS and Linux). The unpacked web UI is `web/` in the data directory. On macOS both directories are `~/Library/Application Support/app.qoop.desktop/`; for Ubuntu and Windows see their sections. Since M13 the folder also holds `backups/`: when a Workspace is opened and its newest copy there is older than 24 hours, the app writes a new one, and keeps the newest 7. A copy is a Workspace file, the same as **Export…** makes; a failed copy never stops the Workspace from opening. **Show in folder** on the start screen opens the folder. To keep a copy elsewhere, use **Export…** rather than copying `workspace.sqlite` (a copy of the open database may be torn). **Remove** deletes the folder, backups included. A Local Workspace cannot yet be moved onto a server. The address an earlier version saved (`config.json`) appears once as a Team Workspace in the list.
+
+**Runs in a Local Workspace.** Approvals are remembered per Workspace, not per address (see "The Runner"): a Team Workspace by its server's origin, a Local Workspace by its own identity in the list. A Local Workspace also keeps its port: the app remembers one per Workspace and asks for it at every start, so its address stays the same; if that port is taken, the Workspace opens on another one, and its approvals still hold, because they do not depend on the port. The approval window names the Workspace under **From**: a Local Workspace by its name, a Team Workspace by its server.
+
+**What guards the server inside the app.** It listens on `127.0.0.1` only and only while a Local Workspace is open, so nothing outside this computer can reach it. Every program on this computer can connect to the port, under any account. To be signed in it must know the key in the address the app opens first (`/api/local/enter?key=…`): 256 random bits, new at every start, never written to disk; any other key, or none, is answered `404`. Signing in with a password is refused in a Local Workspace, so there is no other way in. What it does not guard against: a program running as you can read and change the Workspace's files directly, as it can all your files.
+
 ## The macOS package
 
 `scripts/package-macos.sh` (run from anywhere in a clean checkout) builds `dist/Infall-<version>.dmg` and prints its SHA-256. `dist/` is not kept in git.
@@ -76,26 +98,28 @@ To use a different `claude` (tests do this with the stub): `QOOP_CLAUDE_BIN=/pat
 scripts/package-macos.sh
 ```
 
-It needs what building the app needs (Rust, the Xcode Command Line Tools) and nothing else: `cargo`, `sips`, `iconutil`, `plutil`, `codesign`, `hdiutil`, `shasum`. What it does:
+It needs what building the app needs (Rust, the Xcode Command Line Tools, Node.js with npm) and nothing else: `cargo`, `node`, `npm`, `sips`, `iconutil`, `plutil`, `codesign`, `hdiutil`, `shasum`, and `sandbox-exec` and `swiftc` for the start check. What it does:
 
+0. Builds the web UI: `npm ci` and `npm run build` in `web/` (this replaces `web/node_modules` and `web/dist` in the checkout), and stops unless `web/dist/index.html` is there afterwards.
 1. Reads the version from `src-tauri/Cargo.toml` and the name, identifier and oldest supported macOS from `src-tauri/tauri.conf.json`. It stops if the two files disagree about the version.
-2. `cargo build --release --locked --features custom-protocol`, with the `[profile.release]` of `Cargo.toml`: symbols stripped, thin LTO, one codegen unit. This is for size only (a 9 MB program, a 4 MB disk image); optimisation level and panic behaviour are cargo's defaults.
-3. Puts `Infall.app` together by hand: the program in `Contents/MacOS/`, `Contents/Info.plist` (identifier `app.qoop.desktop`, version, `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category Productivity), and `Contents/Resources/Infall.icns` made from `src-tauri/icons/icon-1024.png` with `sips` and `iconutil`. Nothing else is in the bundle: the pages of `desktop/ui`, `bridge.js` and `runner.py` are inside the program, and it links only against libraries macOS ships.
+2. `cargo build --release --locked --features custom-protocol`, with the `[profile.release]` of `Cargo.toml`: symbols stripped, thin LTO, one codegen unit. This is for size only; optimisation level and panic behaviour are cargo's defaults. Since M12 the program contains the server, SQLite, AWS-LC and the web UI: a 19.6 MB program and a 9.6 MB disk image (M11: 9 MB and 4 MB). The script then checks that the program holds the web UI it has just built.
+3. Puts `Infall.app` together by hand: the program in `Contents/MacOS/`, `Contents/Info.plist` (identifier `app.qoop.desktop`, version, `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category Productivity), and `Contents/Resources/Infall.icns` made from `src-tauri/icons/icon-1024.png` with `sips` and `iconutil`. Nothing else is in the bundle: the pages of `desktop/ui`, `bridge.js`, `runner.py` and the web UI are inside the program, and it links only against libraries macOS ships (SQLite and AWS-LC are compiled in).
 4. Signs it ad hoc (`codesign --sign -`), without entitlements and without the hardened runtime, and verifies the signature.
-5. Makes a compressed disk image holding `Infall.app` and a link to `/Applications`, and verifies it.
+5. **The start check** (`--no-verify` skips it): starts the signed program from the bundle with a new, empty home folder (no Workspaces, no saved server) under `sandbox-exec`, with a profile that refuses every outgoing network connection except to this computer. It must show a window of at least 720 × 560 (the start screen's minimum; the old address screen was 520 × 420) within a minute, still run ten seconds later, and not panic. The window shows on the screen for those seconds. Not checked: anything on the start screen itself, because nothing here may press its buttons (that needs the Accessibility permission); so a Workspace is not created or opened by this check. `sandbox-exec` is deprecated by Apple and still works on macOS 26; WebKit's helper processes are started by the system and are not under its profile.
+6. Makes a compressed disk image holding `Infall.app` and a link to `/Applications`, and verifies it.
 
 **Oldest macOS: 11.0** (`bundle.macOS.minimumSystemVersion` in `tauri.conf.json`; the build and the `Info.plist` both take it from there). The package is built for the kind of Mac it is built on, here Apple silicon, and no Apple silicon Mac runs anything older than macOS 11; it is also the oldest version Rust itself builds for on Apple silicon. Tauri's own default (10.13) would only matter for an Intel build. Run and tested on macOS 26.5 only; see "Unverified".
 
 **The icon.** `icons/icon-1024.png` is the source; the `.icns` is made from it on every packaging run and is not kept in git. `icons/icon.png` is a 256-pixel copy that Tauri builds into the program. `icons/make-icon.py` drew the source (the mark of the web UI's `Logo.tsx` in the dark theme's colours); it needs Pillow and is only needed to change the icon.
 
-**Not there:** a Developer ID signature, notarisation, updates of any kind (a new version is a new `.dmg`, installed over the old one by hand; the app does not look for one), an Intel or universal build, an app store. (Ubuntu and Windows have packages of their own, below.) App data stays in `~/Library/Application Support/app.qoop.desktop/`, the same place a development build uses; nothing is migrated.
+**Not there:** a Developer ID signature, notarisation, updates of any kind (a new version is a new `.dmg`, installed over the old one by hand; the app does not look for one), an Intel or universal build, an app store. (Ubuntu and Windows have packages of their own, below.) App data stays in `~/Library/Application Support/app.qoop.desktop/`, the same place a development build uses: the list of Workspaces, every Local Workspace, the Runner's files. An earlier version's saved server becomes a Team Workspace in the list; nothing else is migrated. Deleting the app from Applications leaves that folder, and the Local Workspaces in it, where they are.
 
 ### Installing it (for a Member)
 
 1. Get `Infall-<version>.dmg` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare: `shasum -a 256 ~/Downloads/Infall-<version>.dmg`.
 2. Open the `.dmg` and drag **Infall** onto **Applications**. Eject the disk image.
 3. Open Infall from Applications. The first time, macOS refuses (see below). After you have allowed it once, it opens like any other app.
-4. Infall asks for the address of your team's server; your Admin has it.
+4. Infall opens with its start screen. To try Infall on your own, press **Tutorial** under **Create a workspace**: no server, no account and no network are needed. To join your team, enter your team's server address (your Admin has it) under **Sign in to a Team Workspace** and press **Sign in**.
 
 ### The first start: allowing Infall once
 
@@ -122,15 +146,19 @@ If no warning appears at all, the file reached you without the mark (for example
 ```sh
 rustup target add x86_64-pc-windows-gnu
 brew install mingw-w64 makensis        # Debian/Ubuntu: apt install mingw-w64 nsis
+# and Node.js 22 (or 20.19 or newer) with npm, for the web UI
 scripts/package-windows.sh
 ```
 
-It cross-compiles with the GNU toolchain for Windows and puts the installer together with NSIS; neither asks anyone to accept a licence. Microsoft's own compiler and SDK are deliberately not used, because they do. The script checks for its tools first and says how to get each one that is missing (`cargo`, the Rust target, `x86_64-w64-mingw32-gcc`, `-windres`, `-objdump`, `makensis`, `python3` to read `tauri.conf.json`, `shasum` or `sha256sum`). No `tauri-cli`, no new Rust dependencies. What it does:
+It cross-compiles with the GNU toolchain for Windows and puts the installer together with NSIS; neither asks anyone to accept a licence. Microsoft's own compiler and SDK are deliberately not used, because they do. The script checks for its tools first and says how to get each one that is missing (`cargo`, the Rust target, `x86_64-w64-mingw32-gcc`, `-windres`, `-objdump`, `makensis`, `python3` to read `tauri.conf.json`, `node` and `npm`, `shasum` or `sha256sum`). No `tauri-cli`. The server inside the app has C parts, SQLite and AWS-LC (the cryptography under `rustls`); mingw's gcc compiles both, and neither cmake nor nasm is needed: `aws-lc-sys` builds with the `cc` crate from bindings it ships for this target, and for its Windows assembly it links object files that come with the crate (`rustls` turns on its `prebuilt-nasm` feature; a `nasm` on `PATH` would be used instead). This was built on a Mac with neither installed. What it does:
 
+0. Builds the web UI on the building machine (`npm ci`, `npm run build` in `web/`, replacing `web/node_modules` and `web/dist` there; the files are the same for every platform) and stops unless `web/dist/index.html` is there.
 1. Reads the version from `src-tauri/Cargo.toml` and the name and identifier from `src-tauri/tauri.conf.json`, and stops if the two files disagree about the version.
-2. `cargo build --release --locked --features custom-protocol --target x86_64-pc-windows-gnu` (output under `src-tauri/target/x86_64-pc-windows-gnu/`; about three minutes from nothing here). `tauri-build` compiles the icon (`icons/icon.ico`), the version information and the application manifest into the program with mingw's `windres`. Release builds are Windows-subsystem programs (`src/main.rs`), so no console window opens with the app.
-3. Checks the program with `objdump`: 64-bit, the Windows GUI subsystem, and every DLL it names is either part of Windows or `WebView2Loader.dll`. It stops at any other name, in particular the compiler's own libraries (`libgcc`, `libwinpthread`), which no Windows has. With Homebrew's mingw-w64 the C runtime it names is the Universal CRT (`api-ms-win-crt-*`), which is part of Windows 10 and 11.
+2. `cargo build --release --locked --features custom-protocol --target x86_64-pc-windows-gnu` (output under `src-tauri/target/x86_64-pc-windows-gnu/`; about three and a half minutes from nothing here, with the server). `tauri-build` compiles the icon (`icons/icon.ico`), the version information and the application manifest into the program with mingw's `windres`. Release builds are Windows-subsystem programs (`src/main.rs`), so no console window opens with the app.
+3. Checks the program with `objdump`: 64-bit, the Windows GUI subsystem, and every DLL it names is either part of Windows or `WebView2Loader.dll`. It stops at any other name, in particular the compiler's own libraries (`libgcc`, `libwinpthread`), which no Windows has. With Homebrew's mingw-w64 the C runtime it names is the Universal CRT (`api-ms-win-crt-*`), which is part of Windows 10 and 11. The script then checks that the program holds the web UI it has just built.
 4. Runs `makensis` on an installer script that is written out in full inside the packaging script, and prints the SHA-256. Every run gives a different file, even from the same source (NSIS stores times): hand out one file and quote the SHA-256 of that one.
+
+**Sizes** (M12, with the server and the web UI inside): `Infall.exe` 20 MB, the installer 7.0 MB (M11: 3.0 MB).
 
 **What the installer does.** It runs as the person who started it and never asks for administrator rights (`RequestExecutionLevel user`). It puts three files into `%LOCALAPPDATA%\Programs\Infall\`: `Infall.exe`, `WebView2Loader.dll` (Microsoft's small loader for WebView2, which programs built with this toolchain load from their own folder; it comes with the `webview2-com-sys` crate) and `uninstall.exe`. It adds **Infall** to that person's Start menu and one entry to their list of installed apps (under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\app.qoop.desktop`). Nothing else: no service, no autostart, no file association, nothing for other accounts of the computer. Installing a new version over an old one replaces the files; if Infall is open, the installer says so and waits.
 
@@ -145,7 +173,7 @@ It cross-compiles with the GNU toolchain for Windows and puts the installer toge
 1. Get `Infall-<version>-x64-setup.exe` from the person who built it. To be sure it is the real file, ask them for its SHA-256 and compare. In PowerShell: `Get-FileHash .\Infall-<version>-x64-setup.exe` (or, in any prompt, `certutil -hashfile Infall-<version>-x64-setup.exe SHA256`).
 2. Open the file. The first time, Windows stops it with a blue window titled **Windows protected your PC**, saying that Microsoft Defender SmartScreen prevented an unrecognized app from starting, with one button, **Don't run**. Click **More info** in the text. The window now shows the file's name and **Publisher: Unknown publisher**, and a second button: **Run anyway**. Click it.
 3. The installer runs without further questions and offers to open Infall. Later, Infall is in the Start menu.
-4. Infall asks for the address of your team's server; your Admin has it.
+4. Infall opens with its start screen. To try Infall on your own, press **Tutorial** under **Create a workspace**: no server, no account and no network are needed. To join your team, enter your team's server address (your Admin has it) under **Sign in to a Team Workspace** and press **Sign in**.
 
 Your browser may warn before that, when the download ends (Edge says the file "isn't commonly downloaded" and offers to keep it in the menu next to that message). If Windows instead says that **Smart App Control** blocked the file, there is no button to allow it: Smart App Control only lets signed programs run, and this one is not signed. Do not switch Smart App Control off for Infall (Windows cannot switch it back on without being reinstalled); tell the person who gave you the file.
 
@@ -155,7 +183,7 @@ Your browser may warn before that, when the download ends (Edge says the file "i
 
 **What you are trusting instead** is the person who gave you the file. That is why the SHA-256 matters: it is the only thing that ties the file in your Downloads folder to the one they built. Do not run an Infall installer that reached you some other way.
 
-**To uninstall:** Settings > Apps > Installed apps (Windows 10: Apps & features) > Infall > Uninstall. It removes the three files, the folder if nothing else is in it, the Start menu entry and the list entry. It does **not** remove your data, which is in two places: `%APPDATA%\app.qoop.desktop\` (the server address in `config.json`, the Runner's `runner.json` and `runner-approvals.json`) and `%LOCALAPPDATA%\app.qoop.desktop\` (what the web view keeps, your sign-in among it). Delete those two folders by hand if you want them gone.
+**To uninstall:** Settings > Apps > Installed apps (Windows 10: Apps & features) > Infall > Uninstall. It removes the three files, the folder if nothing else is in it, the Start menu entry and the list entry. It does **not** remove your data, which is in two places: `%APPDATA%\app.qoop.desktop\` (the list of Workspaces in `workspaces.json`, **every Local Workspace**, its backups included, under `workspaces\`, the unpacked web UI in `web\`, the Runner's `runner.json` and `runner-approvals.json`, and an older version's `config.json`) and `%LOCALAPPDATA%\app.qoop.desktop\` (what the web view keeps, your sign-in to a Team Workspace among it). A Local Workspace exists nowhere else: delete those two folders by hand only if you want it gone too.
 
 ### What the Runner does and does not do on Windows
 
@@ -183,8 +211,8 @@ scripts/package-linux.sh --clean         # remove what the script keeps in Docke
 It needs Docker and nothing else; everything happens in containers, so it gives the same package from a Mac and from a Linux machine. No `tauri-cli`. What it does:
 
 1. Reads the version from `src-tauri/Cargo.toml` and the name and identifier from `src-tauri/tauri.conf.json`, and stops if the two files disagree about the version. The package, the program and the icon are named after the product in lower case: `infall`.
-2. Builds an image `qoop-package-linux:22.04-<arch>`: Ubuntu 22.04, Rust (1.96.0; `QOOP_PACKAGE_RUST` changes it), and the libraries of the package's architecture (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `libdbus-1-dev`). The image is always of the building computer's own kind. For the other kind of processor (amd64 on an Apple silicon Mac) it **cross-compiles** with Ubuntu's multiarch libraries and `crossbuild-essential`, which is as fast as a native build; nothing is compiled under emulation.
-3. Copies `desktop/` into a container (the checkout is mounted read-only; `src-tauri/target` is neither read nor written) and runs `cargo build --release --locked --features custom-protocol --target <triple>`, with the same `[profile.release]` as the macOS package. Downloaded crates and build output are kept in the Docker volume `qoop-package-linux-cargo`.
+2. Builds an image `qoop-package-linux:22.04-<arch>`: Ubuntu 22.04, Rust (1.96.0; `QOOP_PACKAGE_RUST` changes it), Node.js (22.23.5 from nodejs.org, checked against its published SHA-256; `QOOP_PACKAGE_NODE` changes it), and the libraries of the package's architecture (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `libdbus-1-dev`). The image is always of the building computer's own kind. For the other kind of processor (amd64 on an Apple silicon Mac) it **cross-compiles** with Ubuntu's multiarch libraries and `crossbuild-essential`, which is as fast as a native build; nothing is compiled under emulation.
+3. Copies what the app is built from into a container: `desktop/`, `crates/` (the server, which the app compiles in), `web/` without `node_modules` and `dist`, and the root `Cargo.toml` and `Cargo.lock` (the checkout is mounted read-only; `src-tauri/target` is neither read nor written). There it builds the web UI (`npm ci`, `npm run build`, npm's downloads kept in the volume) and stops unless `web/dist/index.html` exists, then runs `cargo build --release --locked --features custom-protocol --target <triple>`, with the same `[profile.release]` as the macOS package, and checks that the program holds the web UI just built. The server's C parts (SQLite, AWS-LC) are compiled by the image's gcc or, for the other architecture, `crossbuild-essential`'s; no cmake or nasm. Downloaded crates and build output are kept in the Docker volume `qoop-package-linux-cargo`. Since M12 the program is 20 MB and the arm64 package 6.0 MB (M11: 2.7 MB).
 4. Puts the package together by hand with `dpkg-deb`: `/usr/bin/infall`, `/usr/share/applications/infall.desktop` (`Name=Infall`, `StartupWMClass=infall`, category Office) and `/usr/share/icons/hicolor/<size>/apps/infall.png` in eight sizes from 16 to 512, made from `src-tauri/icons/icon-1024.png`. Nothing else: no service, no maintainer scripts, no configuration files. `Depends` is what `dpkg-shlibdeps` finds the program linked against, on Ubuntu 22.04:
 
    ```
@@ -194,9 +222,9 @@ It needs Docker and nothing else; everything happens in containers, so it gives 
    Ubuntu 24.04 renamed some of these (`libgtk-3-0t64`, `libglib2.0-0t64`, …), but its packages still provide the old names with their versions, so the same line installs there; no alternatives are needed, and the script checks that on every run. `Recommends: python3, xdg-utils, procps`: Infall works without Python and only Runs need it; `xdg-utils` opens links in the system browser; `procps` is the `ps` the Runner monitor reads.
 5. Checks the result (see below) and prints the SHA-256. All time stamps inside the package are the program's own, so packaging the same build again gives the same file.
 
-In Docker it creates only things named `qoop-package-linux…` (one image per architecture, one volume, containers that are removed when it ends) and pulls `ubuntu:22.04` and `ubuntu:24.04`. `--clean` removes the images and the volume again.
+In Docker it creates only things named `qoop-package-linux…` (one image per architecture, one volume, and containers and a snapshot image per check that are removed when it ends) and pulls `ubuntu:22.04` and `ubuntu:24.04`. `--clean` removes the images and the volume again.
 
-**What the script checks.** For each package, in a clean `ubuntu:22.04` and a clean `ubuntu:24.04` container of the package's architecture: `apt-get install ./infall_….deb` succeeds; the files are there and there are no maintainer scripts; `ldd` finds every shared library; started as an ordinary user on a virtual display (Xvfb), the program shows a window named Infall with the window class `infall`, is still running after ten more seconds together with its page process, and has not panicked; it ends when asked to; `apt-get remove` leaves nothing in `/usr`. A package for the other kind of processor is checked in emulated containers (Docker's QEMU). If the Docker at hand cannot emulate, these checks are skipped and the script's summary says so. Emulating a WebKit app takes several times the memory of the real thing: in a Docker machine with 4 GB that also runs other containers, the emulated start was ended by the kernel for lack of memory (see "Unverified: the Ubuntu package"). Give Docker 8 GB, or build and check the package on a computer of its own kind.
+**What the script checks.** For each package, in a clean `ubuntu:22.04` and a clean `ubuntu:24.04` container of the package's architecture, in two steps. First, with the network: `apt-get install ./infall_….deb` succeeds; the files are there and there are no maintainer scripts; `ldd` finds every shared library; Xvfb and `xdotool` are installed for the second step. Then, from a snapshot of that container started with **no network at all** (`--network none`; the script checks that `lo` is the only interface) and an untouched home folder: started as an ordinary user on a virtual display, the program shows a window named Infall with the window class `infall`, is still running ten seconds later together with its page process, has not panicked, and listens on no port yet. Then the script presses Return in that window: on a fresh start screen the focus is on the first tile, **Tutorial** (`focusStart` in `desktop/ui/setup.js`), so this creates a Tutorial Workspace. Within 90 seconds the program must listen on `127.0.0.1` and on nothing else; `GET /api/health` there must answer `{"ok":true}`; `/api/local/enter` without a key and with a wrong one must answer `404`; `workspaces/<id>/workspace.sqlite` and the unpacked `web/index.html` must be in `~/.local/share/app.qoop.desktop/`; a window must still be shown and nothing may have panicked. Last: it ends when asked to, and `apt-get remove` leaves nothing in `/usr`. Not checked: what any screen looks like, whether the main window shows the Board, and anything in the Tutorial. **This check has not passed yet**: see "Unverified: Workspaces on this computer", item 4. A package for the other kind of processor is checked in emulated containers (Docker's QEMU). If the Docker at hand cannot emulate, these checks are skipped and the script's summary says so. Emulating a WebKit app takes several times the memory of the real thing: in a Docker machine with 4 GB that also runs other containers, the emulated start was ended by the kernel for lack of memory (see "Unverified: the Ubuntu package"). Give Docker 8 GB, or build and check the package on a computer of its own kind.
 
 **How long it takes** (Apple silicon Mac, Docker in a colima machine with 2 processors and 4 GB): the first amd64 run 13 minutes without the checks (8 for the image, 5 for the build); the first arm64 run after it 4 minutes; a run with nothing changed builds in under a second, and after a change to the app's own code in about a minute. The checks download WebKitGTK into each clean container, so they take as long as the network does: here between 3 and 20 minutes per container. The script keeps about 6 GB in Docker (two images that share most of their content, and the volume).
 
@@ -213,7 +241,7 @@ In Docker it creates only things named `qoop-package-linux…` (one image per ar
    ```
 
    `apt` shows the other packages it will add (WebKitGTK 4.1 and what it needs; a normal Ubuntu desktop already has most of it) and asks before it goes on.
-3. Open **Infall** from the applications overview, or run `infall` in a terminal. It asks for the address of your team's server; your Admin has it.
+3. Open **Infall** from the applications overview, or run `infall` in a terminal. It opens with its start screen. To try Infall on your own, press **Tutorial** under **Create a workspace**: no server, no account and no network are needed. To join your team, enter your team's server address (your Admin has it) under **Sign in to a Team Workspace** and press **Sign in**.
 
 **What it needs:** Ubuntu 22.04 or 24.04 with its updates installed (the package wants WebKitGTK 2.42 or newer, which both releases deliver as a security update), on a 64-bit Intel/AMD computer (`amd64`) or an ARM one (`arm64`). For Runs, a Python 3.8 or newer: Ubuntu's own `python3` is enough and is installed along with Infall unless you tell `apt` not to; matplotlib (`sudo apt install python3-matplotlib`, or your own environment) only if Runs draw figures. For the AI sidebar, Claude Code (`claude`) installed and signed in.
 
@@ -221,12 +249,12 @@ In Docker it creates only things named `qoop-package-linux…` (one image per ar
 
 **Where the data is** (per person, the same places a development build uses; nothing is removed with the package):
 
-- `~/.config/app.qoop.desktop/`: the server address (`config.json`), the Runner's settings (`runner.json`) and the remembered approvals (`runner-approvals.json`). `$XDG_CONFIG_HOME` moves it.
-- `~/.local/share/app.qoop.desktop/`: what the page keeps (your sign-in, the web view's storage and cache). `$XDG_DATA_HOME` moves it.
+- `~/.config/app.qoop.desktop/`: the list of Workspaces (`workspaces.json`), the Runner's settings (`runner.json`) and the remembered approvals (`runner-approvals.json`); an older version's `config.json`. `$XDG_CONFIG_HOME` moves it.
+- `~/.local/share/app.qoop.desktop/`: **every Local Workspace** (`workspaces/<id>/`: `workspace.sqlite`, its key file and, since M13, its `backups/`), the unpacked web UI (`web/`), and what the page keeps (your sign-in to a Team Workspace, the web view's storage and cache). `$XDG_DATA_HOME` moves it.
 
-To forget everything: `rm -rf ~/.config/app.qoop.desktop ~/.local/share/app.qoop.desktop`.
+To forget everything, Local Workspaces included, which exist nowhere else: `rm -rf ~/.config/app.qoop.desktop ~/.local/share/app.qoop.desktop`.
 
-**The menu** is a bar in each window with one menu, **Infall**: Change Server…, Runner settings…, Quit (Ctrl+Q). GTK cannot draw most of the items the macOS menu has (it would show them greyed out, Quit included), so on Linux they are left out (`build_menu` in `src/shell.rs`); copy and paste work from the keyboard and the page's own context menu.
+**The menu** is a bar in each window with one menu, **Infall**: Switch Workspace…, Runner settings…, Quit (Ctrl+Q). GTK cannot draw most of the items the macOS menu has (it would show them greyed out, Quit included), so on Linux they are left out (`build_menu` in `src/shell.rs`); copy and paste work from the keyboard and the page's own context menu.
 
 ### What the Runner does and does not do on Linux
 
@@ -246,7 +274,7 @@ Tauri **2.12.7** (`tauri-build` 2.7.6, `wry` 0.57.3). Version 3 exists only as a
 | Need | Mechanism |
 |---|---|
 | Show the server's UI | The main window is created at run time with `WebviewUrl::External(<origin>)`. There are no windows in `tauri.conf.json`. |
-| First-run screen | A second, local window (`setup`) showing `desktop/ui/index.html`, with its own static capability (`capabilities/setup.json`): it may call `setup_current` and `setup_save`, nothing else. |
+| Start screen | A second, local window (`setup`) showing `desktop/ui/index.html`, with its own static capability (`capabilities/setup.json`): it may call M12's `start_view`, `workspace_create`, `workspace_connect`, `workspace_open`, `workspace_rename`, `workspace_remove` and M13's `workspace_export`, `workspace_import`, `workspace_reveal`, nothing else. |
 | Approval window, Runner settings window | Local windows too (`runner-approval-<ticket>` showing `approval.html`, `runner-settings` showing `runner.html`), each with its own static capability (`capabilities/runner-approval.json`, `runner-settings.json`) that names only its own commands and only its own window labels. |
 | Give the bridge to one origin, known only at run time | `build.rs` declares the app's commands in an app manifest, so each has a permission (`allow-claude-send`, …) and nothing may call a command without a capability. When the main window is created, the app adds a capability **at run time**: `app.add_capability(CapabilityBuilder::new("qoop-bridge").remote("<origin>/*").window("main").permission("allow-claude-status")…)`. Tauri checks the calling page's URL against it on every call. |
 | Stream from Rust to the page | A Tauri `Channel<AiEvent>` passed to `claude_send`. No event-plugin permission is granted to the page. |
@@ -260,7 +288,7 @@ Every mechanism in this table was confirmed by reading the source of exactly the
 
 The server's pages are remote content and get no general access to the app. Layers, outermost first:
 
-1. **Only seven commands, only one origin, only the main window.** The run-time capability above grants `claude_status`, `claude_send`, `claude_cancel` and, for the Runner, `runner_status`, `runner_configure`, `runner_run`, `runner_cancel` to `<origin>/*` in window `main`. For remote pages Tauri refuses every command that no capability grants, so the setup commands, the approval and settings commands and every plugin command (events, windows, …) are refused.
+1. **Only ten commands, only one origin, only the main window.** The run-time capability above grants `claude_status`, `claude_send`, `claude_cancel`, for the Runner `runner_status`, `runner_configure`, `runner_run`, `runner_cancel`, since M12 `switch_workspace`, and since M13 `save_file` (`saveFile`: the system's save dialog, at most 20 MB of text; the page never chooses the path) and `print_page` (on macOS, where the web view ignores `window.print()`, the bridge script makes `window.print()` call it), to `<origin>/*` in window `main` (plus Tauri's own two for moving and zooming the window from the page's top row). The origin is the open Workspace's: a team's server, or a Local Workspace's `http://127.0.0.1:<port>`. For remote pages Tauri refuses every command that no capability grants, so the setup commands, the approval and settings commands and every plugin command (events, windows, …) are refused.
 2. **Top frame only.** Tauri's own IPC bootstrap (`window.__TAURI_INTERNALS__` and the per-run "invoke key" that every call must carry) and the bridge script are injected in the main frame only. A frame gets neither. The Visual sandbox frame (`/visual-frame`, `sandbox allow-scripts`) has an opaque origin, so it cannot reach into its parent to borrow them.
 3. **A second key of the app's own.** The bridge script holds a random key (new on every start) in a closure and sends it with each call; the commands refuse calls without it (`bridge::check_caller`). This does not depend on Tauri's invoke key.
 4. **A check inside every command**: the call must come from window `main` while that window's page is on the configured origin.
@@ -270,7 +298,7 @@ The server's pages are remote content and get no general access to the app. Laye
 Known limits, stated plainly:
 
 - **Tauri does not tell a command which frame called it.** On macOS the low-level message channel (`window.webkit.messageHandlers.ipc`) exists in every frame, and Tauri then sees the frame's URL, which for `/visual-frame` is on the configured origin. What stops a frame is that it has neither Tauri's invoke key nor the bridge key (layers 2 and 3). This was observed in a smoke run: a message posted from the sandboxed frame was dropped by Tauri for a wrong invoke key. (Tauri then prints the expected key on the app's standard error; that is Tauri's behaviour, and the page cannot read it.)
-- **A run-time capability cannot be removed.** After "Change Server…" to a different address the app restarts itself, so that only the new origin holds the grant.
+- **A run-time capability cannot be removed.** When a second Workspace is opened in the same run of the app, the app restarts itself and opens it then, so that only the new origin holds the grant (a run of the app grants the bridge to one origin only; each Local Workspace has a port of its own, so two Local Workspaces never share an origin).
 - **A script in any frame can start a navigation**, and Tauri's navigation callback only gets the URL, not the frame. So navigations to other sites are refused without opening anything; only `target="_blank"` links (which the Visual sandbox cannot produce) reach the system browser.
 - The server address must be `https://…`, or `http://` only for `localhost` and `127.0.0.1`, with no user name, password or path; the health check does not follow redirects.
 
@@ -336,7 +364,7 @@ Deliberately **not** used:
 
 **Events.** `delta`: text deltas. `tool`: the tool name without the `mcp__qoop__` prefix. `done`: the result line, with the session id and the model. `error`: a failed result (Claude Code's own sentence, bounded, with the token removed should it ever appear), an exit without a result, the silence timeout, or a start failure. Lines that are not JSON or have an unknown type are ignored.
 
-The app never reads or stores Claude credentials and makes no network request of its own except the health check of the server address.
+The app never reads or stores Claude credentials. Its own network requests are the health check of a Team Workspace's address and, in a Local Workspace, what the server inside it does for the Workspace: the same as a team's server, which means only the OpenRouter path of the AI sidebar, once a key has been added there, and since M13 **Look up**, which asks Crossref or arXiv about one DOI or arXiv id when it is pressed ([privacy](../docs/privacy.md)).
 
 ## The Runner
 
@@ -347,7 +375,7 @@ What the server's page can do (`window.qoopDesktop.runner`): read which interpre
 What happens on `run({ id, code, title }, onEvent)`:
 
 1. **Is there a Python?** The interpreter is the one chosen in **Infall → Runner settings…**. Nothing is chosen until the Member chooses: the first Run opens that window, and gets `error`/`no_python` if it is closed without a choice.
-2. **Approval.** If exactly this code (by SHA-256) was approved before for this server, it goes straight on. Otherwise the page gets `approval` and the app opens its own window: the Run's title, the server, the interpreter, the folder, and the complete code with line numbers. "Don't run" is the default button; closing the window, Escape, and the page going away all mean "Don't run" (`error`/`declined`). "Run on this computer" becomes available once the code has been scrolled to its end and has been on screen for a second.
+2. **Approval.** If exactly this code (by SHA-256) was approved before for this Workspace, it goes straight on. Otherwise the page gets `approval` and the app opens its own window: the Run's title, the Workspace, the interpreter, the folder, and the complete code with line numbers. "Don't run" is the default button; closing the window, Escape, and the page going away all mean "Don't run" (`error`/`declined`). "Run on this computer" becomes available once the code has been scrolled to its end and has been on screen for a second.
 3. **Execution.** The approved text is written to `main.py` in a new temporary directory (mode `0700`, files `0600`) and started as `<python> -u -X utf8 runner.py main.py` in a process group of its own. The working directory is the folder from the settings, or the temporary directory. The environment is the Member's shell environment plus `MPLBACKEND=Agg`, `PYTHONUNBUFFERED=1`, `PYTHONIOENCODING=utf-8` and `QOOP_RUN_DIR`. The page gets `started`, then `output` events (at most about ten a second, each at most 16 000 characters), then `done`.
 4. **Afterwards** the temporary directory is removed and whatever the code left running in its process group is killed.
 
@@ -355,7 +383,7 @@ What happens on `run({ id, code, title }, onEvent)`:
 
 The result (`done`): exit code (`null` if stopped or killed by a signal), `stopped`, duration, the SHA-256 of the executed code, the output, the figures, and `env` (Python version, packages, `os`, `arch`). Standard output and standard error share one pipe, so their order is kept. The kept output is at most 64 000 characters (counted in UTF-16 units, so the limit holds however a reader counts): beyond that, the first and the last 32 000 are kept with one line in between saying how much is not shown, and `output_truncated` is set. Bytes that are not UTF-8 become U+FFFD.
 
-There is **no time limit**. `cancel(id)` asks the process group to stop (`SIGTERM`), waits half a second, then kills the group (`SIGKILL`): `done` with `stopped: true`, `exit: null`, the output so far, no figures. Closing the main window, reloading or leaving the page, "Change Server…" and quitting the app do the same. One Run at a time per app, counted from the moment it is asked for (`error`/`busy` otherwise; a Run asked for right after a cancel waits up to four seconds for the old one to be gone).
+There is **no time limit**. `cancel(id)` asks the process group to stop (`SIGTERM`), waits half a second, then kills the group (`SIGKILL`): `done` with `stopped: true`, `exit: null`, the output so far, no figures. Closing the main window, reloading or leaving the page, "Switch Workspace…" and quitting the app do the same. One Run at a time per app, counted from the moment it is asked for (`error`/`busy` otherwise; a Run asked for right after a cancel waits up to four seconds for the old one to be gone).
 
 **Runner settings** (app menu, or `runner.configure()` from the page; kept in `runner.json` in the app's config directory, per device):
 
@@ -373,7 +401,7 @@ The shell's environment is read once per start of the app by running `$SHELL -l 
 
 - **Code runs only after you said yes to exactly that code**, in a window that belongs to the app. The page cannot draw that window, read it, click in it, or answer for you: the commands behind it are granted only to that window (Tauri capability), are checked again inside each command (window label and the app's own bundled page address), and the question a window can answer is fixed by its label. This was tried from a page in the smoke run: every such call was refused.
 - **What you see is what runs.** The app hashes and writes out the very text it displayed. Characters you could not see (zero-width, direction controls, control characters, unusual spaces, and so on) are drawn as marked codes such as `U+202E`, and a notice says so. Text is drawn strictly left to right in file order, so right-to-left text cannot rearrange code. Long lines are wrapped, never cut. Lines are numbered the way Python counts them. Titles and code are shown as text, never interpreted as HTML.
-- **A changed Run asks again.** Approval is remembered per server and per SHA-256 of the code (`runner-approvals.json` in the app's config directory, newest 1 000). One changed character, by anyone, including you, is new code.
+- **A changed Run asks again.** Approval is remembered per Workspace and per SHA-256 of the code (`runner-approvals.json` in the app's config directory, newest 1 000). One changed character, by anyone, including you, is new code.
 - **The page cannot choose where code runs.** Interpreter and folder come only from the settings window. The request has no field for them.
 - **An accidental yes is hard.** "Don't run" has the focus; Enter, Escape and closing the window all decline; "Run" is refused by the app until the window has had the code for a second, and stays disabled until you have scrolled to the end.
 - **Size is bounded.** Code over 100 000 characters is refused without a question.
@@ -395,7 +423,7 @@ The shell's environment is read once per start of the app by running `$SHELL -l 
 
 - `driver` unit tests: the event mapping, the exact argument vector, the config file contents, redaction.
 - `driver/tests/stub.rs`: the driver against `driver/tests/stub-claude.sh`, a shell script that records its arguments, standard input, working directory, environment and the MCP config file it was given, and prints canned streams (an answer with a tool call, an error, garbage lines, a crash, a hang, a process that ignores `SIGTERM`, one that lingers after its result). They assert: the token is in the file and not in the arguments; the file is `0600`, outside the working directory, and deleted afterwards; built-in tools are off and only the eight tools are allowed; the working directory is empty and emptied again; cancel stops the process and its child; the silence timeout (injected, short) ends the run; events map as specified.
-- app unit tests: server address rules, health check against a local socket, navigation rule, who may call the bridge and the commands of the app's own windows, request validation, the saved address.
+- app unit tests: server address rules, the embedded server's origin, health check against a local socket, navigation rule, who may call the bridge and the commands of the app's own windows, request validation, the list of Workspaces (making, naming, removing, the earlier `config.json`, damaged files), the Member's name, unpacking the embedded web UI.
 - `runner` unit tests: the approval gate (nothing without a yes, remembered per server and hash, the newest 1 000, changed code asks again, decline, window closed, an answer only counts for the question it was given to, a yes that comes at once does not count), what the approval window is given (lines as Python counts them, invisible and direction characters, long lines, titles), settings, interpreter checks and lookup (with small stand-in programs), the shell environment, output handling (split multi-byte characters, non-UTF-8 bytes, head and tail, event spacing), and the checks on what a program leaves behind (links, sizes, PNG signature).
 - `runner/tests/real_python.rs`: the Runner **against a real Python interpreter**, nothing stubbed; the "Member" answers through the same calls the approval window makes. Output and its order, exit codes, tracebacks, `SystemExit`, Unicode, truncation, event rate, a matplotlib figure captured as a real PNG, more than three figures, a figure too large, packages, cancel killing a child and grandchild of the code, a program that ignores `SIGTERM`, busy, the settings flow, the folder, an encoding declaration that tries to smuggle code in, programs that sabotage their own process.
 
@@ -425,8 +453,8 @@ Nothing here has been run against the real `claude`: doing so would have spent t
 
 Other things not verified:
 
-- **Clicking through the first-run screen.** The window was started and stayed up without errors; its form was not operated. The address rules and the health check behind it are unit-tested.
-- **Opening the system browser**, the **Change Server…** menu item and the restart after it, and **stopping a run when the app quits** were not exercised (the code paths are simple; the kill itself is tested in the driver).
+- **Clicking through the start screen** on macOS: nothing here could press its buttons (see "Unverified: Workspaces on this computer").
+- **Opening the system browser**, the **Switch Workspace…** menu item and the restart into a second Workspace, and **stopping a run when the app quits** were not exercised on macOS (the code paths are simple; the kill itself is tested in the driver).
 - **Linux and Windows.** In M7 only macOS (Apple Silicon) was built and run. Since M11 there are packages for both; what was checked on each, and what the code does differently there, is in "The Ubuntu package", "The Windows installer" and their "Unverified" sections. Signing and auto-update are still not there.
 - If the app itself is killed hard (`kill -9`, a crash), a running `claude` is not stopped by it; it ends by itself.
 - If the saved server does not answer when the app starts (within four seconds), the app opens its local screen instead of the main window, saying "Infall could not reach your server", with the saved address filled in: **Connect** tries again. (Until M11 the main window stayed blank.) A server that goes away while the app is open is not noticed by the app; the web UI says it is not synced.
@@ -457,8 +485,8 @@ Not verified:
 1. **The first-start warning itself and the way past it.** No copy carrying the download mark was opened here, so neither the warning nor the Privacy & Security step was seen on screen. The steps above follow Apple's help page for macOS 26 (read on 2026-11-23); the exact sentence of the warning, and whether the confirmation asks for a password or Touch ID, are not confirmed; the Control-click route for macOS 14 and older was not checked against anything. **Before handing the package out, download it once the way a Member will and walk the steps.**
 2. **Any other Mac.** Not started on another computer, on macOS 11 to 15, or under another account. 11.0 is what the build declares, not something that was tried. Intel Macs cannot run this package at all.
 3. **Dragging to Applications** in the Finder, and how the icon looks in the Dock, the Finder and the disk image window (the image has no background or arranged layout).
-4. **A build from a truly clean checkout** (fresh clone, empty `target/`): the script was run in the working tree, where the dependencies were already downloaded.
-5. **Installing a new version over an old one**, and the app's restart after "Change Server…" when it runs from `/Applications`.
+4. **A build from a truly clean checkout.** In M12 the script was run in a copy of the working tree without `target/`, `web/node_modules` and `web/dist` (every crate compiled from nothing, the web UI installed with `npm ci`), but with cargo's and npm's downloads already on this Mac, and not from a fresh clone.
+5. **Installing a new version over an old one**, and the app's restart into a second Workspace when it runs from `/Applications`.
 6. Nobody clicked anything in the packaged app (see the Runner's list above; the same holds here).
 
 ## Unverified: the Windows installer (M11)
@@ -467,17 +495,20 @@ Not verified:
 
 Verified on the Mac that built it (Apple silicon, Rust 1.96, Homebrew mingw-w64 and makensis 3.13): the script runs from the working tree to `dist/Infall-0.1.0-x64-setup.exe` (3.0 MB); `cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings` is clean; the program is a PE32+ x86-64 file of the Windows GUI subsystem with the icon, the version information (`ProductName` Infall, `FileVersion` 0.1.0) and the Common Controls manifest inside; its import table names only Windows' own DLLs and `WebView2Loader.dll` (`ADVAPI32`, `KERNEL32`, `ntdll`, `bcrypt`, `bcryptprimitives`, `WS2_32`, `combase`, `comctl32`, `dwmapi`, `gdi32`, `imm32`, `ole32`, `oleaut32`, `shell32`, `shlwapi`, `user32`, and the Universal CRT's `api-ms-win-crt-*` and two `api-ms-win-core-*`), nothing of the compiler's; `makensis` reports the installer's contents as `Infall.exe`, `WebView2Loader.dll` and the uninstaller, with the registry values and the shortcut named above, and the uninstall section deleting exactly those; the installer is a PE32 program asking for the invoker's rights. No tool here could open the finished installer to list it independently (`7z` is not installed); the list is what `makensis` said it packed.
 
+In M12 the script was run again (once, before the start screen's caller check in `src/bridge.rs` was fixed; not since), in a copy of the working tree without `target/`, `web/node_modules` and `web/dist`, on the same Mac without cmake or nasm: the web UI built, the program with the server inside compiled and linked (`dist/Infall-0.1.0-x64-setup.exe`, 7.0 MB; `Infall.exe` 20 MB), it holds the web UI, and its import table adds `crypt32` (the TLS library reading Windows' certificate store) and one more `api-ms-win-core-*` to the list above, all part of Windows. `cargo clippy` for Windows was not run again.
+
 Not verified, in the order it would be met:
 
 1. **That the installer runs at all**, what SmartScreen really shows for this file (the words above are Windows' usual ones for an unsigned download, not something seen for Infall), and whether antivirus software objects to an unsigned NSIS installer, as some do.
 2. **The WebView2 check**: the registry places are Microsoft's documented ones; the question was never seen, on a computer with or without the runtime.
 3. **That the program starts.** A Rust program for `x86_64-pc-windows-gnu`, linked by Homebrew's mingw-w64 against the Universal CRT, loading `WebView2Loader.dll` from its own folder: each part is ordinary, the combination was only linked here, never run. If it does not start, nothing below matters.
-4. **Every window**: the first-run screen, the server's pages in WebView2 (the bridge reaches the app through `http://ipc.localhost` or Tauri's fallback when the page's security policy forbids that; neither was seen working), the approval window, Runner settings. The menu is a bar in each window on Windows; some of its predefined items (Hide, Services, …) do not exist there and what is shown in their place was not seen. How the page's top row sits under a Windows title bar was not seen either.
+4. **Every window**: the start screen, the server's pages in WebView2 (the bridge reaches the app through `http://ipc.localhost` or Tauri's fallback when the page's security policy forbids that; neither was seen working), the approval window, Runner settings. The menu is a bar in each window on Windows; some of its predefined items (Hide, Services, …) do not exist there and what is shown in their place was not seen. How the page's top row sits under a Windows title bar was not seen either.
 5. **The Runner on Windows, all of it**: that interpreters are found, that a Run starts without a console window flashing, that output and figures arrive, and that stopping kills the job. The job object is four calls into `kernel32` written by hand and compiled, never executed. `runner.py` has never run on Windows.
 6. **The uninstaller**, the entry in Installed apps, installing over an older version, the Start menu entry and its icon at any size.
 7. **Windows 10** in particular (the Universal CRT and WebView2 are assumed present), Windows on ARM (the installer refuses), and accounts whose name or profile path has non-ASCII characters.
 8. **A build on Linux.** The script is written for it (Debian's mingw-w64 links the older `msvcrt.dll`, which the import check also accepts) but was only run on macOS.
 9. The Rust tests were run on macOS only; none of them runs on Windows, and most of the Runner's are Unix-only.
+10. **Everything of M12 on Windows**: that the start screen appears, that a Local Workspace is created and opened, that the server inside the app starts and listens on `127.0.0.1` (Windows Defender Firewall asks only about programs that listen on a network, not on `127.0.0.1` alone, so no question is expected; that was not seen), that the web UI is unpacked to `%APPDATA%\app.qoop.desktop\web\`, and that the app restarts itself into a second Workspace. The person this was first handed to had no server: whether Infall now works for such a person on Windows is exactly what has not been seen.
 
 ## Unverified: the Ubuntu package (M11)
 
@@ -496,9 +527,23 @@ Not verified:
 5. **The server's real pages on Linux**: the stand-in server sent no Content-Security-Policy. On Linux the page talks to the app through a custom address (`ipc://localhost`) and falls back to another channel if the page's policy forbids it; neither was observed against the real server. The web UI leaves room for the macOS window buttons; how its top bar looks in a Linux window was not seen.
 6. **The AI sidebar on Linux**: `claude` was not installed in the container (`status` said so correctly). The lookup also checks `~/.local/bin` and `~/.claude/local`.
 7. **Cancel of a Run, matplotlib figures, pyenv/conda, and `nvidia-smi`** on Linux: same code as macOS (the graphics parser is tested on written-down answers), not exercised on Linux.
-8. **Opening the system browser** (needs `xdg-utils`), **Change Server…** and the restart after it, and installing a new version over an old one.
+8. **Opening the system browser** (needs `xdg-utils`), **Switch Workspace…** and the restart into a second Workspace, and installing a new version over an old one.
 9. **Ubuntu 22.04 without updates** cannot install the package (it needs WebKitGTK 2.42 or newer, which 22.04 only has as an update); other distributions and Debian were not tried.
 10. **A build on a Linux machine** (amd64 host, arm64 cross-compiled): the script is written for it and it was never run there.
+
+## Unverified: Workspaces on this computer (M12)
+
+Seen on the Mac that built it (Apple silicon, macOS 26.5): `scripts/package-macos.sh` ran from the working tree to `dist/Infall-0.1.0.dmg` (9.6 MB), and before that from a copy of the tree without `target/`, `node_modules` and `dist`; both times the program held the web UI just built, and the start check passed: with an empty home folder and every outgoing connection refused except to this computer, the app showed a 920 × 640 window and stayed up. Outside the script, the release app was seen working on this Mac by the person who fixed the start screen's caller check: the start screen, a Tutorial Workspace on the server inside the app, a Visual, and **Switch Workspace…**.
+
+Not verified:
+
+1. **The packaged app from the `.dmg`, clicked through.** The start check presses nothing. Creating each of the four Presets, **Rename** and **Remove** (and that removing really deletes the folder), **Sign in to a Team Workspace** against a real server, the restart into a second Workspace, and the notice after a failure were not operated in the packaged app.
+2. **The hands-on Tutorial** from its first step to its last, in any build. Its steps were still being written while this page was.
+3. **Opening a Local Workspace with no network at all.** The start check runs only up to the start screen. That the Board loads without a network is expected (everything it needs comes from `127.0.0.1`, the fonts included) but was not seen.
+4. **The Ubuntu package's new check has not passed.** `scripts/package-linux.sh arm64` was run once in M12, on a tree from before the start screen's caller check was fixed: it built the package (6.0 MB), and in clean Ubuntu 22.04 and 24.04 containers with no network the package installed, its libraries resolved, and it showed a 920 × 640 window named Infall and stayed up. Then pressing Return on the start screen made no Workspace within 90 seconds, on both releases. The likely reason is that bug, which made the start screen's commands fail; that the key press reaches the focused tile under Xvfb was not confirmed either. The script was not run again, and the `.deb` from that run must not be handed out. Nothing was built or run for amd64.
+5. **Windows**: everything of M12 (see "Unverified: the Windows installer", item 10). The installer was built once in M12, in a copy of the tree from before the same fix, and never started.
+6. **Two copies of the app at once**, a Local Workspace's files on a network or synced folder, and what happens to an open Workspace when the computer sleeps.
+7. **Approvals in a Local Workspace** behave as described under "Workspaces on this computer" (per Workspace, whatever its port); that was read in the code, not seen.
 
 ## Open question: Anthropic's terms
 

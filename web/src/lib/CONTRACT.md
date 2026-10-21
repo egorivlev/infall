@@ -453,3 +453,37 @@ Types in `types.ts`: `RunUsage`, `RunStats`; `RunEvent` gains `stats`; `RunLive.
 - `useBlock(id)`: the live Block with that id on the open Board, whichever Card it is on (`card` says which), or undefined; the same object until that Block changes. The Runner monitor uses it for the name of the Run in flight and its Card. It reads the open Branch: compare `useBoard().branch?.id` with `live.branch` before trusting it for a Run that was started on another Branch.
 - The default clock of `runs` is read at each call (`Date.now()` then, not a reference taken at start), so tests with fake time see it.
 - `testing.ts`: a `FakeExecution` has `stats(patch?)`, which emits a `stats` event — `FAKE_USAGE` (96 % of one core of 10, 512 MB of 16 GB, one process, no `gpu`, `step` or `progress`) with `patch` over it: `x.stats({ progress: { done: 3, total: 10 }, step: 'sweep' })`. Like every handle it goes through `emit`, so nothing arrives once the execution has ended; send it after `x.start()` (before that the layer ignores it), and move the clock between samples for an estimate. `x.emit({ type: 'stats', … })` plays a malformed one. A script that never calls `stats` plays an M8 app.
+
+## M12 — Local Workspaces (docs/specs/local.md, Contract B)
+
+Types in `types.ts`: `WorkspaceKind`, `WorkspaceInfo`, `WorkspaceSnapshot`; `QoopDesktop.switchWorkspace?` (optional: feature-detect; the UI reads it through `desktopSwitchWorkspace()` in `ui/bridge.ts`).
+
+```ts
+export function useWorkspace(): WorkspaceSnapshot      // { status: 'idle'|'loading'|'ready', kind, preset }; reads as a Team Workspace until known
+export const workspace: {
+  current(): WorkspaceSnapshot
+  load(): Promise<void>                                // GET /api/workspace once per session; never throws; 404 (older server) or any failure → { kind: 'team', preset: null }
+  rename(name: string): Promise<string>                // PATCH /api/local/member; trims; 400 locally for empty / over 100 characters; updates the session's Member and the Member list at once
+  loadTutorial(): Promise<unknown>                     // GET /api/local/tutorial → state or null
+  saveTutorial(state: unknown): Promise<void>          // PUT /api/local/tutorial (≤ 16 KiB; the server answers 400 above that)
+}
+```
+
+- The Shell calls `workspace.load()` when a Member is signed in; the snapshot is forgotten when the session ends or changes hands, and a late answer is dropped.
+- The Tutorial's stored state is the UI's own (`ui/tutorial/handson/progress.ts`): `{ v: 1, status: 'running'|'left'|'finished', step, results: { [step]: 'done'|'skipped'|'not_tried' }, card? }`, well under 1 KiB.
+- `testing.ts`: `server.workspace` (null plays a server from before M12), `server.tutorialState`, `server.localFail`, and the four routes; every `/api/local/*` path is 404 unless `workspace.kind` is `'local'`.
+
+## M13 — Look up, and saving a file in the desktop app (docs/specs/portability.md, Contracts B and D)
+
+Types in `types.ts`: `LookupQuery`, `LookupResult`; `QoopDesktop.saveFile?` (optional: feature-detect; the UI reads it through `desktopSaveFile()` in `ui/bridge.ts` and falls back to a browser download).
+
+```ts
+export function lookupQuery(text: string): LookupQuery | null   // pure: a DOI (bare, doi:…, doi.org address) → { doi } lower-cased;
+                                                               // an arXiv id or arxiv.org abs/pdf/html address → { arxiv } without its version;
+                                                               // an arXiv DOI (10.48550/arXiv.…) → { arxiv }; anything else → null
+export function lookupSource(q: LookupQuery): Promise<LookupResult>   // POST /api/sources/lookup
+```
+
+- `lookupSource` resolves with `{ title, authors, year, doi, url }` trimmed; a missing or non-string field reads `''` (`doi` / `url`: `null`). It rejects with the ApiError of the answer — its `message` is the server's sentence (404 not known, 429 too many, 502 `lookup_failed`, 400) — or status 0 when the server cannot be reached; a Guest is refused locally (403) without a request.
+- Nothing else is new in the layer: BibTeX import and the exports are the UI's own (`ui/page/bibtex/`, `ui/page/export/`) and go through `board.submit` with the existing op builders, in batches of at most 200 ops and about 900 kB.
+- `testing.ts`: `server.lookups` (answers by DOI or arXiv id; anything else is 404), `server.lookupFail` (the next answer), `server.lookupGate`.

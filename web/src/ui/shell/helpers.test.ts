@@ -263,7 +263,8 @@ describe('theme storage', () => {
   })
   it('stores the choice, applies it to <html> and cycles dark, light, system', () => {
     setThemePref('light')
-    expect(window.localStorage.getItem(THEME_KEY)).toBe('light')
+    // Kept with this device's other settings now; the old key is only read, for a choice made before Settings.
+    expect(JSON.parse(window.localStorage.getItem('infall-settings')!)).toMatchObject({ v: 1, theme: 'light' })
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
     expect(nextThemePref('dark')).toBe('light')
     expect(nextThemePref('light')).toBe('system')

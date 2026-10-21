@@ -1,8 +1,13 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import { newId, ops, page } from '../../lib'
-import type { AttachedSource, Op } from '../../lib'
+import { lookupQuery, lookupSource, newId, ops, page } from '../../lib'
+import type { AttachedSource, LookupResult, Op } from '../../lib'
 import { useBoardActions } from '../board/useBoardActions'
+import { ImportBibtex } from './bibtex/ImportBibtex'
+import { toBibtex } from './bibtex/write'
+import { exportFile } from './export/exportFile'
+import { fileName } from './files'
+import { LOOKUP_NEEDS_ID, listWords, lookupFailure, registryOf } from './lookupText'
 import { identifierText, parseIdentifier, sourceLink } from './sourceId'
 
 const NEEDS_ID = 'This needs a URL starting with http:// or https://, or a DOI such as 10.1103/PhysRevA.52.R2493.'
@@ -43,6 +48,19 @@ const SourceRow = memo(function SourceRow({ source, canEdit, onEdit, onRemove }:
   )
 })
 
+// ---- Look up (M13): the title, authors and year of a DOI or an arXiv paper, from the server ----
+
+type Detail = 'title' | 'authors' | 'year'
+const DETAIL_WORD: Record<Detail, string> = { title: 'title', authors: 'authors', year: 'year' }
+const DETAIL_LABEL: Record<Detail, string> = { title: 'Title', authors: 'Authors', year: 'Year' }
+
+type Look =
+  | { kind: 'idle' }
+  | { kind: 'asking'; registry: string }
+  | { kind: 'note'; text: string }
+  | { kind: 'failed'; text: string }
+  | { kind: 'differs'; registry: string; found: Partial<Record<Detail, string>> }
+
 type FormProps = {
   cardId: string
   attached: readonly AttachedSource[]
@@ -61,10 +79,78 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
   const [authors, setAuthors] = useState(editing?.authors ?? '')
   const [year, setYear] = useState(editing?.year ?? '')
   const [touched, setTouched] = useState(false)
+  const [look, setLook] = useState<Look>({ kind: 'idle' })
+  const lookNoteId = useId()
+  const idInputId = useId()
+  // The answer that is still wanted: typing another identifier, or closing the form, makes an older one harmless.
+  const asking = useRef(0)
+  useEffect(() => () => void asking.current++, [])
 
   useEffect(() => {
     idRef.current?.focus({ preventScroll: true })
   }, [])
+
+  const current = { title, authors, year }
+  const setDetail: Record<Detail, (v: string) => void> = { title: setTitle, authors: setAuthors, year: setYear }
+
+  const lookUp = async () => {
+    if (look.kind === 'asking') return
+    const query = lookupQuery(idText)
+    if (!query) {
+      setLook({ kind: 'failed', text: LOOKUP_NEEDS_ID })
+      return
+    }
+    const ticket = ++asking.current
+    const registry = registryOf(query)
+    setLook({ kind: 'asking', registry })
+    let found: LookupResult
+    try {
+      found = await lookupSource(query)
+    } catch (e) {
+      if (ticket === asking.current) setLook({ kind: 'failed', text: lookupFailure(e, registry) })
+      return
+    }
+    if (ticket !== asking.current) return
+    // A bare arXiv id is not an address a Source can keep: put the paper's address (or DOI) in its place.
+    if (!parseIdentifier(idText)) {
+      const better = found.url ?? (found.doi ? `doi:${found.doi}` : '')
+      if (better) setIdText(better)
+    }
+    const filled: Detail[] = []
+    const differs: Partial<Record<Detail, string>> = {}
+    for (const d of ['title', 'authors', 'year'] as const) {
+      const theirs = found[d].trim()
+      const mine = current[d].trim()
+      if (theirs === '' || theirs === mine) continue
+      if (mine === '') {
+        setDetail[d](theirs)
+        filled.push(d)
+      } else differs[d] = theirs
+    }
+    if (Object.keys(differs).length > 0) {
+      setLook({ kind: 'differs', registry, found: differs })
+      return
+    }
+    const none = (['title', 'authors', 'year'] as const).every((d) => found[d].trim() === '')
+    setLook({
+      kind: 'note',
+      text: filled.length
+        ? `Filled in the ${listWords(filled.map((d) => DETAIL_WORD[d]))} from ${registry}. Nothing is added until you press ${editing ? 'Update Source' : 'Add Source'}.`
+        : none
+          ? `${registry} knows this one but has no title, authors or year for it. Fill them in by hand.`
+          : `The fields already match what ${registry} has.`,
+    })
+  }
+
+  const replaceAll = () => {
+    if (look.kind !== 'differs') return
+    const words: string[] = []
+    for (const [d, v] of Object.entries(look.found) as [Detail, string][]) {
+      setDetail[d](v)
+      words.push(DETAIL_WORD[d])
+    }
+    setLook({ kind: 'note', text: `Replaced the ${listWords(words)} with what ${look.registry} has.` })
+  }
 
   const parsed = useMemo(() => parseIdentifier(idText), [idText])
   const found = parsed ? page.findSource(parsed) : undefined
@@ -123,22 +209,74 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
   const shared = editing ? editing.cards.length : 0
   return (
     <form className="qp-source-form" aria-label={editing ? 'Edit Source' : 'Add Source'} noValidate onSubmit={submit} onKeyDown={onKeyDown}>
-      <label className="q-field">
-        <span className="q-label">URL or DOI</span>
-        <input
-          ref={idRef}
-          className="q-input qp-source-form__id"
-          value={idText}
-          required
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="https://arxiv.org/abs/… or 10.1103/…"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={(e) => setIdText(e.target.value)}
-          onBlur={() => setTouched(idText.trim() !== '')}
-        />
-      </label>
+      <div className="q-field">
+        <label className="q-label" htmlFor={idInputId}>
+          URL or DOI
+        </label>
+        <div className="qp-lookup">
+          <input
+            ref={idRef}
+            id={idInputId}
+            className="q-input qp-source-form__id"
+            value={idText}
+            required
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="https://arxiv.org/abs/… or 10.1103/…"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            onChange={(e) => {
+              setIdText(e.target.value)
+              // Another identifier: an answer still on its way is for the old one.
+              if (look.kind !== 'idle') {
+                asking.current++
+                setLook({ kind: 'idle' })
+              }
+            }}
+            onBlur={() => setTouched(idText.trim() !== '')}
+          />
+          {!existing && (
+            <button
+              type="button"
+              className="q-btn qp-lookup__btn"
+              aria-disabled={look.kind === 'asking' ? true : undefined}
+              aria-describedby={look.kind !== 'idle' && look.kind !== 'asking' ? lookNoteId : undefined}
+              title="Fill in the title, authors and year from Crossref (DOIs) or arXiv"
+              onClick={() => void lookUp()}
+            >
+              {look.kind === 'asking' ? 'Looking up…' : 'Look up'}
+            </button>
+          )}
+        </div>
+      </div>
+      {!existing && (
+        <div className="qp-lookup__status" aria-live="polite" id={lookNoteId}>
+          {look.kind === 'asking' && <p className="qp-lookup__note">Asking {look.registry}… The form stays usable meanwhile.</p>}
+          {look.kind === 'note' && <p className="qp-lookup__note">{look.text}</p>}
+          {look.kind === 'failed' && <p className="qp-lookup__note is-failed">{look.text}</p>}
+          {look.kind === 'differs' && (
+            <div className="qp-lookup__differs">
+              <p className="qp-lookup__note">{look.registry} has other details than the ones in the form:</p>
+              <dl>
+                {(Object.entries(look.found) as [Detail, string][]).map(([d, v]) => (
+                  <div key={d}>
+                    <dt>{DETAIL_LABEL[d]}</dt>
+                    <dd>{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="qp-lookup__choice">
+                <button type="button" className="q-btn q-btn--sm" onClick={replaceAll}>
+                  Use these
+                </button>
+                <button type="button" className="q-btn q-btn--sm q-btn--quiet" onClick={() => setLook({ kind: 'idle' })}>
+                  Keep mine
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {error && (
         <p className="q-error" id={errorId} role="alert">
           {error}
@@ -180,13 +318,22 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
   )
 }
 
-type Props = { cardId: string; sources: readonly AttachedSource[]; canEdit: boolean }
+type Props = {
+  cardId: string
+  /** The Card's title, for the name of an exported file. */
+  cardTitle: string
+  sources: readonly AttachedSource[]
+  /** Members, when nobody else is editing the Page: add, edit, remove and import. Export is for everyone who reads it. */
+  canEdit: boolean
+}
 
 /** The Sources attached to this Card. `form` is 'add', the id of the Source being edited, or null. */
-export function Sources({ cardId, sources, canEdit }: Props) {
+export function Sources({ cardId, cardTitle, sources, canEdit }: Props) {
   const actions = useBoardActions()
   const rootRef = useRef<HTMLElement>(null)
   const [form, setForm] = useState<string | null>(null)
+  const [importing, setImporting] = useState<HTMLElement | null>(null)
+  const exportBibtex = () => void exportFile(fileName(`${cardTitle || 'Untitled'} - Sources`, 'bib'), toBibtex(sources), 'application/x-bibtex')
   const returnTo = useRef<string | null>(null)
   const shown = canEdit ? form : null
 
@@ -216,7 +363,7 @@ export function Sources({ cardId, sources, canEdit }: Props) {
   }
 
   return (
-    <section className="qp-sources" ref={rootRef} aria-labelledby="qp-sources-head">
+    <section className="qp-sources" ref={rootRef} data-tour="sources" aria-labelledby="qp-sources-head">
       <h2 className="qp-sources__head" id="qp-sources-head">
         <span className="q-caps">Sources</span> <span className="qp-sources__n">{sources.length}</span>
       </h2>
@@ -239,11 +386,27 @@ export function Sources({ cardId, sources, canEdit }: Props) {
           <SourceForm cardId={cardId} attached={sources} onDone={close} />
         </div>
       )}
-      {canEdit && shown !== 'add' && (
-        <button type="button" className="qp-sources__add" data-add onClick={() => setForm('add')}>
-          + Add Source
-        </button>
+      {(canEdit || sources.length > 0) && (
+        <div className="qp-sources__tools">
+          {canEdit && shown !== 'add' && (
+            <button type="button" className="qp-sources__add" data-add onClick={() => setForm('add')}>
+              + Add Source
+            </button>
+          )}
+          <span className="qp-sources__spacer" />
+          {canEdit && (
+            <button type="button" className="qp-link qp-sources__tool" onClick={(e) => setImporting(e.currentTarget)}>
+              Import BibTeX…
+            </button>
+          )}
+          {sources.length > 0 && (
+            <button type="button" className="qp-link qp-sources__tool" title="These Sources as a .bib file" onClick={exportBibtex}>
+              Export BibTeX
+            </button>
+          )}
+        </div>
       )}
+      {importing && <ImportBibtex target={{ kind: 'card', cardId }} opener={importing} onClose={() => setImporting(null)} />}
     </section>
   )
 }

@@ -1,14 +1,17 @@
 import { useCallback, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { session } from '../../lib'
+import { session, useWorkspace } from '../../lib'
 import type { Member } from '../../lib'
+import { handsOn, tutorialHoldsTour, TUTORIAL_PRESET, useHandsOn } from '../tutorial'
+import { desktopSwitchWorkspace } from '../bridge'
 import { describeError } from './errorMessages'
 import { Icon } from './Icon'
 import { initials } from './initials'
 import { Link } from './Link'
-import { AI_ACCESS_PATH } from './router'
+import { SETTINGS_PATH } from './router'
 import { clearSigningOut, noteSigningOut } from './sessionEnd'
 import { startTour, tourBlock } from '../tutorial/start'
+
 import { useDismiss } from './useDismiss'
 
 const ROLE_LABEL = { admin: 'Admin', member: 'Member', guest: 'Guest' } as const
@@ -17,6 +20,12 @@ export function AccountMenu({ member }: { member: Member }) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const ws = useWorkspace()
+  const local = ws.kind === 'local' // one Member, no sign-in: nothing to sign out of, nobody to invite
+  const tutorialWorkspace = local && ws.preset === TUTORIAL_PRESET
+  const lesson = useHandsOn((s) => s.phase)
+  // In a Tutorial Workspace the Tour waits until the Tutorial has been left or finished.
+  const showTour = !tutorialWorkspace || !tutorialHoldsTour(lesson)
   const boxRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -59,6 +68,16 @@ export function AccountMenu({ member }: { member: Member }) {
     startTour(member, triggerRef.current)
   }
 
+  // A Local Workspace has no sign-out; the desktop app's way back to its start screen takes that place.
+  const switchWorkspace = local ? desktopSwitchWorkspace() : null
+
+  const takeTutorial = () => {
+    if (lesson === 'off' || lesson === 'loading') return
+    setOpen(false)
+    triggerRef.current?.focus()
+    handsOn.resume()
+  }
+
   async function signOut() {
     if (busy) return
     setBusy(true)
@@ -98,16 +117,16 @@ export function AccountMenu({ member }: { member: Member }) {
             <span className="q-menu__name">{member.name}</span>
             <span className="q-caps">{ROLE_LABEL[member.role]}</span>
           </div>
-          {member.role !== 'guest' && (
-            <Link href={AI_ACCESS_PATH} role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
-              AI access
-            </Link>
+          {/* Everything else about the account and this device (AI access, Members, the name) is in Settings. */}
+          <Link href={SETTINGS_PATH} role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
+            Settings
+          </Link>
+          {tutorialWorkspace && (
+            <button type="button" role="menuitem" className="q-menu__item" aria-disabled={lesson === 'off' || lesson === 'loading'} onClick={takeTutorial}>
+              Tutorial
+            </button>
           )}
-          {member.role === 'admin' && (
-            <Link href="/members" role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
-              Members
-            </Link>
-          )}
+          {showTour && (
           <button
             type="button"
             role="menuitem"
@@ -118,9 +137,26 @@ export function AccountMenu({ member }: { member: Member }) {
           >
             Tour of Infall
           </button>
-          <button type="button" role="menuitem" className="q-menu__item" aria-disabled={busy} onClick={signOut}>
-            {busy ? 'Signing out…' : 'Sign out'}
-          </button>
+          )}
+          {/* A Local Workspace signs its one Member in by itself: signing out would leave no way back in. */}
+          {switchWorkspace && (
+            <button
+              type="button"
+              role="menuitem"
+              className="q-menu__item"
+              onClick={() => {
+                setOpen(false)
+                void switchWorkspace().catch(() => {})
+              }}
+            >
+              Switch workspace…
+            </button>
+          )}
+          {!local && (
+            <button type="button" role="menuitem" className="q-menu__item" aria-disabled={busy} onClick={signOut}>
+              {busy ? 'Signing out…' : 'Sign out'}
+            </button>
+          )}
           {error && (
             <p className="q-error q-menu__error" role="alert">
               {error}

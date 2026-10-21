@@ -316,6 +316,10 @@ export type QoopDesktop = {
     cancel(id: string): Promise<void>
   }
   runner?: QoopRunner // M8; absent in an older app
+  /** M12: stops what is running, closes this window and shows the start screen. Absent in an older app: check before calling. */
+  switchWorkspace?: () => Promise<void>
+  /** M13: the system's save dialog, then the text written as UTF-8 (at most 20 MB); false when cancelled. Absent in an older app. */
+  saveFile?: (file: { suggestedName: string; text: string }) => Promise<boolean>
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }
@@ -447,3 +451,22 @@ export type RunOutcome = {
 }
 
 export type RunsSnapshot = { runner: RunnerSetup; live: RunLive | null; last: RunOutcome | null }
+
+// ---- M12: Local Workspaces ----
+
+/** Where this Workspace is kept (docs/specs/local.md, Contract B): on a team's server, or on this computer only. */
+export type WorkspaceKind = 'team' | 'local'
+
+/** `GET /api/workspace`. `preset`: the Preset a Local Workspace was made from ("tutorial", "blank", …); null for a Team Workspace. */
+export type WorkspaceInfo = { kind: WorkspaceKind; preset: string | null }
+
+/** What the UI knows about the Workspace. Until it is known (`status` not `'ready'`) it reads as a Team Workspace. */
+export type WorkspaceSnapshot = WorkspaceInfo & { status: 'idle' | 'loading' | 'ready' }
+
+// ---- M13: Look up (docs/specs/portability.md, Contract B) and saving a file in the desktop app (Contract D) ----
+
+/** What Look up asks the server for: one DOI or one arXiv id. */
+export type LookupQuery = { doi: string } | { arxiv: string }
+
+/** The registry's details for a Source. `authors` in the Source field's form; '' where the registry has nothing. */
+export type LookupResult = { title: string; authors: string; year: string; doi: string | null; url: string | null }

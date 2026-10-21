@@ -1,27 +1,22 @@
-// Theme preference: dark (default), light, or follow the system. Stored in localStorage; storage may be unavailable.
-export type ThemePref = 'dark' | 'light' | 'system'
-export const THEME_KEY = 'qoop-theme'
+// Theme preference: dark (default), light, or match the system. It is one of this device's settings (Settings →
+// Appearance, ../settings/prefs.ts); the top bar's toggle and Settings change the same value.
+import { LEGACY_THEME_KEY, PREFS_KEY, isThemePref, parsePrefs, prefs, usePrefs } from '../settings/prefs'
+import type { ThemePref } from '../settings/prefs'
+
+export type { ThemePref } from '../settings/prefs'
+export { isThemePref } from '../settings/prefs'
+/** Where the theme was kept before Settings; still read once when there are no settings yet. */
+export const THEME_KEY = LEGACY_THEME_KEY
 export const THEME_ORDER: ThemePref[] = ['dark', 'light', 'system']
-export const THEME_LABEL: Record<ThemePref, string> = { dark: 'Dark', light: 'Light', system: 'Follow system' }
+export const THEME_LABEL: Record<ThemePref, string> = { dark: 'Dark', light: 'Light', system: 'Match system' }
 
-export function isThemePref(v: unknown): v is ThemePref {
-  return v === 'dark' || v === 'light' || v === 'system'
-}
-
+/** The stored theme, read from storage now (settings first, then the key an earlier version used). */
 export function readThemePref(): ThemePref {
   try {
-    const v = window.localStorage.getItem(THEME_KEY)
-    return isThemePref(v) ? v : 'dark'
+    const s = window.localStorage
+    return parsePrefs(s.getItem(PREFS_KEY), s.getItem(THEME_KEY)).theme
   } catch {
     return 'dark'
-  }
-}
-
-export function writeThemePref(pref: ThemePref): void {
-  try {
-    window.localStorage.setItem(THEME_KEY, pref)
-  } catch {
-    // storage unavailable: the choice lasts for this page only
   }
 }
 
@@ -46,28 +41,23 @@ export function nextThemePref(pref: ThemePref): ThemePref {
   return THEME_ORDER[(THEME_ORDER.indexOf(pref) + 1) % THEME_ORDER.length] ?? 'dark'
 }
 
-// A tiny shared store so the toggle and the root effect agree.
-let current: ThemePref | null = null
-const listeners = new Set<() => void>()
-
 export function getThemePref(): ThemePref {
-  current ??= readThemePref()
-  return current
+  return usePrefs.getState().theme
 }
 
 export function setThemePref(pref: ThemePref): void {
-  current = pref
-  writeThemePref(pref)
+  if (!isThemePref(pref)) return
+  prefs.set({ theme: pref })
   applyTheme(pref)
-  listeners.forEach((l) => l())
 }
 
 export function subscribeThemePref(l: () => void): () => void {
-  listeners.add(l)
-  return () => listeners.delete(l)
+  return usePrefs.subscribe((s, was) => {
+    if (s.theme !== was.theme) l()
+  })
 }
 
-/** Test hook: forget the cached preference. */
+/** Test hook: read the stored settings again. */
 export function resetThemeCache(): void {
-  current = null
+  prefs.reload()
 }

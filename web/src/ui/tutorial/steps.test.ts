@@ -44,6 +44,20 @@ describe('the steps', () => {
     expect(runs(true)).not.toEqual(runs(false))
   })
 
+  it('the last step names the start screen only when the app can go there', () => {
+    const more = (startScreen: boolean) => stepsFor({ role: 'member', desktop: true, startScreen }).find((s) => s.id === 'more')!
+    expect(more(false).body).toHaveLength(2)
+    expect(more(false).action).toBeUndefined()
+    expect(more(true).body).toHaveLength(3)
+    expect(more(true).body[2]).toContain('Tutorial Workspace')
+    expect(more(true).action?.label).toBe('Go to the start screen')
+  })
+
+  it('in a Local Workspace the rail step does not name Members, which it does not have', () => {
+    const rail = stepsFor({ role: 'admin', desktop: true, local: true }).find((s) => s.id === 'rail')!
+    expect(rail.body.join(' ')).not.toContain('Members')
+  })
+
   it('knows the desktop app by its bridge', () => {
     expect(inDesktopApp()).toBe(false)
     ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = {}

@@ -8,6 +8,8 @@ import { formatDateTime } from '../../shell/dates'
 import { errorCode } from '../../shell/errorMessages'
 import { initials } from '../../shell/initials'
 import { BlockTools } from '../BlockTools'
+import { MoreMenu } from '../MoreMenu'
+import type { MenuItem } from '../MoreMenu'
 import type { BlockHandlers } from '../BlockTools'
 import { memberName } from '../people'
 import { codeLines, envLine, figureSrc, formatDuration, formatElapsed } from './format'
@@ -192,87 +194,6 @@ function Elapsed({ since }: { since: number }) {
   return (
     <span className="qp-run__elapsed" role="timer" aria-label="Running for">
       {formatElapsed(now - since)}
-    </span>
-  )
-}
-
-type MenuItem = { label: string; onPick: () => void }
-
-/** The "⋯" menu of a Run. Arrow keys move, Esc closes and gives focus back to the button. */
-function MoreMenu({ label, items }: { label: string; items: readonly MenuItem[] }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLSpanElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    wrapRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus({ preventScroll: true })
-    const onDown = (e: MouseEvent) => {
-      if (e.target instanceof Node && !wrapRef.current?.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  const shut = () => {
-    setOpen(false)
-    buttonRef.current?.focus({ preventScroll: true })
-  }
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const list = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-    const i = list.indexOf(document.activeElement as HTMLButtonElement)
-    const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
-    if (step) {
-      e.preventDefault()
-      list[(i + step + list.length) % list.length]?.focus()
-    } else if (e.key === 'Home' || e.key === 'End') {
-      e.preventDefault()
-      list[e.key === 'Home' ? 0 : list.length - 1]?.focus()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation() // closes the menu, not the panel
-      shut()
-    }
-  }
-
-  return (
-    <span
-      className="qp-run__more-wrap"
-      ref={wrapRef}
-      onBlur={(e) => {
-        if (e.relatedTarget instanceof Node && !e.currentTarget.contains(e.relatedTarget)) setOpen(false)
-      }}
-    >
-      <button
-        ref={buttonRef}
-        type="button"
-        className="q-btn q-btn--sm q-btn--quiet qp-run__more-btn"
-        aria-label={`More for ${label}`}
-        title="More"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span aria-hidden="true">⋯</span>
-      </button>
-      {open && (
-        <div className="qp-menu qp-run__menu" role="menu" aria-label={`More for ${label}`} onKeyDown={onKeyDown}>
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              className="qp-menu__item"
-              onClick={() => {
-                shut() // focus is back on "⋯" before anything opens, so a dialog returns it there
-                item.onPick()
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
     </span>
   )
 }
@@ -600,7 +521,7 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
               Edit
             </button>
           )}
-          {menu.length > 0 && <MoreMenu label={label} items={menu} />}
+          {menu.length > 0 && <MoreMenu label={`More for ${label}`} items={menu} />}
           {action}
         </div>
         {phase === 'approval' && <p className="qp-run__strip qp-run__strip--wait">{APPROVAL_LINE}</p>}

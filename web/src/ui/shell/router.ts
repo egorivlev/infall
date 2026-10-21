@@ -4,7 +4,7 @@ export type Route =
   | { name: 'branches' }
   | { name: 'members' }
   | { name: 'todos' }
-  | { name: 'ai-access' }
+  | { name: 'settings'; section: SettingsSection }
   | { name: 'merge'; from: string; into: string }
   | { name: 'invite'; token: string }
 
@@ -35,7 +35,21 @@ export function boardPath(): string {
 /** The To-dos screen (Members and Admins; the same list on every Branch). */
 export const TODOS_PATH = '/todos'
 
-/** The AI access settings (Members and Admins; each Member's own access tokens). */
+/** The sections of Settings, in the order they are listed. */
+export const SETTINGS_SECTIONS = ['appearance', 'board', 'ai', 'runs', 'workspace', 'about'] as const
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
+
+function isSettingsSection(v: string | undefined): v is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(v ?? '')
+}
+
+/** Settings: `/settings` opens its first section, `/settings/<section>` that one. */
+export const SETTINGS_PATH = '/settings'
+export function settingsPath(section: SettingsSection): string {
+  return `${SETTINGS_PATH}/${section}`
+}
+
+/** AI access, now the "AI access" section of Settings; the address it has always had still opens it. */
 export const AI_ACCESS_PATH = '/settings/ai'
 
 /** The Merge review of `from` into `into`. Names go in the query, each encoded on its own ("/", " ", "&", "+", "#" are all safe). */
@@ -67,7 +81,8 @@ export function parseRoute(pathname: string): Route {
   if (parts.length === 1 && parts[0] === 'members') return { name: 'members' }
   if (parts.length === 1 && parts[0] === 'branches') return { name: 'branches' }
   if (parts.length === 1 && parts[0] === 'todos') return { name: 'todos' }
-  if (parts.length === 2 && parts[0] === 'settings' && parts[1] === 'ai') return { name: 'ai-access' }
+  if (parts.length === 1 && parts[0] === 'settings') return { name: 'settings', section: 'appearance' }
+  if (parts.length === 2 && parts[0] === 'settings' && isSettingsSection(parts[1])) return { name: 'settings', section: parts[1] }
   if (parts.length === 2 && parts[0] === 'invite' && parts[1]) return { name: 'invite', token: decode(parts[1]) }
   if (parts[0] === 'b' && path.startsWith('/b/')) {
     // Names may contain "/": normally encoded, but a hand-typed /b/ana/fit works too. One trailing slash is not part of the name.

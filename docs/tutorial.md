@@ -1,8 +1,15 @@
 # Tutorial
 
-One pass through Infall, from an empty Board to having used each main part once. About fifteen minutes. You are signed in as a Member ([The first day](first-day.md) gets you there). Do the steps in order: later ones use what earlier ones made.
+One pass through Infall, from an empty Board to having used each main part once. About fifteen minutes. Do the steps in order: later ones use what earlier ones made.
 
-Keys are written for a Mac; elsewhere use Ctrl for ⌘. The app also has a short tour that points at the same controls: **Tour of Infall** in the menu under your name.
+Where to do it:
+
+- **On your own, with no server**: install the desktop app ([desktop/README.md](../desktop/README.md)), and on its start screen press **Tutorial** under **Create a workspace**. That makes a Tutorial Workspace on your computer: a sample Board about random walks, and a hands-on Tutorial in the app that goes through the same parts as this page, waits for you to do each one, and moves on by itself. It can be left at any step (**Leave the tutorial**), and **Skip this step** is always there; **Tutorial** in the menu under your name brings it back. This page can be read next to it. For this page's own steps, a **Blank** workspace (same screen) gives the empty Board it starts from.
+- **In your team's Workspace**: you are signed in as a Member ([The first day](first-day.md) gets you there).
+
+In a Local Workspace (the kinds you make on the start screen) you are the only Member: there are no other Members to give To-dos to, no invites and no Guests (part 11), and nobody else sees what you do.
+
+Keys are written for a Mac; elsewhere use Ctrl for ⌘. The app also has a short tour that points at the same controls: **Tour of Infall** in the menu under your name. How to get your work out of Infall, and Sources in, is part 12; Settings is part 13.
 
 Two things to know before you start:
 
@@ -57,8 +64,10 @@ To the left of each block, **↑** and **↓** move it and **✕** deletes it (w
 **A Source** is a paper or web page, identified by its URL or DOI.
 
 7. Under **Sources**, press **+ Add Source**.
-8. In **URL or DOI**, enter `10.1103/PhysRevA.52.R2493`. Fill in **Title**, **Authors** and **Year** yourself: Infall does not look them up.
-9. Press **Add Source**. If the same URL or DOI is already known, the form says "Already in Infall" and the button reads **Attach**: one Source can be on many Cards, and editing it changes it on all of them.
+8. In **URL or DOI**, enter `10.1103/PhysRevA.52.R2493` and press **Look up**, to its right. Infall asks Crossref about that DOI and fills in **Title**, **Authors** and **Year**. An arXiv address or id (`https://arxiv.org/abs/2103.05577`, or `2103.05577`) is asked of arXiv the same way. Look up fills only empty fields. If you already typed something different, it shows what the registry has and asks: **Use these** or **Keep mine**. While it asks, the button reads **Looking up…** and the form stays usable. When the DOI is already a Source in Infall, there is nothing to look up: the form offers that Source instead. If nothing is found, or the registry does not answer, the form says so and keeps what was there: fill the fields in yourself.
+9. Press **Add Source**. Nothing is saved before this. If the same URL or DOI is already known, the form says "Already in Infall" and the button reads **Attach**: one Source can be on many Cards, and editing it changes it on all of them.
+
+Look up sends the DOI or the arXiv id and nothing else: not your name, not the Workspace, not the Card. It goes from the Workspace's server (in a Local Workspace, the one inside the app on your computer) to Crossref for a DOI or to arXiv for an arXiv id, and only when you press the button. Infall never looks anything up by itself. [Privacy](privacy.md) lists everything Infall talks to.
 
 While you have an editor open on a Page, the others see "… is editing this Page" and can read it but not change it until you finish.
 
@@ -144,11 +153,11 @@ Infall does not include a model. There are two ways to give the sidebar one.
 
 **(b) An OpenRouter key.** This is what the browser needs. It was tested and works.
 
-1. Open the menu under your name and choose **AI access**. (The sidebar's own messages call this page "AI settings".)
+1. Open **Settings** (in the menu under your name, or ⌘,) and choose **AI access**. (The sidebar's own messages call this page "AI settings".)
 2. In the section **AI sidebar**, under **OpenRouter (optional)**, paste your key into **OpenRouter key** and press **Add key**.
 3. Under **Model**, choose a model.
 
-The page says what happens to the key: it is stored encrypted on your server and is never shown again, and the server sends your question, and what the AI reads through Infall's tools, to OpenRouter. If the section says "This server is not set up to store keys", the Admin has to turn that on.
+The page says what happens to the key: it is stored encrypted on your server and is never shown again, and the server sends your question, and what the AI reads through Infall's tools, to OpenRouter. If the section says "This server is not set up to store keys", the Admin has to turn that on. In a Local Workspace the server is the one inside the desktop app: the key is stored encrypted in that Workspace's files on your computer, and the questions go from your computer to OpenRouter.
 
 Then ask:
 
@@ -166,7 +175,7 @@ A Run is a block of Python together with the output from the last time someone r
 
 1. Open a Page, press **+ Add block** and choose **Run**. It starts as `experiment.py` with one line that prints a greeting. Change the **Name** or the **Code** if you like and press **Done**.
 
-In the browser the **Run** button is disabled and the block says "Desktop app only". The rest needs the desktop app ([The first day](first-day.md#the-desktop-app-optional-macos) says how to install it):
+In the browser the **Run** button is disabled and the block says "Desktop app only". The rest needs the desktop app ([The first day](first-day.md#the-desktop-app-optional) says how to install it):
 
 2. The first time, the button reads **Set up the Runner…**. Press it. In the window **Runner settings**, choose a **Python** found on your computer, leave **Folder (optional)** empty, and press **Save**.
 3. Press **Run**. The button changes to "Waiting for you…" and a separate window asks **Run this code on your computer?** It shows the code exactly as it will run.
@@ -184,9 +193,90 @@ What to know:
 
 ## 11. A Guest
 
-A Guest is an outside reader with an end date. Only an Admin can invite one: **Members**, then **Invite someone**, role **Guest**, and a date under **Access until**. The steps are in [The first day](first-day.md#the-admin).
+A Guest is an outside reader with an end date. Guests exist only in a Team Workspace; a Local Workspace has no invites. Only an Admin can invite one: **Members**, then **Invite someone**, role **Guest**, and a date under **Access until**. The steps are in [The first day](first-day.md#the-admin).
 
 What a Guest gets: the Board and the Pages of `main`, read-only, with Visuals that work and the captured output of Runs. The top bar reads "main · read-only" and "Guest — access until …". What a Guest does not get: editing, other Branches, History, To-dos, Suggestions, the AI sidebar, or the names of who else is here. Access ends by itself on the date.
+
+## 12. Getting work in and out
+
+Everything in this part works in the browser and in the desktop app, unless it says otherwise. A Guest can take out what they can read, and cannot import anything.
+
+### A Page as Markdown, or printed
+
+1. Open the Page of `Surface code`. Open **Page tools** (the **⋯** in the Page's header) and choose **Export as Markdown**. The desktop app asks where to save the file; a browser downloads it.
+
+   The file has the title as a heading, the summary, then the blocks in order: text as you wrote it, formulas kept as TeX (`$…$` and `$$…$$`), a Run as its code followed by its captured output, with its figures embedded as images inside the file, a line saying where a Visual is (a Visual only works inside Infall), pinned AI text marked as AI-generated, and the Card's Sources as a numbered list at the end.
+
+2. **Print…**, in the same menu, opens the system's print dialog with the Page alone: no rail, no bars, no Board, black on white in either theme, with formulas and Run output as they are on screen. To make a PDF, use the dialog: on a Mac, **PDF** at the bottom left, then **Save as PDF**; on Windows, the printer **Microsoft Print to PDF**; on Ubuntu, **Print to File**.
+
+### Sources as BibTeX
+
+**Export BibTeX** gives a `.bib` file that a reference manager or LaTeX can read:
+
+- in a Page's **Sources** row, next to **+ Add Source**: the Sources of that Card;
+- on the Board, in the second toolbar at the top left (**Sources on this Branch**): open **BibTeX ▾** and choose **Export BibTeX** for every Source on the Branch that is open.
+
+A Source with a DOI becomes an `@article`, any other an `@misc`. Keys are the first author's surname, the year and a word of the title (`fowler2012surface`), made unique. Titles are written as they are, without extra braces to keep their capitals, so a LaTeX style that lowers the case of titles will lower yours too: add braces in the `.bib` file where it matters (`{Bloch}`).
+
+**Import BibTeX…** brings a `.bib` file in (or text you paste):
+
+- in a Page's **Sources** row: every entry becomes a Source on that Card;
+- on the Board, **BibTeX ▾** → **Import BibTeX…**: every entry becomes a Card (its title is the entry's title, its status **Idea**, the Source attached), laid out in a grid inside a new Frame named after the file.
+
+In the window that opens, choose the file under **BibTeX file**, or paste the entries under **Or paste the entries**; it says how many entries it found. Press **Import** (it reads, for example, **Import 40 entries**), then **Done**. An entry whose DOI or URL is already a Source reuses that Source instead of making a second one. Infall reads `title`, `author`, `year` (or the year in `date`), `doi`, `url` and `note`; it skips the rest. Entries it could not read are counted, and the message after the import says how many. A whole import is one Activity in History: to take it back, Restore to the moment before it (part 8).
+
+**From Zotero**, in three steps:
+
+1. In Zotero, right-click the collection and choose **Export Collection…** (for the whole library: **File → Export Library…**).
+2. Choose the format **BibTeX** and press **OK**. Save the `.bib` file.
+3. In Infall, choose **BibTeX ▾** → **Import BibTeX…** on the Board (or press **Import BibTeX…** in a Page's **Sources** row) and choose that file.
+
+Mendeley and JabRef export BibTeX too; their files are read the same way.
+
+### A Local Workspace: where it is, Workspace files, backups
+
+A Team Workspace lives on the team's server; the Admin keeps its backups ([deploy guide](../deploy/README.md), step 9). The rest of this part is about Local Workspaces, which live on your computer. It needs the desktop app's start screen: **Switch Workspace…** in the app menu, or **Switch workspace…** in the menu under your name, takes you there.
+
+Each Workspace's row on the start screen has a **⋯** menu with **Rename**, **Export…**, **Show in folder** and **Remove…**.
+
+**Where it is.** Each Local Workspace is a folder on your computer. In its row's **⋯** menu, choose **Show in folder** to open that folder in the Finder (Explorer on Windows, the file manager on Ubuntu). It holds the Workspace's database, a key file beside it, and the folder `backups/`. The folders are under:
+
+- macOS: `~/Library/Application Support/app.qoop.desktop/workspaces/`
+- Ubuntu: `~/.local/share/app.qoop.desktop/workspaces/`
+- Windows: `%APPDATA%\app.qoop.desktop\workspaces\`
+
+Do not copy the database file to keep a copy: use **Export…**.
+
+**Export.** In the Workspace's **⋯** menu, choose **Export…** and choose where to save. The result is one **Workspace file**, named `<Workspace name>.infall`. The row then says "Workspace file saved to …" with the path. It holds the Workspace's Research Content with all its history, Branches and Checkpoints, its To-dos, and your name. It does not hold:
+
+- sign-ins;
+- access tokens (made under **AI access**);
+- the AI settings, the OpenRouter key among them;
+- your Conversations with the AI, which are kept by the app on this computer, not in the Workspace;
+- this device's Settings (Appearance, Board) and the Runner's approvals.
+
+So a Workspace file can be given to someone without giving them your key.
+
+**Import.** Below **Your workspaces** (under **Create a workspace** while you have none), press **Import a workspace…** and choose a `.infall` file. Infall makes a **new** Local Workspace from it, named after the file (with a number added if that name is taken), and opens it. It never replaces a Workspace you have. Only a Workspace file made by **Export…**, or an automatic backup, can be imported; a copy of a Workspace's folder or of its database made by hand cannot. Add an OpenRouter key again under **AI access** if you used one. A Workspace file made by a newer version of Infall is refused: update the app first.
+
+**Backups.** The app keeps copies of each Local Workspace by itself. When you open a Workspace and its newest copy is older than 24 hours, the app makes a new one. It keeps the newest 7, in that Workspace's `backups/` folder. A copy is a Workspace file, like an export. There is nothing to set. Once there is a copy, the Workspace's row says when, for example "backed up yesterday at 09:12". If a copy cannot be made, the Workspace still opens.
+
+To get a backup back: choose **Show in folder** and look in `backups/`. Each copy is named after when it was made, in UTC: `backup-2026-11-24-150405.infall` is 24 November 2026 at 15:04:05. Then press **Import a workspace…** and choose that file. It opens as a new Workspace beside the old one; remove the old one when you are sure.
+
+The backups are on the same computer, inside the Workspace's folder. **Remove…** on the start screen deletes that folder, backups included (it asks first, and offers **Export first…**), and a lost or broken disk takes them with it. For a copy that survives that, put a Workspace file from **Export…** somewhere else: another disk, or a folder that is backed up.
+
+## 13. Settings
+
+Open **Settings** from the menu under your name, or press ⌘, anywhere. The sections are listed on the left; every change applies at once, and a changed setting offers **Reset to default**.
+
+- **Appearance**, kept on this device only: **Theme** (Light, Dark, Match system); **Interface scale** (bars, panels, menus and Page text; not the Board); **Text size** (text only, on top of the interface scale; Visuals keep their own sizes); **Reduce motion** (Match system, On, Off).
+- **Board**, kept on this device only: **Board scale**, how large Cards, Frames and Connections are drawn at the Board's 100%. On the Board, when you are not typing in a field, ⇧+ makes it larger, ⇧− smaller, and ⇧0 puts it back to 100%.
+- **AI access**: the AI sidebar and access tokens (part 9).
+- **Runs**: which Python the Runner uses, and **Open Runner settings…** (desktop app only; part 10).
+- **Workspace**: which kind of Workspace this is, and your name and role. In a Local Workspace, **Change name** and **Switch workspace…**; in a Team Workspace, **Members** (Admin only) and **Sign out**.
+- **About**: browser or desktop app and its version, **Tour of Infall**, **Tutorial** (in a Tutorial Workspace), and the fonts' licences.
+
+A Guest has no **AI access** and no **Runs**.
 
 ## Where things are
 
@@ -201,5 +291,11 @@ What a Guest gets: the Board and the Pages of `main`, read-only, with Visuals th
 | Work apart, then bring it in | Branch control, then **Branches** and **Merge into …** |
 | See who owes what | **To-dos**, left rail |
 | Review what an AI proposed | **Suggestions**, left rail |
-| Set up the AI | menu under your name, **AI access** |
+| Fill in a Source from its DOI or arXiv id | **Look up**, beside **URL or DOI** |
+| Take a Page out | **Page tools** (⋯ in the Page's header), **Export as Markdown** or **Print…** |
+| Take Sources out, or bring them in | **Export BibTeX**, **Import BibTeX…**: in a Page's Sources row, or **BibTeX ▾** on the Board |
+| Keep or move a Local Workspace | start screen, **⋯** in its row, **Export…**; **Import a workspace…** |
+| See where a Local Workspace is | start screen, **⋯** in its row, **Show in folder** |
+| Change how Infall looks | **Settings** (⌘,), **Appearance** and **Board** |
+| Set up the AI | **Settings** (⌘,), **AI access** |
 | Invite or remove people (Admin) | **Members**, left rail |

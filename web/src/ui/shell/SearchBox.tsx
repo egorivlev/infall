@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { boardBridge } from '../bridge'
+import { boardBridge, searchUse } from '../bridge'
 import { useBoard } from '../../lib'
 import { Icon } from './Icon'
 import { searchCards } from './searchCards'
@@ -40,6 +40,7 @@ export function SearchBox() {
     setOpen(false)
     setQuery('')
     inputRef.current?.blur()
+    searchUse.chose(id)
     onBoard(() => boardBridge.focus('card', id))
   }
 

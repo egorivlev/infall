@@ -13,9 +13,19 @@ pub const MAIN_WINDOW: &str = "main";
 
 const BRIDGE_JS: &str = include_str!("bridge.js");
 
+/// Whether the bridge script takes `window.print()` over for the page. The macOS webview
+/// (WKWebView) ignores `window.print()`, and Tauri's own replacement calls a command remote
+/// pages are not allowed; the app prints the page itself (`print_page`). Elsewhere the
+/// webview's own `window.print()` opens the system's print dialog.
+pub const OWN_PRINT: bool = cfg!(target_os = "macos");
+
 /// The initialization script for the main window: defines `window.qoopDesktop` on pages of
 /// `origin`, in the top frame.
 pub fn script(origin: &str, version: &str, key: &str) -> String {
+    script_with(origin, version, key, OWN_PRINT)
+}
+
+fn script_with(origin: &str, version: &str, key: &str, own_print: bool) -> String {
     let literal = |s: &str| {
         // A JSON string is a JavaScript string literal; `<` is escaped for good measure.
         serde_json::to_string(s)
@@ -26,6 +36,10 @@ pub fn script(origin: &str, version: &str, key: &str) -> String {
         .replace("__QOOP_ORIGIN__;", &format!("{};", literal(origin)))
         .replace("__QOOP_VERSION__;", &format!("{};", literal(version)))
         .replace("__QOOP_KEY__;", &format!("{};", literal(key)))
+        .replace(
+            "__QOOP_OWN_PRINT__;",
+            if own_print { "true;" } else { "false;" },
+        )
 }
 
 /// Defence in depth behind Tauri's own access control: a bridge command runs only when it
@@ -67,11 +81,26 @@ pub fn is_local_page(page: &Url, file: &str) -> bool {
         "http" | "https" => page.host_str() == Some("tauri.localhost"),
         _ => false,
     };
-    bundled
-        && page.port().is_none()
-        && page.username().is_empty()
-        && page.password().is_none()
-        && page.path().strip_prefix('/') == Some(file)
+    bundled && page.port().is_none() && page.username().is_empty() && page.password().is_none() && {
+        // Tauri opens the app's `index.html` at the root address, with no file name
+        // (and, for `tauri://localhost`, no path at all).
+        let path = page.path();
+        path.strip_prefix('/') == Some(file) || (file == "index.html" && matches!(path, "" | "/"))
+    }
+}
+
+/// The label of the start screen's window (local UI).
+pub const SETUP_WINDOW: &str = "setup";
+
+/// The start screen's commands run only when called from its window while it shows the
+/// app's own start page. (Tauri's capability for that window is the first line of defence;
+/// this is the second.)
+pub fn check_setup_caller(window: &str, page: Option<&Url>) -> Result<(), String> {
+    if window == SETUP_WINDOW && page.is_some_and(|p| is_local_page(p, "index.html")) {
+        Ok(())
+    } else {
+        Err("Not allowed.".into())
+    }
 }
 
 /// The settings commands run only when called from the Runner settings window while it
@@ -382,6 +411,51 @@ mod tests {
         }
         assert_eq!(check_approval_caller("runner-approval-7", None), no_ticket);
         assert_eq!(check_settings_caller("runner-settings", None), refused);
+
+        // The start screen.
+        let start = url("tauri://localhost/index.html");
+        assert_eq!(check_setup_caller("setup", Some(&start)), Ok(()));
+        // What the window really shows: Tauri opens `index.html` at the root address.
+        for root in [
+            "tauri://localhost",
+            "tauri://localhost/",
+            "http://tauri.localhost/",
+        ] {
+            assert_eq!(
+                check_setup_caller("setup", Some(&url(root))),
+                Ok(()),
+                "{root}"
+            );
+        }
+        // Only the start page has that shorthand.
+        assert!(
+            check_settings_caller("runner-settings", Some(&url("tauri://localhost/"))).is_err()
+        );
+        assert_eq!(
+            check_setup_caller("setup", Some(&url("http://tauri.localhost/index.html"))),
+            Ok(())
+        );
+        for page in [
+            "https://qoop.example.org/index.html",
+            "http://127.0.0.1:53124/index.html",
+            "tauri://localhost/runner.html",
+            "tauri://localhost/approval.html",
+            "about:blank",
+        ] {
+            assert_eq!(
+                check_setup_caller("setup", Some(&url(page))),
+                refused,
+                "{page}"
+            );
+        }
+        for window in ["main", "runner-settings", "runner-approval-7", "setup-2"] {
+            assert_eq!(
+                check_setup_caller(window, Some(&start)),
+                refused,
+                "{window}"
+            );
+        }
+        assert_eq!(check_setup_caller("setup", None), refused);
         // A query or fragment does not make it another page.
         assert_eq!(
             check_approval_caller(
@@ -404,10 +478,36 @@ mod tests {
             assert!(js.contains(&format!("'{command}'")), "{command}");
         }
         // The commands of the app's own windows are not even named in what a page gets.
-        for local in ["approval_", "runner_settings", "setup_"] {
+        for local in [
+            "approval_",
+            "runner_settings",
+            "setup_",
+            "start_view",
+            "workspace_",
+        ] {
             assert!(!js.contains(local), "{local}");
         }
         assert!(js.contains("runner: runner"));
+        // Leaving the Workspace is offered, like the menu item.
+        assert!(js.contains("'switch_workspace'"));
+        assert!(js.contains("switchWorkspace: switchWorkspace"));
+        // Saving a file (M13, Contract D) and printing.
+        assert!(js.contains("'save_file'"));
+        assert!(js.contains("saveFile: saveFile"));
+        assert!(js.contains("'print_page'"));
+    }
+
+    #[test]
+    fn printing_is_taken_over_only_where_the_webview_cannot() {
+        let own = script_with("http://localhost:8787", "0.1.0", KEY, true);
+        let native = script_with("http://localhost:8787", "0.1.0", KEY, false);
+        assert!(own.contains("var OWN_PRINT = true;"));
+        assert!(native.contains("var OWN_PRINT = false;"));
+        assert!(!own.contains("__QOOP_OWN_PRINT__;"));
+        assert_eq!(
+            script("http://localhost:8787", "0.1.0", KEY).contains("var OWN_PRINT = true;"),
+            cfg!(target_os = "macos")
+        );
     }
 
     #[test]
@@ -417,6 +517,11 @@ mod tests {
         assert!(js.contains(r#"var VERSION = "0.1.0";"#));
         assert!(js.contains(&format!(r#"var KEY = "{KEY}";"#)));
         assert!(!js.contains("__QOOP_ORIGIN__;") && !js.contains("__QOOP_KEY__;"));
+        // The limit the page is told is the app's own.
+        assert!(js.contains(&format!(
+            "var MAX_SAVE_BYTES = {};",
+            crate::portable::MAX_SAVE_BYTES
+        )));
         // The frame and origin checks are there.
         assert!(js.contains("if (window.top !== window) return;"));
         assert!(js.contains("if (window.location.origin !== ORIGIN) return;"));

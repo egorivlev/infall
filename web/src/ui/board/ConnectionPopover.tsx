@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useViewportStore } from '@xyflow/react'
 import { CONNECTION_KINDS, ops } from '../../lib'
 import type { CardVM, ConnectionKind, ConnectionVM } from '../../lib'
+import { interfacePxPerScreenPx } from '../settings/apply'
 import { route } from './geometry'
 import { returnFocus } from './focus'
 import { KIND_LABEL } from './status'
@@ -33,8 +34,10 @@ export function ConnectionPopover({ conn, from, to }: Props) {
   const skipCommit = useRef(false)
 
   const r = route(from, to)
-  const left = r.mx * t[2] + t[0]
-  const top = r.my * t[2] + t[1] + 18
+  // The canvas works in screen pixels; the popover sits in the Board element, which the interface scale zooms.
+  const k = interfacePxPerScreenPx(document.querySelector('.qb-board') ?? undefined)
+  const left = (r.mx * t[2] + t[0]) * k
+  const top = (r.my * t[2] + t[1]) * k + 18
 
   const commitLabel = () => {
     setDraft(null)

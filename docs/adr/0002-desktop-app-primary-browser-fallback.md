@@ -13,3 +13,4 @@ Two headline features need the Member's own machine: executing Runs on local har
 - The app executes code authored by other Members; it must show the code and ask before first executing a Run someone else wrote or changed.
 - A Run stores its captured output as Research Content, so browser users and Guests see results without executing anything.
 - One always-on server (storage, sync, accounts) is still required; the app is not standalone.
+  (Since M12 this holds only for a Team Workspace: the app carries the server for Local Workspaces, [ADR 0004](0004-server-embedded-in-the-desktop-app-for-local-workspaces.md).)

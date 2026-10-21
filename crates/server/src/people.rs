@@ -32,6 +32,8 @@ pub const PALETTE: [&str; 6] = [
 pub const INVITE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_NAME_CHARS: usize = 100;
 const MAX_EMAIL_CHARS: usize = 254;
+/// Why invites are refused in a Local Workspace.
+const NO_INVITES: &str = "A Local Workspace has one Member and no invites.";
 
 /// A Member as the API shows it to `viewer`.
 #[derive(Serialize)]
@@ -167,6 +169,7 @@ pub async fn delete_member(
     Admin(who): Admin,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::local::refuse(&st, "A Local Workspace has exactly one Member.")?;
     let id = MemberId(parse_id(&id)?);
     if id == who.id() {
         return Err(ApiError::Forbidden("An Admin cannot remove themself."));
@@ -215,6 +218,7 @@ pub async fn create_invite(
     Admin(who): Admin,
     ApiJson(body): ApiJson<CreateInvite>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::local::refuse(&st, NO_INVITES)?;
     let now = st.clock.now();
     let email = clean_email(&body.email)?;
     let access_until = match (body.role, body.access_until) {
@@ -273,6 +277,7 @@ pub async fn delete_invite(
     Admin(_): Admin,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::local::refuse(&st, NO_INVITES)?;
     let id = parse_id(&id)?;
     let now = st.clock.now();
     if !blocking(&st, move |s| s.delete_invite(id, now)).await? {

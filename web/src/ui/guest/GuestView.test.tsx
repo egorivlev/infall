@@ -159,7 +159,7 @@ describe('Guest: top bar', () => {
     expect(within(bar).queryByTitle('Mei Lin')).toBeNull()
   })
 
-  it('keeps search, the theme toggle, and an account menu with only the name, "Guest", the tour and "Sign out"', async () => {
+  it('keeps search, the theme toggle, and an account menu with only the name, "Guest", Settings, the tour and "Sign out"', async () => {
     const user = userEvent.setup()
     renderAs(PRIYA)
     expect(screen.getByRole('combobox', { name: /Search Cards/ })).toBeInTheDocument()
@@ -169,7 +169,7 @@ describe('Guest: top bar', () => {
     expect(menu).toHaveTextContent('Priya Nair')
     expect(within(menu).getByText('Guest')).toBeInTheDocument()
     const items = within(menu).getAllByRole('menuitem')
-    expect(items.map((i) => i.textContent)).toEqual(['Tour of Infall', 'Sign out']) // M11: the tour is in everybody's account menu
+    expect(items.map((i) => i.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out']) // Settings (this device's appearance) and the tour are everybody's
     expect(within(menu).queryByText('AI access')).toBeNull()
     expect(within(menu).queryByText('Members')).toBeNull()
   })

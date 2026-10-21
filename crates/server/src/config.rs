@@ -10,6 +10,12 @@ use crate::secret::SecretKey;
 pub const DEFAULT_OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
 /// How long an AI turn may go without progress from upstream (contract §14).
 pub const AI_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Where Crossref is unless `QOOP_CROSSREF_URL` says otherwise (contract §17).
+pub const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
+/// Where arXiv's export API is unless `QOOP_ARXIV_URL` says otherwise (contract §17).
+pub const DEFAULT_ARXIV_URL: &str = "https://export.arxiv.org";
+/// How long a Source lookup may take in all (contract §17).
+pub const LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Everything the server needs to know about where it runs.
 #[derive(Debug, Clone)]
@@ -28,6 +34,13 @@ pub struct Config {
     /// How long an AI turn may go without progress from upstream. Not read from the
     /// environment: always `AI_IDLE_TIMEOUT`, except in tests.
     pub ai_idle_timeout: Duration,
+    /// Crossref's base URL, without a trailing slash: where DOIs are looked up.
+    pub crossref_url: String,
+    /// arXiv's export API base URL, without a trailing slash: where arXiv ids are looked up.
+    pub arxiv_url: String,
+    /// How long a Source lookup may take in all. Not read from the environment: always
+    /// `LOOKUP_TIMEOUT`, except in tests.
+    pub lookup_timeout: Duration,
 }
 
 impl Config {
@@ -61,6 +74,18 @@ impl Config {
         .ok_or(
             "QOOP_OPENROUTER_URL must be an http:// or https:// URL without a query, fragment or credentials",
         )?;
+        let crossref_url = normalize_base_url(
+            &var("QOOP_CROSSREF_URL").unwrap_or_else(|| DEFAULT_CROSSREF_URL.to_string()),
+        )
+        .ok_or(
+            "QOOP_CROSSREF_URL must be an http:// or https:// URL without a query, fragment or credentials",
+        )?;
+        let arxiv_url = normalize_base_url(
+            &var("QOOP_ARXIV_URL").unwrap_or_else(|| DEFAULT_ARXIV_URL.to_string()),
+        )
+        .ok_or(
+            "QOOP_ARXIV_URL must be an http:// or https:// URL without a query, fragment or credentials",
+        )?;
         Ok(Config {
             addr,
             db: PathBuf::from(var("QOOP_DB").unwrap_or_else(|| "./qoop.db".to_string())),
@@ -70,6 +95,9 @@ impl Config {
             secret_key,
             openrouter_url,
             ai_idle_timeout: AI_IDLE_TIMEOUT,
+            crossref_url,
+            arxiv_url,
+            lookup_timeout: LOOKUP_TIMEOUT,
         })
     }
 
@@ -85,6 +113,9 @@ impl Config {
             secret_key: None,
             openrouter_url: DEFAULT_OPENROUTER_URL.to_string(),
             ai_idle_timeout: AI_IDLE_TIMEOUT,
+            crossref_url: DEFAULT_CROSSREF_URL.to_string(),
+            arxiv_url: DEFAULT_ARXIV_URL.to_string(),
+            lookup_timeout: LOOKUP_TIMEOUT,
         }
     }
 

@@ -6,9 +6,9 @@
 .q-mon { position: relative; flex: 0 100 auto; min-width: 88px; display: flex; }
 .q-mon__btn { position: relative; min-width: 0; max-width: 100%; gap: 7px; overflow: hidden; }
 .q-mon__btn > * { flex: none; }
-.q-mon__title { flex: 0 1 auto; min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font: 12px/1.3 var(--q-mono); }
-.q-mon__time { font: 12px var(--q-mono); font-variant-numeric: tabular-nums; color: var(--q-ink-2); }
-.q-mon__wait { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--q-ink-2); }
+.q-mon__title { flex: 0 1 auto; min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font: calc(12px * var(--q-text, 1))/1.3 var(--q-mono); }
+.q-mon__time { font: calc(12px * var(--q-text, 1)) var(--q-mono); font-variant-numeric: tabular-nums; color: var(--q-ink-2); }
+.q-mon__wait { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-2); }
 
 .q-mon__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--q-accent); }
 .q-mon__dot.is-waiting { background: transparent; box-shadow: inset 0 0 0 1.5px var(--q-st-question); }
@@ -26,25 +26,25 @@
 .q-mon__pop { left: auto; right: 0; width: 340px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; gap: var(--q-s3); padding: var(--q-s3); }
 .q-mon__pop:focus-visible { outline-offset: -2px; }
 .q-mon__head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding-bottom: 10px; border-bottom: 1px solid var(--q-line-soft); }
-.q-mon__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13px/1.3 var(--q-mono); }
-.q-mon__card { display: flex; align-items: center; gap: var(--q-s2); max-width: 100%; height: 26px; padding: 0 8px; border: 1px solid var(--q-line); border-radius: var(--q-r); background: transparent; color: var(--q-ink); font-size: 12.5px; cursor: pointer; transition: background var(--q-fast) var(--q-ease); }
+.q-mon__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 calc(13px * var(--q-text, 1))/1.3 var(--q-mono); }
+.q-mon__card { display: flex; align-items: center; gap: var(--q-s2); max-width: 100%; height: 26px; padding: 0 8px; border: 1px solid var(--q-line); border-radius: var(--q-r); background: transparent; color: var(--q-ink); font-size: calc(12.5px * var(--q-text, 1)); cursor: pointer; transition: background var(--q-fast) var(--q-ease); }
 .q-mon__card:hover { background: var(--q-hover); }
 .q-mon__card > .q-caps { flex: none; }
 .q-mon__card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-mon__elsewhere { font-size: 12px; }
+.q-mon__elsewhere { font-size: calc(12px * var(--q-text, 1)); }
 
 /* Rows of a fixed height: the numbers change every second and nothing may move. */
 .q-mon__rows { display: flex; flex-direction: column; gap: 10px; margin: 0; }
 .q-mon__row { display: grid; grid-template-columns: 76px minmax(0, 1fr); column-gap: var(--q-s2); align-items: start; }
 .q-mon__label { padding-top: 4px; line-height: 1.3; }
-.q-mon__value { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.q-mon__value { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: calc(12.5px * var(--q-text, 1)); font-variant-numeric: tabular-nums; }
 .q-mon__text { display: block; height: 18px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-mon__value > .q-mon__time { height: 18px; line-height: 18px; font-size: 12.5px; color: var(--q-ink); }
+.q-mon__value > .q-mon__time { height: 18px; line-height: 18px; font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink); }
 /* A sentence that never changes may take two lines. */
 .q-mon__text--wrap { height: auto; white-space: normal; }
 .q-mon__quiet { color: var(--q-ink-3); }
-.q-mon__hint { font-size: 11.5px; line-height: 1.4; color: var(--q-ink-3); }
-.q-mon__hint code { font: 11px var(--q-mono); color: var(--q-ink-2); }
+.q-mon__hint { font-size: calc(11.5px * var(--q-text, 1)); line-height: 1.4; color: var(--q-ink-3); }
+.q-mon__hint code { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-2); }
 
 .q-mon__meter { display: block; height: 4px; border-radius: 2px; background: var(--q-line-soft); overflow: hidden; }
 .q-mon__meter .q-mon__fill { background: var(--q-ink-2); }

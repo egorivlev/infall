@@ -1,6 +1,7 @@
-import { useBoard } from '../../lib'
+import { useBoard, useWorkspace } from '../../lib'
 import type { Member } from '../../lib'
 import { boardBridge } from '../bridge'
+import { TutorialProgress } from '../tutorial'
 import { frameCounts } from './frameCounts'
 import { Icon } from './Icon'
 import { Link } from './Link'
@@ -15,6 +16,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
   const counts = frameCounts(frames, cards)
   const onBoard = useOnBoard()
   const canAdd = member.role !== 'guest' && !readOnly
+  const local = useWorkspace().kind === 'local' // one Member, nobody to invite: no Members
   return (
     <aside className="q-rail">
       <nav aria-label="Main" className="q-rail__nav" data-tour="rail">
@@ -23,19 +25,19 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
           <span>Board</span>
         </Link>
         {member.role !== 'guest' && (
-          <Link href={TODOS_PATH} className="q-rail__item" aria-current={route === 'todos' ? 'page' : undefined}>
+          <Link href={TODOS_PATH} className="q-rail__item" data-tour="todos" aria-current={route === 'todos' ? 'page' : undefined}>
             <Icon name="todos" />
             <span>To-dos</span>
           </Link>
         )}
         {member.role !== 'guest' && <SuggestionsItem onBoard={route === 'board'} />}
         {member.role !== 'guest' && (
-          <Link href="/branches" className="q-rail__item" aria-current={route === 'branches' ? 'page' : undefined}>
+          <Link href="/branches" className="q-rail__item" data-tour="branches" aria-current={route === 'branches' ? 'page' : undefined}>
             <Icon name="branch" />
             <span>Branches</span>
           </Link>
         )}
-        {member.role === 'admin' && (
+        {member.role === 'admin' && !local && (
           <Link href="/members" className="q-rail__item" aria-current={route === 'members' ? 'page' : undefined}>
             <Icon name="members" />
             <span>Members</span>
@@ -81,6 +83,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
           </ul>
         )}
       </section>
+      <TutorialProgress />
       <footer className="q-rail__foot">
         <SyncStatus status={status} readOnly={member.role === 'guest'} />
         <div className="q-rail__host">{window.location.host}</div>

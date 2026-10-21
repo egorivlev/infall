@@ -362,12 +362,20 @@ pub trait Store: Send + Sync + 'static {
     fn set_ai_key(&self, member: MemberId, key: Option<&AiKeyRecord>) -> StoreResult<bool>;
     /// Sets the Member's model; their key stays. False if there is no such Member.
     fn set_ai_model(&self, member: MemberId, model: &str) -> StoreResult<bool>;
+
+    /// Gives a Member a new display name (already passed `clean_name`); false if unknown.
+    fn set_member_name(&self, id: MemberId, name: &str) -> StoreResult<bool>;
+    /// A value the server keeps about the Workspace itself (such as the Preset of a Local
+    /// Workspace); `None` if it was never set.
+    fn setting(&self, name: &str) -> StoreResult<Option<String>>;
+    /// Stores or replaces such a value.
+    fn set_setting(&self, name: &str, value: &str) -> StoreResult<()>;
 }
 
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -471,9 +479,18 @@ CREATE TABLE ai_settings (
 );
 ";
 
+/// M12: values about the Workspace itself, by name: the Preset a Local Workspace was created
+/// from, and the progress of its Tutorial.
+const SCHEMA_V5: &str = "
+CREATE TABLE settings (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+";
+
 /// Steps that bring a file from version `i` to `i + 1`; index 0 creates the schema.
 /// A later version appends its step here.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
@@ -1347,6 +1364,34 @@ impl Store for SqliteStore {
         tx.commit()?;
         Ok(true)
     }
+
+    fn set_member_name(&self, id: MemberId, name: &str) -> StoreResult<bool> {
+        let n = self.conn()?.execute(
+            "UPDATE members SET name = ?1 WHERE id = ?2",
+            params![name, id.0.to_string()],
+        )?;
+        Ok(n > 0)
+    }
+
+    fn setting(&self, name: &str) -> StoreResult<Option<String>> {
+        Ok(self
+            .conn()?
+            .query_row(
+                "SELECT value FROM settings WHERE name = ?1",
+                params![name],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    fn set_setting(&self, name: &str, value: &str) -> StoreResult<()> {
+        self.conn()?.execute(
+            "INSERT INTO settings (name, value) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+            params![name, value],
+        )?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------- memory
@@ -1361,6 +1406,7 @@ struct Memory {
     tokens: Vec<AccessTokenRecord>,
     suggestions: Vec<SuggestionRecord>,
     ai: HashMap<MemberId, AiSettingsRecord>,
+    settings: HashMap<String, String>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -1731,5 +1777,26 @@ impl Store for MemoryStore {
         }
         m.ai.entry(member).or_default().model = Some(model.to_string());
         Ok(true)
+    }
+
+    fn set_member_name(&self, id: MemberId, name: &str) -> StoreResult<bool> {
+        match self.lock()?.members.iter_mut().find(|x| x.id == id) {
+            Some(x) => {
+                x.name = name.to_string();
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    fn setting(&self, name: &str) -> StoreResult<Option<String>> {
+        Ok(self.lock()?.settings.get(name).cloned())
+    }
+
+    fn set_setting(&self, name: &str, value: &str) -> StoreResult<()> {
+        self.lock()?
+            .settings
+            .insert(name.to_string(), value.to_string());
+        Ok(())
     }
 }

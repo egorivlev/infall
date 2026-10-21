@@ -1,13 +1,20 @@
 //! The Tauri layer: windows, the menu, and the commands. Everything with a rule in it lives
-//! in `address`, `bridge`, `config` and the `qoop-claude-driver` and `qoop-runner` crates;
-//! this file only connects them to Tauri.
+//! in `address`, `bridge`, `portable`, `webui`, `workspaces` and the `qoop-claude-driver`,
+//! `qoop-runner` and `qoop-server` crates; this file only connects them to Tauri.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::collections::HashMap;
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use qoop_claude_driver::{AiEvent, Cancel, Driver, Status};
 use qoop_runner::{ApprovalView, DecideError, Runner, SettingsView};
+use qoop_server::local::{
+    LocalOptions, LocalServer, PortError, Preset, export_workspace, import_workspace, start_local,
+};
+use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{CapabilityBuilder, Channel};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
@@ -17,14 +24,18 @@ use tauri::{
 };
 
 use crate::address::{self, Navigation};
-use crate::bridge::{self, MAIN_WINDOW, SETTINGS_WINDOW, SendRequest};
-use crate::config;
+use crate::bridge::{self, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest};
+use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
+use crate::webui;
+use crate::workspaces::{self, Entry, Kind, Registry};
 
-const SETUP_WINDOW: &str = "setup";
-const CHANGE_SERVER: &str = "change-server";
+const SWITCH_WORKSPACE: &str = "switch-workspace";
 const RUNNER_SETTINGS: &str = "runner-settings";
 #[cfg(target_os = "linux")]
 const QUIT: &str = "quit";
+
+/// How long quitting waits for Runs, `claude` and the embedded server to stop.
+const EXIT_BUDGET: Duration = Duration::from_secs(4);
 
 /// Whether the Runner settings window is open, for those who wait for it to close.
 #[derive(Default)]
@@ -77,15 +88,77 @@ impl Drop for RunSlot {
     }
 }
 
+/// The Workspace the main window shows.
+struct OpenWorkspace {
+    id: String,
+    /// Which main window shows it: a window closed earlier must not end what a later one
+    /// shows when its last event comes in late.
+    generation: u64,
+    /// What its Run approvals are remembered under, and how the approval window names it.
+    approvals: qoop_runner::Workspace,
+}
+
+/// The server of the open Local Workspace, and the one still stopping, if any.
+#[derive(Default)]
+struct Embedded {
+    server: Option<LocalServer>,
+    stopping: Option<JoinHandle<()>>,
+}
+
 struct AppState {
-    /// The server origin the main window shows and the bridge is granted to.
-    origin: Mutex<Option<String>>,
+    /// The origin the bridge is granted to, in this run of the app: set once, never
+    /// changed. A grant cannot be taken back, so a Workspace on another origin is opened by
+    /// starting the app again (see `open_workspace`).
+    granted: Mutex<Option<String>>,
     /// Held only by the bridge script; see `bridge::check_caller`.
     bridge_key: String,
     run: ActiveRun,
     /// When a blocked navigation last opened the system browser (ms since the epoch).
     last_external: AtomicU64,
     runner_settings: Arc<SettingsWindow>,
+    /// The Workspace the main window shows (see `open_main`).
+    open: Mutex<Option<OpenWorkspace>>,
+    main_windows: AtomicU64,
+    /// Held while a Workspace is being opened: one at a time.
+    opening: tauri::async_runtime::Mutex<()>,
+    embedded: Mutex<Embedded>,
+    /// Said once on the start screen: why the app came back to it.
+    notice: Mutex<Option<String>>,
+    /// The automatic backups being made, by Workspace id (see `back_up`).
+    backups: Mutex<HashMap<String, JoinHandle<()>>>,
+    /// Whether a save or open dialog is showing: one at a time.
+    dialog: AtomicBool,
+}
+
+impl AppState {
+    /// Starts stopping the embedded server, if one runs; `stopped` waits for it.
+    fn begin_stop(&self) {
+        let mut embedded = self.embedded.lock().unwrap();
+        if let Some(server) = embedded.server.take() {
+            let previous = embedded.stopping.take();
+            embedded.stopping = Some(tauri::async_runtime::spawn(async move {
+                if let Some(previous) = previous {
+                    let _ = previous.await;
+                }
+                server.stop().await;
+            }));
+        }
+    }
+
+    async fn stopped(&self) {
+        let stopping = self.embedded.lock().unwrap().stopping.take();
+        if let Some(stopping) = stopping {
+            let _ = stopping.await;
+        }
+    }
+
+    fn open_id(&self) -> Option<String> {
+        self.open
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|open| open.id.clone())
+    }
 }
 
 /// The Runner. Managed on its own because it needs the app's config directory, which is
@@ -96,27 +169,64 @@ fn runner(app: &AppHandle) -> RunnerState {
     app.state::<RunnerState>().inner().clone()
 }
 
+/// The list of Workspaces. Managed on its own for the same reason; the lock keeps two
+/// changes to the file from overlapping.
+struct Workspaces {
+    registry: Mutex<Registry>,
+    data_dir: PathBuf,
+    /// The unpacked web UI, once a Local Workspace has needed it.
+    web_dir: OnceLock<PathBuf>,
+}
+
+fn workspaces(app: &AppHandle) -> State<'_, Workspaces> {
+    app.state::<Workspaces>()
+}
+
 fn random_key() -> String {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).expect("the operating system provides random bytes");
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(AppState {
-            origin: Mutex::new(None),
+            granted: Mutex::new(None),
             bridge_key: random_key(),
             run: ActiveRun::default(),
             last_external: AtomicU64::new(0),
             runner_settings: Arc::default(),
+            open: Mutex::new(None),
+            main_windows: AtomicU64::new(0),
+            opening: tauri::async_runtime::Mutex::new(()),
+            embedded: Mutex::default(),
+            notice: Mutex::new(None),
+            backups: Mutex::default(),
+            dialog: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
-            setup_current,
-            setup_save,
+            start_view,
+            workspace_create,
+            workspace_connect,
+            workspace_open,
+            workspace_rename,
+            workspace_remove,
+            workspace_export,
+            workspace_import,
+            workspace_reveal,
             claude_status,
             claude_send,
             claude_cancel,
+            switch_workspace,
+            save_file,
+            print_page,
             runner_status,
             runner_configure,
             runner_run,
@@ -131,23 +241,47 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             // The Runner keeps its settings and the remembered approvals in the app's own
-            // config directory. Without one there is nowhere safe to keep them: no fallback.
-            let dir = config_dir(&handle).ok_or("the app has no config directory")?;
+            // config directory, and the list of Workspaces is kept there too; Local
+            // Workspaces live in the data directory. Without them there is nowhere safe to
+            // keep any of it: no fallback.
+            let config = handle
+                .path()
+                .app_config_dir()
+                .map_err(|_| "the app has no config directory")?;
+            let data = handle
+                .path()
+                .app_data_dir()
+                .map_err(|_| "the app has no data directory")?;
             app.manage::<RunnerState>(Arc::new(Runner::new(
-                qoop_runner::Options::from_process_env(dir),
+                qoop_runner::Options::from_process_env(config.clone()),
             )));
+            app.manage(Workspaces {
+                registry: Mutex::new(Registry::new(config, data.clone())),
+                data_dir: data,
+                web_dir: OnceLock::new(),
+            });
             build_menu(&handle)?;
-            match config_dir(&handle).and_then(|dir| config::load(&dir)) {
-                // A server that cannot be reached would leave the main window blank, with
-                // nothing said: the local screen says it instead, and "Connect" tries again.
-                Some(origin) if address::check_reachable(&origin) => open_main(&handle, &origin)?,
-                Some(_) => open_setup(&handle, true)?,
-                None => open_setup(&handle, false)?,
+            // Always the start screen, except just after the app started itself again to
+            // open a Workspace: then that Workspace, without a second click.
+            let next = workspaces(&handle)
+                .registry
+                .lock()
+                .unwrap()
+                .take_open_next();
+            match next {
+                Some(entry) => {
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(notice) = open_workspace(&handle, entry).await {
+                            let _ = open_setup(&handle, Some(notice));
+                        }
+                    });
+                }
+                None => open_setup(&handle, None)?,
             }
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            CHANGE_SERVER => change_server(app),
+            SWITCH_WORKSPACE => leave_workspace(app),
             RUNNER_SETTINGS => {
                 let _ = open_runner_settings(app);
             }
@@ -160,25 +294,35 @@ pub fn run() {
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // Leave no `claude` and no Run behind: stop them and wait for their process
-            // groups to go.
-            let run = app.state::<AppState>().run.clone();
+            // Leave no `claude`, no Run and no embedded server behind: stop them all at
+            // once, then wait (within the budget) for the processes and the server to go.
+            let deadline = Instant::now() + EXIT_BUDGET;
+            let state = app.state::<AppState>();
+            state.begin_stop();
+            let run = state.run.clone();
             run.cancel();
             let runner = app.try_state::<RunnerState>().map(|r| r.inner().clone());
             if let Some(runner) = &runner {
                 runner.cancel_all();
             }
             let busy = || !run.is_idle() || runner.as_ref().is_some_and(|r| !r.is_idle());
-            let deadline = Instant::now() + Duration::from_secs(4);
             while busy() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(20));
             }
+            let stopping = state.embedded.lock().unwrap().stopping.take();
+            if let Some(stopping) = stopping {
+                // At least a moment, even when the Runs took the whole budget.
+                let left = deadline
+                    .saturating_duration_since(Instant::now())
+                    .max(Duration::from_millis(500));
+                // The timeout is made inside the runtime: its timer needs one, and this
+                // callback runs on the main thread, outside it.
+                tauri::async_runtime::block_on(async move {
+                    let _ = tokio::time::timeout(left, stopping).await;
+                });
+            }
         }
     });
-}
-
-fn config_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok()
 }
 
 /// The menu on Linux, a bar in every window. GTK draws most of the predefined items of the
@@ -187,14 +331,14 @@ fn config_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
 /// Copy and paste work from the keyboard and the page's own context menu.
 #[cfg(target_os = "linux")]
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
-    let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
+    let switch = MenuItemBuilder::with_id(SWITCH_WORKSPACE, "Switch Workspace…").build(app)?;
     let runner_settings =
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
     let quit = MenuItemBuilder::with_id(QUIT, "Quit")
         .accelerator("Ctrl+Q")
         .build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Infall")
-        .item(&change)
+        .item(&switch)
         .item(&runner_settings)
         .separator()
         .item(&quit)
@@ -205,13 +349,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
-    let change = MenuItemBuilder::with_id(CHANGE_SERVER, "Change Server…").build(app)?;
+    let switch = MenuItemBuilder::with_id(SWITCH_WORKSPACE, "Switch Workspace…").build(app)?;
     let runner_settings =
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Infall")
         .about(None)
         .separator()
-        .item(&change)
+        .item(&switch)
         .item(&runner_settings)
         .separator()
         .hide()
@@ -242,20 +386,21 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The local first-run screen (desktop/ui): asks for the server address. With `unreachable`
-/// it opens saying that the saved address did not answer (desktop/ui/setup.js reads the flag).
-fn open_setup(app: &AppHandle, unreachable: bool) -> tauri::Result<()> {
+/// The start screen (desktop/ui/index.html): every Workspace, signing in to a Team
+/// Workspace, making a Local one. `notice` is what it says first (`start_view`), when the
+/// app came back to it because something failed.
+fn open_setup(app: &AppHandle, notice: Option<String>) -> tauri::Result<()> {
+    if notice.is_some() {
+        *app.state::<AppState>().notice.lock().unwrap() = notice;
+    }
     if let Some(window) = app.get_webview_window(SETUP_WINDOW) {
         return window.set_focus();
     }
-    let mut window = local_window(app, SETUP_WINDOW, "index.html");
-    if unreachable {
-        window = window.initialization_script("window.__infallUnreachable = true;");
-    }
-    window
+    local_window(app, SETUP_WINDOW, "index.html")
         .title("Infall")
-        .inner_size(520.0, 420.0)
-        .resizable(false)
+        .inner_size(920.0, 640.0)
+        .min_inner_size(720.0, 560.0)
+        .resizable(true)
         .build()?;
     Ok(())
 }
@@ -265,35 +410,55 @@ fn is_local_asset(url: &Url) -> bool {
     url.host_str() == Some("tauri.localhost")
 }
 
-/// The main window: shows the server's UI at `origin`, and nothing else.
-fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
+/// The main window: shows the Workspace at `origin`, and nothing else. It starts at
+/// `start`, a page of that origin: the origin itself for a Team Workspace, the embedded
+/// server's entry URL for a Local one. That URL carries the key that signs the Member in;
+/// it is given to this window and to nothing else, and never written anywhere.
+fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri::Result<()> {
     let state = app.state::<AppState>();
-    let start =
-        Url::parse(origin).map_err(|_| tauri::Error::InvalidWebviewUrl("server address"))?;
+    let start = Url::parse(start)
+        .ok()
+        .filter(|url| address::same_origin(url, origin))
+        .ok_or(tauri::Error::InvalidWebviewUrl("workspace address"))?;
 
-    // The only access remote content gets: the bridge commands, for pages of this one
-    // origin, in this one window. (Tauri checks the calling page's URL against it on every
-    // call; a call from any other origin, or for any other command, is refused.) For the
-    // Runner that is: read its status, ask for the settings window, ask for a Run, cancel
-    // it. The commands that choose an interpreter or approve code are not in this list.
-    app.add_capability(
-        CapabilityBuilder::new("qoop-bridge")
-            .remote(format!("{origin}/*"))
-            .window(MAIN_WINDOW)
-            .permission("allow-claude-status")
-            .permission("allow-claude-send")
-            .permission("allow-claude-cancel")
-            .permission("allow-runner-status")
-            .permission("allow-runner-configure")
-            .permission("allow-runner-run")
-            .permission("allow-runner-cancel")
-            // The top bar's first row is the window's title bar (macOS has none of its own,
-            // see below): pressing on an empty part of it moves the window, a double click
-            // zooms it. Nothing else about the window is reachable.
-            .permission("core:window:allow-start-dragging")
-            .permission("core:window:allow-internal-toggle-maximize"),
-    )?;
-    *state.origin.lock().unwrap() = Some(origin.to_owned());
+    let mut granted = state.granted.lock().unwrap();
+    match granted.as_deref() {
+        Some(previous) if previous == origin => {}
+        // `open_workspace` starts the app again rather than come here.
+        Some(_) => return Err(tauri::Error::InvalidWebviewUrl("workspace address")),
+        None => {
+            // The only access remote content gets: the bridge commands, for pages of this
+            // one origin, in this one window. (Tauri checks the calling page's URL against
+            // it on every call; a call from any other origin, or for any other command, is
+            // refused.) For the Runner that is: read its status, ask for the settings
+            // window, ask for a Run, cancel it. The commands that choose an interpreter or
+            // approve code are not in this list.
+            app.add_capability(
+                CapabilityBuilder::new("qoop-bridge")
+                    .remote(format!("{origin}/*"))
+                    .window(MAIN_WINDOW)
+                    .permission("allow-claude-status")
+                    .permission("allow-claude-send")
+                    .permission("allow-claude-cancel")
+                    .permission("allow-runner-status")
+                    .permission("allow-runner-configure")
+                    .permission("allow-runner-run")
+                    .permission("allow-runner-cancel")
+                    .permission("allow-switch-workspace")
+                    // Saving an export where the Member chooses, in the system's dialog, and
+                    // printing the page (macOS; see `bridge::OWN_PRINT`).
+                    .permission("allow-save-file")
+                    .permission("allow-print-page")
+                    // The top bar's first row is the window's title bar (macOS has none of
+                    // its own, see below): pressing on an empty part of it moves the window,
+                    // a double click zooms it. Nothing else about the window is reachable.
+                    .permission("core:window:allow-start-dragging")
+                    .permission("core:window:allow-internal-toggle-maximize"),
+            )?;
+            *granted = Some(origin.to_owned());
+        }
+    }
+    drop(granted);
 
     let script = bridge::script(
         origin,
@@ -341,8 +506,21 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
     let builder = builder.devtools(true);
     let window = builder.build()?;
 
+    // Which main window this is: a window closed earlier must not end what a later one
+    // shows when its last event comes in late.
+    let generation = state.main_windows.fetch_add(1, Ordering::Relaxed) + 1;
+    *state.open.lock().unwrap() = Some(OpenWorkspace {
+        id: entry.id.clone(),
+        generation,
+        approvals: qoop_runner::Workspace {
+            key: entry.approvals_key(),
+            name: entry.approvals_name(),
+        },
+    });
+
     let run = state.run.clone();
     let runs = runner(app);
+    let closed_app = app.clone();
     window.on_window_event(move |event| {
         if matches!(
             event,
@@ -350,6 +528,16 @@ fn open_main(app: &AppHandle, origin: &str) -> tauri::Result<()> {
         ) {
             run.cancel();
             runs.cancel_all();
+        }
+        if matches!(event, WindowEvent::Destroyed) {
+            // The Workspace is left: its server stops.
+            let state = closed_app.state::<AppState>();
+            let mut open = state.open.lock().unwrap();
+            if open.as_ref().is_some_and(|o| o.generation == generation) {
+                *open = None;
+                drop(open);
+                state.begin_stop();
+            }
         }
     });
     Ok(())
@@ -444,10 +632,7 @@ fn open_externally(app: &AppHandle, url: &Url, throttle: bool) {
         return;
     }
     if throttle {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let now = now_ms();
         let last = &app.state::<AppState>().last_external;
         let previous = last.load(Ordering::Relaxed);
         if now.saturating_sub(previous) < 2000
@@ -462,40 +647,342 @@ fn open_externally(app: &AppHandle, url: &Url, throttle: bool) {
     let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
 }
 
-/// "Change Server…": back to the first-run screen.
-fn change_server(app: &AppHandle) {
-    if open_setup(app, false).is_ok()
-        && let Some(main) = app.get_webview_window(MAIN_WINDOW)
-    {
-        app.state::<AppState>().run.cancel();
-        runner(app).cancel_all();
+/// "Switch Workspace…" (and `qoopDesktop.switchWorkspace`): stops what is running, closes
+/// the main window, shows the start screen.
+fn leave_workspace(app: &AppHandle) {
+    if open_setup(app, None).is_err() {
+        return;
+    }
+    let state = app.state::<AppState>();
+    state.run.cancel();
+    runner(app).cancel_all();
+    *state.open.lock().unwrap() = None;
+    state.begin_stop();
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW) {
         let _ = main.close();
     }
 }
 
-// ---- commands of the local first-run screen ---------------------------------------------
+// ---- opening a Workspace -----------------------------------------------------------------
 
-fn check_setup_caller(webview: &Webview) -> Result<(), String> {
-    if webview.label() == SETUP_WINDOW {
-        Ok(())
-    } else {
-        Err("Not allowed.".into())
+/// Opens a Workspace in the main window and closes the start screen. The error is a
+/// sentence for the start screen.
+async fn open_workspace(app: &AppHandle, entry: Entry) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let _opening = state
+        .opening
+        .try_lock()
+        .map_err(|_| "Another workspace is being opened.".to_owned())?;
+    // One Workspace at a time.
+    if app.get_webview_window(MAIN_WINDOW).is_some() {
+        return Err("Close the open workspace first.".to_owned());
+    }
+    state.stopped().await;
+
+    let granted = state.granted.lock().unwrap().clone();
+    match entry.kind {
+        Kind::Team => {
+            let origin = entry
+                .address
+                .clone()
+                .ok_or("That workspace has no address.")?;
+            let checked = origin.clone();
+            let answered =
+                tauri::async_runtime::spawn_blocking(move || address::check_health(&checked))
+                    .await
+                    .map(|r| r.is_ok())
+                    .unwrap_or(false);
+            if !answered {
+                return Err(format!(
+                    "“{}” did not answer; check that its server is running and try again.",
+                    entry.name
+                ));
+            }
+            if granted.is_some_and(|g| g != origin) {
+                return restart_into(app, &entry);
+            }
+            open_main(app, &entry, &origin, &origin)
+                .map_err(|_| "The window could not be opened.".to_owned())?;
+        }
+        Kind::Local => {
+            // The embedded server's port is new at every start, so its origin is never the
+            // one already granted.
+            if granted.is_some() {
+                return restart_into(app, &entry);
+            }
+            let server = start_embedded(app, &entry).await?;
+            let opened = address::embedded_origin(server.origin()).and_then(|origin| {
+                open_main(app, &entry, &origin, server.entry_url())
+                    .map_err(|_| "The window could not be opened.".to_owned())
+            });
+            if let Err(message) = opened {
+                server.stop().await;
+                return Err(message);
+            }
+            state.embedded.lock().unwrap().server = Some(server);
+            back_up(app, &entry.id);
+        }
+    }
+
+    let _ = workspaces(app)
+        .registry
+        .lock()
+        .unwrap()
+        .opened(&entry.id, now_ms() as i64);
+    if let Some(setup) = app.get_webview_window(SETUP_WINDOW) {
+        let _ = setup.close();
+    }
+    Ok(())
+}
+
+/// The bridge was granted to another origin in this run of the app, and a grant cannot be
+/// taken back: start again, so that only the new origin has it, and open `entry` then.
+fn restart_into(app: &AppHandle, entry: &Entry) -> Result<(), String> {
+    workspaces(app)
+        .registry
+        .lock()
+        .unwrap()
+        .set_open_next(&entry.id)?;
+    app.request_restart();
+    Ok(())
+}
+
+/// Starts the embedded server for a Local Workspace, on the app's own async runtime.
+async fn start_embedded(app: &AppHandle, entry: &Entry) -> Result<LocalServer, String> {
+    const NOT_STARTED: &str = "The workspace could not be opened on this computer.";
+    let ws = workspaces(app);
+    let web_dir = match ws.web_dir.get() {
+        Some(dir) => dir.clone(),
+        None => {
+            let root = ws.data_dir.clone();
+            let dir = tauri::async_runtime::spawn_blocking(move || webui::unpack(&root))
+                .await
+                .map_err(|_| NOT_STARTED.to_owned())?
+                .map_err(|_| NOT_STARTED.to_owned())?;
+            ws.web_dir.get_or_init(|| dir).clone()
+        }
+    };
+    let preset = entry
+        .preset
+        .as_deref()
+        .and_then(Preset::from_id)
+        .unwrap_or(Preset::Blank);
+    let (db, port) = {
+        let registry = ws.registry.lock().unwrap();
+        // Without a remembered port (the list could not be saved) the OS chooses one; the
+        // Workspace opens all the same, only its address is new.
+        (
+            registry.db_path(&entry.id),
+            registry.port_for(&entry.id).ok().flatten(),
+        )
+    };
+    let options = LocalOptions {
+        db,
+        web_dir,
+        preset,
+        member_name: workspaces::member_name(),
+        // When it is taken the server listens on another port for this once; the
+        // remembered one is kept for the next start.
+        port,
+    };
+    // The start screen gets a sentence; what the server said is not ours to word. Debug
+    // builds print it for whoever is working on the app (it names files, never the key).
+    start_local(options).await.map_err(|_error| {
+        #[cfg(debug_assertions)]
+        eprintln!("The Local Workspace did not start: {_error}");
+        NOT_STARTED.to_owned()
+    })
+}
+
+// ---- backups (docs/specs/portability.md, decision 2) --------------------------------------
+
+/// Makes a backup of a Local Workspace that has just been opened, if one is due, on a
+/// thread of its own: the Workspace is already open and never waits for it. A failure is
+/// written to the log and tried again at the next opening.
+fn back_up(app: &AppHandle, id: &str) {
+    let (db, dir) = {
+        let ws = workspaces(app);
+        let registry = ws.registry.lock().unwrap();
+        (registry.db_path(id), registry.backups_dir(id))
+    };
+    let state = app.state::<AppState>();
+    let mut backups = state.backups.lock().unwrap();
+    backups.retain(|_, task| !task.inner().is_finished());
+    if backups.contains_key(id) {
+        return;
+    }
+    let done = app.clone();
+    let workspace = id.to_owned();
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let made = portable::keep_backed_up(&db, &dir, now_ms() as i64, |db, dest| {
+            export_workspace(db, dest).map_err(|e| e.to_string())
+        });
+        match made {
+            Ok(newest) => {
+                let _ = workspaces(&done)
+                    .registry
+                    .lock()
+                    .unwrap()
+                    .set_last_backup(&workspace, newest);
+            }
+            Err(e) => eprintln!("Infall: no backup of a workspace was made this time: {e}"),
+        }
+    });
+    backups.insert(id.to_owned(), task);
+}
+
+/// Waits for the backup of `id` being made, if one is.
+async fn backup_done(state: &AppState, id: &str) {
+    let task = state.backups.lock().unwrap().remove(id);
+    if let Some(task) = task {
+        let _ = task.await;
     }
 }
 
-/// The address saved earlier, to fill the field with.
-#[tauri::command]
-fn setup_current(webview: Webview, app: AppHandle) -> Result<Option<String>, String> {
-    check_setup_caller(&webview)?;
-    Ok(config_dir(&app).and_then(|dir| config::load(&dir)))
+// ---- the system's file dialogs -----------------------------------------------------------
+
+const NO_DIALOG: &str = "The file dialog could not be shown.";
+
+/// Held while a dialog shows: one at a time, for every window.
+struct DialogSlot<'a>(&'a AtomicBool);
+
+impl<'a> DialogSlot<'a> {
+    fn take(state: &'a AppState) -> Result<DialogSlot<'a>, String> {
+        state
+            .dialog
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| DialogSlot(&state.dialog))
+            .map_err(|_| "A file dialog is already open.".to_owned())
+    }
 }
 
-/// Checks the address, asks the server for its health, saves, and shows the server's UI.
+impl Drop for DialogSlot<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// Shows a dialog `make` builds (on the main thread, as the systems want), attached to the
+/// window it was asked from, and returns the path chosen: `None` when the person cancelled.
+async fn ask_path<F, D>(app: &AppHandle, make: F) -> Result<Option<PathBuf>, String>
+where
+    F: FnOnce() -> D + Send + 'static,
+    D: Future<Output = Option<rfd::FileHandle>> + Send + 'static,
+{
+    let (chosen, answer) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let dialog = make();
+        // The answer is waited for away from the main thread, which keeps the dialog going.
+        std::thread::spawn(move || {
+            let _ = chosen.send(tauri::async_runtime::block_on(dialog));
+        });
+    })
+    .map_err(|_| NO_DIALOG.to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        answer
+            .recv()
+            .ok()
+            .flatten()
+            .map(|file| file.path().to_path_buf())
+    })
+    .await
+    .map_err(|_| NO_DIALOG.to_owned())
+}
+
+/// A save dialog suggesting `name`, offering `filter` (a label and an extension) if given.
+async fn ask_save_path(
+    app: &AppHandle,
+    parent: tauri::Window,
+    name: String,
+    filter: Option<(&'static str, &'static str)>,
+) -> Result<Option<PathBuf>, String> {
+    ask_path(app, move || {
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_parent(&parent)
+            .set_file_name(name)
+            .set_can_create_directories(true);
+        if let Some((label, extension)) = filter {
+            dialog = dialog.add_filter(label, &[extension]);
+        }
+        dialog.save_file()
+    })
+    .await
+}
+
+/// A sentence for the start screen from what the server crate said. Its sentences are fit
+/// to show as they are (Contract A), except the system's own words about files.
+fn port_sentence(error: PortError, io: &str) -> String {
+    match error {
+        PortError::Io(_) => io.to_owned(),
+        other => other.to_string(),
+    }
+}
+
+// ---- commands of the start screen (docs/specs/local.md, Contract C) ----------------------
+
+fn check_setup_caller(webview: &Webview) -> Result<(), String> {
+    bridge::check_setup_caller(webview.label(), webview.url().ok().as_ref())
+}
+
+#[derive(serde::Serialize)]
+struct StartView {
+    workspaces: Vec<workspaces::Listed>,
+    notice: Option<String>,
+}
+
+/// Every Workspace, newest first, and why the app came back here, if it did (said once).
 #[tauri::command]
-async fn setup_save(
+fn start_view(
     webview: Webview,
     app: AppHandle,
     state: State<'_, AppState>,
+) -> Result<StartView, String> {
+    check_setup_caller(&webview)?;
+    Ok(StartView {
+        workspaces: workspaces(&app)
+            .registry
+            .lock()
+            .unwrap()
+            .list()
+            .iter()
+            .map(Entry::listed)
+            .collect(),
+        notice: state.notice.lock().unwrap().take(),
+    })
+}
+
+/// Makes a Local Workspace from a Preset and opens it.
+#[tauri::command]
+async fn workspace_create(
+    webview: Webview,
+    app: AppHandle,
+    preset: String,
+    name: Option<String>,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    if Preset::from_id(&preset).is_none() {
+        return Err("There is no such kind of workspace.".to_owned());
+    }
+    let entry = workspaces(&app)
+        .registry
+        .lock()
+        .unwrap()
+        .create_local(&preset, name.as_deref())?;
+    let id = entry.id.clone();
+    let opened = open_workspace(&app, entry).await;
+    if opened.is_err() {
+        // Nothing the Member made is lost: what failed to open was made just now.
+        let _ = workspaces(&app).registry.lock().unwrap().remove(&id);
+    }
+    opened
+}
+
+/// Checks the address, asks the server for its health, remembers the Team Workspace and
+/// opens it.
+#[tauri::command]
+async fn workspace_connect(
+    webview: Webview,
+    app: AppHandle,
     address: String,
 ) -> Result<(), String> {
     check_setup_caller(&webview)?;
@@ -504,31 +991,192 @@ async fn setup_save(
     tauri::async_runtime::spawn_blocking(move || address::check_health(&checked))
         .await
         .map_err(|_| "The address could not be checked. Try again.".to_owned())??;
+    let entry = workspaces(&app)
+        .registry
+        .lock()
+        .unwrap()
+        .remember_team(&origin)?;
+    open_workspace(&app, entry).await
+}
 
-    const NOT_SAVED: &str = "The address could not be saved on this computer.";
-    let dir = config_dir(&app).ok_or(NOT_SAVED)?;
-    config::save(&dir, &origin).map_err(|_| NOT_SAVED.to_owned())?;
+#[tauri::command]
+async fn workspace_open(webview: Webview, app: AppHandle, id: String) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    let entry = workspaces(&app)
+        .registry
+        .lock()
+        .unwrap()
+        .get(&id)
+        .ok_or("That workspace is no longer in the list.")?;
+    open_workspace(&app, entry).await
+}
 
-    let granted = state.origin.lock().unwrap().clone();
-    match granted {
-        // The bridge was already granted to another origin in this run of the app, and a
-        // grant cannot be taken back: start again, so that only the new origin has it.
-        Some(previous) if previous != origin => app.restart(),
-        _ => {}
+#[tauri::command]
+fn workspace_rename(
+    webview: Webview,
+    app: AppHandle,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    workspaces(&app).registry.lock().unwrap().rename(&id, &name)
+}
+
+/// A Local Workspace's files are deleted for good; a Team Workspace is only forgotten.
+/// Never the open one.
+#[tauri::command]
+async fn workspace_remove(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    // Not while it is being opened, nor while its server is still stopping.
+    let _opening = state
+        .opening
+        .try_lock()
+        .map_err(|_| "A workspace is being opened; try again in a moment.".to_owned())?;
+    if state.open_id().as_deref() == Some(id.as_str()) {
+        return Err("This workspace is open; switch to another one before removing it.".to_owned());
     }
-    if app.get_webview_window(MAIN_WINDOW).is_none() {
-        open_main(&app, &origin).map_err(|_| "The window could not be opened.".to_owned())?;
-    }
-    if let Some(setup) = app.get_webview_window(SETUP_WINDOW) {
-        let _ = setup.close();
+    state.stopped().await;
+    // Its backup, if one is being made, is finished first: then everything goes.
+    backup_done(&state, &id).await;
+    let registry = workspaces(&app);
+    let registry = registry.registry.lock().unwrap();
+    let entry = registry
+        .get(&id)
+        .ok_or("That workspace is no longer in the list.")?;
+    registry.remove(&id)?;
+    drop(registry);
+    // A Local Workspace is gone for good, and so are the Runs approved in it. A Team
+    // Workspace's approvals stay: its server is still there, and may be signed in to again.
+    if entry.kind == Kind::Local {
+        let _ = runner(&app).forget_approvals_for(&entry.approvals_key());
     }
     Ok(())
+}
+
+/// The Local Workspace `id`, or the sentence for why it is not one.
+fn local_entry(app: &AppHandle, id: &str) -> Result<Entry, String> {
+    let entry = workspaces(app)
+        .registry
+        .lock()
+        .unwrap()
+        .get(id)
+        .ok_or("That workspace is no longer in the list.")?;
+    if entry.kind != Kind::Local {
+        return Err("Only a workspace on this computer has a Workspace file.".to_owned());
+    }
+    Ok(entry)
+}
+
+/// Writes a Workspace file of a Local Workspace where the Member chooses (open or not: the
+/// copy is consistent either way). The path written, or `None` when they cancelled.
+#[tauri::command]
+async fn workspace_export(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<String>, String> {
+    check_setup_caller(&webview)?;
+    let entry = local_entry(&app, &id)?;
+    let db = workspaces(&app).registry.lock().unwrap().db_path(&id);
+    if !db.is_file() {
+        return Err("This workspace has nothing in it to export yet.".to_owned());
+    }
+    let chosen = {
+        let _dialog = DialogSlot::take(&state)?;
+        let name = format!(
+            "{}.{WORKSPACE_EXTENSION}",
+            portable::safe_stem(&entry.name, "Workspace")
+        );
+        let filter = Some(("Workspace file", WORKSPACE_EXTENSION));
+        ask_save_path(&app, webview.window(), name, filter).await?
+    };
+    let Some(chosen) = chosen else {
+        return Ok(None);
+    };
+    let dest = portable::with_extension(chosen, WORKSPACE_EXTENSION);
+    const NOT_WRITTEN: &str = "The Workspace file could not be written there.";
+    let written = dest.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        portable::write_replacing(
+            &written,
+            |tmp| export_workspace(&db, tmp).map_err(|e| port_sentence(e, NOT_WRITTEN)),
+            NOT_WRITTEN,
+        )
+    })
+    .await
+    .map_err(|_| NOT_WRITTEN.to_owned())??;
+    Ok(Some(dest.display().to_string()))
+}
+
+/// Makes a new Local Workspace from a Workspace file the Member chooses, and opens it.
+/// Nothing happens when they cancel.
+#[tauri::command]
+async fn workspace_import(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    let chosen = {
+        let _dialog = DialogSlot::take(&state)?;
+        let parent = webview.window();
+        ask_path(&app, move || {
+            rfd::AsyncFileDialog::new()
+                .set_parent(&parent)
+                .add_filter("Workspace file", &[WORKSPACE_EXTENSION])
+                .pick_file()
+        })
+        .await?
+    };
+    let Some(file) = chosen else {
+        return Ok(());
+    };
+    const NOT_READ: &str = "That Workspace file could not be read.";
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let importing = app.clone();
+    let entry = tauri::async_runtime::spawn_blocking(move || {
+        workspaces(&importing)
+            .registry
+            .lock()
+            .unwrap()
+            .import_local(&stem, |db: &Path| {
+                import_workspace(&file, db)
+                    .map(|imported| imported.preset.map(|p| p.id().to_owned()))
+                    .map_err(|e| port_sentence(e, NOT_READ))
+            })
+    })
+    .await
+    .map_err(|_| NOT_READ.to_owned())??;
+    // Should it not open now, it is kept all the same: it is in the list, to open later.
+    open_workspace(&app, entry).await
+}
+
+/// Shows a Local Workspace's folder (its database, and its backups) in the file manager.
+#[tauri::command]
+fn workspace_reveal(webview: Webview, app: AppHandle, id: String) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    local_entry(&app, &id)?;
+    let dir = workspaces(&app).registry.lock().unwrap().local_dir(&id);
+    if !dir.is_dir() {
+        return Err("This workspace's folder is no longer on this computer.".to_owned());
+    }
+    tauri_plugin_opener::open_path(&dir, None::<&str>)
+        .map_err(|_| "The folder could not be shown.".to_owned())
 }
 
 // ---- commands behind `window.qoopDesktop` ----------------------------------------------
 
 fn check_bridge_caller(webview: &Webview, state: &AppState, key: &str) -> Result<String, String> {
-    let origin = state.origin.lock().unwrap().clone();
+    let origin = state.granted.lock().unwrap().clone();
     let page = webview.url().ok();
     bridge::check_caller(
         webview.window().label(),
@@ -538,6 +1186,69 @@ fn check_bridge_caller(webview: &Webview, state: &AppState, key: &str) -> Result
         &state.bridge_key,
     )?;
     origin.ok_or_else(|| "Not allowed.".to_owned())
+}
+
+/// Back to the start screen, as the menu item "Switch Workspace…" does.
+#[tauri::command]
+async fn switch_workspace(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    leave_workspace(&app);
+    Ok(())
+}
+
+/// Saves text where the Member chooses, in the system's save dialog (Contract D): `true`
+/// once written whole, `false` when they cancelled.
+#[tauri::command]
+async fn save_file(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    suggested_name: String,
+    text: String,
+) -> Result<bool, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    if text.len() > MAX_SAVE_BYTES {
+        return Err("The file is too large to save (at most 20 MB).".to_owned());
+    }
+    let chosen = {
+        let _dialog = DialogSlot::take(&state)?;
+        let name = portable::safe_file_name(&suggested_name, "Untitled");
+        ask_save_path(&app, webview.window(), name, None).await?
+    };
+    let Some(dest) = chosen else {
+        return Ok(false);
+    };
+    const NOT_WRITTEN: &str = "The file could not be written there.";
+    tauri::async_runtime::spawn_blocking(move || {
+        portable::write_replacing(
+            &dest,
+            |tmp| std::fs::write(tmp, text.as_bytes()).map_err(|_| NOT_WRITTEN.to_owned()),
+            NOT_WRITTEN,
+        )
+    })
+    .await
+    .map_err(|_| NOT_WRITTEN.to_owned())??;
+    Ok(true)
+}
+
+/// Opens the system's print dialog for the page (what `window.print()` does on macOS;
+/// see `bridge::OWN_PRINT`).
+#[tauri::command]
+async fn print_page(
+    webview: Webview,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    webview
+        .print()
+        .map_err(|_| "The page could not be printed.".to_owned())
 }
 
 /// Is the `claude` command available on this machine (`claude --version`).
@@ -660,7 +1371,7 @@ async fn runner_configure(
 
 /// One Run. Every outcome is reported as an event; the command itself only fails when the
 /// caller is not allowed. The code is executed only if the Member approves it in the app's
-/// own window (or approved the same code from this server before): see `qoop_runner`.
+/// own window (or approved the same code in this Workspace before): see `qoop_runner`.
 #[tauri::command]
 async fn runner_run(
     webview: Webview,
@@ -670,14 +1381,27 @@ async fn runner_run(
     request: qoop_runner::RunRequest,
     on_event: Channel<qoop_runner::RunEvent>,
 ) -> Result<(), String> {
-    // The origin approvals are remembered for is the one the app was set up with, not
-    // anything the page says about itself.
-    let origin = check_bridge_caller(&webview, &state, &key)?;
+    // The Workspace approvals are remembered for is the one the app opened, not anything
+    // the page says about itself.
+    check_bridge_caller(&webview, &state, &key)?;
+    let workspace = state
+        .open
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|open| open.approvals.clone());
+    let Some(workspace) = workspace else {
+        let _ = on_event.send(qoop_runner::RunEvent::Error {
+            reason: qoop_runner::Reason::Failed,
+            message: "The Run could not be carried out.".to_owned(),
+        });
+        return Ok(());
+    };
     let runner = runner(&app);
     let windows = RunnerWindows(app.clone());
     let events = on_event.clone();
     let finished = tauri::async_runtime::spawn_blocking(move || {
-        runner.run(request, &origin, &windows, &mut |event| {
+        runner.run(request, &workspace, &windows, &mut |event| {
             let _ = events.send(event);
         });
     })

@@ -2,6 +2,8 @@
 
 Infall is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This guide takes a fresh Debian or Ubuntu VPS to a working server. It needs about an hour.
 
+A server is what a team needs: it holds a Team Workspace, which several Members share. One person trying Infall on their own does not need one: the desktop app makes a Local Workspace on that computer by itself ([desktop/README.md](../desktop/README.md)).
+
 Placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
 
 This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
@@ -269,6 +271,7 @@ What this setup does:
 - **Contained service.** Infall runs as an unprivileged user, in a systemd sandbox that can write only to its own database folder.
 - **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves, step 10 and `sudo apt upgrade`).
 - **Encrypted backups** whose decryption key is not on the server, plus an off-machine copy if you set one up.
+- **Few outgoing requests.** The server connects out only for two things, and only when a Member uses them: the AI sidebar's OpenRouter path (once a Member has added a key), and **Look up** in the Source form, which sends one DOI to `api.crossref.org` or one arXiv id to `export.arxiv.org` over HTTPS, with nothing about the Workspace or the person. The firewall of [harden.md](harden.md) allows outgoing connections; if you restrict them, allow HTTPS to those hosts, or those two features say they could not reach them. The full list for Members: [docs/privacy.md](../docs/privacy.md).
 
 What it does not do:
 

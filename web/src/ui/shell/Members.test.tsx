@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
+  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useMembers: () => h.people,
   members: {
     remove: (...a: unknown[]) => {

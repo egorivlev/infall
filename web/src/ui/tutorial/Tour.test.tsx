@@ -288,6 +288,40 @@ describe('moving through the steps', () => {
   })
 })
 
+describe('the last step and the start screen (M12)', () => {
+  it('in the desktop app, says a Tutorial Workspace is made from the start screen, with a button that goes there', async () => {
+    const switchWorkspace = vi.fn(async () => {})
+    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { switchWorkspace }
+    render(<Screen member={MEMBER} />)
+    await begin(MEMBER)
+    for (let i = 0; i < 10; i++) await press('Next')
+    expect(title()).toBe('Where to read more')
+    expect(screen.getByText('To try every part yourself, make a Tutorial Workspace from the start screen.')).toBeInTheDocument()
+    await press('Go to the start screen')
+    expect(switchWorkspace).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument() // the step is otherwise the same
+  })
+
+  it('says nothing of it in a browser, nor in an app without the bridge function', async () => {
+    for (const desk of [undefined, { version: '0.11' }]) {
+      if (desk) (globalThis as { qoopDesktop?: unknown }).qoopDesktop = desk
+      const view = render(<Screen member={MEMBER} />)
+      await begin(MEMBER)
+      for (let i = 0; i < 10; i++) await press('Next')
+      expect(title()).toBe('Where to read more')
+      expect(screen.queryByText(/Tutorial Workspace/)).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Go to the start screen' })).toBeNull()
+      await press('Done')
+      view.unmount()
+    }
+  })
+
+  it('is not offered with offer={false} (a Tutorial Workspace), and can still be started', async () => {
+    render(<Tour member={MEMBER} view="board" offer={false} />)
+    expect(offer()).toBeNull()
+  })
+})
+
 describe('focus and the screen reader', () => {
   it('is a dialog that is not modal, named by its title and read with the step count', async () => {
     render(<Screen member={MEMBER} />)

@@ -29,19 +29,25 @@ const GAP = 10 // between the control and the popover
 const MARGIN = 8 // between the popover and the window's edge
 const INSET = 24 // from the corner of a control too large to stand beside
 
+export type Side = 'below' | 'above' | 'right' | 'left'
+const SIDES: Side[] = ['below', 'above', 'right', 'left']
+
 /**
- * The popover's top-left corner: under the control if it fits, else above, to its right, to its left; a control that
- * leaves no room on any side (the Board) gets the popover inside its bottom-left corner. Always inside the window.
+ * The popover's top-left corner: on the first side of `sides` it fits on (by default under the control, else above,
+ * to its right, to its left); a control that leaves no room on any side (the Board) gets the popover inside its
+ * bottom-left corner. Always inside the window.
  */
-export function placePopover(target: Box, pop: Size, view: Size): { left: number; top: number } {
+export function placePopover(target: Box, pop: Size, view: Size, sides: Side[] = SIDES): { left: number; top: number } {
   const clampX = (x: number) => Math.max(MARGIN, Math.min(x, view.width - pop.width - MARGIN))
   const clampY = (y: number) => Math.max(MARGIN, Math.min(y, view.height - pop.height - MARGIN))
   const right = target.left + target.width
   const bottom = target.top + target.height
-  if (bottom + GAP + pop.height <= view.height - MARGIN) return { left: clampX(target.left), top: bottom + GAP }
-  if (target.top - GAP - pop.height >= MARGIN) return { left: clampX(target.left), top: target.top - GAP - pop.height }
-  if (right + GAP + pop.width <= view.width - MARGIN) return { left: right + GAP, top: clampY(target.top) }
-  if (target.left - GAP - pop.width >= MARGIN) return { left: target.left - GAP - pop.width, top: clampY(target.top) }
+  for (const side of sides) {
+    if (side === 'below' && bottom + GAP + pop.height <= view.height - MARGIN) return { left: clampX(target.left), top: bottom + GAP }
+    if (side === 'above' && target.top - GAP - pop.height >= MARGIN) return { left: clampX(target.left), top: target.top - GAP - pop.height }
+    if (side === 'right' && right + GAP + pop.width <= view.width - MARGIN) return { left: right + GAP, top: clampY(target.top) }
+    if (side === 'left' && target.left - GAP - pop.width >= MARGIN) return { left: target.left - GAP - pop.width, top: clampY(target.top) }
+  }
   return { left: clampX(target.left + INSET), top: clampY(bottom - pop.height - INSET) }
 }
 

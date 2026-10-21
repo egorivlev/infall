@@ -1,9 +1,10 @@
-// The Qoop desktop bridge: puts `window.qoopDesktop` (docs/specs/desktop.md) on the pages of
-// the configured server origin, in the top frame only. The app injects this as an
+// The Infall desktop bridge: puts `window.qoopDesktop` (docs/specs/desktop.md,
+// docs/specs/local.md) on the pages of the open Workspace's origin, in the top frame only. The app injects this as an
 // initialization script that the webview runs in the main frame only; the checks below hold
 // even if it ever ran somewhere else.
 //
-// __QOOP_ORIGIN__, __QOOP_VERSION__ and __QOOP_KEY__ are replaced by JSON string literals.
+// __QOOP_ORIGIN__, __QOOP_VERSION__ and __QOOP_KEY__ are replaced by JSON string literals,
+// __QOOP_OWN_PRINT__ by `true` or `false`.
 (function () {
   'use strict';
   var ORIGIN = __QOOP_ORIGIN__;
@@ -11,6 +12,10 @@
   // Sent with every call; the app refuses calls without it. It lives only in this closure,
   // so a frame (which never runs this script) cannot learn it.
   var KEY = __QOOP_KEY__;
+  // Whether `window.print()` is the app's to do (macOS: the webview ignores it).
+  var OWN_PRINT = __QOOP_OWN_PRINT__;
+  // `saveFile` takes at most this much text (UTF-8 bytes; the app checks it again).
+  var MAX_SAVE_BYTES = 20971520;
 
   if (window.top !== window) return;
   if (window.location.origin !== ORIGIN) return;
@@ -170,8 +175,42 @@
     }
   });
 
+  // Back to the start screen, as the menu's "Switch Workspace…" does: stops what is
+  // running, closes this window. (M12)
+  function switchWorkspace() {
+    return call('switch_workspace', {}).then(function () {});
+  }
+
+  // Saves text as a file where the person chooses, in the system's save dialog (M13).
+  // Resolves true once written, false when the person cancelled; rejects with a sentence.
+  function saveFile(file) {
+    var name = file && file.suggestedName != null ? String(file.suggestedName) : '';
+    var text = file && file.text != null ? String(file.text) : '';
+    if (typeof text.toWellFormed === 'function') text = text.toWellFormed();
+    // A string longer than this in UTF-16 units is longer in UTF-8 bytes too.
+    if (text.length > MAX_SAVE_BYTES) {
+      return Promise.reject(new Error('The file is too large to save (at most 20 MB).'));
+    }
+    return call('save_file', { suggestedName: name, text: text }).then(function (saved) {
+      return saved === true;
+    });
+  }
+
+  // `window.print()` opens the system's print dialog for this page.
+  if (OWN_PRINT) {
+    window.print = function () {
+      call('print_page', {}).catch(function () {});
+    };
+  }
+
   Object.defineProperty(window, 'qoopDesktop', {
-    value: Object.freeze({ version: VERSION, claude: claude, runner: runner }),
+    value: Object.freeze({
+      version: VERSION,
+      claude: claude,
+      runner: runner,
+      switchWorkspace: switchWorkspace,
+      saveFile: saveFile
+    }),
     writable: false,
     configurable: false,
     enumerable: true

@@ -35,7 +35,7 @@
     if (!loaded) hint.textContent = '';
     else if (!reachedEnd) hint.textContent = 'Scroll to the end of the code to be able to run it.';
     else if (!waited) hint.textContent = 'One moment…';
-    else hint.textContent = 'Infall will remember this exact code for this server and not ask again until it changes.';
+    else hint.textContent = 'Infall will remember this exact code for this Workspace and not ask again until it changes.';
   }
 
   function checkEnd() {

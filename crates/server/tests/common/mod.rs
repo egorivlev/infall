@@ -135,6 +135,20 @@ impl TestApp {
             .await
     }
 
+    /// A write like `write`, with the body sent exactly as given.
+    pub async fn write_raw(&self, method: Method, path: &str, cookie: &str, body: String) -> Res {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::ORIGIN, ORIGIN)
+            .header("x-qoop-request", "1")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::COOKIE, cookie)
+            .body(Body::from(body))
+            .unwrap();
+        self.send(req).await
+    }
+
     pub async fn post(&self, path: &str, cookie: Option<&str>, body: Value) -> Res {
         self.write(Method::POST, path, cookie, body).await
     }

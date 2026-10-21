@@ -14,7 +14,7 @@
   border-top: 1px solid var(--q-line);
   background: var(--q-surface);
   color: var(--q-ink);
-  font: 13px var(--q-sans);
+  font: calc(13px * var(--q-text, 1)) var(--q-sans);
 }
 
 .qh-main {
@@ -27,9 +27,9 @@
   padding: var(--q-s3) var(--q-s4) var(--q-s2) 20px;
 }
 .qh-head { display: flex; align-items: baseline; gap: var(--q-s3); min-height: 26px; }
-.qh-title { margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.qh-title { margin: 0; font-size: calc(13px * var(--q-text, 1)); font-weight: 600; white-space: nowrap; }
 .qh-title .q-mono { font-weight: 600; }
-.qh-counts { font: 11px var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qh-counts { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
 .qh-spacer { flex: 1; }
 .qh-head .q-btn { align-self: center; }
 
@@ -59,7 +59,7 @@
 .qh-row--checkpoints { height: var(--qh-row-checkpoints); }
 .qh-row--lane { height: var(--qh-row-lane); border-top: 1px solid var(--q-line-soft); }
 .qh-row--scrub { height: var(--qh-row-scrub); border-top: 1px solid var(--q-line-soft); }
-.qh-row--ticks { height: var(--qh-row-ticks); font: 10.5px var(--q-mono); color: var(--q-ink-3); }
+.qh-row--ticks { height: var(--qh-row-ticks); font: calc(10.5px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
 .qh-gutter .qh-row--lane { display: flex; align-items: center; border-top-color: transparent; }
 
 .qh-avatar.is-former { background: var(--q-line); color: var(--q-ink-2); }
@@ -91,7 +91,7 @@
 .qh-block--restore .qh-block__bar {
   background: transparent;
   color: var(--qh-tint, var(--q-ink-3));
-  font: 600 13px/12px var(--q-sans);
+  font: 600 calc(13px * var(--q-text, 1))/12px var(--q-sans);
   text-align: center;
 }
 
@@ -118,7 +118,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 10.5px/1.2 var(--q-mono);
+  font: calc(10.5px * var(--q-text, 1))/1.2 var(--q-mono);
   background: var(--q-surface);
 }
 .qh-checkpoint__mark { display: block; flex: none; }
@@ -178,10 +178,10 @@
 .qh-detail__scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--q-s2); }
 .qh-detail__note { margin: auto 0; color: var(--q-ink-2); text-align: center; }
 .qh-detail__who { display: flex; align-items: center; gap: var(--q-s2); min-width: 0; }
-.qh-detail__who .qh-avatar { font-size: 9px; }
+.qh-detail__who .qh-avatar { font-size: calc(9px * var(--q-text, 1)); }
 .qh-detail__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qh-detail__when { font: 11.5px var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
-.qh-detail__count, .qh-detail__checkpoint { font: 11px var(--q-mono); color: var(--q-ink-3); }
+.qh-detail__when { font: calc(11.5px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qh-detail__count, .qh-detail__checkpoint { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
 .qh-detail__checkpoint { color: var(--q-ink-2); overflow-wrap: anywhere; }
 .qh-detail__lines {
   list-style: none;
@@ -190,12 +190,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--q-s1);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--q-text, 1));
   color: var(--q-ink-2);
 }
 .qh-detail__lines li { padding-left: 10px; text-indent: -10px; overflow-wrap: anywhere; }
 .qh-detail__lines li::before { content: '· '; }
-.qh-detail__hint { margin: 0; font-size: 12px; color: var(--q-ink-3); line-height: 1.45; }
+.qh-detail__hint { margin: 0; font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-3); line-height: 1.45; }
 .qh-detail__foot {
   flex: none;
   display: flex;
@@ -206,4 +206,4 @@
 }
 .qh-restore { width: 100%; border-color: var(--q-ink-2); }
 .qh-restore:disabled { border-color: var(--q-line); }
-.qh-detail__small { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--q-ink-3); text-wrap: pretty; }
+.qh-detail__small { margin: 0; font-size: calc(11.5px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-3); text-wrap: pretty; }

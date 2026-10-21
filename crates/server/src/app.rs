@@ -24,12 +24,14 @@ use crate::error::ApiError;
 use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
 use crate::tokens::RateLimit;
-use crate::{Clock, boards, chat, history, mcp, merges, people, suggestions, todos, tokens};
+use crate::{
+    Clock, boards, chat, history, local, mcp, merges, people, sources, suggestions, todos, tokens,
+};
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
 
-const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
+const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
 
 /// The policy of the page a Visual runs in (contract §13): sandboxed into an opaque origin,
 /// no network, embeddable only by the app itself.
@@ -53,6 +55,8 @@ pub struct AppState {
     pub throttle: Throttle,
     /// Requests per access token on the tool endpoint.
     pub tool_rate: RateLimit,
+    /// Source lookups per Member (contract §17).
+    pub lookup_rate: RateLimit,
     /// The OpenRouter path of the AI sidebar: its HTTP client, turn limit and model list.
     pub ai: AiState,
     pub clock: Clock,
@@ -64,6 +68,9 @@ pub struct AppState {
     /// Flips to `true` when the server is shutting down; live connections close.
     /// Held here so that it outlives every connection.
     pub shutdown: Arc<watch::Sender<bool>>,
+    /// Set when this is a Local Workspace run by the desktop app; `None` for a Team
+    /// Workspace.
+    pub local: Option<crate::local::LocalMode>,
 }
 
 pub type Shared = Arc<AppState>;
@@ -148,7 +155,24 @@ pub fn router(st: Shared) -> Router {
         .route("/ai/model", put(ai::put_model))
         .route("/ai/models", get(ai::get_models))
         .route("/ai/chat", post(chat::chat))
+        .route("/sources/lookup", post(sources::lookup))
         .route("/ws", get(live::ws_handler))
+        .route("/workspace", get(local::get_workspace));
+    // Only a Local Workspace has these; on a Team Workspace they are `404` like any unknown
+    // path.
+    let api = if st.local.is_some() {
+        api.route("/local/enter", get(local::enter))
+            .route("/local/member", patch(local::patch_member))
+            .route(
+                "/local/tutorial",
+                get(local::get_tutorial)
+                    .put(local::put_tutorial)
+                    .layer(DefaultBodyLimit::max(local::TUTORIAL_BODY_LIMIT)),
+            )
+    } else {
+        api
+    };
+    let api = api
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_not_found)
         .layer(middleware::from_fn_with_state(

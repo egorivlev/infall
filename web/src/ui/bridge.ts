@@ -97,3 +97,42 @@ export const boardFocus = {
     useBoardFocus.setState({ card })
   },
 }
+
+
+// ---- M12: what the Tutorial watches, and the desktop app's way back to the start screen. ----
+
+/** A Card chosen from Search (the search box publishes it; the Tutorial's Search step watches the count). */
+type SearchUseState = { chosen: number; card: string | null }
+export const useSearchUse = create<SearchUseState>(() => ({ chosen: 0, card: null }))
+export const searchUse = {
+  chose(card: string) {
+    useSearchUse.setState((s) => ({ chosen: s.chosen + 1, card }))
+  },
+}
+
+/**
+ * `window.qoopDesktop.switchWorkspace` (docs/specs/local.md, Contract C): the same as the app's menu item
+ * "Switch Workspace…". An older app, and every browser, has none — so this is null and nothing may offer it.
+ */
+export function desktopSwitchWorkspace(): (() => Promise<void>) | null {
+  const desktop = (globalThis as { qoopDesktop?: { switchWorkspace?: unknown } }).qoopDesktop
+  if (typeof desktop !== 'object' || desktop === null) return null
+  const fn = desktop.switchWorkspace
+  return typeof fn === 'function' ? () => Promise.resolve((fn as () => Promise<void>).call(desktop)) : null
+}
+
+
+// ---- M13: saving a file through the desktop app (docs/specs/portability.md, Contract D). ----
+
+type SaveFile = (file: { suggestedName: string; text: string }) => Promise<boolean>
+
+/**
+ * `window.qoopDesktop.saveFile`: the system's save dialog, then the text written as UTF-8. Resolves false when the
+ * person cancelled. A browser, and an app from before M13, has none — so this is null and the caller downloads.
+ */
+export function desktopSaveFile(): SaveFile | null {
+  const desktop = (globalThis as { qoopDesktop?: { saveFile?: unknown } }).qoopDesktop
+  if (typeof desktop !== 'object' || desktop === null) return null
+  const fn = desktop.saveFile
+  return typeof fn === 'function' ? (file) => Promise.resolve((fn as SaveFile).call(desktop, file)).then((ok) => ok !== false) : null
+}

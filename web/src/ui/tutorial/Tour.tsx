@@ -1,76 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Member } from '../../lib'
 import { readAnswer, writeAnswer } from './memory'
-import { placePopover, ringBox, sameBox, unionBox } from './position'
-import type { Box } from './position'
+import { useFollow } from './follow'
+import { placePopover, ringBox } from './position'
 import { startTour, wideEnough } from './start'
 import { anchorsOf } from './steps'
 import type { TourStep } from './steps'
 import { tour, useTour } from './store'
 import './tutorial.css'
 
-/** How long a step's control may be missing (a panel still opening) before the step is taken for gone. */
-export const GONE_AFTER_MS = 400
-
-type Seen = { target: Box; view: { width: number; height: number } }
-
-/**
- * Where the step's control is, kept up to date: its size (ResizeObserver), the window's size, any scrolling, and
- * any change of layout around it (the Board panning, a panel opening) all lead to one measurement per frame.
- * Calls `onGone` when the control has left the screen and stays away.
- */
-function useFollow(step: TourStep, onGone: () => void): Seen | null {
-  const [seen, setSeen] = useState<Seen | null>(null)
-  useEffect(() => {
-    let frame = 0
-    let gone = 0
-    let watched: Element[] = []
-    const schedule = () => {
-      if (frame === 0) frame = window.requestAnimationFrame(measure)
-    }
-    const sizes = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
-    function measure() {
-      frame = 0
-      const found = anchorsOf(step)
-      if (found.length === 0) {
-        if (gone === 0) {
-          gone = window.setTimeout(() => {
-            gone = 0
-            if (anchorsOf(step).length === 0) onGone()
-            else measure()
-          }, GONE_AFTER_MS)
-        }
-        return
-      }
-      window.clearTimeout(gone)
-      gone = 0
-      if (found.length !== watched.length || found.some((el, i) => el !== watched[i])) {
-        sizes?.disconnect()
-        for (const el of found) sizes?.observe(el)
-        watched = found
-      }
-      const target = unionBox(found.map((el) => el.getBoundingClientRect()))
-      if (target === null) return
-      const view = { width: window.innerWidth, height: window.innerHeight }
-      setSeen((was) => (was && sameBox(was.target, target) && was.view.width === view.width && was.view.height === view.height ? was : { target, view }))
-    }
-    measure()
-    window.addEventListener('resize', schedule)
-    document.addEventListener('scroll', schedule, true)
-    const changes = typeof MutationObserver === 'function' ? new MutationObserver(schedule) : null
-    changes?.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] })
-    return () => {
-      if (frame !== 0) window.cancelAnimationFrame(frame)
-      window.clearTimeout(gone)
-      sizes?.disconnect()
-      changes?.disconnect()
-      window.removeEventListener('resize', schedule)
-      document.removeEventListener('scroll', schedule, true)
-    }
-  }, [step, onGone])
-  return seen
-}
+export { GONE_AFTER_MS } from './follow'
 
 /** Esc is somebody else's while they type, or while another popup is open around the focus. */
 function escapeIsTaken(popover: HTMLElement | null): boolean {
@@ -86,7 +26,7 @@ const skipStep = () => tour.skip()
 function StepPopover({ step, index, count }: { step: TourStep; index: number; count: number }) {
   const id = useId()
   const pop = useRef<HTMLDivElement>(null)
-  const seen = useFollow(step, skipStep)
+  const seen = useFollow(useCallback(() => anchorsOf(step), [step]), skipStep)
   const last = index === count - 1
 
   // The popover is placed by hand: its own size decides which side of the control it fits on.
@@ -153,6 +93,11 @@ function StepPopover({ step, index, count }: { step: TourStep; index: number; co
           <button type="button" className="q-btn q-btn--sm q-btn--quiet q-tour__skip" onClick={() => tour.end()}>
             Skip the tour
           </button>
+          {step.action && (
+            <button type="button" className="q-btn q-btn--sm" onClick={step.action.run}>
+              {step.action.label}
+            </button>
+          )}
           {index > 0 && (
             <button type="button" className="q-btn q-btn--sm" onClick={() => tour.back()}>
               Back
@@ -185,9 +130,10 @@ function returnFocus(): void {
 /**
  * The tour of Infall, mounted once in the shell for whoever is signed in: the open step, and — the first time a
  * Member is signed in on this device — the card that offers it. `view` is the screen the shell is showing: the tour
- * lives on the Board, ends quietly when the Member goes elsewhere, and is never offered over a Merge.
+ * lives on the Board, ends quietly when the Member goes elsewhere, and is never offered over a Merge. `offer: false`
+ * (a Tutorial Workspace, which has the Tutorial instead) leaves out the offer; the menu can still start the tour.
  */
-export function Tour({ member, view }: { member: Member; view: string }) {
+export function Tour({ member, view, offer = true }: { member: Member; view: string; offer?: boolean }) {
   const steps = useTour((s) => s.steps)
   const index = useTour((s) => s.index)
   const step = steps[index]
@@ -218,7 +164,7 @@ export function Tour({ member, view }: { member: Member; view: string }) {
   }
 
   if (step) return <StepPopover key={step.id} step={step} index={index} count={steps.length} />
-  if (answer !== null || !wide || view === 'merge') return null
+  if (!offer || answer !== null || !wide || view === 'merge') return null
   return (
     <section className="q-tour-offer" aria-label="Tour of Infall">
       <p className="q-tour-offer__text">New here? Take a two-minute tour of Infall.</p>

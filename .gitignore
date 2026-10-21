@@ -2,3 +2,4 @@ target/
 .superpowers/
 .dev/
 dist/
+.DS_Store

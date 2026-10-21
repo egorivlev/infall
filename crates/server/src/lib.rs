@@ -12,20 +12,23 @@ pub mod config;
 pub mod error;
 pub mod history;
 pub mod live;
+pub mod local;
 pub mod mcp;
 pub mod merges;
 pub mod people;
 pub mod runs;
 pub mod secret;
+pub mod sources;
 pub mod store;
 pub mod suggestions;
 pub mod todos;
 pub mod tokens;
 pub mod tools;
 
+use std::future::{Future, IntoFuture};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use qoop_core::Workspace;
@@ -100,6 +103,16 @@ pub fn build_app_with(
     store: Arc<dyn Store>,
     clock: Clock,
 ) -> Result<(Router, Shutdown), StartError> {
+    assemble(config, store, clock, None)
+}
+
+/// `build_app_with`, for a Team Workspace (`local: None`) or a Local Workspace.
+pub(crate) fn assemble(
+    config: Config,
+    store: Arc<dyn Store>,
+    clock: Clock,
+    local: Option<local::LocalMode>,
+) -> Result<(Router, Shutdown), StartError> {
     let workspace = match store.load_workspace()? {
         Some(ws) => ws,
         None => {
@@ -118,13 +131,45 @@ pub fn build_app_with(
         hub: Hub::default(),
         throttle: Throttle::default(),
         tool_rate: tokens::RateLimit::default(),
+        lookup_rate: tokens::RateLimit::new(sources::LOOKUPS_PER_MINUTE),
         ai: ai::AiState::new().map_err(StartError::Other)?,
         clock,
         hashing: Semaphore::new(4),
         dummy_hash,
         shutdown: shutdown.clone(),
+        local,
     });
     Ok((app::router(state), Shutdown(shutdown)))
+}
+
+/// Serves `app` on `listener` until `stop` finishes, then tells live connections to close
+/// and lets in-flight requests finish for at most `grace`.
+pub async fn serve_until(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: Shutdown,
+    stop: impl Future<Output = ()> + Send + 'static,
+    grace: Duration,
+) -> Result<(), String> {
+    let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        stop.await;
+        shutdown.trigger();
+        let _ = stopped_tx.send(());
+    });
+    let server = server.into_future();
+    tokio::pin!(server);
+    tokio::select! {
+        result = &mut server => return result.map_err(|e| format!("server error: {e}")),
+        _ = stopped_rx => {}
+    }
+    match tokio::time::timeout(grace, server).await {
+        Ok(result) => result.map_err(|e| format!("server error: {e}")),
+        Err(_) => {
+            tracing::warn!("in-flight requests did not finish in time");
+            Ok(())
+        }
+    }
 }
 
 /// Why `create-admin` or `reset-password` failed; messages are for the operator.

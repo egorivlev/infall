@@ -12,29 +12,53 @@
 # machine give the same package. No tauri-cli. Not signed, no repository, no auto-update.
 #
 # What it does:
-#   - builds an image with Ubuntu 22.04, Rust and the libraries the app is built against
-#     (WebKitGTK 4.1, GTK 3). The image is of this computer's kind; for the other kind of
-#     processor it cross-compiles (Ubuntu multiarch), which is much faster than emulating;
-#   - copies desktop/ into a container (the checkout is mounted read-only and nothing is
-#     written to it) and runs `cargo build --release --locked --features custom-protocol`;
+#   - builds an image with Ubuntu 22.04, Rust, Node.js and the libraries the app is built
+#     against (WebKitGTK 4.1, GTK 3). The image is of this computer's kind; for the other kind
+#     of processor it cross-compiles (Ubuntu multiarch), which is much faster than emulating;
+#   - copies what the app is built from into a container (the checkout is mounted read-only and
+#     nothing is written to it): desktop/, crates/ (the Infall server, which the app compiles
+#     into itself), web/ without node_modules and dist, and the root Cargo.toml and Cargo.lock;
+#   - builds the web UI there (`npm ci`, `npm run build`; the web UI is the same files for every
+#     architecture) and stops unless web/dist/index.html exists: the app embeds web/dist when it
+#     is compiled and serves it from its own server for Local Workspaces (docs/specs/local.md);
+#   - runs `cargo build --release --locked --features custom-protocol`. The server's C parts
+#     (SQLite, and AWS-LC under the TLS library) are compiled by the image's gcc, or by
+#     crossbuild-essential's gcc for the other architecture; no cmake or nasm is needed. Then
+#     checks that the program holds the web UI that was just built;
 #   - puts the package together by hand with dpkg-deb: /usr/bin/infall, a .desktop entry,
 #     the icon in the usual sizes. `Depends` is what dpkg-shlibdeps finds the program
 #     linked against. No maintainer scripts;
-#   - installs the package with apt in a clean Ubuntu 22.04 and a clean Ubuntu 24.04
-#     container of the package's architecture, checks that every shared library resolves,
-#     starts the program under a virtual display and checks that it shows its window and
-#     stays up. For the other kind of processor these containers are emulated; if this
-#     Docker cannot emulate, the checks are skipped and the script says so;
+#   - checks the package in a clean Ubuntu 22.04 and a clean Ubuntu 24.04 container of the
+#     package's architecture, in two steps:
+#       1. with the network: installs it with apt (and the virtual display and xdotool the
+#          check needs), checks the files and that every shared library resolves;
+#       2. from a snapshot of that container, WITH NO NETWORK AT ALL (`--network none`: only the
+#          loopback interface exists) and a fresh home folder (no saved server, no Workspaces):
+#          starts the program under a virtual display and checks that it shows its window,
+#          stays up, and has not panicked. Then it presses keys in the start screen to create a
+#          Tutorial Workspace (open_keys, open_tutorial below) and checks that the program now listens
+#          on 127.0.0.1 and nowhere else, that /api/health answers there, that
+#          /api/local/enter refuses a missing and a wrong key, that the Workspace's database
+#          and the unpacked web UI are in the app's data folder, and that a window is still
+#          shown. Last, it removes the package.
+#     This is what the M11 package lacked: it only asked for a server address.
+#     Not checked: what the start screen and the web UI look like, the Tutorial's steps, and
+#     everything after the Workspace opened (no click is made in the page).
+#     For the other kind of processor these containers are emulated; if this Docker cannot
+#     emulate, the checks are skipped and the script says so;
 #   - prints the SHA-256.
 #
 # What it creates in Docker, all named qoop-package-linux…, and nothing else is touched:
 #   images      qoop-package-linux:22.04-<arch>   (one per package architecture)
-#   volume      qoop-package-linux-cargo          (downloaded crates and build output)
-#   containers  qoop-package-linux-build-<arch>, qoop-package-linux-verify-<arch>-<release>
-#               (removed when the script ends)
+#               qoop-package-linux-verify:<arch>-<release>   (the snapshot of step 1;
+#               removed when the script ends)
+#   volume      qoop-package-linux-cargo          (downloaded crates, npm's cache, build output)
+#   containers  qoop-package-linux-build-<arch>, qoop-package-linux-verify-<arch>-<release>,
+#               qoop-package-linux-offline-<arch>-<release>   (removed when the script ends)
 # It pulls ubuntu:22.04 and ubuntu:24.04 if this Docker does not have them and leaves them.
 #
 # Environment: QOOP_PACKAGE_RUST (Rust version in the image, default 1.96.0),
+# QOOP_PACKAGE_NODE (Node.js version in the image, default 22.23.5),
 # QOOP_PACKAGE_MAINTAINER (the control file's Maintainer field).
 set -euo pipefail
 
@@ -49,9 +73,14 @@ volume="$prefix-cargo"
 base_release="22.04"
 verify_releases="22.04 24.04"
 rust="${QOOP_PACKAGE_RUST:-1.96.0}"
+node="${QOOP_PACKAGE_NODE:-22.23.5}"
 maintainer="${QOOP_PACKAGE_MAINTAINER:-Infall <nobody@example.invalid>}"
 # How long the started program must stay up, in seconds.
 stay_up=10
+# The keys that create a Tutorial Workspace on a fresh start screen, for xdotool (see
+# open_tutorial in the check below). With no Workspaces yet, the start screen puts the focus on
+# its first tile, Tutorial (desktop/ui/setup.js, focusStart), and Return presses it.
+open_keys="Return"
 
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'package-linux: %s\n' "$*" >&2; exit 1; }
@@ -79,7 +108,8 @@ if [ "$clean" = 1 ]; then
     for arch in amd64 arm64; do
         docker rm -f "$prefix-build-$arch" >/dev/null 2>&1 || true
         for release in $verify_releases; do
-            docker rm -f "$prefix-verify-$arch-$release" >/dev/null 2>&1 || true
+            docker rm -f "$prefix-verify-$arch-$release" "$prefix-offline-$arch-$release" >/dev/null 2>&1 || true
+            docker image rm "$prefix-verify:$arch-$release" >/dev/null 2>&1 || true
         done
         docker image rm "$prefix:$base_release-$arch" >/dev/null 2>&1 || true
     done
@@ -89,6 +119,7 @@ if [ "$clean" = 1 ]; then
 fi
 
 [ -f "$icon_src" ] || die "the icon source $icon_src is missing"
+[ -f "$root/web/package-lock.json" ] || die "web/package-lock.json is missing"
 
 # --- What is being packaged -------------------------------------------------------------------
 # The version is the one in Cargo.toml ([package]); tauri.conf.json must say the same, because
@@ -141,10 +172,14 @@ triple_of() {
 
 started_at=$SECONDS
 containers=()
+images=()
 finish() {
     trap - EXIT
     for c in ${containers[@]+"${containers[@]}"}; do
         docker rm -f "$c" >/dev/null 2>&1 || true
+    done
+    for i in ${images[@]+"${images[@]}"}; do
+        docker image rm "$i" >/dev/null 2>&1 || true
     done
 }
 trap finish EXIT
@@ -159,11 +194,11 @@ docker volume create "$volume" >/dev/null
 # archive.ubuntu.com, arm64 packages from ports.ubuntu.com, so every source names its architecture.
 build_image() { # <arch>
     local arch="$1"
-    say "Image $prefix:$base_release-$arch (Ubuntu $base_release, Rust $rust, libraries for $arch)"
+    say "Image $prefix:$base_release-$arch (Ubuntu $base_release, Rust $rust, Node.js $node, libraries for $arch)"
     local log="$dist/.image-$arch.log"
     # Docker keeps the finished steps, so this takes minutes only the first time.
     if ! docker build --platform "linux/$native" \
-        --build-arg "TARGET_ARCH=$arch" --build-arg "RUST=$rust" \
+        --build-arg "TARGET_ARCH=$arch" --build-arg "RUST=$rust" --build-arg "NODE=$node" \
         -t "$prefix:$base_release-$arch" - >"$log" 2>&1 <<'DOCKERFILE'; then
 FROM ubuntu:22.04
 ARG RUST
@@ -192,6 +227,24 @@ RUN set -eu; \
         CARGO_HOME=/opt/cargo sh -s -- -y -q --profile minimal --default-toolchain "$RUST" \
             --target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu --no-modify-path; \
     rustc --version
+# Node.js for the web UI build, of this computer's kind (its output is the same everywhere),
+# from nodejs.org, checked against the SHA-256 that nodejs.org publishes next to it.
+ARG NODE
+ENV PATH=/opt/node/bin:$PATH
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) node_arch=x64 ;; \
+        arm64) node_arch=arm64 ;; \
+    esac; \
+    file="node-v$NODE-linux-$node_arch.tar.gz"; \
+    cd /tmp; \
+    curl --proto '=https' --tlsv1.2 -sSfO "https://nodejs.org/dist/v$NODE/$file"; \
+    curl --proto '=https' --tlsv1.2 -sSfO "https://nodejs.org/dist/v$NODE/SHASUMS256.txt"; \
+    grep " $file\$" SHASUMS256.txt | sha256sum -c -; \
+    mkdir -p /opt/node; \
+    tar -xzf "$file" -C /opt/node --strip-components=1; \
+    rm -f "$file" SHASUMS256.txt; \
+    node --version; npm --version
 # The libraries the app is built against, of the package's architecture.
 ARG TARGET_ARCH
 RUN set -eu; \
@@ -219,7 +272,7 @@ build_package() { # <arch>
     docker rm -f "$builder" >/dev/null 2>&1 || true
     containers+=("$builder")
     docker run -i --quiet --name "$builder" --platform "linux/$native" \
-        -v "$volume":/cargo -v "$root/desktop":/src/desktop:ro \
+        -v "$volume":/cargo -v "$root":/src:ro \
         -e ARCH="$arch" -e TRIPLE="$triple" -e CRATE="$crate" -e PACKAGE="$package" \
         -e NAME="$name" -e VERSION="$version" -e MAINTAINER="$maintainer" -e DEB="$deb" \
         "$prefix:$base_release-$arch" bash -s <<'BUILD'
@@ -228,10 +281,29 @@ export CARGO_HOME=/cargo/home CARGO_TARGET_DIR=/cargo/target CARGO_INCREMENTAL=0
 export CARGO_TERM_COLOR=never
 
 # The checkout is read-only here, and the build writes next to the sources (Tauri's generated
-# schemas): work on a copy. File times are kept, so cargo rebuilds only what changed.
-mkdir -p /build/desktop
-tar -C /src/desktop --exclude=./src-tauri/target --exclude=./src-tauri/gen --exclude=.DS_Store -cf - . |
-    tar -C /build/desktop -xf -
+# schemas, the web UI's dist/): work on a copy of what the app is built from, laid out as in the
+# checkout. File times are kept, so cargo rebuilds only what changed.
+mkdir -p /build
+for part in Cargo.toml Cargo.lock crates desktop web; do
+    [ -e "/src/$part" ] || { echo "the checkout has no $part" >&2; exit 1; }
+done
+tar -C /src --exclude=desktop/src-tauri/target --exclude=desktop/src-tauri/gen \
+    --exclude=web/node_modules --exclude=web/dist --exclude=.DS_Store \
+    -cf - Cargo.toml Cargo.lock crates desktop web |
+    tar -C /build -xf -
+
+# --- The web UI ---
+# The same files for every architecture. npm's downloads are kept in the volume.
+(
+    cd /build/web
+    rm -rf dist
+    npm ci --no-audit --no-fund --loglevel=error --cache /cargo/npm
+    npm run build
+)
+[ -f /build/web/dist/index.html ] || { echo "the web UI build did not produce web/dist/index.html" >&2; exit 1; }
+web_marker="$(sed -n 's/.*src="\/\(assets\/[^"]*\.js\)".*/\1/p' /build/web/dist/index.html | head -n 1)"
+[ -n "$web_marker" ] || { echo "web/dist/index.html names no script under assets/; this script is out of date" >&2; exit 1; }
+
 cd /build/desktop/src-tauri
 
 if [ "$(dpkg --print-architecture)" != "$ARCH" ]; then
@@ -250,6 +322,9 @@ fi
 cargo build --release --locked -p "$CRATE" --features custom-protocol --target "$TRIPLE"
 built="/cargo/target/$TRIPLE/release/$CRATE"
 [ -x "$built" ] || { echo "the build did not produce $built" >&2; exit 1; }
+LC_ALL=C grep -qaF "$web_marker" "$built" \
+    || { echo "the program does not hold the web UI that was just built (no $web_marker inside it)" >&2; exit 1; }
+echo "the program holds the web UI ($web_marker)"
 
 # --- The package's files ---
 stage=/build/stage
@@ -312,8 +387,9 @@ Recommends: python3, xdg-utils, procps
 Section: misc
 Priority: optional
 Description: $NAME desktop app
- A thin shell around the web UI of your team's $NAME server. It can run the AI
- sidebar on your own Claude Code and execute Runs with your own Python.
+ Workspaces on this computer, with no server needed, or a Team Workspace on
+ your team's $NAME server. It can run the AI sidebar on your own Claude Code
+ and execute Runs with your own Python.
 CONTROL
 
 # xz: every dpkg reads it (Ubuntu's own default, zstd, is not understood by Debian 11).
@@ -342,18 +418,22 @@ can_run() { # <arch>: can this Docker run containers of that architecture?
 }
 
 verify_package() { # <arch> <release>
-    local arch="$1" release="$2" checker deb how
+    local arch="$1" release="$2" checker offline snapshot deb how
     deb="${package}_${version}_${arch}.deb"
     checker="$prefix-verify-$arch-$release"
+    offline="$prefix-offline-$arch-$release"
+    snapshot="$prefix-verify:$arch-$release"
     how="natively"
     [ "$arch" = "$native" ] || how="emulated"
     say "Checking $deb in a clean Ubuntu $release ($arch, $how)"
-    docker rm -f "$checker" >/dev/null 2>&1 || true
-    containers+=("$checker")
-    if docker run -i --quiet --name "$checker" --platform "linux/$arch" \
-        -v "$dist":/pkg:ro -e DEB="$deb" -e PACKAGE="$package" -e NAME="$name" \
-        -e IDENTIFIER="$identifier" -e STAY_UP="$stay_up" \
-        "ubuntu:$release" bash -s <<'VERIFY'; then
+    docker rm -f "$checker" "$offline" >/dev/null 2>&1 || true
+    containers+=("$checker" "$offline")
+    images+=("$snapshot")
+
+    # Step 1, with the network: install it the way a Member does, and what the check needs.
+    if ! docker run -i --quiet --name "$checker" --platform "linux/$arch" \
+        -v "$dist":/pkg:ro -e DEB="$deb" -e PACKAGE="$package" \
+        "ubuntu:$release" bash -s <<'INSTALL'; then
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 fail() { echo "FAILED: $*" >&2; exit 1; }
@@ -373,50 +453,155 @@ missing="$(ldd "/usr/bin/$PACKAGE" | grep 'not found' || true)"
 [ -z "$missing" ] || fail "shared libraries do not resolve: $missing"
 echo "    every shared library resolves ($(ldd "/usr/bin/$PACKAGE" | wc -l) of them)"
 
-# Start it as an ordinary person would, on a display that exists only here.
-apt-get install -y -qq --no-install-recommends xvfb x11-utils >/tmp/apt-x.log 2>&1 || { tail -n 30 /tmp/apt-x.log >&2; fail "could not install the virtual display"; }
+# For step 2: a display that exists only here, a way to press keys in it, an ordinary user.
+apt-get install -y -qq --no-install-recommends xvfb x11-utils xdotool >/tmp/apt-x.log 2>&1 || { tail -n 30 /tmp/apt-x.log >&2; fail "could not install the virtual display"; }
 useradd -m member
+# The snapshot of this container should not carry apt's downloads.
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+INSTALL
+        results+=("FAILED   Ubuntu $release, $arch, $how: installing")
+        failed=1
+        docker rm -f "$checker" >/dev/null 2>&1 || true
+        return
+    fi
+    docker commit "$checker" "$snapshot" >/dev/null
+    docker rm -f "$checker" >/dev/null
+
+    # Step 2, with no network at all: start it with nothing configured and open a Local Workspace.
+    if docker run -i --quiet --name "$offline" --platform "linux/$arch" --network none \
+        -e PACKAGE="$package" -e NAME="$name" -e IDENTIFIER="$identifier" -e STAY_UP="$stay_up" \
+        -e OPEN_KEYS="$open_keys" "$snapshot" bash -s <<'OFFLINE'; then
+set -euo pipefail
+fail() { echo "FAILED: $*" >&2; exit 1; }
+show_log() { [ -s /tmp/app.log ] && tail -n 40 /tmp/app.log >&2; return 0; }
+
+nets="$(ls /sys/class/net | tr '\n' ' ')"
+[ "$nets" = "lo " ] || fail "this container was meant to have no network, but has: $nets"
+echo "    no network: the only interface is lo"
+home=/home/member
+[ -z "$(ls -A "$home/.config" "$home/.local" 2>/dev/null)" ] || fail "the home folder is not fresh"
+
+# Start it as an ordinary person would, on a display that exists only here.
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
 for _ in $(seq 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.2; done
 [ -e /tmp/.X11-unix/X99 ] || fail "the virtual display did not start"
+export DISPLAY=:99
 
-runuser -u member -- env DISPLAY=:99 HOME=/home/member XDG_RUNTIME_DIR=/tmp "$PACKAGE" >/tmp/app.log 2>&1 &
-app=$!
+runuser -u member -- env DISPLAY=:99 HOME="$home" XDG_RUNTIME_DIR=/tmp "$PACKAGE" >/tmp/app.log 2>&1 &
+launcher=$!
+# The program's windows: GTK names the window class after the program's file name.
+windows() { xwininfo -root -tree 2>/dev/null | grep -F "(\"$PACKAGE\" " | grep -F "\"$NAME" || true; }
 window=""
 for _ in $(seq 120); do
-    kill -0 "$app" 2>/dev/null || { cat /tmp/app.log >&2; fail "the program ended by itself"; }
-    window="$(DISPLAY=:99 xwininfo -root -tree 2>/dev/null | grep -F "(\"$PACKAGE\" " | grep -F "\"$NAME" | head -n 1 || true)"
+    kill -0 "$launcher" 2>/dev/null || { show_log; fail "the program ended by itself"; }
+    window="$(windows | head -n 1)"
     [ -n "$window" ] && break
     sleep 1
 done
-[ -n "$window" ] || { cat /tmp/app.log >&2; fail "the program showed no window within two minutes"; }
+[ -n "$window" ] || { show_log; fail "the program showed no window within two minutes"; }
+start_id="$(printf '%s' "$window" | awk '{ print $1 }')"
 echo "    window: $(printf '%s' "$window" | sed 's/^ *//')"
 sleep "$STAY_UP"
-kill -0 "$app" 2>/dev/null || { cat /tmp/app.log >&2; fail "the program did not stay up for $STAY_UP seconds"; }
-pgrep -f WebKitWebProcess >/dev/null || { cat /tmp/app.log >&2; fail "the page's own process (WebKitWebProcess) is not running"; }
-grep -qi 'panicked' /tmp/app.log && { cat /tmp/app.log >&2; fail "the program panicked"; }
-echo "    started under a virtual display, showed its window, stayed up $STAY_UP s; its page process runs"
-[ -d "/home/member/.config/$IDENTIFIER" ] || [ ! -e "/home/member/.config/$IDENTIFIER" ] || true
+kill -0 "$launcher" 2>/dev/null || { show_log; fail "the program did not stay up for $STAY_UP seconds"; }
+pgrep -f WebKitWebProcess >/dev/null || { show_log; fail "the page's own process (WebKitWebProcess) is not running"; }
+grep -qi 'panicked' /tmp/app.log && { show_log; fail "the program panicked"; }
+app="$(pgrep -u member -x "$PACKAGE" | head -n 1)"
+[ -n "$app" ] || fail "no process named $PACKAGE runs as member"
+echo "    started with no network and a fresh home, showed its window, stayed up $STAY_UP s; its page process runs"
+
+# The program's listening TCP sockets, as "address:port" in the kernel's hexadecimal notation.
+listening() {
+    local inodes
+    inodes=" $(find "/proc/$app/fd" -lname 'socket:*' -printf '%l\n' 2>/dev/null | tr -dc '0-9\n' | tr '\n' ' ') "
+    awk 'FNR > 1 && $4 == "0A" { print $2, $10 }' /proc/net/tcp /proc/net/tcp6 2>/dev/null |
+        while read -r address inode; do
+            case "$inodes" in *" $inode "*) echo "$address" ;; esac
+        done
+}
+[ -z "$(listening)" ] || fail "the program listens before any Workspace is open: $(listening)"
+
+# open_tutorial: create a Tutorial Workspace on the start screen. Nothing can click in the page
+# from here, so this presses keys the way a person using only the keyboard would ($OPEN_KEYS,
+# set at the top of the script).
+xdotool windowfocus --sync "$start_id" 2>/dev/null || xdotool windowfocus "$start_id"
+sleep 1
+# shellcheck disable=SC2086
+xdotool key --clearmodifiers $OPEN_KEYS
+
+# The embedded server: one listening socket, on 127.0.0.1.
+port=""
+for _ in $(seq 90); do
+    kill -0 "$launcher" 2>/dev/null || { show_log; fail "the program ended after the start screen was used"; }
+    sockets="$(listening)"
+    if [ -n "$sockets" ]; then
+        for s in $sockets; do
+            case "$s" in
+                0100007F:*) port="$((16#${s#*:}))" ;;
+                *) fail "the program listens on something else than 127.0.0.1: $s" ;;
+            esac
+        done
+        [ -n "$port" ] && break
+    fi
+    sleep 1
+done
+[ -n "$port" ] || { show_log; fail "no Workspace server started within 90 seconds of pressing $OPEN_KEYS on the start screen"; }
+echo "    created a Tutorial Workspace from the start screen; its server listens on 127.0.0.1:$port only"
+
+# A request over loopback with nothing but bash: the status line and the body.
+get() { # <path>
+    exec 3<>"/dev/tcp/127.0.0.1/$port"
+    printf 'GET %s HTTP/1.1\r\nHost: 127.0.0.1:%s\r\nConnection: close\r\n\r\n' "$1" "$port" >&3
+    timeout 10 cat <&3 || true
+    exec 3<&-
+}
+health="$(get /api/health)"
+case "$health" in
+    "HTTP/1.1 200"*'"ok":true'*) echo "    /api/health answers {\"ok\":true}" ;;
+    *) fail "/api/health did not answer as expected: $(printf '%s' "$health" | head -c 300)" ;;
+esac
+for path in /api/local/enter "/api/local/enter?key=0000000000000000000000000000000000000000000000000000000000000000"; do
+    case "$(get "$path" | head -n 1)" in
+        "HTTP/1.1 404"*) ;;
+        *) fail "$path did not answer 404: nothing may sign in without the key" ;;
+    esac
+done
+echo "    /api/local/enter refuses a missing and a wrong key (404)"
+
+# One directory per Local Workspace in the app's data folder, its database in it
+# (desktop/src-tauri/src/workspaces.rs), and the unpacked web UI beside them (src/webui.rs).
+data="$home/.local/share/$IDENTIFIER"
+db="$(find "$data/workspaces" -name workspace.sqlite -size +0 2>/dev/null | head -n 1)"
+[ -n "$db" ] || fail "no Workspace database in $data/workspaces"
+[ -f "$data/web/index.html" ] || fail "the web UI was not unpacked to $data/web"
+echo "    the Workspace's database is ${db#"$home"/}; the web UI was unpacked to ${data#"$home"/}/web"
+sleep 3
+kill -0 "$launcher" 2>/dev/null || { show_log; fail "the program ended after opening the Workspace"; }
+[ -n "$(windows)" ] || { show_log; fail "after the Workspace opened, the program shows no window"; }
+grep -qi 'panicked' /tmp/app.log && { show_log; fail "the program panicked"; }
+echo "    a window is shown, still no panic"
 if [ -s /tmp/app.log ]; then
     echo "    what it printed ($(wc -l < /tmp/app.log) lines), first lines:"
     head -n 5 /tmp/app.log | sed 's/^/      /'
 fi
-# Quit takes the page process with it.
-kill "$app" 2>/dev/null || true
-for _ in $(seq 50); do kill -0 "$app" 2>/dev/null || break; sleep 0.1; done
-kill -0 "$app" 2>/dev/null && fail "the program did not end when asked to"
 
-# And it goes away again completely.
+# Quit takes the page process and the Workspace's server with it.
+kill "$launcher" 2>/dev/null || true
+for _ in $(seq 50); do kill -0 "$launcher" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$launcher" 2>/dev/null && fail "the program did not end when asked to"
+
+# And it goes away again completely (apt needs no network to remove).
 apt-get remove -y -qq "$PACKAGE" >/dev/null 2>&1 || fail "apt could not remove the package"
 [ ! -e "/usr/bin/$PACKAGE" ] && [ ! -e "/usr/share/applications/$PACKAGE.desktop" ] || fail "files were left after removal"
 echo "    removed with apt, nothing left in /usr"
-VERIFY
-        results+=("ok       Ubuntu $release, $arch, $how: installs with apt, libraries resolve, starts and stays up, removes")
+OFFLINE
+        results+=("ok       Ubuntu $release, $arch, $how: installs with apt, libraries resolve; with no network starts, stays up, opens a Tutorial Workspace on 127.0.0.1; removes")
     else
         results+=("FAILED   Ubuntu $release, $arch, $how")
         failed=1
     fi
-    docker rm -f "$checker" >/dev/null 2>&1 || true
+    docker rm -f "$offline" >/dev/null 2>&1 || true
+    docker image rm "$snapshot" >/dev/null 2>&1 || true
 }
 
 # --- Run ------------------------------------------------------------------------------------------

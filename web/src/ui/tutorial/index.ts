@@ -1,2 +1,5 @@
 export { Tour } from './Tour'
 export { startTour, tourBlock } from './start'
+export { Tutorial, TutorialProgress } from './handson/Tutorial'
+export { handsOn, tutorialHoldsTour, useHandsOn } from './handson/store'
+export { TUTORIAL_PRESET } from './handson/names'

@@ -1,4 +1,4 @@
-# Infall — server API contract (M1–M7)
+# Infall — server API contract (M1–M13)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -156,7 +156,7 @@ Server → client:
 
 ## 8. Responses and headers
 
-`Content-Type: application/json` for API responses. For every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and for HTML `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'`. Request bodies over 1 MiB are refused; `POST /api/branches/{id}/ops` accepts up to 2 MiB (§15).
+`Content-Type: application/json` for API responses. For every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and for HTML `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'`. Request bodies over 1 MiB are refused; `POST /api/branches/{id}/ops` accepts up to 2 MiB (§15).
 
 ## 9. M2 — History, Checkpoints, Restore, Branches
 
@@ -443,3 +443,105 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
 - **Tools** (§12, and the same tools in §14): `get_card` lists a Run among the Page's blocks with its title, its code, and — when it has a result — who executed it (name), when, the exit code, whether the code changed since (`code_sha256` against the present code), the number of figures and the last 4 000 characters of the output. Figures (base64) are never sent to a model. No tool creates a Run, changes its code or writes a result: **AI cannot put code on anyone's machine**, and a new tool must not change that.
 - **Guests** (§13): unchanged; a Run on `main` is visible with its result. Guests cannot write, so cannot record one.
 - History, Restore, Checkpoints, forks: nothing new — `result` is a field like any other.
+
+## 16. M12 — Local Workspaces
+
+See [local.md](local.md). The desktop app links this crate and runs the same server in-process for a Local Workspace: `qoop_server::local::start_local` listens on `127.0.0.1` on the port asked for in `LocalOptions::port` when it is free, else on a port the OS chooses, on the caller's tokio runtime, reads no environment variables and installs no signal handlers. The public origin is `http://127.0.0.1:<port>`; there is no dev origin; the Origin rules of §3 apply unchanged. `stop` closes live connections and lets in-flight requests finish for at most a few seconds.
+
+Files, all in the folder the desktop app gives: the database (one per Workspace) and beside it `<database file name>.secret-key` — the secret key of §14 as base64, made on the first start and kept (owner-only, mode 0600, on unix; on Windows the folder's own access rules apply). So the OpenRouter path is on in every Local Workspace.
+
+A new database gets, before the server answers anything: one Member (role `admin`, the name the app gives, the email `me@local.invalid`, a random password nobody knows) and the Research Content of its Preset (local.md, "What each Preset seeds"), recorded as ordinary Changes by that Member and through the same checks as `POST …/ops`. The Preset id is kept in the database; a database that has one is never seeded again, and the Preset and name given at later starts are ignored.
+
+Storage: a `settings` table (schema version 5), one text value per name: `preset`, and `tutorial_state` (below). Older files are migrated in place as in §2.
+
+| Method, path | Who | Response |
+|---|---|---|
+| `GET /api/workspace` | any signed-in Member or Guest, any Workspace | `{ kind: "team", preset: null }` or `{ kind: "local", preset: string }` (the Preset id: `blank`, `tutorial`, `literature-review`, `research-project`) |
+| `GET /api/local/enter?key=…` *public* | local only | with the key of this start: a new session for the one Member (cookie as in §3), `303` with `Location: /` and `Cache-Control: no-store`. Any other key, or none: `404 not_found` |
+| `PATCH /api/local/member` | local only | body `{ name: string }`; `200 { name: string }` — the name trimmed, with the rules of accepting an invite (1–100 characters, no control characters; `400 bad_request` otherwise) |
+| `GET /api/local/tutorial` | local only | `200 { state: <JSON> \| null }` — exactly what was last stored, byte for byte; `null` before anything was |
+| `PUT /api/local/tutorial` | local only | body `{ state: <any JSON> }`, at most 16 KiB in all (`400 bad_request` over that, or without `state`); `204` with no body. The server stores the text of `state` as it came and never reads it |
+
+The key of `entry_url` is 32 random bytes (URL-safe base64, no padding), made at each start, compared in constant time, and valid until `stop`. A session made with it lasts like any other (§3), but after a restart only the new key can make a new one.
+
+On a Team Workspace every `/api/local/*` path is `404 not_found`, whatever the method and whether or not there is a session.
+
+Refused in a Local Workspace, `403 forbidden` with a plain sentence: `POST /api/invites`, `DELETE /api/invites/{id}`, `DELETE /api/members/{id}`, `POST /api/auth/login`, and `POST /api/auth/logout` (signing out would leave no way back in). There is no HTTP route that changes a role or a password, so there is nothing more to refuse. Everything else is the same server, unchanged.
+
+## 17. M13 — Workspace files and Source lookup
+
+See [portability.md](portability.md) (Contracts A and B).
+
+### Workspace files (the crate, for the desktop app)
+
+In `qoop_server::local`:
+
+```rust
+pub fn export_workspace(db: &Path, dest: &Path) -> Result<(), PortError>;
+pub fn import_workspace(file: &Path, db: &Path) -> Result<Imported, PortError>;
+pub struct Imported { pub preset: Option<Preset> }   // None: a Preset id this build does not know
+pub enum PortError { NotAWorkspaceFile, NewerVersion, DestinationExists, Io(String) }  // Display: one plain sentence
+pub const APPLICATION_ID: i32 = 0x496e_6661;          // "Infa"
+pub const WORKSPACE_FILE_EXTENSION: &str = "infall";
+```
+
+A Workspace file is a SQLite database (rollback journal, no `-wal` beside it) with `PRAGMA application_id = 0x496e6661` and the schema version of §2 in `PRAGMA user_version`.
+
+**Export** takes a consistent snapshot of the open database with `VACUUM INTO` (one read transaction, so it is safe while the server writes; only whole batches of Changes are in it) into a private scratch file beside the database, then removes from that copy, with `secure_delete` on and a `VACUUM` after, so no freed page keeps a deleted byte:
+
+| Taken out | Why |
+|---|---|
+| `sessions` (all) | sign-ins on this computer |
+| `invites` (all) | token hashes; a Local Workspace has none anyway |
+| `access_tokens` (all) | bearer tokens for `/mcp` |
+| `ai_settings` (all rows: sealed OpenRouter key, nonce, last four characters, model) | the only data sealed with the secret key of §14/§16; that key file is never copied |
+| every `settings` row except `preset` and `tutorial_state` | anything a later version keeps there is left out unless it is added to the list on purpose |
+| each Member's `password_hash` | replaced by the hash of a fresh random password nobody knows |
+
+Kept: the Research Content with all its history (Changes, Checkpoints, Branches), Members (id, name, email, role, colour), To-dos, Suggestions, the Preset and the Tutorial's progress. The entry key (§16) lives only in memory and is never in a database. The clean copy is then written to `dest` (never over an existing file: `DestinationExists`; owner-only, mode 0600, on unix) and the scratch file is removed. A database whose schema is newer than the build is `NewerVersion`.
+
+**Import** refuses, before writing anything, a file that does not start with the SQLite header (`NotAWorkspaceFile`) and a `db` that exists (`DestinationExists`). It copies the file to `db` (owner-only on unix) and checks the copy: the Infall mark (`NotAWorkspaceFile`), a schema version not newer than this build (`NewerVersion`), `PRAGMA quick_check`, the tables of a Local Workspace, a `preset` setting, exactly one Member who is an Admin, and a Workspace snapshot that reads (else `NotAWorkspaceFile`). Then it removes from the copy any sessions, invites, access tokens and AI settings (in case a file was made by hand). If any check fails, the copy is removed and nothing is left at `db`. The copy is migrated to the current schema by `start_local` like any database; since it has a Preset and a Member, nothing is seeded and the `preset` and `member_name` of `LocalOptions` are ignored. The secret key file is made afresh at that first start.
+
+A Team Workspace's database is refused as `NotAWorkspaceFile` (it has no Preset and usually more than one person), whether exported with `export_workspace` or not; so is a Local Workspace's own database copied by hand (it has no mark).
+
+### Source lookup
+
+Configuration (new; a Local Workspace always uses the defaults):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `QOOP_CROSSREF_URL` | `https://api.crossref.org` | where DOIs are looked up |
+| `QOOP_ARXIV_URL` | `https://export.arxiv.org` | where arXiv ids are looked up |
+
+Besides OpenRouter (§14), these are the only hosts the server calls out to, and only when a Member asks. The whole lookup has a 10 s limit (`Config::lookup_timeout`, not read from the environment). The request carries only the id: the server's generic `User-Agent` (`qoop-server/<version>`), `Accept`, no cookie, no name, nothing about the Workspace. Redirects are not followed and no proxy is used (the same HTTP client as §14).
+
+`POST /api/sources/lookup` — Members and Admins, Team and Local Workspaces alike (`403 forbidden` for Guests, `401` without a session). Body: exactly one of
+
+```ts
+{ doi: string }    // "10.1038/nature12373"; also "doi:…" and "https://doi.org/…" / "dx.doi.org"
+{ arxiv: string }  // "2103.05577", "2103.05577v2", "hep-th/9711200"; also "arXiv:…" and arxiv.org
+                   // (www., export.) addresses under /abs/, /pdf/ (".pdf" dropped), /html/
+```
+
+A DOI is `10.` + 4–9 digits + `/` + a suffix, without white space, at most 300 characters.
+
+| Status | Body | When |
+|---|---|---|
+| `200` | `{ title: string, authors: string, year: string, doi: string \| null, url: string \| null }` | found |
+| `400 bad_request` | usual error body | neither key, both, a value that is not a string, or not a DOI / arXiv id. Nothing is sent anywhere and nothing is counted |
+| `404 not_found` | usual error body; the sentence names the registry | Crossref answers `404`; arXiv's feed has no entry, an error entry, or an entry without a title |
+| `429 too_many_requests` | usual error body | more than 30 lookups by this Member in a minute (refused ones are not counted) |
+| `502 lookup_failed` | usual error body, a sentence that ends with what to do (try again, or fill in the fields by hand) | the registry could not be reached, answered with another error status, took longer than 10 s, or answered with something that is not what it should be (more than 2 MiB included). Never the registry's own text |
+
+The answer:
+
+- `title` — plain text: tags (`<i>`, `<sub>`, MathML) removed without breaking words, HTML entities decoded (named, decimal, hex), white space collapsed, at most 2 000 characters. arXiv titles keep their TeX as written.
+- `authors` — the form a Source's `authors` already has in the seeds and the web UI: each name as "Given Family" (Crossref `given` + `family`, else `name`; arXiv `<name>` as is), joined by `", "`. Past 100 names the list ends in `", et al."`.
+- `year` — Crossref: the first of `issued`, `published`, `published-print`, `published-online`, `created` that has a year; arXiv: the year of `<published>`.
+- `doi` — Crossref: the DOI it gives (else the one asked); arXiv: the `<arxiv:doi>` of the paper when it has one, else `null`.
+- `url` — Crossref: `null` (the DOI is the identifier); arXiv: `https://arxiv.org/abs/<id as asked, version included>`.
+- A field the registry lacks is `""`.
+
+Nothing is stored; the web UI fills its form with the answer and saves through the ordinary ops (§11).
+
+Crossref is asked `GET <crossref>/works/<doi>` (everything but unreserved characters and `/` percent-encoded), arXiv `GET <arxiv>/api/query?id_list=<id>&max_results=1`.

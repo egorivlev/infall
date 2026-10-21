@@ -1130,6 +1130,15 @@ impl Store for BreakableStore {
     fn set_ai_model(&self, m: MemberId, model: &str) -> StoreResult<bool> {
         self.inner.set_ai_model(m, model)
     }
+    fn set_member_name(&self, id: MemberId, name: &str) -> StoreResult<bool> {
+        self.inner.set_member_name(id, name)
+    }
+    fn setting(&self, name: &str) -> StoreResult<Option<String>> {
+        self.inner.setting(name)
+    }
+    fn set_setting(&self, name: &str, value: &str) -> StoreResult<()> {
+        self.inner.set_setting(name, value)
+    }
 }
 
 #[tokio::test]

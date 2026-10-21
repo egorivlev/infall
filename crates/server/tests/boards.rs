@@ -613,6 +613,15 @@ impl Store for FailingStore {
     fn set_ai_model(&self, m: MemberId, model: &str) -> qoop_server::store::StoreResult<bool> {
         self.0.set_ai_model(m, model)
     }
+    fn set_member_name(&self, id: MemberId, name: &str) -> qoop_server::store::StoreResult<bool> {
+        self.0.set_member_name(id, name)
+    }
+    fn setting(&self, name: &str) -> qoop_server::store::StoreResult<Option<String>> {
+        self.0.setting(name)
+    }
+    fn set_setting(&self, name: &str, value: &str) -> qoop_server::store::StoreResult<()> {
+        self.0.set_setting(name, value)
+    }
 }
 
 #[tokio::test]

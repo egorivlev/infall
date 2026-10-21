@@ -74,6 +74,15 @@ pub enum ApiError {
     /// The upstream model list could not be fetched.
     #[error("upstream failed")]
     UpstreamFailed,
+    /// A Source lookup for an id the registry does not know; the value is the sentence.
+    #[error("{0}")]
+    LookupNotFound(&'static str),
+    /// A registry that did not answer, or answered nonsense; the value is the sentence.
+    #[error("{0}")]
+    LookupFailed(&'static str),
+    /// A Member who asked for more Source lookups than a minute allows.
+    #[error("too many lookups")]
+    TooManyLookups,
     /// Logged, never shown.
     #[error("internal: {0}")]
     Internal(String),
@@ -189,6 +198,13 @@ impl ApiError {
                 StatusCode::BAD_GATEWAY,
                 "upstream_failed",
                 "The list of models could not be fetched from OpenRouter. Try again later.".into(),
+            ),
+            LookupNotFound(m) => (StatusCode::NOT_FOUND, "not_found", (*m).into()),
+            LookupFailed(m) => (StatusCode::BAD_GATEWAY, "lookup_failed", (*m).into()),
+            TooManyLookups => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Too many lookups in a minute. Try again in a moment.".into(),
             ),
             Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

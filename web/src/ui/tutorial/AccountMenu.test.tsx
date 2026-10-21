@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Member } from '../../lib'
 
-vi.mock('../../lib', () => ({ session: { logout: vi.fn() } }))
+vi.mock('../../lib', async (orig) => ({ ...(await orig<typeof import('../../lib')>()), session: { logout: vi.fn() } }))
 
 import { AccountMenu } from '../shell/AccountMenu'
 import { tour } from './store'
@@ -75,7 +75,7 @@ describe('"Tour of Infall" in the account menu', () => {
     render(<Screen member={MEMBER} />)
     trigger().focus()
     await userEvent.keyboard('{Enter}')
-    await vi.waitFor(() => expect(screen.getByRole('menuitem', { name: 'AI access' })).toHaveFocus())
+    await vi.waitFor(() => expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveFocus())
     await userEvent.keyboard('{ArrowDown}')
     expect(item()).toHaveFocus()
     await userEvent.keyboard('{ArrowDown}')

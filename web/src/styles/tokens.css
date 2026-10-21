@@ -23,7 +23,7 @@
 --q-shadow:0 1px 0 oklch(0 0 0 / .04),0 10px 30px oklch(0.3 0.02 255 / .14);
 --q-chrome:var(--q-surface);--q-chrome-line:var(--q-line-soft);--q-cur-branch:var(--q-ink);}
 [data-branch]:not([data-branch="main"]){--q-chrome:color-mix(in srgb,var(--q-surface) 87%,var(--q-branch));--q-chrome-line:color-mix(in srgb,var(--q-line-soft) 55%,var(--q-branch));--q-cur-branch:var(--q-branch);}
-body{margin:0;background:var(--q-sunken);color:var(--q-ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:13px;-webkit-font-smoothing:antialiased;}
+body{margin:0;background:var(--q-sunken);color:var(--q-ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:calc(13px * var(--q-text, 1));-webkit-font-smoothing:antialiased;}
 a{color:var(--q-accent);text-decoration:none}a:hover{text-decoration:underline;color:var(--q-ink)}
 ::selection{background:var(--q-accent-soft)}
 .katex{font-size:1.06em}

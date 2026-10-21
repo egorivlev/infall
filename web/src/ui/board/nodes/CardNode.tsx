@@ -39,6 +39,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
       className={`qb-card qb-card--${level}${selected ? ' is-selected' : ''}${dead ? ' is-dead' : ''}`}
       data-status={card.status}
       data-testid={`card-${id}`}
+      data-card={id}
       data-tour="card"
       style={{ ['--st' as string]: `var(--q-st-${STATUS_TOKEN[card.status]})` }}
     >
@@ -49,7 +50,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
               {selected && !readOnly ? (
                 <button
                   type="button"
-                  className="qb-card__status qb-card__status--btn nodrag"
+                  className="qb-card__status qb-card__status--btn"
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
                   aria-label={`Status: ${STATUS_LABEL[card.status]}. Change status`}

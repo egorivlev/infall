@@ -18,6 +18,8 @@ const noAi = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
+  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,
   ai: { refresh: async () => {}, models: async () => [] },
   useSession: () => h.session,
@@ -92,10 +94,12 @@ afterEach(() => {
 describe('AI access route', () => {
   it('parses and builds /settings/ai', () => {
     expect(AI_ACCESS_PATH).toBe('/settings/ai')
-    expect(parseRoute(AI_ACCESS_PATH)).toEqual({ name: 'ai-access' })
-    expect(parseRoute('/settings/ai/')).toEqual({ name: 'ai-access' })
-    expect(parseRoute('/settings/ai?x=1#top')).toEqual({ name: 'ai-access' })
-    expect(parseRoute('/settings')).toEqual({ name: 'board', branch: 'main' })
+    // AI access is now the "AI access" section of Settings, at the address it always had.
+    const ai = { name: 'settings', section: 'ai' }
+    expect(parseRoute(AI_ACCESS_PATH)).toEqual(ai)
+    expect(parseRoute('/settings/ai/')).toEqual(ai)
+    expect(parseRoute('/settings/ai?x=1#top')).toEqual(ai)
+    expect(parseRoute('/settings')).toEqual({ name: 'settings', section: 'appearance' })
     expect(parseRoute('/settings/other')).toEqual({ name: 'board', branch: 'main' })
     expect(parseRoute('/settings/ai/more')).toEqual({ name: 'board', branch: 'main' })
   })
@@ -116,7 +120,9 @@ describe('AI access route', () => {
     const user = userEvent.setup()
     const { container } = render(<App />)
     await user.click(screen.getByRole('button', { name: /Elena Varga/ }))
-    await user.click(screen.getByRole('menuitem', { name: 'AI access' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Settings' }))
+    expect(window.location.pathname).toBe('/settings')
+    await user.click(screen.getByRole('link', { name: 'AI access' }))
     expect(window.location.pathname).toBe('/settings/ai')
     expect(screen.getByRole('heading', { level: 1, name: 'AI access' })).toBeInTheDocument()
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -126,13 +132,17 @@ describe('AI access route', () => {
     await screen.findByText('No access tokens yet.')
   })
 
-  it('has a real link "AI access" in the account menu of a Member', async () => {
+  it('is reached from the account menu: a real link "Settings", then the "AI access" section', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /Mei Lin/ }))
-    const entry = within(screen.getByRole('menu')).getByRole('menuitem', { name: 'AI access' })
-    expect(entry).toHaveAttribute('href', '/settings/ai')
+    const menu = within(screen.getByRole('menu'))
+    expect(menu.queryByRole('menuitem', { name: 'AI access' })).not.toBeInTheDocument()
+    const entry = menu.getByRole('menuitem', { name: 'Settings' })
+    expect(entry).toHaveAttribute('href', '/settings')
     expect(entry.tagName).toBe('A')
+    await user.click(entry)
+    expect(within(screen.getByRole('navigation', { name: 'Settings' })).getByRole('link', { name: 'AI access' })).toHaveAttribute('href', '/settings/ai')
   })
 
   it('sends a Guest back to the Board; a Guest sees neither the menu entry nor the rail item', async () => {

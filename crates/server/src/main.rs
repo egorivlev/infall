@@ -1,7 +1,6 @@
 //! The `qoop-server` command line: `serve` (default), `create-admin`, `reset-password`,
 //! `gen-secret-key`.
 
-use std::future::IntoFuture;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,7 +9,7 @@ use clap::{Parser, Subcommand};
 use qoop_server::config::Config;
 use qoop_server::secret::SecretKey;
 use qoop_server::store::{SqliteStore, Store};
-use qoop_server::{Clock, build_app_with, create_admin, reset_password};
+use qoop_server::{Clock, build_app_with, create_admin, reset_password, serve_until};
 use tracing_subscriber::EnvFilter;
 
 /// How long `serve` waits for in-flight requests after a shutdown signal.
@@ -120,26 +119,11 @@ fn serve(config: Config) -> Result<(), String> {
             .map_err(|e| format!("cannot listen on {addr}: {e}"))?;
         tracing::info!(%addr, origin = %config.public_origin, "qoop-server listening");
 
-        let (signalled_tx, signalled_rx) = tokio::sync::oneshot::channel::<()>();
-        let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        let stop = async {
             wait_for_signal().await;
             tracing::info!("shutting down");
-            shutdown.trigger();
-            let _ = signalled_tx.send(());
-        });
-        let server = server.into_future();
-        tokio::pin!(server);
-        tokio::select! {
-            result = &mut server => return result.map_err(|e| format!("server error: {e}")),
-            _ = signalled_rx => {}
-        }
-        match tokio::time::timeout(SHUTDOWN_GRACE, server).await {
-            Ok(result) => result.map_err(|e| format!("server error: {e}")),
-            Err(_) => {
-                tracing::warn!("in-flight requests did not finish in time; exiting");
-                Ok(())
-            }
-        }
+        };
+        serve_until(listener, app, shutdown, stop, SHUTDOWN_GRACE).await
     })
 }
 

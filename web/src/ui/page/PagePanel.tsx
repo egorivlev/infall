@@ -1,7 +1,8 @@
 import './page.css'
-import { memo, useEffect, useRef, useState } from 'react'
+import './port.css'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
-import { ops, useBoard, useHistory, usePage } from '../../lib'
+import { ops, useBoard, useHistory, useMembers, usePage } from '../../lib'
 import type { CardVM, PageVM, Status } from '../../lib'
 import { boardBridge, pagePanel } from '../bridge'
 import { centre, containsPoint } from '../board/geometry'
@@ -14,8 +15,13 @@ import { formatTime } from '../shell/dates'
 import { initials } from '../shell/initials'
 import { Blocks } from './Blocks'
 import { DraftArea } from './DraftArea'
+import { exportFile } from './export/exportFile'
+import { pageMarkdown } from './export/markdown'
+import { PrintView } from './export/PrintView'
+import { fileName } from './files'
+import { MoreMenu } from './MoreMenu'
 import { PageTodos } from './PageTodos'
-import { count, firstName } from './people'
+import { count, firstName, memberName } from './people'
 import { Sources } from './Sources'
 
 type Props = {
@@ -202,10 +208,26 @@ export function PagePanel({ cardId, full, onClose }: Props) {
   const previewing = useHistory().preview !== null
   const canEdit = !readOnly && !editor && card !== null
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const people = useMembers()
+  const nameOf = useCallback((id: string) => memberName(people, id).name, [people])
+  // Each Print… mounts the print copy afresh (the key), which asks for the system's dialog once it is ready.
+  const [printing, setPrinting] = useState(0)
+  const endPrint = useCallback(() => setPrinting(0), [])
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true })
   }, [cardId])
+
+  // M13: the Page's tools — the Page as a Markdown file, or printed on its own.
+  const exportMarkdown = () => {
+    if (!card) return
+    const text = pageMarkdown({ title: card.title, summary: card.summary, blocks: vm.blocks, sources: vm.sources, nameOf })
+    void exportFile(fileName(card.title || 'Untitled', 'md'), text, 'text/markdown')
+  }
+  const tools = [
+    { label: 'Export as Markdown', onPick: exportMarkdown },
+    { label: 'Print…', onPick: () => setPrinting((n) => n + 1) },
+  ]
 
   const close = () => onClose(cardId)
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
@@ -228,7 +250,7 @@ export function PagePanel({ cardId, full, onClose }: Props) {
   const label = card ? `Page of ${card.title || 'Untitled'}` : waiting ? 'Page' : 'Page of a removed Card'
 
   return (
-    <section className={`qp-panel${full ? ' is-full' : ''}`} aria-label={label} data-testid="page-panel" onKeyDown={onKeyDown}>
+    <section className={`qp-panel${full ? ' is-full' : ''}`} aria-label={label} data-testid="page-panel" data-tour="page" onKeyDown={onKeyDown}>
       <header className="qp-head">
         <svg className="qp-head__icon" width="13" height="14" viewBox="0 0 13 14" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
           <path d="M1.5 1 H8.5 L11.5 4 V13 H1.5 Z M8.5 1 V4 H11.5" />
@@ -245,6 +267,16 @@ export function PagePanel({ cardId, full, onClose }: Props) {
         {card && <StatusPicker card={card} readOnly={readOnly} />}
         <span className="qp-spacer" />
         {card && <span className="qp-sync">{sync}</span>}
+        {card && (
+          <MoreMenu
+            label="Page tools"
+            title="Export or print this Page"
+            items={tools}
+            wrapClass="qp-tools"
+            buttonClass="qp-head__btn qp-tools__btn"
+            menuClass="qp-tools__menu"
+          />
+        )}
         <button
           type="button"
           className="qp-head__btn"
@@ -273,7 +305,7 @@ export function PagePanel({ cardId, full, onClose }: Props) {
               </p>
             </div>
             <Blocks cardId={cardId} blocks={vm.blocks} canEdit={canEdit} readOnly={readOnly || previewing} branchId={board.branch?.id} />
-            <Sources cardId={cardId} sources={vm.sources} canEdit={canEdit} />
+            <Sources cardId={cardId} cardTitle={card.title} sources={vm.sources} canEdit={canEdit} />
             {!readOnly && <PageTodos card={card} branchId={board.branch?.id} />}
             <Connections connections={vm.connections} />
           </div>
@@ -296,6 +328,7 @@ export function PagePanel({ cardId, full, onClose }: Props) {
       </div>
 
       <Toast />
+      {printing > 0 && card && <PrintView key={printing} card={card} blocks={vm.blocks} sources={vm.sources} nameOf={nameOf} onDone={endPrint} />}
     </section>
   )
 }

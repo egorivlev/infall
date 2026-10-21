@@ -80,7 +80,8 @@ impl SecretKey {
         Ok(SecretKey(random()?))
     }
 
-    /// The key as `QOOP_SECRET_KEY` takes it. Only `gen-secret-key` calls this.
+    /// The key as `QOOP_SECRET_KEY` takes it. Only `gen-secret-key` and the secret key file
+    /// of a Local Workspace call this.
     pub fn to_base64(&self) -> String {
         STANDARD.encode(self.0)
     }

@@ -1,5 +1,6 @@
-//! The server address: what may be typed on the first-run screen, the health check, and the
-//! rule for where the main window may navigate. No Tauri types.
+//! The server address: what may be typed on the start screen, the health check, the origin
+//! of the app's own embedded server, and the rule for where the main window may navigate.
+//! No Tauri types.
 
 use std::time::Duration;
 
@@ -42,6 +43,28 @@ pub fn parse_server_address(input: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
+/// The origin of the app's own embedded server (a Local Workspace), as that server reports
+/// it: exactly `http://127.0.0.1:<port>`. Nothing typed by anyone goes through here; this is
+/// the one way such an origin becomes the main window's origin besides a checked address.
+pub fn embedded_origin(origin: &str) -> Result<String, String> {
+    const REFUSED: &str = "The workspace's server gave an address the app does not accept.";
+    let url = Url::parse(origin).map_err(|_| REFUSED.to_owned())?;
+    let plain = url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port().is_some_and(|p| p != 0)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none();
+    let serialized = url.origin().ascii_serialization();
+    if plain && serialized == origin {
+        Ok(serialized)
+    } else {
+        Err(REFUSED.into())
+    }
+}
+
 /// Is `url` a page of the server at `origin` (an origin as [`parse_server_address`] returns)?
 pub fn same_origin(url: &Url, origin: &str) -> bool {
     matches!(url.scheme(), "http" | "https") && url.origin().ascii_serialization() == origin
@@ -78,12 +101,6 @@ pub fn may_open_externally(url: &Url) -> bool {
 /// `GET <origin>/api/health` must answer `{ "ok": true }`. Redirects are not followed.
 pub fn check_health(origin: &str) -> Result<(), String> {
     check_health_within(origin, Duration::from_secs(8))
-}
-
-/// The same check when the app starts with a saved address, with less patience: the window
-/// waits for it, and a server that is there answers at once.
-pub fn check_reachable(origin: &str) -> bool {
-    check_health_within(origin, Duration::from_secs(4)).is_ok()
 }
 
 fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
@@ -221,6 +238,42 @@ mod tests {
         assert_eq!(nav("ipc://localhost/claude_send"), Navigation::Block);
         assert_eq!(nav("about:config"), Navigation::Block);
         assert_eq!(nav("x-apple-something://open"), Navigation::Block);
+    }
+
+    #[test]
+    fn the_embedded_servers_origin_is_exactly_loopback_with_a_port() {
+        assert_eq!(
+            embedded_origin("http://127.0.0.1:53124").as_deref(),
+            Ok("http://127.0.0.1:53124")
+        );
+        for refused in [
+            "http://127.0.0.1",
+            "http://127.0.0.1:0",
+            "http://127.0.0.1:53124/",
+            "http://127.0.0.1:53124/api",
+            "http://127.0.0.1:53124?key=x",
+            "https://127.0.0.1:53124",
+            "http://localhost:53124",
+            "http://127.0.0.2:53124",
+            "http://[::1]:53124",
+            "http://user@127.0.0.1:53124",
+            "http://127.0.0.1.evil.example:53124",
+            "https://qoop.example.org",
+            "",
+            "not a url",
+        ] {
+            assert!(embedded_origin(refused).is_err(), "accepted {refused:?}");
+        }
+        // Once accepted, the window's rules are the same as for any origin.
+        let origin = "http://127.0.0.1:53124";
+        let nav = |u: &str| navigation(&Url::parse(u).unwrap(), origin);
+        assert_eq!(
+            nav("http://127.0.0.1:53124/api/local/enter?key=abc"),
+            Navigation::Allow
+        );
+        assert_eq!(nav("http://127.0.0.1:53124/"), Navigation::Allow);
+        assert_eq!(nav("http://127.0.0.1:53125/"), Navigation::External);
+        assert_eq!(nav("http://localhost:53124/"), Navigation::External);
     }
 
     #[test]
