@@ -121,6 +121,10 @@ _Avoid_: Revert, rollback, reset
 The picture of every Branch from the Workspace's first Change onward: each Branch a line of its Activities and Checkpoints, joined to other lines where it was forked and where a Merge happened. A new Branch may be started from any Activity or Checkpoint on it.
 _Avoid_: Tree, timeline, network, divergence graph
 
+**Undo**:
+Taking back one's own latest gesture on the open Branch by adding new Changes that reverse it, leaving alone anything someone else has changed since. Works only on what was done in this window since it was opened; a Restore is the way further back.
+_Avoid_: Revert, rollback
+
 ### Outside versioning
 
 **To-do**:
