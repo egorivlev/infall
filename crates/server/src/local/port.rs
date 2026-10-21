@@ -1,6 +1,9 @@
 //! Workspace files (docs/specs/portability.md, Contract A; api.md §17): a Local Workspace
 //! taken out as one `.infall` file, and a new Local Workspace made from one.
 //!
+//! A Local Workspace's own database, copied by hand, can be imported too (see
+//! `import_workspace`).
+//!
 //! A Workspace file is a SQLite database: a consistent copy of the Workspace's own,
 //! marked with `PRAGMA application_id = APPLICATION_ID` and carrying its schema version in
 //! `PRAGMA user_version` as every database does. Before it leaves the Workspace's folder
@@ -47,9 +50,11 @@ pub enum PortError {
 impl std::fmt::Display for PortError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PortError::NotAWorkspaceFile => f.write_str("This file is not an Infall Workspace file."),
+            PortError::NotAWorkspaceFile => f.write_str(
+                "This file is neither an Infall Workspace file nor the database of a Local Workspace.",
+            ),
             PortError::NewerVersion => f.write_str(
-                "This Workspace file was made by a newer version of Infall. Update Infall to open it.",
+                "This Workspace was made by a newer version of Infall. Update Infall to open it.",
             ),
             PortError::DestinationExists => {
                 f.write_str("A file with that name is already there. Choose another name.")
@@ -77,7 +82,7 @@ pub fn export_workspace(db: &Path, dest: &Path) -> Result<(), PortError> {
             db.display()
         )));
     }
-    let scratch = scratch_path(db)?;
+    let scratch = scratch_path(db, "export")?;
     let result = export_via(db, &scratch, dest);
     remove_quietly(&scratch);
     remove_quietly(&journal_of(&scratch));
@@ -183,8 +188,14 @@ fn strip(path: &Path) -> rusqlite::Result<()> {
 /// (which must not exist). The copy is brought up to the current schema when it is opened
 /// by `start_local`. Returns what the start screen needs.
 ///
-/// The copy is checked, not the original, so what was checked is what is opened; when the
-/// check fails the copy is removed again and nothing is left at `db`.
+/// `file` may also be a Local Workspace's own database, copied by hand out of the app's
+/// data folder (it has no Workspace-file mark): it passes the same checks, and when a
+/// `<file>-wal` lies beside it — the copy was made while the app was running — the Changes
+/// kept only there are taken in too. It is then cleaned exactly as an export is.
+///
+/// Neither `file` nor its `-wal` is ever opened as a database, only read as bytes: they are
+/// copied beside `db` first, and the copy is what is checked, cleaned and finally written to
+/// `db`. When anything fails, the copies are removed and nothing is written to `db`.
 pub fn import_workspace(file: &Path, db: &Path) -> Result<Imported, PortError> {
     let mut header = [0u8; 16];
     let read_header = File::open(file).and_then(|mut f| f.read_exact(&mut header));
@@ -212,31 +223,61 @@ pub fn import_workspace(file: &Path, db: &Path) -> Result<Imported, PortError> {
             ))
         })?;
     }
-    copy_new(file, db).map_err(|e| match e.kind() {
+    let scratch = scratch_path(db, "import")?;
+    let result = import_via(file, &scratch, db);
+    for leftover in [
+        scratch.clone(),
+        journal_of(&scratch),
+        suffixed(&scratch, "-wal"),
+        suffixed(&scratch, "-shm"),
+    ] {
+        remove_quietly(&leftover);
+    }
+    // `db` is written last, whole or not at all (`copy_new`), so a failure leaves nothing
+    // there.
+    result
+}
+
+fn import_via(file: &Path, scratch: &Path, db: &Path) -> Result<Imported, PortError> {
+    let not_copied = |e: std::io::Error| {
+        PortError::Io(format!(
+            "The Workspace could not be copied to {}: {e}.",
+            parent_of(scratch).display()
+        ))
+    };
+    copy_new(file, scratch).map_err(not_copied)?;
+    let wal = suffixed(file, "-wal");
+    if wal.is_file() {
+        copy_new(&wal, &suffixed(scratch, "-wal")).map_err(not_copied)?;
+    }
+    let (marked, imported) = check(scratch)?;
+    if marked {
+        clean(scratch)?;
+    } else {
+        // A database copied by hand: everything an export takes out is taken out, the
+        // `-wal` is folded in, and it is marked, so it is from here on a Workspace file.
+        strip(scratch)
+            .map_err(|e| PortError::Io(format!("The copy could not be cleaned: {e}.")))?;
+    }
+    copy_new(scratch, db).map_err(|e| match e.kind() {
         ErrorKind::AlreadyExists => PortError::DestinationExists,
         _ => PortError::Io(format!(
             "The Workspace could not be copied to {}: {e}.",
             db.display()
         )),
     })?;
-    match check_and_clean(db) {
-        Ok(imported) => Ok(imported),
-        Err(e) => {
-            remove_quietly(db);
-            remove_quietly(&journal_of(db));
-            Err(e)
-        }
-    }
+    Ok(imported)
 }
 
-/// The checks of `import_workspace`, on the copy: the Infall mark, a schema version this
-/// build knows, an intact database that is a Local Workspace (a Preset, exactly one
-/// Member, an Admin, a Workspace that reads). Then what a file should never bring in —
-/// sessions, invites, access tokens, AI settings — is taken out, in case it was made by
-/// hand.
-fn check_and_clean(db: &Path) -> Result<Imported, PortError> {
+/// The checks of `import_workspace`, on the copy: a schema version this build knows, an
+/// intact database that is a Local Workspace (the tables, a Preset, exactly one Member, an
+/// Admin, a Workspace that reads). Returns whether the copy carries the Workspace-file mark,
+/// and what the start screen needs.
+fn check(db: &Path) -> Result<(bool, Imported), PortError> {
     let not_ours = |_: rusqlite::Error| PortError::NotAWorkspaceFile;
-    let mut conn = Connection::open_with_flags(
+    // Opened read-write so that SQLite can read a `-wal` beside the copy (and roll back a
+    // hot journal): a read-only connection cannot recover either.
+    let conn = Connection::open_with_flags(
         db,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
@@ -244,9 +285,13 @@ fn check_and_clean(db: &Path) -> Result<Imported, PortError> {
     let app_id: i32 = conn
         .query_row("PRAGMA application_id", [], |r| r.get(0))
         .map_err(not_ours)?;
-    if app_id != APPLICATION_ID {
-        return Err(PortError::NotAWorkspaceFile);
-    }
+    // Unmarked: a Local Workspace's database itself (it is never marked), copied by hand.
+    // Marked with anything else: some other program's file.
+    let marked = match app_id {
+        APPLICATION_ID => true,
+        0 => false,
+        _ => return Err(PortError::NotAWorkspaceFile),
+    };
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(not_ours)?;
@@ -294,11 +339,27 @@ fn check_and_clean(db: &Path) -> Result<Imported, PortError> {
         Some(json) if serde_json::from_str::<Workspace>(&json).is_ok() => {}
         _ => return Err(PortError::NotAWorkspaceFile),
     }
+    Ok((
+        marked,
+        Imported {
+            preset: Preset::from_id(&preset),
+        },
+    ))
+}
+
+/// What a Workspace file should never bring in — sessions, invites, access tokens, AI
+/// settings — taken out of the copy, in case the file was made by hand.
+fn clean(db: &Path) -> Result<(), PortError> {
     let clean = |e: rusqlite::Error| {
         PortError::Io(format!(
             "The imported Workspace could not be prepared: {e}."
         ))
     };
+    let mut conn = Connection::open(db).map_err(clean)?;
+    // One file, whatever the file it came from used: what is copied to `db` is all of it.
+    let _mode: String = conn
+        .query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0))
+        .map_err(clean)?;
     let tx = conn.transaction().map_err(clean)?;
     for table in ["sessions", "invites", "access_tokens", "ai_settings"] {
         if has_table(&tx, table).map_err(clean)? {
@@ -307,9 +368,7 @@ fn check_and_clean(db: &Path) -> Result<Imported, PortError> {
         }
     }
     tx.commit().map_err(clean)?;
-    Ok(Imported {
-        preset: Preset::from_id(&preset),
-    })
+    Ok(())
 }
 
 // ---------------------------------------------------------------- files
@@ -334,19 +393,25 @@ fn parent_of(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
-/// `<db>.export-<random>.tmp`, beside `db`.
-fn scratch_path(db: &Path) -> Result<PathBuf, PortError> {
+/// `<db>.<what>-<random>.tmp`, beside `db`.
+fn scratch_path(db: &Path, what: &str) -> Result<PathBuf, PortError> {
     let random = new_token().map_err(|e| PortError::Io(format!("{e}.")))?;
     let mut name = db.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".export-{}.tmp", &random[..12]));
+    name.push(format!(".{what}-{}.tmp", &random[..12]));
     Ok(db.with_file_name(name))
+}
+
+/// `path` with `suffix` added to its file name, as SQLite names the files beside a
+/// database: `-journal`, `-wal`, `-shm`.
+fn suffixed(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(suffix);
+    path.with_file_name(name)
 }
 
 /// The rollback journal SQLite keeps beside a database while it writes.
 fn journal_of(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push("-journal");
-    path.with_file_name(name)
+    suffixed(path, "-journal")
 }
 
 fn remove_quietly(path: &Path) {

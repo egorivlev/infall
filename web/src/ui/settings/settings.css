@@ -89,10 +89,10 @@
 .q-set-row__text { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .q-set-row__label { font-weight: 600; color: var(--q-ink); }
 .q-set-row__desc { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-2); text-wrap: pretty; }
-.q-set-row__control { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--q-s2); flex-wrap: wrap; }
+.q-set-row__control { flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--q-s2); flex-wrap: wrap; }
 .q-set-row__reset:disabled { visibility: hidden; }
 .q-set-select { width: 140px; height: 30px; padding: 0 8px; font-size: calc(13px * var(--q-text, 1)); }
-.q-seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--q-line); border-radius: var(--q-r); background: var(--q-sunken); }
+.q-seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 2px; gap: 2px; border: 1px solid var(--q-line); border-radius: var(--q-r); background: var(--q-sunken); }
 .q-seg__opt { height: 26px; padding: 0 10px; border: 0; border-radius: 3px; background: transparent; color: var(--q-ink-2); font-size: calc(12.5px * var(--q-text, 1)); white-space: nowrap; cursor: pointer; }
 .q-seg__opt:hover { color: var(--q-ink); }
 .q-seg__opt[aria-checked="true"] { background: var(--q-raised); color: var(--q-ink); font-weight: 600; box-shadow: 0 0 0 1px var(--q-line); }
@@ -107,4 +107,7 @@
 .q-set-actions { display: flex; flex-wrap: wrap; gap: var(--q-s2); }
 .q-set-actions a.q-btn:hover { text-decoration: none; color: var(--q-ink); }
 .q-set-runs__line { color: var(--q-ink-2); }
-@media (max-width: 1100px) { .q-set { grid-template-columns: 168px minmax(0, 1fr); } }
+:root:not([data-room="wide"]) .q-set { grid-template-columns: 168px minmax(0, 1fr); }
+:root[data-room="narrow"] .q-set { grid-template-columns: 136px minmax(0, 1fr); }
+:root[data-room="narrow"] .q-set-nav { padding-inline: var(--q-s2); }
+:root[data-room="narrow"] .q-set-main .q-settings__inner { padding-inline: var(--q-s4); }

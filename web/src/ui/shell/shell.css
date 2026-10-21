@@ -3,11 +3,12 @@
 
 .q-boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--q-ink-3); font-size: calc(13px * var(--q-text, 1)); }
 
-.q-shell { --q-topbar-h: 66px; display: grid; grid-template-columns: 224px minmax(0, 1fr); grid-template-rows: var(--q-topbar-h) minmax(0, 1fr); height: 100%; min-width: 900px; /* the desktop app's smallest window */ background: var(--q-canvas); color: var(--q-ink); }
-/* M7: the AI sidebar (ui/ai) takes a 376px column at the right on every screen; below 1100px it lies over the work area instead. */
-@media (min-width: 1100px) {
-  .q-shell.has-ai { grid-template-columns: 224px minmax(0, 1fr) 376px; }
-}
+/* No min-width: the shell fits any window. What gives way when there is little room is decided by `data-room` on
+   <html> — the window measured in interface (zoomed) pixels, ../settings/apply.ts — never by a media query, which
+   would measure unzoomed pixels: "wide" ≥ 1100, "medium" 900–1099, "narrow" < 900. */
+.q-shell { --q-topbar-h: 66px; --q-rail-w: 224px; display: grid; grid-template-columns: var(--q-rail-w) minmax(0, 1fr); grid-template-rows: var(--q-topbar-h) minmax(0, 1fr); height: 100%; background: var(--q-canvas); color: var(--q-ink); }
+/* M7: the AI sidebar (ui/ai) takes a 376px column at the right on every screen; in a room under "wide" it lies over the work area instead. */
+:root[data-room="wide"] .q-shell.has-ai { grid-template-columns: var(--q-rail-w) minmax(0, 1fr) 376px; }
 .q-work { position: relative; z-index: 0; /* own stacking context: Board overlays stay under top-bar menus */ min-width: 0; min-height: 0; overflow: hidden; }
 .q-board-host { position: absolute; inset: 0; }
 
@@ -16,7 +17,7 @@
 [data-branch]:not([data-branch="main"]) .q-topbar::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2; background: var(--q-branch); }
 
 .q-titlebar { height: 30px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; --q-logo-cut: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); background: var(--q-logo-cut); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
-.q-topbar__brand { width: 224px; flex: none; height: 100%; display: flex; align-items: center; gap: var(--q-s2); padding-left: 13px; border-right: 1px solid var(--q-chrome-line); }
+.q-topbar__brand { width: var(--q-rail-w); flex: none; height: 100%; display: flex; align-items: center; gap: var(--q-s2); padding-left: 13px; border-right: 1px solid var(--q-chrome-line); }
 /* macOS desktop app: the traffic lights (three 12px buttons, 8px apart, at x 13) are drawn here. */
 .q-titlebar.is-mac-window .q-topbar__brand { padding-left: 75px; }
 .q-topbar__name { font-weight: 600; letter-spacing: .01em; }
@@ -49,7 +50,7 @@
 .q-branch--button svg:last-child { color: var(--q-ink-3); }
 
 .q-switch { position: relative; }
-.q-switch__menu { left: 0; right: auto; width: 320px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.q-switch__menu { left: 0; right: auto; width: min(320px, calc(var(--q-vw, 100vw) - 16px)); max-height: calc(var(--q-vh, 100vh) - 80px); overflow-y: auto; }
 .q-switch__label { padding: 6px 8px 4px; }
 .q-switch__empty { margin: 0; padding: 6px 8px; }
 .q-switch__row { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: var(--q-s2); padding: 7px 8px; border-radius: var(--q-r); color: var(--q-ink); }
@@ -146,6 +147,10 @@
 
 /* ---- Branches screen ---- */
 .q-branches { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+/* Under "wide", or beside the docked AI sidebar, the list and the new-Branch form are stacked and scroll together. */
+:root:not([data-room="wide"]) .q-branches, .q-shell.has-ai .q-branches { display: block; overflow: auto; }
+:root:not([data-room="wide"]) .q-branches__main, .q-shell.has-ai .q-branches__main { overflow: visible; }
+:root:not([data-room="wide"]) .q-newbranch, .q-shell.has-ai .q-newbranch { overflow: visible; border-left: 0; border-top: 1px solid var(--q-line-soft); }
 .q-branches__main { min-width: 0; min-height: 0; overflow: auto; padding: var(--q-s5) 28px; display: flex; flex-direction: column; gap: 20px; }
 .q-branches__title { display: flex; align-items: baseline; gap: 14px; }
 .q-branches__h { margin: 0; font: 600 calc(22px * var(--q-text, 1))/1.2 var(--q-serif); }
@@ -198,3 +203,32 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 .q-rename { width: 280px; gap: var(--q-s3); padding: var(--q-s3); }
 .q-rename__h { margin: 0; font: 600 calc(15px * var(--q-text, 1))/1.3 var(--q-serif); }
 .q-rename__actions { display: flex; justify-content: flex-end; gap: var(--q-s2); }
+
+/* ---- a narrow room (< 900 interface pixels: the 900-pixel window at 110 % and up, any window under 900 at 100 %) ----
+   What gives way, in order: the AI sidebar already lies over the work area ("medium"); the rail folds to a 48px column
+   of icons, which unfolds over the work area on demand; the title bar keeps the mark, search, avatars and buttons and
+   drops the words beside them. While the hands-on Tutorial runs, its steps live in the rail, so the rail stays open. */
+.q-rail__toggle { display: none; }
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) { --q-rail-w: 48px; }
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail__toggle { display: inline-flex; flex: none; align-self: center; margin: 8px 0 2px; color: var(--q-ink-2); }
+:root[data-room="narrow"] .q-topbar__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:root[data-room="narrow"] .q-topbar__brand { justify-content: center; padding-left: 0; }
+:root[data-room="narrow"] .q-titlebar.is-mac-window .q-topbar__brand { width: auto; padding-left: 75px; padding-right: 13px; }
+:root[data-room="narrow"] .q-account__name, :root[data-room="narrow"] .q-presence > .q-caps { display: none; }
+:root[data-room="narrow"] .q-topbar__search { padding: 0 var(--q-s2); }
+
+/* Folded: icons only. The words stay for screen readers; a title says them on hover. */
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail:not(.is-open) {
+  .q-rail__nav { margin: 0; padding: 4px; align-items: center; }
+  .q-rail__item { position: relative; width: 36px; justify-content: center; padding: 0; gap: 0; }
+  .q-rail__item > span:not(.q-rail__badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .q-rail__badge { position: absolute; top: 2px; right: 0; min-width: 0; padding: 0 3px; font-size: calc(9px * var(--q-text, 1)); }
+  .q-rail__badge:not(.q-rail__badge--hot) { display: none; }
+  .q-rail__frames { visibility: hidden; }
+  .q-rail__foot { align-items: center; padding: 12px 0; }
+  .q-rail__host { display: none; }
+  .q-sync > :not(.q-sync__dot) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* Unfolded: the whole rail, over the work area (it overflows its 48px column), under the top bar's menus. */
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open { position: relative; z-index: 3; width: 224px; box-shadow: var(--q-shadow); }
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open .q-rail__toggle { align-self: flex-start; margin-left: 12px; }

@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::app::{Shared, blocking};
+use crate::app::{AppState, Shared, blocking};
 use crate::error::{ApiError, ApiJson};
 use crate::people::MemberView;
 use crate::store::{MemberRecord, Role};
@@ -108,31 +108,54 @@ pub async fn hashing<T: Send + 'static>(
 
 // ---------------------------------------------------------------- cookie
 
-fn cookie(value: &str, max_age_secs: i64, secure: bool) -> Result<HeaderValue, ApiError> {
+/// The name of the session cookie this server sets and reads: `qoop_session` on a Team
+/// Workspace; on a Local Workspace a name of its own (`local::LocalMode::cookie_name`), since
+/// every Local Workspace is served from `127.0.0.1` and cookies are not kept apart by port.
+pub fn cookie_name(st: &AppState) -> &str {
+    st.local
+        .as_ref()
+        .map_or(SESSION_COOKIE, |local| local.cookie_name())
+}
+
+fn cookie(
+    name: &str,
+    value: &str,
+    max_age_secs: i64,
+    secure: bool,
+) -> Result<HeaderValue, ApiError> {
     let secure = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{SESSION_COOKIE}={value}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_secs}{secure}"
+        "{name}={value}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age_secs}{secure}"
     ))
     .map_err(ApiError::internal)
 }
 
-pub fn session_cookie(token: &str, secure: bool) -> Result<HeaderValue, ApiError> {
-    cookie(token, SESSION_TTL_MS / 1000, secure)
+/// The `Set-Cookie` value that carries `token` as this server's session cookie.
+pub fn session_cookie(st: &AppState, token: &str) -> Result<HeaderValue, ApiError> {
+    cookie(
+        cookie_name(st),
+        token,
+        SESSION_TTL_MS / 1000,
+        st.config.secure_cookies(),
+    )
 }
 
-pub fn clearing_cookie(secure: bool) -> Result<HeaderValue, ApiError> {
-    cookie("", 0, secure)
+/// The `Set-Cookie` value that removes this server's session cookie.
+pub fn clearing_cookie(st: &AppState) -> Result<HeaderValue, ApiError> {
+    cookie(cookie_name(st), "", 0, st.config.secure_cookies())
 }
 
-/// The `qoop_session` value from the request's `Cookie` headers.
-fn cookie_token(headers: &HeaderMap) -> Option<String> {
+/// The value of the cookie called `name` from the request's `Cookie` headers. A cookie of
+/// any other name (another Workspace's, or one from before Local Workspaces had their own
+/// names) is not looked at.
+fn cookie_token(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(';'))
         .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(name, value)| *name == SESSION_COOKIE && !value.is_empty())
+        .find(|(n, value)| *n == name && !value.is_empty())
         .map(|(_, value)| value.to_string())
 }
 
@@ -177,7 +200,7 @@ pub async fn live_session(
 /// Middleware for `/api`: resolves the session cookie into a `SignedIn` request extension,
 /// slides the session's expiry, and re-sends the cookie when it was extended.
 pub async fn resolve_session(State(st): State<Shared>, mut req: Request, next: Next) -> Response {
-    let Some(token) = cookie_token(req.headers()) else {
+    let Some(token) = cookie_token(req.headers(), cookie_name(&st)) else {
         return next.run(req).await;
     };
     let found = match live_session(&st, token_hash(&token)).await {
@@ -199,13 +222,14 @@ pub async fn resolve_session(State(st): State<Shared>, mut req: Request, next: N
     }
     req.extensions_mut().insert(signed_in);
     let mut res = next.run(req).await;
+    let own = format!("{}=", cookie_name(&st));
     let handler_set_cookie = res
         .headers()
         .get_all(SET_COOKIE)
         .iter()
-        .any(|v| v.as_bytes().starts_with(SESSION_COOKIE.as_bytes()));
+        .any(|v| v.as_bytes().starts_with(own.as_bytes()));
     if extended && !handler_set_cookie {
-        match session_cookie(&token, st.config.secure_cookies()) {
+        match session_cookie(&st, &token) {
             Ok(v) => {
                 res.headers_mut().append(SET_COOKIE, v);
             }
@@ -266,7 +290,7 @@ pub async fn start_session(st: &Shared, member: MemberId) -> Result<HeaderValue,
         s.insert_session(&hash, member, now + SESSION_TTL_MS, now)
     })
     .await?;
-    session_cookie(&token, st.config.secure_cookies())
+    session_cookie(st, &token)
 }
 
 // ---------------------------------------------------------------- Origin guard
@@ -389,7 +413,7 @@ pub async fn logout(State(st): State<Shared>, who: SignedIn) -> Result<Response,
         "Signing out of a Local Workspace would leave no way back in.",
     )?;
     blocking(&st, move |s| s.delete_session(&who.token_hash)).await?;
-    let cookie = clearing_cookie(st.config.secure_cookies())?;
+    let cookie = clearing_cookie(&st)?;
     Ok(([(SET_COOKIE, cookie)], Json(json!({}))).into_response())
 }
 
@@ -439,10 +463,23 @@ mod tests {
             COOKIE,
             HeaderValue::from_static("a=1; qoop_session=tok; b=2"),
         );
-        assert_eq!(cookie_token(&h).as_deref(), Some("tok"));
+        assert_eq!(cookie_token(&h, SESSION_COOKIE).as_deref(), Some("tok"));
         let mut h = HeaderMap::new();
         h.append(COOKIE, HeaderValue::from_static("qoop_session="));
-        assert_eq!(cookie_token(&h), None);
+        assert_eq!(cookie_token(&h, SESSION_COOKIE), None);
+    }
+
+    #[test]
+    fn only_the_cookie_of_the_given_name_is_read() {
+        let mut h = HeaderMap::new();
+        h.append(
+            COOKIE,
+            HeaderValue::from_static("qoop_session=team; qoop_session_abc=a; qoop_session_abcd=b"),
+        );
+        assert_eq!(cookie_token(&h, "qoop_session_abc").as_deref(), Some("a"));
+        assert_eq!(cookie_token(&h, "qoop_session_abcd").as_deref(), Some("b"));
+        assert_eq!(cookie_token(&h, SESSION_COOKIE).as_deref(), Some("team"));
+        assert_eq!(cookie_token(&h, "qoop_session_x"), None);
     }
 
     #[test]

@@ -1114,8 +1114,9 @@ async fn workspace_export(
     Ok(Some(dest.display().to_string()))
 }
 
-/// Makes a new Local Workspace from a Workspace file the Member chooses, and opens it.
-/// Nothing happens when they cancel.
+/// Makes a new Local Workspace from a Workspace file the Member chooses — or from a Local
+/// Workspace's own database (`.sqlite`) copied out of the app's data folder by hand — and
+/// opens it. Nothing happens when they cancel.
 #[tauri::command]
 async fn workspace_import(
     webview: Webview,
@@ -1129,7 +1130,10 @@ async fn workspace_import(
         ask_path(&app, move || {
             rfd::AsyncFileDialog::new()
                 .set_parent(&parent)
-                .add_filter("Workspace file", &[WORKSPACE_EXTENSION])
+                .add_filter(
+                    "Workspace file or database",
+                    &[WORKSPACE_EXTENSION, portable::DATABASE_EXTENSION],
+                )
                 .pick_file()
         })
         .await?
@@ -1137,7 +1141,7 @@ async fn workspace_import(
     let Some(file) = chosen else {
         return Ok(());
     };
-    const NOT_READ: &str = "That Workspace file could not be read.";
+    const NOT_READ: &str = "That file could not be read.";
     let stem = file
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())

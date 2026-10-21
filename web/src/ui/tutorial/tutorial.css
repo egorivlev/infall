@@ -3,7 +3,7 @@
 
 .q-tour-ring { position: fixed; z-index: 60; pointer-events: none; border: 2px solid var(--q-accent); border-radius: var(--q-r-panel); box-shadow: 0 0 0 3px var(--q-accent-soft); }
 
-.q-tour { position: fixed; left: 8px; top: 8px; z-index: 61; width: 320px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; gap: var(--q-s2); padding: var(--q-s3); background: var(--q-raised); color: var(--q-ink); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
+.q-tour { position: fixed; left: 8px; top: 8px; z-index: 61; width: 320px; max-width: calc(var(--q-vw, 100vw) - 16px); display: flex; flex-direction: column; gap: var(--q-s2); padding: var(--q-s3); background: var(--q-raised); color: var(--q-ink); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
 /* Until its control has been measured it is there for focus and for screen readers, and not yet for the eye. */
 .q-tour.is-unplaced { opacity: 0; pointer-events: none; }
 .q-tour:focus-visible { outline: 2px solid var(--q-accent); outline-offset: -2px; }

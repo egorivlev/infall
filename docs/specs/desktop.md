@@ -107,7 +107,7 @@ Also local UI; reached from the app menu ("Runner settings…") and through `run
 - The interpreter path can be overridden for tests with `QOOP_PYTHON_BIN`; approval can **not** be switched off by any environment variable or build flag — tests drive the approval through the Rust code behind the window.
 
 ## Not in M8
-Sandboxing or containers; other languages; per-Run environments or dependency installation; streaming figures while it runs; GPU/hardware reporting; running on the server or on another Member's machine; native file pickers.
+Sandboxing or containers; other languages (M19b: "Languages — Runs in more than Python", below); per-Run environments or dependency installation; streaming figures while it runs; GPU/hardware reporting; running on the server or on another Member's machine; native file pickers.
 
 # M9 — the Runner monitor
 
@@ -189,6 +189,7 @@ The contract is [local.md](local.md) (Contract A for the server inside the app, 
 - It listens on `127.0.0.1` only, on a port the operating system chooses, and only while a Local Workspace is open. The shell accepts nothing but `http://127.0.0.1:<port>` as its origin.
 - Every program on the computer, of any account, can connect to that port. Signing in needs the key in `entry_url`: 256 random bits made at each start, compared in constant time, gone when the server stops; a wrong or missing key is `404`. The key is only in the address the app gives its own window; it is not written to disk or printed. Signing in with a password, invites and signing out are refused in a Local Workspace ([local.md](local.md#contract-b--the-http-api-in-a-local-workspace-for-the-web-ui)), so there is no other way in.
 - The server's Origin checks apply unchanged, with `http://127.0.0.1:<port>` as the public origin.
+- The web view keeps one cookie jar for `127.0.0.1`, whatever the port, so each Local Workspace's session cookie has a name of its own (`qoop_session_<id>`, api.md §16): entering one Workspace leaves the sign-in of every other as it was, and no Workspace's session is ever accepted by another's server. A Team Workspace's cookie is `qoop_session`, as before.
 - What it does not guard against: programs running as the same user can read and change the Workspace's files directly, as they can any of that user's files.
 
 ## Not in M12
@@ -206,8 +207,10 @@ workspace_export({ id: string }): string | null
   // local only. The system's save dialog, suggested name "<Workspace name>.infall".
   // Writes a Workspace file with export_workspace; resolves to the path written, or null when cancelled.
 workspace_import(): void
-  // The system's open dialog for a .infall file. Makes a new Local Workspace from it with
-  // import_workspace (name: the file's name without extension, made unique) and opens it.
+  // The system's open dialog, filter "Workspace file or database": a .infall file, or a
+  // Local Workspace's own .sqlite database copied by hand. Makes a new Local Workspace from
+  // it with import_workspace (name: the file's name without extension, made unique; a file
+  // called "workspace" gives "Recovered workspace", made unique) and opens it.
   // Resolves without doing anything when cancelled.
 workspace_reveal({ id: string }): void
   // local only. Shows the Workspace's folder in the file manager.
@@ -220,6 +223,7 @@ The start screen shows, per Local Workspace, **Export…** and **Show in folder*
 ## The Workspace file
 - One file, extension `.infall`: a consistent copy of the Workspace's database, taken safely while it is open, without what is secret or tied to this computer: sessions, access tokens, AI settings with the OpenRouter key, the entry key. The key file beside the database (`workspace.sqlite.secret-key`) is not in it either.
 - Importing always makes a **new** Local Workspace (its own folder, its own new key file); it never writes over one. Its one Member is kept, name included. A file made by a newer schema than this build knows is refused, never half opened; a file that is not a Workspace file is refused with a sentence that says so.
+- A Local Workspace's own `workspace.sqlite`, copied out of its folder by hand, imports too: the `workspace.sqlite-wal` beside it, if there is one (a copy made while the app ran), is taken in, the result is cleaned exactly as an export is, and the files chosen are only read. **Export…** stays the way to make a copy: one consistent file, safe at any moment.
 
 ## Backups
 - When a Local Workspace is opened and its newest backup is older than 24 hours (or there is none), the shell writes a Workspace file into `workspaces/<id>/backups/` and then keeps the newest 7 there, deleting older ones. Same format as an export, so a backup is brought back with **Import a workspace…**.
@@ -241,3 +245,112 @@ The web UI calls `window.print()` for **Print…** on a Page, and the system's p
 
 ## Not in M13
 Moving a Local Workspace onto a server; backups of a Team Workspace by the app (the server's backups are the Admin's: deploy guide); a setting for how often or how many backups; backups anywhere but the Workspace's own folder; a bridge command for opening files (a `.bib` file reaches the page through the web view's own file chooser, as in a browser).
+
+
+# Languages — Runs in more than Python
+
+**Not built yet.** Scheduled as M19b in [the plan to 1.0](../plans/2026-11-24-road-to-1.0.md). Everything in M8 and M9 stays as written for Python; this says what is added. The Run's side of it (the `lang` field, the result) is api.md §15, "Languages".
+
+A Run names its language; the Member's own computer decides what that name starts. **The page chooses a name and nothing else.** Which program runs, with which arguments, is set by the Member in the Runner settings window on this device, never by the request — the M8 rule for the interpreter, kept for every language.
+
+## Toolchains
+A **Toolchain** (CONTEXT.md) is what the Runner starts for one language. Three kinds:
+
+- **`python`** — built in. The M8 interpreter, `runner.py`, figures, packages, `qoop`. Unchanged.
+- **`qsharp`** — built in, hosted by Python. Q# has no program of its own to start: it runs through the `qsharp` package of the chosen Python (see "Q#").
+- **A command** — any other language: a program on this computer, its arguments, and a file extension. Set up by the Member, from a preset or by hand.
+
+A language id is 1–24 characters, `^[a-z][a-z0-9_-]{0,23}$`. Ids are compared exactly. `python` and `qsharp` cannot be redefined.
+
+## Bridge — what changes
+```ts
+type RunEvent = /* M8, M9 */
+  // `done` gains:  lang: string            — the language it was executed as
+  //                env.runtime?: string    — what a command Toolchain said its version is (≤ 40 characters)
+  // `error` gains the reason "no_toolchain": the Run's language is not set up on this computer
+
+type QoopRunner = {
+  status(): Promise<{
+    python?: { path: string; version: string };
+    folder?: string;
+    languages?: Record<string, { name: string; version?: string }>;   // every language a Run could be executed in now, `python` included
+  }>;
+  configure(lang?: string): Promise<void>;          // opens Runner settings, at that language
+  run(request: { id: string; code: string; title: string; lang?: string }, onEvent: (e: RunEvent) => void): Promise<void>;
+  cancel(id: string): Promise<void>;
+};
+```
+- `lang` absent or `"python"`: exactly M8, `no_python` included. An app from before this section ignores `lang` and has no `languages` in `status()`; the page must then refuse to start a Run whose language is not Python ("Update Infall on this computer to run Julia code.") rather than let it be executed as Python.
+- `lang` that is not a valid id: `error` / `failed`, nothing is shown or executed.
+- `lang` with no Toolchain here: the settings window opens at that language (a known preset, or an empty form carrying the id); `no_toolchain` if it is closed without one.
+- `status().languages` is read from the saved settings: it starts nothing.
+
+## Runner settings — one more part
+Below **Python** and **Folder**, **Languages**:
+- **Q#** — a switch, usable once a Python is chosen. Turning it on asks that Python for the version of its `qsharp` package (`importlib.metadata`, five seconds); when there is none the window says what to install (`pip install qsharp` into that Python) and the switch stays off.
+- **Presets** — Julia (`julia`, `.jl`), R (`Rscript`, `.R`), JavaScript (`node`, `.mjs`), Shell (`bash`, `.sh`; not on Windows): each offered with the programs found the way Python is found (the login shell's `PATH`), arguments `{file}`. Nothing is set up until the Member chooses it.
+- **Add a language** — id, name (≤ 40 characters), the program's full path, arguments, file extension.
+
+What is accepted when saving a command Toolchain:
+- the program is an absolute path to an executable file. On Windows it must not be a `.bat` or `.cmd` file: those are run by the command interpreter, which reads arguments its own way;
+- at most 16 arguments, each at most 200 characters, and `{file}` appears in exactly one of them;
+- the extension is `^[A-Za-z0-9]{1,8}$`;
+- at most 24 languages.
+
+`<program> --version` is asked once when saving (five seconds, first line, control characters removed, at most 40 characters). A program that does not answer is still accepted, with no version: unlike Python, the app cannot know what a right answer looks like.
+
+Saved in `runner.json` beside `python` and `folder`:
+```jsonc
+{
+  "qsharp": { "version": "1.31.0" },
+  "languages": {
+    "julia": { "name": "Julia", "program": "/opt/homebrew/bin/julia", "args": ["{file}"], "ext": "jl", "version": "julia version 1.11.2" }
+  }
+}
+```
+Anything unreadable or implausible in it counts as not set up, entry by entry.
+
+A language that needs two steps (compile, then run) is set up by pointing the Toolchain at a script of the Member's own that does both. The settings take one command, and never a shell line.
+
+## Approval — what changes
+- The window names the **language** next to the title, and shows the **command** that will run in place of the interpreter: the program's full path and its arguments as they will be passed, `{file}` standing for the Run's file. For Q#: "Q#, through Python at `<path>`".
+- An approval is remembered per Workspace, per `code_sha256`, per folder **and per language**. The same text approved as Python asks again when a page sends it as Shell: the same characters are a different program. What was remembered before this section counts as Python.
+- Changing a Toolchain's program or arguments does not ask again for code already approved, as changing the Python does not: both are the Member's own choice on their own device, and the window shows what is set at the time it asks.
+- A language id and a Toolchain's name reach the window as text and are drawn as text, like the title and the code.
+
+## How a Run in another language is executed
+For a command Toolchain:
+- The code is written to `main.<ext>` in the Run's owner-only temporary directory and started as `<program> <arguments>`, `{file}` replaced by that file's full path. The arguments are passed as they are, one by one: **no shell reads them**. The code is never on the command line.
+- Working directory, process group, the one pipe for output, the output limits, `cancel`, no time limit, one Run at a time, deleting the directory afterwards: as M8.
+- The environment is the login shell's plus `QOOP_RUN_DIR`. The Python-only variables (`MPLBACKEND`, `PYTHONUNBUFFERED`, `PYTHONIOENCODING`) are not set.
+- `env` in `done`: `runtime` (the version saved with the Toolchain), `os`, `arch`. No `python`, no `packages`.
+
+What a Run in any language gets without doing anything: its output, its exit code, stopping, the Runner monitor's usage figures, and progress read from a `tqdm`-style bar in its output (M9).
+
+What its code can opt into, by writing files into `QOOP_RUN_DIR` — the same files `runner.py` writes for Python, read with the same checks (no links followed, sizes capped, content checked as hostile):
+- **Figures**: `qoop-figure-1.png`, `qoop-figure-2.png`, `qoop-figure-3.png`, present when the process ends. Real PNG, at most 120 000 bytes each; anything else is left out.
+- **Progress**: `qoop-progress.json`, `{"step": "…", "done": 45, "total": 100}`, every part optional, rewritten whenever the code likes (written to another name and moved into place). Read when the monitor samples.
+
+There is no `qoop` module outside Python.
+
+## Q#
+- Started as `<python> -u -X utf8 <the app's bundled qsharp_runner.py> <main.qs>`, with the environment of a Python Run.
+- `qsharp_runner.py` (bundled; standard library and `qsharp` only) evaluates the code with `qsharp.eval`, so `Message` output and the value of a final expression are printed. When the code declares an operation or function `Main` that takes nothing and has no statement of its own that calls it, `Main()` is evaluated afterwards and its result printed. Compiler errors are printed as Q# reports them, and the exit code is 1.
+- When `qsharp` cannot be imported (it was removed since the settings were saved), the output is one sentence saying what to install, and the exit code is 1.
+- `env`: `python`, `packages: { "qsharp": "<version>" }`, `os`, `arch`. No figures, no `qoop`; the monitor shows usage only.
+
+## The page
+- Every Run shows its language beside its title: `Python`, `Q#`, `Julia`, `R`, `JavaScript`, `Shell`, and for any other id the id itself. Someone who may edit the Page can change it: the known ones, and **Other…** for an id typed by hand.
+- **Run** is offered when `status().languages` has the Run's language. Otherwise the button is **Set up `<name>`** and calls `configure(lang)`. In a browser nothing changes: no Runner, the captured output is read as before.
+- A result is shown as being from other code when its `code_sha256` differs from the present code **or its `lang` differs from the Run's**.
+- The line under a result names what executed it: `Python 3.12.3`, `Q# · qsharp 1.31.0`, or `runtime` as recorded.
+- Export as Markdown (portability.md) tags the fenced code block with the Run's language id.
+
+## Not here
+Sandboxing or containers; compiling as a step of its own; installing a language or its packages; state kept between Runs (kernels, notebooks); syntax colouring per language; package versions for languages other than Python; a `qoop` library for other languages; Toolchains shared across a Workspace — each Member sets up their own device.
+
+## To check when building
+Written from the `qsharp` package's documentation as remembered, not from running it (the package exists on PyPI, 1.31.0 at the time of writing):
+- that `qsharp.eval` prints `Message` output to standard output outside a notebook, and returns the value of a final expression;
+- how an entry point is best found — the rule above looks for `Main` in the text; the package may offer a better way;
+- that `importlib.metadata.version("qsharp")` is the right name on every platform the package ships for.

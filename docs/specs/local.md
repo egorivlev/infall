@@ -59,6 +59,7 @@ pub async fn start_local(options: LocalOptions) -> Result<LocalServer, StartErro
 - Listens on `127.0.0.1` only. The public origin is `origin()`; the existing Origin checks apply unchanged.
 - A new `db` gets: the Workspace seeded from the Preset, and one Member (role Admin, the given name, an email nobody can use). The Preset id is kept in the database.
 - `entry_url`: `GET` with the right key sets the session cookie for the one Member and answers `303` to `/`. The key is 256 random bits made at each start, compared in constant time, valid until `stop`. A wrong or missing key is `404`. Without the key nothing on the machine can sign in.
+- The session cookie has a name of its own per Local Workspace, `qoop_session_<id>`, the id made once and kept in the database (api.md §16): every Local Workspace is on `127.0.0.1`, cookies are not kept apart by port, and under one shared name opening one Workspace replaced the sign-in of another and sent one database's session to another's server. A Team Workspace's cookie stays `qoop_session`.
 - Runs on the caller's tokio runtime. No environment variables are read. No signal handlers.
 - OpenRouter keys at rest need a secret key: the local server makes one on first start and keeps it beside the database in a file only the owner can read.
 

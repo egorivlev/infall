@@ -39,7 +39,8 @@
 .qp-crumb.is-current { flex: none; color: var(--q-ink); }
 .qp-crumb__sep { color: var(--q-ink-3); }
 .qp-spacer { flex: 1; }
-.qp-sync { flex: none; font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+/* The first to give way in a narrow header (with the Frame's name): the buttons after it stay in reach. */
+.qp-sync { flex: 0 0.0001 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
 .qp-head__btn {
   flex: none;
   width: 28px;

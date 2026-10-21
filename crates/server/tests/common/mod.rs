@@ -33,14 +33,15 @@ pub struct Res {
 }
 
 impl Res {
-    /// `qoop_session=<token>` from the response's Set-Cookie, ready for a Cookie header.
+    /// `<name>=<token>` from the response's Set-Cookie, ready for a Cookie header: the
+    /// session cookie, `qoop_session` on a Team Workspace, `qoop_session_<id>` on a Local one.
     pub fn cookie(&self) -> String {
         let set = self
             .headers
             .get_all(header::SET_COOKIE)
             .iter()
             .map(|v| v.to_str().unwrap().to_string())
-            .find(|v| v.starts_with("qoop_session="))
+            .find(|v| v.starts_with("qoop_session=") || v.starts_with("qoop_session_"))
             .expect("a session cookie");
         set.split(';').next().unwrap().to_string()
     }

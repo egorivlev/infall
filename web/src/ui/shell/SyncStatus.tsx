@@ -15,7 +15,7 @@ const STATES: Record<BoardStatus, { word: string; tone: 'ok' | 'warn' | 'off' }>
 export function SyncStatus({ status, readOnly = false }: { status: BoardStatus; readOnly?: boolean }) {
   const s = readOnly && status === 'live' ? { word: 'Read-only', tone: 'ok' as const } : STATES[status]
   return (
-    <div className="q-sync" role="status">
+    <div className="q-sync" role="status" title={s.word}>
       <span className={`q-sync__dot q-sync__dot--${s.tone}`} aria-hidden="true" />
       <span>{s.word}</span>
     </div>

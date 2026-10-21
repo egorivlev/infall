@@ -43,7 +43,9 @@ impl Client {
             .next()
             .unwrap()
             .to_string();
-        let session = cookie.strip_prefix("qoop_session=").unwrap().to_string();
+        let (name, session) = cookie.split_once('=').unwrap();
+        assert!(name.starts_with("qoop_session_"), "{name}");
+        let session = session.to_string();
         Client {
             http,
             origin: server.origin().to_string(),
@@ -496,13 +498,19 @@ async fn what_is_not_a_workspace_file_is_refused() {
     }
     assert_eq!(refuse(&other), Err(PortError::NotAWorkspaceFile));
 
-    // A Local Workspace's own database, not exported: no mark.
+    // A Local Workspace's database marked as some other program's.
     let db = dir.path().join("ws").join("workspace.db");
     start(&db, web.path(), Preset::Blank, "Ada")
         .await
         .stop()
         .await;
-    assert_eq!(refuse(&db), Err(PortError::NotAWorkspaceFile));
+    let marked = dir.path().join("marked.sqlite");
+    std::fs::copy(&db, &marked).unwrap();
+    rusqlite::Connection::open(&marked)
+        .unwrap()
+        .execute_batch("PRAGMA application_id = 1234")
+        .unwrap();
+    assert_eq!(refuse(&marked), Err(PortError::NotAWorkspaceFile));
 
     // A good file cut short.
     let good = dir.path().join("good.infall");
@@ -551,7 +559,7 @@ async fn what_is_not_a_workspace_file_is_refused() {
     assert!(import_workspace(&good, &target).is_ok());
     assert_eq!(
         PortError::NotAWorkspaceFile.to_string(),
-        "This file is not an Infall Workspace file."
+        "This file is neither an Infall Workspace file nor the database of a Local Workspace."
     );
 }
 
@@ -623,4 +631,249 @@ async fn workspace_files_are_private_to_their_owner() {
     import_workspace(&file, &target).unwrap();
     let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
+}
+
+// ---------------------------------------------------------------- a database copied by hand
+
+/// Every file in `dir` with its bytes, to see that nothing there changed.
+fn files_in(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut files: Vec<(String, Vec<u8>)> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap())
+        .map(|e| {
+            (
+                e.file_name().to_string_lossy().to_string(),
+                std::fs::read(e.path()).unwrap(),
+            )
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+fn wal_of(db: &Path) -> PathBuf {
+    let mut name = db.file_name().unwrap().to_os_string();
+    name.push("-wal");
+    db.with_file_name(name)
+}
+
+/// Adds a Checkpoint and a Branch made at it to the running Workspace.
+async fn checkpoint_and_branch(c: &Client, name: &str) {
+    let branches = c.get("/api/branches").await;
+    let main = &branches["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["name"] == "main")
+        .unwrap();
+    let (id, seq) = (main["id"].as_str().unwrap(), main["seq"].as_u64().unwrap());
+    c.ok(
+        reqwest::Method::POST,
+        &format!("/api/branches/{id}/checkpoints"),
+        json!({ "name": format!("Checkpoint {name}") }),
+    )
+    .await;
+    c.ok(
+        reqwest::Method::POST,
+        "/api/branches",
+        json!({ "name": format!("branch-{name}"), "from": { "branch": id, "seq": seq } }),
+    )
+    .await;
+}
+
+/// What is in an imported Workspace's database: only the kept settings, the mark, no
+/// secrets, nothing beside it.
+fn assert_clean_import(imported: &Path, secrets: &Secrets) {
+    let mut bytes = std::fs::read(imported).unwrap();
+    assert!(!wal_of(imported).exists());
+    bytes.extend(std::fs::read(wal_of(imported)).unwrap_or_default());
+    assert_no_secrets(&bytes, secrets);
+    let conn = rusqlite::Connection::open(imported).unwrap();
+    let app_id: i32 = conn
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(app_id, APPLICATION_ID);
+    let settings: Vec<String> = conn
+        .prepare("SELECT name FROM settings ORDER BY name")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(settings, ["preset", "tutorial_state"]);
+    drop(conn);
+    for table in ["sessions", "invites", "access_tokens", "ai_settings"] {
+        assert_eq!(count(imported, table), 0, "{table}");
+    }
+    let left: Vec<String> = std::fs::read_dir(imported.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .filter(|n| n.contains("import"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// Opens the imported Workspace and checks it is the one it came from: its Member, its
+/// Preset, its Tutorial progress, and a cookie of its own.
+async fn opens_as_the_original(
+    imported: &Path,
+    web: &Path,
+    original: &Value,
+    original_cookie: &str,
+) {
+    let server = start(imported, web, Preset::Blank, "Somebody Else").await;
+    let c = Client::enter(&server).await;
+    let me = c.get("/api/me").await;
+    assert_eq!(me["member"]["name"], "Ada Lovelace");
+    assert_eq!(me["member"]["id"], original["members"][0]["id"]);
+    assert_eq!(
+        c.get("/api/workspace").await,
+        json!({ "kind": "local", "preset": "tutorial" })
+    );
+    assert_eq!(c.get("/api/tokens").await, json!({ "tokens": [] }));
+    let name = c.cookie.split('=').next().unwrap();
+    assert_ne!(name, original_cookie.split('=').next().unwrap());
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_database_copied_by_hand_after_the_app_quit_imports_without_its_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let web = web_dir();
+    let db = dir.path().join("app").join("workspace.sqlite");
+    let (server, c, secrets) = used(&db, web.path(), Preset::Tutorial).await;
+    checkpoint_and_branch(&c, "one").await;
+    let original_cookie = c.cookie.clone();
+    server.stop().await;
+    assert!(
+        !wal_of(&db).exists(),
+        "the app folds its -wal in when it stops"
+    );
+
+    // The person copies the database out of the app's data folder.
+    let hand = dir.path().join("Desktop");
+    std::fs::create_dir_all(&hand).unwrap();
+    let copy = hand.join("workspace.sqlite");
+    std::fs::copy(&db, &copy).unwrap();
+    let before = files_in(&hand);
+
+    let imported = dir.path().join("new").join("workspace.sqlite");
+    assert_eq!(
+        import_workspace(&copy, &imported),
+        Ok(qoop_server::local::Imported {
+            preset: Some(Preset::Tutorial)
+        })
+    );
+    // The person's files are as they were, and nothing was put beside them.
+    assert_eq!(files_in(&hand), before);
+
+    let original = contents(&db);
+    assert_eq!(contents(&imported), original);
+    let ws = &original["workspace"];
+    assert!(ws.to_string().contains("Checkpoint one"));
+    assert!(ws.to_string().contains("branch-one"));
+    assert!(ws.to_string().contains("Before the tutorial"));
+    assert!(ws.to_string().contains("longer-walks"));
+    assert!(original["todos"].as_array().unwrap().len() >= 2);
+    assert_clean_import(&imported, &secrets);
+    opens_as_the_original(&imported, web.path(), &original, &original_cookie).await;
+}
+
+#[tokio::test]
+async fn a_database_copied_by_hand_while_the_app_runs_keeps_what_is_in_its_wal() {
+    let dir = tempfile::tempdir().unwrap();
+    let web = web_dir();
+    let db = dir.path().join("app").join("workspace.sqlite");
+    let (server, c, secrets) = used(&db, web.path(), Preset::Tutorial).await;
+    checkpoint_and_branch(&c, "two").await;
+    let main = c.main_branch().await;
+    c.ok(
+        reqwest::Method::POST,
+        &format!("/api/branches/{main}/ops"),
+        json!({ "ops": [create_card(&new_id(), "Only in the wal")] }),
+    )
+    .await;
+    // While it runs, the newest Changes are only in the -wal beside the database.
+    let wal = wal_of(&db);
+    assert!(wal.is_file() && std::fs::metadata(&wal).unwrap().len() > 0);
+
+    let hand = dir.path().join("Desktop");
+    std::fs::create_dir_all(&hand).unwrap();
+    let copy = hand.join("workspace.sqlite");
+    std::fs::copy(&db, &copy).unwrap();
+    std::fs::copy(&wal, wal_of(&copy)).unwrap();
+    let before = files_in(&hand);
+
+    let imported = dir.path().join("new").join("workspace.sqlite");
+    let got = import_workspace(&copy, &imported).unwrap();
+    assert_eq!(got.preset, Some(Preset::Tutorial));
+    assert_eq!(files_in(&hand), before, "the person's files are untouched");
+
+    let original = contents(&db);
+    assert_eq!(contents(&imported), original);
+    let ws = original["workspace"].to_string();
+    for needle in [
+        "Only in the wal",
+        "Checkpoint two",
+        "branch-two",
+        "longer-walks",
+    ] {
+        assert!(ws.contains(needle), "{needle}");
+    }
+    assert_clean_import(&imported, &secrets);
+
+    // Without its -wal the copy lacks the newest Changes: the -wal is what brought them.
+    let alone = dir.path().join("alone");
+    std::fs::create_dir_all(&alone).unwrap();
+    std::fs::copy(&db, alone.join("workspace.sqlite")).unwrap();
+    let target = dir.path().join("alone-imported").join("workspace.sqlite");
+    match import_workspace(&alone.join("workspace.sqlite"), &target) {
+        Err(_) => assert!(!target.exists()),
+        Ok(_) => assert_ne!(contents(&target), original),
+    }
+
+    let original_cookie = c.cookie.clone();
+    server.stop().await;
+    opens_as_the_original(&imported, web.path(), &original, &original_cookie).await;
+}
+
+#[tokio::test]
+async fn a_team_database_copied_by_hand_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let web = web_dir();
+    for people in [1, 2] {
+        let team_db = dir.path().join(format!("team-{people}.sqlite"));
+        {
+            let store = SqliteStore::open(&team_db).unwrap();
+            for i in 0..people {
+                create_admin(
+                    &store,
+                    &format!("admin{i}@example.org"),
+                    "Ada",
+                    "a long enough password",
+                    1,
+                )
+                .unwrap();
+            }
+            let (_router, _shutdown) = qoop_server::build_app_with(
+                qoop_server::config::Config::for_tests(web.path()),
+                std::sync::Arc::new(store),
+                Clock::manual(0),
+            )
+            .unwrap();
+        }
+        let before = std::fs::read(&team_db).unwrap();
+        let target = dir.path().join("new").join("workspace.sqlite");
+        assert_eq!(
+            import_workspace(&team_db, &target),
+            Err(PortError::NotAWorkspaceFile)
+        );
+        assert!(!target.exists());
+        assert_eq!(std::fs::read(&team_db).unwrap(), before);
+        let left: Vec<String> = std::fs::read_dir(dir.path().join("new"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
 }

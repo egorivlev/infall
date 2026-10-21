@@ -892,6 +892,20 @@ mod tests {
     }
 
     #[test]
+    fn a_database_called_workspace_is_imported_as_a_recovered_workspace_made_unique() {
+        let d = dirs();
+        let r = registry(&d);
+        let a = r.import_local("workspace", |_| Ok(None)).unwrap();
+        let b = r.import_local("workspace", |_| Ok(None)).unwrap();
+        let c = r.import_local("Workspace", |_| Ok(None)).unwrap();
+        let e = r.import_local("Thesis backup", |_| Ok(None)).unwrap();
+        assert_eq!(a.name, "Recovered workspace");
+        assert_eq!(b.name, "Recovered workspace 2");
+        assert_eq!(c.name, "Recovered workspace 3");
+        assert_eq!(e.name, "Thesis backup");
+    }
+
+    #[test]
     fn a_failed_import_leaves_nothing_behind() {
         let d = dirs();
         let r = registry(&d);

@@ -2,7 +2,8 @@
 //
 // `@article` when the Source has a DOI, else `@misc`; keys `firstauthorYEARword` made unique with a
 // letter (`jerbi2021parametrized`, `jerbi2021parametrizeda`); text escaped so that BibTeX and LaTeX
-// read back exactly what was written. Letters beyond ASCII stay as they are (the file is UTF-8, which
+// read back exactly what was written; in titles, words whose capitals must survive a bibliography style are
+// braced (`escapeTitle`), and the importer drops those braces again. Letters beyond ASCII stay as they are (the file is UTF-8, which
 // biber and bibtex8 read; classic BibTeX keeps them as bytes).
 
 export type BibSource = { title: string; authors: string; year: string; doi: string; url: string; note: string }
@@ -133,6 +134,38 @@ export function escapeText(text: string): string {
     .join('')
 }
 
+/**
+ * A title for BibTeX: escaped as `escapeText` does, and with its case protected. Bibliography styles lower-case a
+ * title's words unless they are in braces, so every word with a capital that is not merely the title's first
+ * letter is braced: proper nouns ("{Hilbert}"), acronyms ("{CMB}", "{SU(2)}"), mixed case ("{pH}", "{mRNA}") and
+ * a capitalised word after a colon. Math between `$…$` is left as written (LaTeX math keeps its case), and a word
+ * already inside braces the title itself has (written `\{…\}`, which BibTeX counts as braces too) is not braced again.
+ */
+export function escapeTitle(text: string): string {
+  const state = { first: true }
+  return text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(\$[^$]+\$)/)
+    .map((part, i) => {
+      if (i % 2 === 1 && balanced(part)) {
+        state.first = false // the title opens with math: no word of it is "the first word"
+        return part
+      }
+      return escapePlain(part, state)
+    })
+    .join('')
+}
+
+const CAPITAL = /[\p{Lu}\p{Lt}]/u
+const LETTER = /\p{L}/u
+
+/** Whether a word (as written in Infall) needs braces; `first` when it is the title's first word. */
+function needsProtection(word: readonly string[], first: boolean): boolean {
+  const firstLetter = first ? word.findIndex((ch) => LETTER.test(ch)) : -1
+  return word.some((ch, i) => i !== firstLetter && CAPITAL.test(ch))
+}
+
 function balanced(text: string): boolean {
   let depth = 0
   for (const ch of text) {
@@ -142,7 +175,11 @@ function balanced(text: string): boolean {
   return depth === 0
 }
 
-function escapePlain(text: string): string {
+/**
+ * Plain text escaped. With `title`, words that need it are also braced (see `escapeTitle`); `title.first` says
+ * whether the title's first word is still to come and is cleared once it has passed.
+ */
+function escapePlain(text: string, title?: { first: boolean }): string {
   const chars = [...text]
   const paired = new Set<number>()
   const open: number[] = []
@@ -153,14 +190,61 @@ function escapePlain(text: string): string {
       paired.add(i)
     }
   })
-  return chars
-    .map((ch, i) => {
-      if (ch === '{') return paired.has(i) ? '\\{' : '\\textbraceleft{}'
-      if (ch === '}') return paired.has(i) ? '\\}' : '\\textbraceright{}'
-      return SPECIAL[ch] ?? ch
-    })
-    .join('')
+  const escape = (ch: string, i: number): string => {
+    if (ch === '{') return paired.has(i) ? '\\{' : '\\textbraceleft{}'
+    if (ch === '}') return paired.has(i) ? '\\}' : '\\textbraceright{}'
+    return SPECIAL[ch] ?? ch
+  }
+  if (!title) return chars.map(escape).join('')
+
+  let out = ''
+  let depth = 0 // inside braces the title itself has
+  let i = 0
+  while (i < chars.length) {
+    if (chars[i] === ' ') {
+      out += ' '
+      i++
+      continue
+    }
+    const start = i
+    const startDepth = depth
+    let hasBrace = false
+    for (; i < chars.length && chars[i] !== ' '; i++) {
+      if (!paired.has(i)) continue
+      hasBrace = true
+      depth += chars[i] === '{' ? 1 : -1
+    }
+    const word = chars.slice(start, i)
+    const esc = (from: number, to: number) => word.slice(from, to).map((ch, k) => escape(ch, start + from + k)).join('')
+    const protect = startDepth === 0 && !hasBrace && needsProtection(word, title.first)
+    title.first = false
+    if (!protect) {
+      out += esc(0, word.length)
+      continue
+    }
+    // Punctuation around the word stays outside the braces: "({LHC}):", "{E}.".
+    let a = 0
+    let b = word.length
+    while (a < b && LEADING.has(word[a]!)) a++
+    const count = (ch: string) => word.slice(a, b).filter((c) => c === ch).length
+    for (;;) {
+      const last = word[b - 1]
+      if (b <= a || last === undefined) break
+      // A closing bracket is the word's own when it pairs with one inside: "SU(2)" keeps it, "(CMS)" does not.
+      const stray = (last === ')' && count(')') > count('(')) || (last === ']' && count(']') > count('['))
+      if (!TRAILING.has(last) && !stray) break
+      b--
+    }
+    const core = esc(a, b)
+    // A group that opens with a backslash is a "special character" to BibTeX, whose letters it still changes:
+    // `{\&Co}` would become "\&co". A second pair of braces makes it an ordinary, protected group.
+    out += esc(0, a) + (core.startsWith('\\') ? `{{${core}}}` : `{${core}}`) + esc(b, word.length)
+  }
+  return out
 }
+
+const LEADING = new Set(['(', '[', '"', '“', '‘', "'"])
+const TRAILING = new Set(['.', ',', ':', ';', '!', '?', '"', '”', '’'])
 
 /** An address or DOI in braces: written as it is, except that a brace (never balanced on purpose) is percent-encoded. */
 function escapeVerbatim(text: string): string {
@@ -182,7 +266,7 @@ export function toBibtex(sources: readonly BibSource[]): string {
     const doi = s.doi.trim()
     const url = s.url.trim()
     const fields: [string, string][] = []
-    if (s.title.trim()) fields.push(['title', escapeText(s.title)])
+    if (s.title.trim()) fields.push(['title', escapeTitle(s.title)])
     const { names, others } = splitAuthors(s.authors)
     if (names.length > 0 || others) fields.push(['author', [...names.map((n) => escapeText(bibtexName(n))), ...(others ? ['others'] : [])].join(' and ')])
     if (s.year.trim()) fields.push(['year', escapeText(s.year)])

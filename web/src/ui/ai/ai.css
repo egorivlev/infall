@@ -27,7 +27,7 @@
 
 /* ---- Conversations menu ---- */
 .qa-convs { position: relative; display: flex; }
-.qa-convs__pop { position: absolute; top: 32px; right: -30px; z-index: 20; width: 320px; max-height: min(420px, calc(100vh - 120px)); overflow-y: auto; padding: var(--q-s1); background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
+.qa-convs__pop { position: absolute; top: 32px; right: -30px; z-index: 20; width: 320px; max-height: min(420px, calc(var(--q-vh, 100vh) - 120px)); overflow-y: auto; padding: var(--q-s1); background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
 .qa-convs__label { padding: 6px 8px 4px; }
 .qa-convs__empty { margin: 0; padding: 6px 8px 8px; }
 .qa-convs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -133,7 +133,6 @@ a.qa-none__link, a.qa-none__link:hover { color: var(--q-accent-ink); text-decora
   .qa-convs__pop { animation: q-pop 140ms var(--q-ease); }
 }
 
-/* Below 1100px the sidebar lies over the work area instead of taking a column from it (shell.css keeps the two-column grid). */
-@media (max-width: 1099px) {
-  .qa-side { position: fixed; top: var(--q-topbar-h, 66px); right: 0; bottom: 0; z-index: 4; width: 376px; box-shadow: var(--q-shadow); }
-}
+/* In a room under "wide" (shell.css: the window in interface pixels) the sidebar lies over the work area instead of
+   taking a column from it (shell.css keeps the two-column grid); in a narrow window it never covers more than it leaves. */
+:root:not([data-room="wide"]) .qa-side { position: fixed; top: var(--q-topbar-h, 66px); right: 0; bottom: 0; z-index: 4; width: min(376px, calc(var(--q-vw, 100vw) - 48px)); box-shadow: var(--q-shadow); }

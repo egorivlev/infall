@@ -45,6 +45,13 @@ use crate::{Clock, Shutdown, StartError, assemble, serve_until};
 
 /// The setting that holds the id of the Preset a Local Workspace was created from.
 pub const PRESET_SETTING: &str = "preset";
+/// The setting that holds what this Local Workspace's session cookie is called after (see
+/// `LocalMode::cookie_name`).
+pub const COOKIE_SETTING: &str = "session_cookie";
+/// The session cookie of a Local Workspace is called this, followed by its own id.
+pub const LOCAL_COOKIE_PREFIX: &str = "qoop_session_";
+/// How many characters the id in a Local Workspace's cookie name has.
+const COOKIE_ID_CHARS: usize = 16;
 /// The setting that holds the Tutorial's progress, as the web UI sent it.
 pub const TUTORIAL_SETTING: &str = "tutorial_state";
 /// The largest body `PUT /api/local/tutorial` takes.
@@ -111,6 +118,22 @@ pub struct LocalMode {
     key: String,
     /// The one Member, whom `entry_url` signs in.
     member: MemberId,
+    /// The name of this Workspace's session cookie.
+    cookie: String,
+}
+
+impl LocalMode {
+    /// `qoop_session_<id>`, where the id is made at random the first time the Workspace's
+    /// database is opened and kept in it (`COOKIE_SETTING`). Every Local Workspace is served
+    /// from `127.0.0.1`, and a browser keeps cookies apart by host, not by port: under one
+    /// name, opening one Workspace would replace the sign-in of another, and the cookie of
+    /// one database would be sent to the server of another. The id is the database's, not
+    /// the port's, because a Workspace whose port was taken opens on another one, possibly
+    /// one another Workspace had. A Workspace file leaves the id out, so a Workspace
+    /// imported from one gets a new id, never its original's.
+    pub(crate) fn cookie_name(&self) -> &str {
+        &self.cookie
+    }
 }
 
 /// A running Local Workspace server.
@@ -278,10 +301,12 @@ pub fn build_local_app(
     member_name: &str,
 ) -> Result<LocalApp, StartError> {
     let member = prepare(&*store, preset, member_name, clock.now())?;
+    let cookie = format!("{LOCAL_COOKIE_PREFIX}{}", cookie_id(&*store)?);
     let entry_key = new_token().map_err(StartError::Other)?;
     let local = LocalMode {
         key: entry_key.clone(),
         member,
+        cookie,
     };
     let (router, shutdown) = assemble(config, store, clock, Some(local))?;
     Ok(LocalApp {
@@ -342,6 +367,29 @@ fn prepare(
         store.set_setting(PRESET_SETTING, preset.id())?;
     }
     Ok(member)
+}
+
+/// The id in the name of this Workspace's session cookie: the one kept in the store, or,
+/// when there is none (or what is there is not one this build makes), a new one, kept.
+fn cookie_id(store: &dyn Store) -> Result<String, StartError> {
+    if let Some(id) = store.setting(COOKIE_SETTING)?.filter(|id| is_cookie_id(id)) {
+        return Ok(id);
+    }
+    let id: String = new_token()
+        .map_err(StartError::Other)?
+        .chars()
+        .take(COOKIE_ID_CHARS)
+        .collect();
+    store.set_setting(COOKIE_SETTING, &id)?;
+    Ok(id)
+}
+
+/// URL-safe base64 characters only, all of which a cookie name may hold.
+fn is_cookie_id(id: &str) -> bool {
+    id.len() == COOKIE_ID_CHARS
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 // ---------------------------------------------------------------- the secret key file
@@ -520,6 +568,27 @@ mod tests {
         assert_eq!(Preset::from_id("Tutorial"), None);
         assert_eq!(Preset::from_id(""), None);
         assert_eq!(Preset::LiteratureReview.id(), "literature-review");
+    }
+
+    #[test]
+    fn cookie_ids_are_kept_and_made_again_only_when_unusable() {
+        let store = crate::store::MemoryStore::new();
+        let first = cookie_id(&store).unwrap();
+        assert!(is_cookie_id(&first), "{first}");
+        assert_eq!(cookie_id(&store).unwrap(), first);
+        for bad in [
+            "",
+            "short",
+            "has a space in it",
+            "semi;colon=equals",
+            "ééééééééé",
+        ] {
+            store.set_setting(COOKIE_SETTING, bad).unwrap();
+            let made = cookie_id(&store).unwrap();
+            assert!(is_cookie_id(&made), "{bad}");
+            assert_eq!(store.setting(COOKIE_SETTING).unwrap(), Some(made));
+        }
+        assert_ne!(cookie_id(&crate::store::MemoryStore::new()).unwrap(), first);
     }
 
     #[test]

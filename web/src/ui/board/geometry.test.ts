@@ -4,6 +4,7 @@ import {
   boundsOf,
   fitBounds,
   frameMembers,
+  isCramped,
   nudge,
   nudgeDelta,
   readingOrder,
@@ -137,5 +138,13 @@ describe('showing a suggested Connection (M5)', () => {
     expect(sidePanelsFit(1056)).toBe(false) // a 1280px window
     expect(sidePanelsFit(1219)).toBe(false)
     expect(sidePanelsFit(1220)).toBe(true)
+  })
+
+  it('calls an area under 640 interface pixels cramped: a side panel then takes all of it', () => {
+    expect(isCramped(552)).toBe(true) // a 900px window at 150 %, rail folded
+    expect(isCramped(639)).toBe(true)
+    expect(isCramped(640)).toBe(false)
+    expect(isCramped(676)).toBe(false) // a 900px window at 100 %
+    expect(isCramped(0)).toBe(false) // not laid out
   })
 })

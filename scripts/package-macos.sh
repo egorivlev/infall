@@ -245,10 +245,10 @@ SWIFT
     if [ -n "$windows" ]; then
         for _ in $(seq 60); do
             kill -0 "$app_pid" 2>/dev/null || { cat "$log" >&2; die "start check: the program ended by itself"; }
-            # The largest window of the program, as "width height".
-            size="$("$windows" "$app_pid" | sort -n -k1,1 -k2,2 | tail -n 1)"
-            if [ -n "$size" ] && [ "${size%% *}" -ge 720 ] && [ "${size##* }" -ge 560 ]; then break; fi
-            size=""
+            # Any window of the program that is big enough, as "width height". (The widest one
+            # will not do: the program also owns full-width strips a few points high.)
+            size="$("$windows" "$app_pid" | awk '$1 >= 720 && $2 >= 560 { print int($1), int($2); exit }')"
+            if [ -n "$size" ]; then break; fi
             sleep 1
         done
         [ -n "$size" ] || { cat "$log" >&2; die "start check: no window of at least 720 x 560 within a minute"; }

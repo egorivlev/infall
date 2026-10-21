@@ -538,16 +538,25 @@
   flex: 1;
   min-height: 0;
   display: flex; /* M5: the Suggestions panel (if open), then the Board */
-  /* M4: the Page panel is 740px, at least 480, and always leaves 320px of the Board (room for the inspector). */
+  /* M4: the Page panel is 740px, at least 480, and leaves 320px of the Board (room for the inspector) where it can. */
   --qb-page-w: max(480px, min(740px, calc(100% - 320px)));
 }
+/* A cramped area (under 640 interface pixels, geometry.ts CRAMPED_W: a narrow window, a large interface scale): a side
+   panel takes the whole area instead of leaving the Board a strip. The Board stays mounted underneath, hidden, so its
+   controls are not reached by Tab behind the panel. */
+.qb-area.is-cramped .qb-area__canvas { --qb-page-w: 100%; }
+.qb-area.is-cramped .qp-panel { border-left: 0; box-shadow: none; }
+.qb-area.is-cramped .qb-board.has-page { visibility: hidden; }
+.qb-area.is-cramped .qs-panel { width: 100%; border-right: 0; }
+.qb-area.is-cramped .qb-area__canvas:has(> .qs-panel) > .qb-area__board { visibility: hidden; }
 
 /* ---- M4: the Page panel is docked over the right of the Board; the Board's own overlays move beside it ---- */
 .qb-board.has-page .qb-inspector { right: var(--qb-page-w); }
 .qb-board.has-page .qb-hud { right: calc(var(--qb-page-w) + 14px); }
 .qb-board.has-page.has-inspector .qb-hud { right: calc(var(--qb-page-w) + var(--qb-inspector-w) + 14px); }
-/* Beside the docked panel there is room for the zoom HUD or the counts, not both. */
-.qb-board.has-page .qb-counts { display: none; }
+/* Beside the docked panel there is room for the zoom HUD or the counts, not both; nor beside the inspector in a
+   room under "wide" (the window in interface pixels, ../shell/shell.css). */
+.qb-board.has-page .qb-counts, :root:not([data-room="wide"]) .qb-board.has-inspector .qb-counts { display: none; }
 .qb-inspector__open { align-self: flex-start; }
 
 /* ---- M2: previewing an earlier moment from History ---- */

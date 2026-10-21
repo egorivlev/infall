@@ -119,6 +119,77 @@ async fn each_start_has_its_own_key() {
     assert_eq!(res.status, StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn a_local_workspace_has_a_session_cookie_name_of_its_own() {
+    let w = local(Preset::Blank);
+    let cookie = w.enter().await;
+    let (name, token) = cookie.split_once('=').unwrap();
+    assert!(
+        name.starts_with("qoop_session_") && name.len() > "qoop_session_".len(),
+        "{name}"
+    );
+    // Kept: every entry uses the same name.
+    assert_eq!(w.enter().await.split('=').next().unwrap(), name);
+    // When the session is extended, the cookie is sent again under the same name.
+    w.app.clock.advance(2 * 24 * 60 * 60 * 1000);
+    let res = w.app.get("/api/me", Some(&cookie)).await;
+    assert_eq!(res.status, StatusCode::OK);
+    let set = res.set_cookie().expect("the cookie, sent again");
+    assert!(set.starts_with(&format!("{name}={token};")), "{set}");
+    // Another Workspace (another database), another name.
+    let other = local(Preset::Blank);
+    assert_ne!(other.enter().await.split('=').next().unwrap(), name);
+    // The same database started again: the same name.
+    let store = w.app.store.clone();
+    let again = local_with(store, Preset::Blank, "Ada Lovelace");
+    assert_eq!(again.enter().await.split('=').next().unwrap(), name);
+}
+
+#[tokio::test]
+async fn a_stale_cookie_under_the_old_name_is_ignored_in_a_local_workspace() {
+    let w = local(Preset::Blank);
+    let cookie = w.enter().await;
+    let (_, token) = cookie.split_once('=').unwrap();
+    // Beside the right one: no error, still signed in.
+    for both in [
+        format!("qoop_session=stale; {cookie}"),
+        format!("{cookie}; qoop_session=stale"),
+    ] {
+        let res = w.app.get("/api/me", Some(&both)).await;
+        assert_eq!(res.status, StatusCode::OK, "{both}: {}", res.text);
+        assert!(res.set_cookie().is_none());
+    }
+    // Alone it signs no one in, whatever it carries — even this Workspace's own token.
+    for stale in [
+        "qoop_session=stale".to_string(),
+        format!("qoop_session={token}"),
+    ] {
+        let res = w.app.get("/api/me", Some(&stale)).await;
+        assert_eq!(res.status, StatusCode::UNAUTHORIZED, "{stale}");
+        assert_eq!(res.code(), "not_signed_in");
+    }
+}
+
+#[tokio::test]
+async fn a_team_workspace_keeps_the_cookie_name_qoop_session() {
+    let app = TestApp::new();
+    let admin = app.admin().await;
+    let (name, token) = admin.split_once('=').unwrap();
+    assert_eq!(name, "qoop_session");
+    assert_eq!(
+        app.get("/api/me", Some(&admin)).await.status,
+        StatusCode::OK
+    );
+    // A Local Workspace's kind of name means nothing to a Team server.
+    let res = app
+        .get(
+            "/api/me",
+            Some(&format!("qoop_session_abcdefghijklmnop={token}")),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::UNAUTHORIZED);
+}
+
 // ---------------------------------------------------------------- GET /api/workspace
 
 #[tokio::test]
@@ -1044,6 +1115,8 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         .next()
         .unwrap()
         .to_string();
+    let cookie_name = cookie.split('=').next().unwrap().to_string();
+    assert!(cookie_name.starts_with("qoop_session_"), "{cookie_name}");
 
     let me: Value = client
         .get(format!("{origin}/api/me"))
@@ -1166,7 +1239,162 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         .unwrap();
     assert_eq!(me["member"]["name"], "Bea");
     assert_eq!(std::fs::read_to_string(&key_file).unwrap(), key_text);
+    // The same database: the same cookie name, whatever the port.
+    assert_eq!(cookie.split('=').next().unwrap(), cookie_name);
     again.stop().await;
+}
+
+// ---------------------------------------------------------------- one cookie name per Workspace
+
+/// What a browser (or the desktop app's web view) keeps for `127.0.0.1`: cookies are kept
+/// by host and name, never by port, so every Local Workspace shares this one jar.
+#[derive(Default)]
+struct Jar(std::sync::Mutex<BTreeMap<String, String>>);
+
+impl Jar {
+    fn take(&self, res: &reqwest::Response) {
+        let mut jar = self.0.lock().unwrap();
+        for set in res.headers().get_all(reqwest::header::SET_COOKIE) {
+            let set = set.to_str().unwrap();
+            let (name, value) = set.split(';').next().unwrap().split_once('=').unwrap();
+            if value.is_empty() || set.contains("Max-Age=0") {
+                jar.remove(name);
+            } else {
+                jar.insert(name.to_string(), value.to_string());
+            }
+        }
+    }
+
+    fn put(&self, name: &str, value: &str) {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), value.to_string());
+    }
+
+    fn header(&self) -> String {
+        let jar = self.0.lock().unwrap();
+        jar.iter()
+            .map(|(n, v)| format!("{n}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.0.lock().unwrap().keys().cloned().collect()
+    }
+}
+
+async fn start_named(
+    dir: &std::path::Path,
+    name: &str,
+    web: &std::path::Path,
+) -> qoop_server::local::LocalServer {
+    start_local(LocalOptions {
+        db: dir.join(name).join("workspace.db"),
+        web_dir: web.to_path_buf(),
+        preset: Preset::Blank,
+        member_name: name.to_string(),
+        port: None,
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn two_local_workspaces_at_once_keep_their_own_sign_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let web = web_dir();
+    let a = start_named(dir.path(), "Ada", web.path()).await;
+    let b = start_named(dir.path(), "Bea", web.path()).await;
+    assert_ne!(a.origin(), b.origin());
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let jar = Jar::default();
+    // A stale cookie under the name of before, from some earlier version.
+    jar.put("qoop_session", "left-over-from-before");
+
+    // Ada's Workspace is entered, then Bea's: the second does not replace the first.
+    let mut entered: Vec<(String, String)> = Vec::new();
+    for server in [&a, &b] {
+        let res = client.get(server.entry_url()).send().await.unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::SEE_OTHER);
+        let set = res.headers()[reqwest::header::SET_COOKIE].to_str().unwrap();
+        let (name, token) = set.split(';').next().unwrap().split_once('=').unwrap();
+        entered.push((name.to_string(), token.to_string()));
+        jar.take(&res);
+    }
+    let names = jar.names();
+    assert_eq!(names.len(), 3, "{names:?}");
+    let local_names: Vec<&String> = names.iter().filter(|n| *n != "qoop_session").collect();
+    assert_eq!(local_names.len(), 2);
+    assert_ne!(local_names[0], local_names[1]);
+
+    let me = |origin: String, cookie: String| {
+        let client = client.clone();
+        async move {
+            let res = client
+                .get(format!("{origin}/api/me"))
+                .header(reqwest::header::COOKIE, cookie)
+                .send()
+                .await
+                .unwrap();
+            let status = res.status();
+            let body: Value = res.json().await.unwrap();
+            (status, body)
+        }
+    };
+    // With everything in the jar, each server signs in its own Member, again and again.
+    for _ in 0..2 {
+        for (server, name) in [(&a, "Ada"), (&b, "Bea")] {
+            let (status, body) = me(server.origin().to_string(), jar.header()).await;
+            assert_eq!(status, reqwest::StatusCode::OK, "{body}");
+            assert_eq!(body["member"]["name"], name);
+        }
+    }
+    // The live connection too.
+    for server in [&a, &b] {
+        let origin = server.origin().to_string();
+        let ws_url = format!("{}/api/ws", origin.replace("http://", "ws://"));
+        let mut request =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(ws_url)
+                .unwrap();
+        request
+            .headers_mut()
+            .insert("cookie", jar.header().parse().unwrap());
+        request
+            .headers_mut()
+            .insert("origin", origin.parse().unwrap());
+        let (socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        drop(socket);
+    }
+
+    // Each Workspace's cookie, alone, is refused by the other server: under its own name,
+    // and under the other's.
+    let [(name_a, token_a), (name_b, token_b)] = [&entered[0], &entered[1]].map(|c| c.clone());
+    for (server, name, foreign_name, foreign_token) in [
+        (&a, &name_a, &name_b, &token_b),
+        (&b, &name_b, &name_a, &token_a),
+    ] {
+        for cookie in [
+            format!("{foreign_name}={foreign_token}"),
+            format!("{name}={foreign_token}"),
+        ] {
+            let (status, body) = me(server.origin().to_string(), cookie.clone()).await;
+            assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED, "{cookie}");
+            assert_eq!(body["error"]["code"], "not_signed_in");
+        }
+    }
+    // A Workspace's own token under the name of before is not read either, and is no error.
+    for (server, token) in [(&a, &token_a), (&b, &token_b)] {
+        let (status, body) = me(server.origin().to_string(), format!("qoop_session={token}")).await;
+        assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+        assert_eq!(body["error"]["code"], "not_signed_in");
+    }
+    a.stop().await;
+    b.stop().await;
 }
 
 #[tokio::test]

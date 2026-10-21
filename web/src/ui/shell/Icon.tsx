@@ -17,6 +17,7 @@ export type IconName =
   | 'todos'
   | 'suggestion'
   | 'ai'
+  | 'rail'
 
 const PATHS: Record<IconName, ReactNode> = {
   board: (
@@ -91,6 +92,13 @@ const PATHS: Record<IconName, ReactNode> = {
   suggestion: <path d="M7 1.6 L12.4 7 L7 12.4 L1.6 7 Z" />,
   // A four-point spark.
   ai: <path d="M7 1.5 C7.4 4.6 9.4 6.6 12.5 7 C9.4 7.4 7.4 9.4 7 12.5 C6.6 9.4 4.6 7.4 1.5 7 C4.6 6.6 6.6 4.6 7 1.5 Z" />,
+  // The rail: a window with its left column.
+  rail: (
+    <>
+      <rect x="1.5" y="2" width="11" height="10" rx="1.5" />
+      <path d="M5.2 2 V12" />
+    </>
+  ),
 }
 
 export function Icon({ name, size = 14 }: { name: IconName; size?: number }) {

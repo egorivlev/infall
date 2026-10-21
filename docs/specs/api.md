@@ -43,7 +43,7 @@ type Member = {
 ```
 
 - Passwords: Argon2id, minimum 12 characters. Never logged, never returned.
-- Session: 32 random bytes, sent as cookie `qoop_session` (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the public origin is https, 30-day expiry, sliding). Only a hash of the token is stored.
+- Session: 32 random bytes, sent as cookie `qoop_session` (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the public origin is https, 30-day expiry, sliding). Only a hash of the token is stored. A Local Workspace's server names its cookie differently (§16); everything else here is the same for it.
 - Every request whose method is not `GET`/`HEAD` must carry header `X-Qoop-Request: 1` and an `Origin` equal to the public origin or the dev origin; otherwise `403 forbidden_origin`. The WebSocket upgrade checks `Origin` the same way.
 - Login failures: more than 5 for one email within 15 minutes → `429 too_many_attempts` until the window passes. The login error never says whether the email exists.
 - A Guest whose `access_until` has passed is treated as signed out.
@@ -416,7 +416,7 @@ Storage: `ai_settings` table (schema version 4): per Member the encrypted key, i
 
 ## 15. M8 — Runs
 
-A Run is a Block with `type: "run"` (core.md §1): `text` is its code (Python in M8), `title` its name, `result` the captured output of its last execution. The server never executes anything: code is executed by the Runner in a Member's desktop app ([desktop.md](desktop.md)), and the result arrives as an ordinary op (`Set` of `result`) from that Member. Readers — browser, Guests included — get the result with the Board like any field.
+A Run is a Block with `type: "run"` (core.md §1): `text` is its code (Python in M8; other languages come with M19b, "Languages" below), `title` its name, `result` the captured output of its last execution. The server never executes anything: code is executed by the Runner in a Member's desktop app ([desktop.md](desktop.md)), and the result arrives as an ordinary op (`Set` of `result`) from that Member. Readers — browser, Guests included — get the result with the Board like any field.
 
 ### The `result` value
 A Text value holding one JSON object, at most **600 000 characters**, or Null (no result). Every other Text field keeps the 100 000 limit. The request body limit of `POST /api/branches/{id}/ops` is raised to 2 MiB so that one fits.
@@ -444,6 +444,20 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
 - **Guests** (§13): unchanged; a Run on `main` is visible with its result. Guests cannot write, so cannot record one.
 - History, Restore, Checkpoints, forks: nothing new — `result` is a field like any other.
 
+### Languages
+**Not built yet; M19b** (see [desktop.md](desktop.md), "Languages — Runs in more than Python", for the Runner's side).
+
+- A Run has one more field, **`lang`** (Text): the id of the language its code is written in, `^[a-z][a-z0-9_-]{0,23}$`. Unset means `python`, so every Run that exists stays what it was. The server checks the shape when it is set on a Run (`400 bad_request` otherwise) and nothing else: it keeps no list of languages, because it executes none.
+- `lang` is a field like `title`: two Branches changing it meet in a field Conflict, decided by taking one side; History and Restore need nothing new.
+- The `result` object gains two optional parts, and stays `"v": 1`:
+  ```jsonc
+  "lang": "julia",                              // the language it was executed as; absent means python
+  "env": { "runtime": "julia version 1.11.2" }  // what the Toolchain said it is; ≤ 40 characters. Beside python, packages, os, arch
+  ```
+  A result of a Python Run is written without either, exactly as before. A server from before this section refuses a result that carries them (`400`), so Runs in other languages need the server updated; the page says so in a sentence when that happens.
+- The server does not compare a result's `lang` with the Block's: like `code_sha256`, it is a record of what was executed, and the page shows a result as being from other code when either differs.
+- **Tools** (§12, §14): `get_card` gives a Run's language with its code, and "the code changed since" is also true when the result's `lang` differs. No tool sets `lang`: the same characters under another language are another program, so changing it is changing what runs on someone's machine.
+
 ## 16. M12 — Local Workspaces
 
 See [local.md](local.md). The desktop app links this crate and runs the same server in-process for a Local Workspace: `qoop_server::local::start_local` listens on `127.0.0.1` on the port asked for in `LocalOptions::port` when it is free, else on a port the OS chooses, on the caller's tokio runtime, reads no environment variables and installs no signal handlers. The public origin is `http://127.0.0.1:<port>`; there is no dev origin; the Origin rules of §3 apply unchanged. `stop` closes live connections and lets in-flight requests finish for at most a few seconds.
@@ -452,7 +466,7 @@ Files, all in the folder the desktop app gives: the database (one per Workspace)
 
 A new database gets, before the server answers anything: one Member (role `admin`, the name the app gives, the email `me@local.invalid`, a random password nobody knows) and the Research Content of its Preset (local.md, "What each Preset seeds"), recorded as ordinary Changes by that Member and through the same checks as `POST …/ops`. The Preset id is kept in the database; a database that has one is never seeded again, and the Preset and name given at later starts are ignored.
 
-Storage: a `settings` table (schema version 5), one text value per name: `preset`, and `tutorial_state` (below). Older files are migrated in place as in §2.
+Storage: a `settings` table (schema version 5), one text value per name: `preset`, `tutorial_state` (below), and `session_cookie` (the id in the cookie's name, below). Older files are migrated in place as in §2.
 
 | Method, path | Who | Response |
 |---|---|---|
@@ -463,6 +477,8 @@ Storage: a `settings` table (schema version 5), one text value per name: `preset
 | `PUT /api/local/tutorial` | local only | body `{ state: <any JSON> }`, at most 16 KiB in all (`400 bad_request` over that, or without `state`); `204` with no body. The server stores the text of `state` as it came and never reads it |
 
 The key of `entry_url` is 32 random bytes (URL-safe base64, no padding), made at each start, compared in constant time, and valid until `stop`. A session made with it lasts like any other (§3), but after a restart only the new key can make a new one.
+
+**The session cookie of a Local Workspace** is called `qoop_session_<id>`, not `qoop_session`. Every Local Workspace is served from `127.0.0.1`, and a browser (the desktop app's web view included) keeps cookies apart by host and name, never by port: under one name, entering one Workspace would replace the sign-in of another, and one database's session token would be sent to another Workspace's server. `<id>` is 16 URL-safe base64 characters, made at random the first time the database is opened by `start_local` and kept in it (the `settings` row `session_cookie`), so it is the same at every start, whatever port the Workspace gets; a stored value of any other shape is replaced by a new one. It is the database's and not the port's because a Workspace whose port is taken opens on another, possibly one another Workspace had. A Workspace file leaves that row out (§17), so an imported Workspace has an id of its own. Everything that sets, reads, extends or clears the session cookie (`/api/local/enter`, every request under `/api`, the WebSocket upgrade, `logout` on a Team server) uses the server's own name, and reads no other: a cookie under another name — another Workspace's, or a `qoop_session` left from before this rule — is not looked at and signs no one in, with no error. Attributes are those of §3. A Team server's cookie is `qoop_session`, exactly as before.
 
 On a Team Workspace every `/api/local/*` path is `404 not_found`, whatever the method and whether or not there is a session.
 
@@ -485,7 +501,7 @@ pub const APPLICATION_ID: i32 = 0x496e_6661;          // "Infa"
 pub const WORKSPACE_FILE_EXTENSION: &str = "infall";
 ```
 
-A Workspace file is a SQLite database (rollback journal, no `-wal` beside it) with `PRAGMA application_id = 0x496e6661` and the schema version of §2 in `PRAGMA user_version`.
+A Workspace file is a SQLite database (rollback journal, no `-wal` beside it) with `PRAGMA application_id = 0x496e6661` and the schema version of §2 in `PRAGMA user_version`. A Local Workspace's own database is not marked (`application_id` 0).
 
 **Export** takes a consistent snapshot of the open database with `VACUUM INTO` (one read transaction, so it is safe while the server writes; only whole batches of Changes are in it) into a private scratch file beside the database, then removes from that copy, with `secure_delete` on and a `VACUUM` after, so no freed page keeps a deleted byte:
 
@@ -500,9 +516,16 @@ A Workspace file is a SQLite database (rollback journal, no `-wal` beside it) wi
 
 Kept: the Research Content with all its history (Changes, Checkpoints, Branches), Members (id, name, email, role, colour), To-dos, Suggestions, the Preset and the Tutorial's progress. The entry key (§16) lives only in memory and is never in a database. The clean copy is then written to `dest` (never over an existing file: `DestinationExists`; owner-only, mode 0600, on unix) and the scratch file is removed. A database whose schema is newer than the build is `NewerVersion`.
 
-**Import** refuses, before writing anything, a file that does not start with the SQLite header (`NotAWorkspaceFile`) and a `db` that exists (`DestinationExists`). It copies the file to `db` (owner-only on unix) and checks the copy: the Infall mark (`NotAWorkspaceFile`), a schema version not newer than this build (`NewerVersion`), `PRAGMA quick_check`, the tables of a Local Workspace, a `preset` setting, exactly one Member who is an Admin, and a Workspace snapshot that reads (else `NotAWorkspaceFile`). Then it removes from the copy any sessions, invites, access tokens and AI settings (in case a file was made by hand). If any check fails, the copy is removed and nothing is left at `db`. The copy is migrated to the current schema by `start_local` like any database; since it has a Preset and a Member, nothing is seeded and the `preset` and `member_name` of `LocalOptions` are ignored. The secret key file is made afresh at that first start.
+**Import** takes a Workspace file, or a Local Workspace's own database copied by hand (out of the app's data folder, or from a backup of that folder made by other means) — the way back in for a person whose only copy is `workspace.sqlite`.
 
-A Team Workspace's database is refused as `NotAWorkspaceFile` (it has no Preset and usually more than one person), whether exported with `export_workspace` or not; so is a Local Workspace's own database copied by hand (it has no mark).
+It refuses, before writing anything, a file that does not start with the SQLite header (`NotAWorkspaceFile`) and a `db` that exists (`DestinationExists`). It never opens the chosen file as a database and never writes to it: it copies the file, as bytes, to a private scratch file beside `db` (`<db>.import-<random>.tmp`, owner-only on unix), and when `<file>-wal` exists beside the chosen file — a copy made while the app was running, whose newest Changes are only in that write-ahead log — it copies that too, to `<scratch>-wal`, so SQLite reads them in. A `-shm` beside it is not used (SQLite rebuilds it from the `-wal`). The scratch copy is checked: its `application_id` is the Infall mark or none (any other: `NotAWorkspaceFile`), a schema version not newer than this build (`NewerVersion`), `PRAGMA quick_check`, the tables of a Local Workspace, a `preset` setting, exactly one Member who is an Admin, and a Workspace snapshot that reads (else `NotAWorkspaceFile`). Then it is cleaned:
+
+- a **Workspace file** (marked): any sessions, invites, access tokens and AI settings are removed (in case a file was made by hand);
+- an **unmarked database**: exactly what an export takes out (the table above: sessions, invites, access tokens, AI settings, every setting but `preset` and `tutorial_state`, each Member's password hash), with `secure_delete` and a `VACUUM`, the `-wal` folded in, and the mark set — the result is what an export of that database would have been.
+
+Only then is the clean copy written to `db` (owner-only on unix, never over a file that appeared meanwhile: `DestinationExists`), and the scratch files are removed. If any check fails, nothing is written to `db` and no scratch file is left. The new database is migrated to the current schema by `start_local` like any database; since it has a Preset and a Member, nothing is seeded and the `preset` and `member_name` of `LocalOptions` are ignored. The secret key file is made afresh at that first start, and so is the id in the session cookie's name (§16).
+
+A Team Workspace's database is refused as `NotAWorkspaceFile` (it has no Preset and usually more than one person), whether exported with `export_workspace`, copied by hand, or given as it is.
 
 ### Source lookup
 

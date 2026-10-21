@@ -8,7 +8,7 @@ A researcher will not put real work into something they cannot get it back out o
 
 ## Decisions
 
-1. **Workspace file.** A Local Workspace exports to one file, extension `.infall`: a consistent copy of its database with everything secret or tied to this computer removed (sessions, access tokens, AI settings including the OpenRouter key, the entry key). Importing one makes a **new** Local Workspace; it never overwrites one.
+1. **Workspace file.** A Local Workspace exports to one file, extension `.infall`: a consistent copy of its database with everything secret or tied to this computer removed (sessions, access tokens, AI settings including the OpenRouter key, the entry key). Importing one makes a **new** Local Workspace; it never overwrites one. A Local Workspace's own database (`workspace.sqlite`) copied by hand can be imported the same way — with the `-wal` beside it when it was copied while the app ran — and comes in cleaned exactly as a Workspace file is; the person's copy is only read, never changed. A Workspace file from **Export…** stays the recommended way: it is one consistent file.
 2. **Backups.** The desktop app keeps copies of each Local Workspace by itself: one when the Workspace is opened if the newest copy is older than 24 hours, kept in that Workspace's folder under `backups/`, the newest 7 kept. Same format as an export. No setting; it just happens. A failed backup never stops the Workspace from opening.
 3. **Where the data is.** The start screen can show a Local Workspace's folder in the file manager.
 4. **Export of content** (any Workspace, browser or desktop): a Page as Markdown (formulas kept as TeX, Sources listed at the end); a Page printed (print stylesheet — the system's print dialog makes the PDF); a Card's Sources, or all Sources on the Branch, as BibTeX.
@@ -38,9 +38,11 @@ In `qoop_server::local`:
 /// this-computer-only rows are not in the result.
 pub fn export_workspace(db: &Path, dest: &Path) -> Result<(), PortError>;
 
-/// Checks that `file` is a Workspace file this version can open, and copies it to `db`
-/// (which must not exist). The copy is brought up to the current schema when it is opened
-/// by `start_local`. Returns what the start screen needs.
+/// Checks that `file` is a Workspace file this version can open — or a Local Workspace's
+/// own database copied by hand, taking in `<file>-wal` when it lies beside it — and copies
+/// it to `db` (which must not exist), without its secrets. `file` is never written to.
+/// The copy is brought up to the current schema when it is opened by `start_local`.
+/// Returns what the start screen needs.
 pub fn import_workspace(file: &Path, db: &Path) -> Result<Imported, PortError>;
 
 pub struct Imported { pub preset: Option<Preset> }
@@ -52,7 +54,8 @@ impl std::fmt::Display for PortError { /* … */ }
 
 - A file made by a newer schema than this build knows is refused (`NewerVersion`), never half-opened.
 - After import, `start_local` on the new `db` works exactly as on any existing database: the one Member is kept (their name too), `member_name` and `preset` in `LocalOptions` are ignored.
-- A Workspace file from a **Team** server's database is out of scope: refuse it as `NotAWorkspaceFile` unless it happens to be importable with no extra work; say which in the report.
+- A Workspace file from a **Team** server's database is out of scope: refuse it as `NotAWorkspaceFile` unless it happens to be importable with no extra work; say which in the report. (It is refused, and so is a Team database given as it is.)
+- An unmarked database passes the same checks as a Workspace file (schema version not newer, the tables, a `preset` setting, exactly one Member who is an Admin, a snapshot that reads) and is then stripped exactly as an export strips (api.md §17).
 
 ## Contract B — HTTP, for the web UI
 
@@ -78,8 +81,10 @@ workspace_export({ id: string }): string | null
   // local only. Opens the system's save dialog (suggested name "<Workspace name>.infall").
   // Returns the path written, or null when the person cancelled.
 workspace_import(): void
-  // Opens the system's open dialog for a .infall file, makes a new Local Workspace from it
-  // (name: the file's name without extension, made unique), and opens it.
+  // Opens the system's open dialog for a .infall file or a .sqlite database (one filter,
+  // "Workspace file or database"), makes a new Local Workspace from it (name: the file's
+  // name without extension, made unique; a file called "workspace", as every Local
+  // Workspace's database is, gives "Recovered workspace", made unique), and opens it.
   // Resolves without doing anything when the person cancelled.
 workspace_reveal({ id: string }): void
   // local only. Shows the Workspace's folder in the file manager.

@@ -68,6 +68,10 @@ _Avoid_: Notebook, job, cell
 The part of the desktop app that executes Runs on the member's own hardware. A member using Infall from a browser has no Runner, and can still read every Run's captured output.
 _Avoid_: Kernel, agent, worker
 
+**Toolchain**:
+What the Runner starts to execute a Run written in one language: a program on the member's own computer and how it is handed the code. Each member sets up their own, per device; a Run only names its language. (Comes with Runs in more than Python, M19b; until then the only one is Python.)
+_Avoid_: Kernel, interpreter (for anything but Python), backend
+
 **Source**:
 An external reference — a paper, preprint, or web page — identified by its URL or DOI. One Source may be attached to many cards.
 _Avoid_: Link, article, reference, citation
@@ -106,12 +110,16 @@ A name a team member gives to a moment in a Branch's history so it can be found 
 _Avoid_: Commit, tag, snapshot, save
 
 **Activity**:
-One Member's consecutive Changes on a Branch made close together in time, shown as a single entry when reading history. A way of reading the history, not something recorded.
+One Member's consecutive Changes on a Branch made close together in time, shown as a single entry when reading history. A Merge and a Restore are each one Activity of their own, and a Checkpoint always ends the Activity it falls in. A way of reading the history, not something recorded.
 _Avoid_: Session, edit, burst
 
 **Restore**:
 Returning a Branch to how it was at an earlier moment by adding new Changes that undo the later ones. History is never erased, so a Restore can itself be undone.
 _Avoid_: Revert, rollback, reset
+
+**Branch Graph**:
+The picture of every Branch from the Workspace's first Change onward: each Branch a line of its Activities and Checkpoints, joined to other lines where it was forked and where a Merge happened. A new Branch may be started from any Activity or Checkpoint on it.
+_Avoid_: Tree, timeline, network, divergence graph
 
 ### Outside versioning
 

@@ -19,6 +19,16 @@
           if ([85, 90, 100, 110, 120, 130].indexOf(s.textSize) >= 0) r.setProperty('--q-text', s.textSize / 100)
         }
       } catch (e) {}
+      // The room the interface has (ui/settings/apply.ts, applyRoom): the window in zoomed pixels, so the rail and the
+      // AI sidebar are laid out right from the first paint.
+      try {
+        var d = document.documentElement
+        var k = 1 / (parseFloat(d.style.getPropertyValue('--q-ui-zoom')) || 1)
+        var w = d.clientWidth * k
+        d.setAttribute('data-room', w >= 1100 ? 'wide' : w >= 900 ? 'medium' : 'narrow')
+        d.style.setProperty('--q-vw', Math.floor(w) + 'px')
+        d.style.setProperty('--q-vh', Math.floor(d.clientHeight * k) + 'px')
+      } catch (e) {}
     </script>
   </head>
   <body>

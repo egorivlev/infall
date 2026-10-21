@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyPrefs, interfacePxPerScreenPx, motionAllowed } from './apply'
+import { applyPrefs, applyRoom, interfacePxPerScreenPx, motionAllowed, roomFor } from './apply'
 import { DEFAULT_PREFS, LEGACY_THEME_KEY, parsePrefs, prefs, PREFS_KEY, readPrefs, stepBoardScale, usePrefs } from './prefs'
 
 beforeEach(() => {
@@ -101,6 +101,22 @@ describe('applying the settings', () => {
     applyPrefs(DEFAULT_PREFS)
     expect(root).not.toHaveAttribute('data-motion')
     expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('1')
+  })
+
+  it('measures the room in interface pixels: the window divided by the interface scale', () => {
+    expect(roomFor(1100)).toBe('wide')
+    expect(roomFor(1099)).toBe('medium')
+    expect(roomFor(900)).toBe('medium')
+    expect(roomFor(899)).toBe('narrow')
+    const root = document.createElement('div')
+    Object.defineProperty(root, 'clientWidth', { value: 900 })
+    Object.defineProperty(root, 'clientHeight', { value: 600 })
+    expect(applyRoom(100, root)).toBe('medium') // the desktop app's smallest window
+    expect(applyRoom(150, root)).toBe('narrow') // 600 × 400 interface pixels
+    expect(root).toHaveAttribute('data-room', 'narrow')
+    expect(root.style.getPropertyValue('--q-vw')).toBe('600px')
+    expect(root.style.getPropertyValue('--q-vh')).toBe('400px')
+    expect(applyRoom(80, root)).toBe('wide') // 1125
   })
 
   it('says whether motion is welcome from the choice, else from the system', () => {

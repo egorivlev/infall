@@ -81,8 +81,14 @@ fn trim_ends(s: &str) -> &str {
     s.trim_matches(|c: char| c == '.' || c.is_whitespace())
 }
 
-/// The name a Workspace made from the file `stem.infall` gets, before it is made unique:
-/// the file's name without its extension, made a valid Workspace name.
+/// The extension of a Local Workspace's own database, which can be imported too when it was
+/// copied out of the app's data folder by hand.
+pub const DATABASE_EXTENSION: &str = "sqlite";
+
+/// The name a Workspace made from the file `stem.infall` (or `stem.sqlite`) gets, before it
+/// is made unique: the file's name without its extension, made a valid Workspace name. A
+/// file called just "workspace" — what every Local Workspace's own database is called, so
+/// what a copy of one made by hand is called — gives "Recovered workspace" instead.
 pub fn workspace_name_from_file(stem: &str, max_chars: usize) -> String {
     let cleaned: String = stem
         .chars()
@@ -92,6 +98,8 @@ pub fn workspace_name_from_file(stem: &str, max_chars: usize) -> String {
     let name = name.trim();
     if name.is_empty() {
         "Imported workspace".to_owned()
+    } else if name.eq_ignore_ascii_case("workspace") {
+        "Recovered workspace".to_owned()
     } else {
         name.to_owned()
     }
@@ -347,6 +355,17 @@ mod tests {
         assert_eq!(workspace_name_from_file("  a\nb ", 80), "a b");
         assert_eq!(workspace_name_from_file("", 80), "Imported workspace");
         assert_eq!(workspace_name_from_file("\t", 80), "Imported workspace");
+        // A Local Workspace's own database, copied by hand, is called "workspace".
+        assert_eq!(
+            workspace_name_from_file("workspace", 80),
+            "Recovered workspace"
+        );
+        assert_eq!(
+            workspace_name_from_file(" Workspace ", 80),
+            "Recovered workspace"
+        );
+        assert_eq!(workspace_name_from_file("workspace 2", 80), "workspace 2");
+        assert_eq!(workspace_name_from_file("My workspace", 80), "My workspace");
         assert_eq!(
             workspace_name_from_file(&"y".repeat(90), 80),
             "y".repeat(80)
@@ -591,6 +610,29 @@ mod tests {
             server.stop().await;
         });
 
+        // The Workspace's own database, copied out of its folder by hand, imports too, and
+        // is called "Recovered workspace" rather than after the file.
+        let hand = tmp.path().join("hand");
+        fs::create_dir_all(&hand).unwrap();
+        let copy = hand.join(db.file_name().unwrap());
+        fs::copy(&db, &copy).unwrap();
+        let stem = copy.file_stem().unwrap().to_string_lossy().into_owned();
+        let recovered = registry
+            .import_local(&stem, |new_db| {
+                import_workspace(&copy, new_db)
+                    .map(|i| i.preset.map(|p| p.id().to_owned()))
+                    .map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert_eq!(recovered.name, "Recovered workspace");
+        assert_eq!(recovered.preset.as_deref(), Some("tutorial"));
+        tauri::async_runtime::block_on(async {
+            let server = start_local(options(registry.db_path(&recovered.id)))
+                .await
+                .unwrap();
+            server.stop().await;
+        });
+
         // Something that is not a Workspace file is refused, and leaves nothing behind.
         let junk = tmp.path().join("junk.infall");
         fs::write(&junk, "not a database").unwrap();
@@ -600,6 +642,6 @@ mod tests {
                 .map_err(|e| e.to_string())
         });
         assert!(refused.is_err());
-        assert_eq!(registry.list().len(), 2);
+        assert_eq!(registry.list().len(), 3);
     }
 }

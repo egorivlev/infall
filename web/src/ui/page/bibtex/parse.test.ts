@@ -152,6 +152,33 @@ describe('parseBibtex: real exports', () => {
     })
   })
 
+  it('drops the braces that only protect case, wherever an exporter put them', () => {
+    const text = `@article{aad2012,
+  title = {Observation of a new particle in the search for the {Standard} {Model} {Higgs} boson with the {ATLAS} detector at the {LHC}},
+}
+@article{zotero,
+	title = {Measuring the {pH} dependence of {mRNA} decay in {E}. coli: {A} {Bose}–{Einstein} view},
+}
+@article{scholar,
+  title={{SU}(2) lattice gauge theory on {IBM} quantum hardware},
+}
+@article{mendeley,
+title = {{Lower bounds for $\\mathrm{SU}(2)$ Yang--Mills theory}},
+}
+@article{accent,
+title = {{\\"{O}}ffene {F}ragen zu {\\v{C}}erenkov radiation},
+}`
+    const { entries, problems } = parseBibtex(text)
+    expect(problems).toEqual([])
+    expect(entries.map((e) => e.title)).toEqual([
+      'Observation of a new particle in the search for the Standard Model Higgs boson with the ATLAS detector at the LHC',
+      'Measuring the pH dependence of mRNA decay in E. coli: A Bose–Einstein view',
+      'SU(2) lattice gauge theory on IBM quantum hardware',
+      'Lower bounds for $\\mathrm{SU}(2)$ Yang–Mills theory',
+      'Öffene Fragen zu Čerenkov radiation',
+    ])
+  })
+
   it('accepts CRLF line ends and a byte-order mark', () => {
     const { entries } = parseBibtex('\uFEFF@misc{a,\r\n  title = {One},\r\n}\r\n@misc{b,\r\n title={Two}}')
     expect(entries.map((e) => [e.title, e.line])).toEqual([

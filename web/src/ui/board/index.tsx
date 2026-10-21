@@ -36,6 +36,7 @@ import {
   centre,
   fitBounds,
   frameMembers,
+  isCramped,
   nudge,
   nudgeDelta,
   readingOrder,
@@ -132,8 +133,18 @@ export function BoardView() {
     else pagePanel.close()
   }, [showSuggestions, pageCard])
 
+  // A cramped area (geometry.ts): a side panel takes all of it. Measured in interface pixels, so it follows the scale.
+  const [cramped, setCramped] = useState(false)
+  useEffect(() => {
+    const el = areaRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(() => setCramped(isCramped(el.clientWidth)))
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [])
+
   return (
-    <div className="qb-area" ref={areaRef}>
+    <div className={cramped ? 'qb-area is-cramped' : 'qb-area'} ref={areaRef}>
       <div className="qb-area__canvas">
         {showSuggestions && <SuggestionsPanel onClose={focusBoard} />}
         <div className="qb-area__board">

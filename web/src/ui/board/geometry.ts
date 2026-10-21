@@ -198,6 +198,18 @@ export const SUGGESTIONS_W = 420 // the Suggestions panel, docked left of the Bo
 const PAGE_MIN_W = 480 // the Page panel never gets narrower than this
 const BOARD_MIN_W = 320 // what must stay of the Board between the two side panels
 
+/**
+ * Under this width (interface pixels) the Board area is "cramped": a side panel docked beside the Board would leave it
+ * a useless strip, so the Suggestions panel or the Page panel takes the whole area and the Board waits underneath.
+ * A narrow window does it, and so does a large interface scale (a 900-pixel window at 150 % has 600).
+ */
+export const CRAMPED_W = 640
+
+/** Whether a Board area this wide is cramped (0: not laid out yet, so not). */
+export function isCramped(areaWidth: number): boolean {
+  return areaWidth > 0 && areaWidth < CRAMPED_W
+}
+
 /** Whether the Suggestions panel and the Page panel fit side by side in a Board area this wide. */
 export function sidePanelsFit(areaWidth: number): boolean {
   return areaWidth - SUGGESTIONS_W - PAGE_MIN_W >= BOARD_MIN_W
