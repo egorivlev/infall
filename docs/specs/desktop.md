@@ -257,7 +257,7 @@ A Run names its language; the Member's own computer decides what that name start
 A **Toolchain** (CONTEXT.md) is what the Runner starts for one language. Three kinds:
 
 - **`python`** — built in. The M8 interpreter, `runner.py`, figures, packages, `qoop`. Unchanged.
-- **`qsharp`** — built in, hosted by Python. Q# has no program of its own to start: it runs through the `qsharp` package of the chosen Python (see "Q#").
+- **`qsharp`** — built in, hosted by Python. Q# has no program of its own to start: it runs through the `qdk` package of the chosen Python (see "Q#"). Since 1.29 the `qsharp` package is a deprecated shim that only pulls in `qdk`; a `qsharp` of 1.28 or earlier, from before `qdk`, is the package itself and is used when there is no `qdk`.
 - **A command** — any other language: a program on this computer, its arguments, and a file extension. Set up by the Member, from a preset or by hand.
 
 A language id is 1–24 characters, `^[a-z][a-z0-9_-]{0,23}$`. Ids are compared exactly. `python` and `qsharp` cannot be redefined.
@@ -287,7 +287,7 @@ type QoopRunner = {
 
 ## Runner settings — one more part
 Below **Python** and **Folder**, **Languages**:
-- **Q#** — a switch, usable once a Python is chosen. Turning it on asks that Python for the version of its `qsharp` package (`importlib.metadata`, five seconds); when there is none the window says what to install (`pip install qsharp` into that Python) and the switch stays off.
+- **Q#** — a switch, usable once a Python is chosen. Turning it on asks that Python (`-I`, `importlib.metadata`, five seconds) for the version of its `qdk` distribution, and when there is none, of its `qsharp` distribution; when there is neither the window says what to install (`pip install qdk` into that Python; it needs Python 3.10 or newer) and the switch stays off. What is saved is which of the two was found and its version. The `qsharp` shim's own version says nothing about the compiler (1.31.0 is the last shim and requires only `qdk>=1.31.0`), so with a `qdk` present it is not looked at.
 - **Presets** — Julia (`julia`, `.jl`), R (`Rscript`, `.R`), JavaScript (`node`, `.mjs`), Shell (`bash`, `.sh`; not on Windows): each offered with the programs found the way Python is found (the login shell's `PATH`), arguments `{file}`. Nothing is set up until the Member chooses it.
 - **Add a language** — id, name (≤ 40 characters), the program's full path, arguments, file extension.
 
@@ -302,7 +302,7 @@ What is accepted when saving a command Toolchain:
 Saved in `runner.json` beside `python` and `folder`:
 ```jsonc
 {
-  "qsharp": { "version": "1.31.0" },
+  "qsharp": { "package": "qdk", "version": "1.34.0" },   // "package": "qdk", or "qsharp" for a 1.28 or earlier
   "languages": {
     "julia": { "name": "Julia", "program": "/opt/homebrew/bin/julia", "args": ["{file}"], "ext": "jl", "version": "julia version 1.11.2" }
   }
@@ -335,22 +335,42 @@ There is no `qoop` module outside Python.
 
 ## Q#
 - Started as `<python> -u -X utf8 <the app's bundled qsharp_runner.py> <main.qs>`, with the environment of a Python Run.
-- `qsharp_runner.py` (bundled; standard library and `qsharp` only) evaluates the code with `qsharp.eval`, so `Message` output and the value of a final expression are printed. When the code declares an operation or function `Main` that takes nothing and has no statement of its own that calls it, `Main()` is evaluated afterwards and its result printed. Compiler errors are printed as Q# reports them, and the exit code is 1.
-- When `qsharp` cannot be imported (it was removed since the settings were saved), the output is one sentence saying what to install, and the exit code is 1.
-- `env`: `python`, `packages: { "qsharp": "<version>" }`, `os`, `arch`. No figures, no `qoop`; the monitor shows usage only.
+- **Telemetry off.** `qdk` (and `qsharp` 1.28) sends a usage report to Microsoft by default: at exit it posts the OS kernel version, the locale and counts of what was called, and waits up to 3 s for an answer. `qsharp_runner.py` sets `QDK_PYTHON_TELEMETRY=none` in its own environment before the import, which both honour; with it, nothing opens a socket.
+- `qsharp_runner.py` (bundled; standard library and `qdk` or `qsharp` only) imports `from qdk import qsharp`, and only when there is no `qdk`, `import qsharp`. Never `import qsharp` beside a `qdk`: the shim then writes a `DeprecationWarning` to standard error at every Run.
+- It evaluates the whole text with one `qsharp.eval`. `Message` output and `DumpMachine` go to standard output as they happen (each is printed and flushed), so a long Run shows them while it runs. `eval` prints nothing for the value of a final expression, it returns it as a Python value: `qsharp_runner.py` prints it, as Q# itself writes a value in an interpolated string — `true`, `One`, `[Zero, One]`, `(1, true, One, s, 2.5)`, `PauliX`, `1..3` (not Python's `True`, `Pauli.X`, `<Range> 1..3`, `'s'`). A `Unit` value prints nothing.
+- **The entry point** is the compiler's own: the callable marked `@EntryPoint()`, else the callable named exactly `Main`, in any namespace. One with parameters, and two of them, are compile errors (`Qdk.Qsc.EntryPoint.Args`, `…Duplicate`); with an `@EntryPoint()`, a `Main` is an ordinary callable. Neither `eval` nor anything else in the package calls it, and nothing tells Python which one it is. So after the text is evaluated, `qsharp_runner.py` finds it among the callables `eval` registered (`qdk.code`, with their namespaces, so `Demo.Main` is found), the `@EntryPoint()` one by its name in the text, and evaluates `<full name>()` unless the text has a call to it of its own besides the declaration (comments and string contents left out). Its value is printed like a final expression's. A text that declares callables and has neither runs nothing: no output, exit code 0.
+- A Run is executed once. `qsharp.run` (many shots) takes an entry expression from Python, which a Run does not have; code that wants repetitions loops in Q#.
+- Compile errors and failures while running both raise `QSharpError`. `qsharp_runner.py` prints its text — the error code (`Qdk.Qsc.Parse.Rule`, `Qdk.Qsc.Eval.UserFail`; `Qsc.…` in 1.28), the message and the lines it points at, positions given as `line_0:<line>:<column>`; a failure while running is preceded by `Error: program failed: …` and its call stack — and nothing of Python's, and the exit code is 1. Output written before a failure stays.
+- When neither `qdk` nor `qsharp` can be imported (removed since the settings were saved), the output is one sentence saying what to install, and the exit code is 1.
+- `qsharp_runner.py` writes `qoop-env.json` as `runner.py` does, at exit: the Python version and one package, `qdk` (or `qsharp`) with its version read then by `importlib.metadata`, so an upgrade since the settings were saved is recorded as it ran. `pyqir`, which `qdk` requires, is not loaded by `eval` and is not recorded.
+- `env`: `python`, `packages: { "qdk": "<version>" }` (or `"qsharp"`), `os`, `arch`. No figures, no `qoop`; the monitor shows usage only.
+- Stopping is as for Python: SIGTERM to the group ends it at once, also in the middle of a long computation, and nothing is left in its group.
+- Nothing is written outside the Run's directory, and in it nothing but `qoop-env.json`.
 
 ## The page
 - Every Run shows its language beside its title: `Python`, `Q#`, `Julia`, `R`, `JavaScript`, `Shell`, and for any other id the id itself. Someone who may edit the Page can change it: the known ones, and **Other…** for an id typed by hand.
 - **Run** is offered when `status().languages` has the Run's language. Otherwise the button is **Set up `<name>`** and calls `configure(lang)`. In a browser nothing changes: no Runner, the captured output is read as before.
 - A result is shown as being from other code when its `code_sha256` differs from the present code **or its `lang` differs from the Run's**.
-- The line under a result names what executed it: `Python 3.12.3`, `Q# · qsharp 1.31.0`, or `runtime` as recorded.
+- The line under a result names what executed it: `Python 3.12.3`, `Q# · qdk 1.34.0` (the package and version in `env.packages`), or `runtime` as recorded.
 - Export as Markdown (portability.md) tags the fenced code block with the Run's language id.
 
 ## Not here
 Sandboxing or containers; compiling as a step of its own; installing a language or its packages; state kept between Runs (kernels, notebooks); syntax colouring per language; package versions for languages other than Python; a `qoop` library for other languages; Toolchains shared across a Workspace — each Member sets up their own device.
 
-## To check when building
-Written from the `qsharp` package's documentation as remembered, not from running it (the package exists on PyPI, 1.31.0 at the time of writing):
-- that `qsharp.eval` prints `Message` output to standard output outside a notebook, and returns the value of a final expression;
-- how an entry point is best found — the rule above looks for `Main` in the text; the package may offer a better way;
-- that `importlib.metadata.version("qsharp")` is the right name on every platform the package ships for.
+## Checked on 2026-11-24 with qsharp 1.31.0 (qdk 1.34.0) on macOS arm64
+The section was first written from the package's documentation as remembered; the Q# part above is now what running it showed. Scripts, samples and their captured output, to repeat the check: [qsharp-check.md](qsharp-check.md).
+
+Verified on macOS 26.5 arm64, Python 3.12.13, in a throwaway virtual environment, programs started as the Runner starts them (`-u -X utf8`, standard input from `/dev/null`, one pipe for both streams, own process group):
+- `pip install qsharp` installs `qsharp` 1.31.0 (a pure-Python shim, the last release, 31 July 2026), `qdk` 1.34.0 and `pyqir` 0.12.8. `qdk` alone, and `qsharp` 1.28.0 alone, run every sample the same way.
+- `Message` and `DumpMachine` output on standard output as it happens; values returned, not printed; the formatting of each kind of value; `Unit` as `None`.
+- The entry-point rule, with namespaces, `@EntryPoint()`, a `Main` with parameters, two `Main`s, a `Main` the text calls itself, no entry point, a syntax error, a failure while running.
+- Errors as `QSharpError` (an `Exception` at run time, though the package's type stubs say `BaseException`) and their text; `qsharp.run` raises at the first failing shot instead of returning the failure in its list as its docstring says.
+- `importlib.metadata.version` under `-I`: `"qdk"` → `1.34.0`, `"qsharp"` → `1.31.0` (shim) or `1.28.0`; neither has a `__version__`.
+- Telemetry: what is sent and when (to a local listener, never to Microsoft's address), up to 3 s added at exit when the answer is slow, nothing sent and no socket opened with `QDK_PYTHON_TELEMETRY=none` (a Python audit hook and `lsof` on the running process).
+- Nothing written in a fresh `HOME`, `TMPDIR`, the working directory or the environment's `site-packages`, except `qoop-env.json` in the Run's directory.
+- SIGTERM to the group ends a never-ending Q# loop in milliseconds, nothing left; SIGINT does not (only SIGKILL then).
+- Time, warm: Python start 0.02 s, `import qdk.qsharp` 0.11–0.15 s, the whole of a small Run 0.23 s. The first import after installing took 1.0 s.
+
+Read from PyPI, not run: `qdk` 1.34.0 has wheels for macOS arm64 (11.0+) and x64 (10.12+), Linux x64 and arm64 (`manylinux_2_28`, glibc 2.28+), Windows x64 and arm64, all `cp310-abi3` (any CPython 3.10 or newer; the package requires `>=3.10`). `pyqir` 0.12.8 has the same platforms.
+
+Not verified, to confirm in M16/M19b on each system: Windows x64 and Linux (x64, arm64) — the import, the output through the pipe, `-X utf8` with non-Latin text, stopping (a job object on Windows), and that nothing is written outside the Run's directory; a Python older than 3.10 when the switch is turned on.

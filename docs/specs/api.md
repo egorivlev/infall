@@ -455,6 +455,7 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
   "env": { "runtime": "julia version 1.11.2" }  // what the Toolchain said it is; ≤ 40 characters. Beside python, packages, os, arch
   ```
   A result of a Python Run is written without either, exactly as before. A server from before this section refuses a result that carries them (`400`), so Runs in other languages need the server updated; the page says so in a sentence when that happens.
+- A result of a Q# Run has `"lang": "qsharp"` and no `runtime`: its `env` is a Python Run's, `python` and one package, the one that executed it — `{ "qdk": "1.34.0" }`, or `{ "qsharp": "1.28.0" }` from a Python with only a `qsharp` of 1.28 or earlier. Since 1.29 `qsharp` is a shim whose version does not follow the compiler's, so it is never the one recorded beside a `qdk`. Nothing new for the server to check: these are the `packages` it already accepts.
 - The server does not compare a result's `lang` with the Block's: like `code_sha256`, it is a record of what was executed, and the page shows a result as being from other code when either differs.
 - **Tools** (§12, §14): `get_card` gives a Run's language with its code, and "the code changed since" is also true when the result's `lang` differs. No tool sets `lang`: the same characters under another language are another program, so changing it is changing what runs on someone's machine.
 
