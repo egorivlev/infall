@@ -299,6 +299,59 @@ describe('history stays current', () => {
     expect(snap().checkpoints.map((c) => c.name)).toEqual(['origin', 'named'])
     expect(snap().activities.flatMap((a) => a.checkpoints)).toEqual([cp])
   })
+  it('splits the Activity a new Checkpoint falls in, keeping the others, as a fresh load would', async () => {
+    server.commit([card('a', 'A')], OTHER.id)
+    server.commit([card('b', 'B'), card('c', 'C'), ops.setText('a', 'title', 'A2')], ME.id)
+    const ws = await openLive()
+    await history.open()
+    const [first, second] = snap().activities
+    expect(second).toMatchObject({ fromSeq: 1, toSeq: 4 })
+    const cp = server.checkpoint('mid', 2, OTHER.id)
+    ws.receive(server.checkpointFrame(cp))
+    const now = snap().activities
+    expect(now[0]).toBe(first)
+    expect(now.map((a) => [a.fromSeq, a.toSeq, a.lines])).toEqual([
+      [0, 1, ['Added Card A']],
+      [1, 2, ['Added Card B']],
+      [2, 4, ['Added Card C', 'Renamed Card A → A2']],
+    ])
+    expect(now[1]!.checkpoints).toEqual([cp])
+    // The tail goes on from the right place: a new Change by the same author joins the last part.
+    ws.receive(server.external([card('d', 'D')], ME.id))
+    expect(snap().activities.map((a) => [a.fromSeq, a.toSeq])).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 5],
+    ])
+    // A Checkpoint at the head ends the last Activity: the next Change starts another.
+    ws.receive(server.checkpointFrame(server.checkpoint('head', 5, OTHER.id)))
+    ws.receive(server.external([card('e', 'E')], ME.id))
+    expect(snap().activities.map((a) => [a.fromSeq, a.toSeq])).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 5],
+      [5, 6],
+    ])
+    const fresh = createHistory(sync)
+    await fresh.open()
+    expect(snap().activities).toEqual(fresh.store.getState().snapshot.activities)
+  })
+  it('splits an earlier Activity, not the last one, when the Checkpoint falls there', async () => {
+    server.commit([card('a', 'A'), card('b', 'B')], OTHER.id)
+    server.commit([card('c', 'C')], ME.id)
+    const ws = await openLive()
+    await history.open()
+    const last = snap().activities[1]
+    ws.receive(server.checkpointFrame(server.checkpoint('early', 1, OTHER.id)))
+    expect(snap().activities.map((a) => [a.author, a.fromSeq, a.toSeq])).toEqual([
+      ['other', 0, 1],
+      ['other', 1, 2],
+      ['me', 2, 3],
+    ])
+    expect(snap().activities[2]).toBe(last)
+    ws.receive(server.external([ops.setText('c', 'title', 'C2')], ME.id))
+    expect(snap().activities.map((a) => a.lines)).toEqual([['Added Card A'], ['Added Card B'], ['Added Card C2']])
+  })
   it('fetches Checkpoints again after a reconnect', async () => {
     const ws = await openLive()
     await history.open()

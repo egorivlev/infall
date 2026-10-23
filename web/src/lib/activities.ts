@@ -1,7 +1,7 @@
 // Pure History logic: replaying Changes, grouping them into Activities, and wording them.
 import type { Entities } from './board-state'
 import { applyOps } from './board-state'
-import type { Activity, Change, Checkpoint, Entity, Fields, Kind, Op, Status } from './types'
+import type { Activity, Change, Checkpoint, Entity, Fields, Kind, Moment, Op, Status } from './types'
 import { STATUSES } from './types'
 
 export const ACTIVITY_GAP_MS = 10 * 60 * 1000
@@ -325,32 +325,45 @@ function batchOf(c: Change): { kind: RunKind; batch: string | null } {
   return { kind: 'merge', batch: c.origin.Merge.batch }
 }
 
+/** One Activity without its words: which Changes it covers, `(fromSeq, toSeq]`, and what kind it is. */
+export type ActivityShape = {
+  id: string // id of its first Change
+  kind: RunKind
+  author: string
+  fromSeq: number
+  toSeq: number
+  startedAt: number
+  endedAt: number
+  source?: Moment // a Merge: the moment it brought in
+  to?: number // a Restore: the moment of its Branch it returned to
+}
+
 /**
- * Reads a Branch's Changes as Activities, oldest first.
+ * The grouping rule of Activities without their words. The server has the same rule (`qoop_core::activities`,
+ * behind `GET /api/graph`); both are checked against the shared fixture `docs/specs/branch-graph-activities.json`.
  *
- * - Consecutive `Edit` Changes by one author with no pause over `gapMs` between neighbours are one Activity.
+ * - Consecutive `Edit` Changes by one author with no pause over `gapMs` between neighbours are one Activity
+ *   (a clock that went backwards is no pause).
  * - Consecutive Changes of one Restore (or Merge) batch are one Activity of that kind, whatever surrounds them.
- * - `baseEntities` is the Board before `changes[0]` (the Branch at seq 0 unless `startSeq` says otherwise);
- *   it is replayed along the way so that `lines` use the titles of that moment.
- * - `checkpoints` are attached to the Activity whose `(fromSeq, toSeq]` holds their moment.
+ * - A Checkpoint always ends the Activity it falls in: no Activity reaches across a moment in `cuts` (the seqs of
+ *   the Branch's Checkpoints, counted from the Branch's start as `startSeq` is).
  */
-export function groupActivities(
+export function groupShapes(
   changes: readonly Change[],
-  checkpoints: readonly Checkpoint[],
-  baseEntities: Entities,
-  options: GroupOptions = {},
-): Activity[] {
+  cuts: Iterable<number>,
+  options: { gapMs?: number; startSeq?: number } = {},
+): ActivityShape[] {
   const gapMs = options.gapMs ?? ACTIVITY_GAP_MS
-  const maxLines = options.maxLines ?? MAX_LINES
   const startSeq = options.startSeq ?? 0
-  const out: Activity[] = []
-  let world = baseEntities
+  const cut = new Set(cuts)
+  const out: ActivityShape[] = []
   let i = 0
   while (i < changes.length) {
     const first = changes[i]!
     const head = batchOf(first)
     let j = i + 1
     while (j < changes.length) {
+      if (cut.has(startSeq + j)) break
       const c = changes[j]!
       const b = batchOf(c)
       if (b.kind !== head.kind) break
@@ -359,32 +372,69 @@ export function groupActivities(
       } else if (b.batch !== head.batch) break
       j++
     }
-    const run = changes.slice(i, j)
-    const before = world
-    world = replay(world, run.map((c) => c.op))
-    const fromSeq = startSeq + i
-    const toSeq = startSeq + j
-    const lines =
-      head.kind === 'restore'
-        ? ['Restored to an earlier moment']
-        : head.kind === 'merge'
-          ? ['Merged from another Branch']
-          : describeChanges(before, world, run, maxLines)
-    out.push({
+    const shape: ActivityShape = {
       id: first.id,
-      author: first.author,
       kind: head.kind,
-      fromSeq,
-      toSeq,
+      author: first.author,
+      fromSeq: startSeq + i,
+      toSeq: startSeq + j,
       startedAt: first.at,
-      endedAt: run[run.length - 1]!.at,
-      count: run.length,
-      lines,
-      checkpoints: checkpoints.filter((c) => c.moment.seq > fromSeq && c.moment.seq <= toSeq).sort(byMoment),
-    })
+      endedAt: changes[j - 1]!.at,
+    }
+    const origin = first.origin
+    if (origin !== 'Edit' && 'Merge' in origin) shape.source = origin.Merge.source
+    if (origin !== 'Edit' && 'Restore' in origin) shape.to = origin.Restore.to_seq
+    out.push(shape)
     i = j
   }
   return out
+}
+
+/**
+ * Reads a Branch's Changes as Activities, oldest first, by the rule of `groupShapes`: a Checkpoint ends the
+ * Activity it falls in.
+ *
+ * - `baseEntities` is the Board before `changes[0]` (the Branch at seq 0 unless `startSeq` says otherwise);
+ *   it is replayed along the way so that `lines` use the titles of that moment.
+ * - `checkpoints` are attached to the Activity whose `(fromSeq, toSeq]` holds their moment, which is its end.
+ */
+export function groupActivities(
+  changes: readonly Change[],
+  checkpoints: readonly Checkpoint[],
+  baseEntities: Entities,
+  options: GroupOptions = {},
+): Activity[] {
+  const maxLines = options.maxLines ?? MAX_LINES
+  const startSeq = options.startSeq ?? 0
+  const shapes = groupShapes(
+    changes,
+    checkpoints.map((c) => c.moment.seq),
+    { gapMs: options.gapMs, startSeq },
+  )
+  let world = baseEntities
+  return shapes.map((shape) => {
+    const run = changes.slice(shape.fromSeq - startSeq, shape.toSeq - startSeq)
+    const before = world
+    world = replay(world, run.map((c) => c.op))
+    const lines =
+      shape.kind === 'restore'
+        ? ['Restored to an earlier moment']
+        : shape.kind === 'merge'
+          ? ['Merged from another Branch']
+          : describeChanges(before, world, run, maxLines)
+    return {
+      id: shape.id,
+      author: shape.author,
+      kind: shape.kind,
+      fromSeq: shape.fromSeq,
+      toSeq: shape.toSeq,
+      startedAt: shape.startedAt,
+      endedAt: shape.endedAt,
+      count: run.length,
+      lines,
+      checkpoints: checkpoints.filter((c) => c.moment.seq > shape.fromSeq && c.moment.seq <= shape.toSeq).sort(byMoment),
+    }
+  })
 }
 
 export function byMoment(a: Checkpoint, b: Checkpoint): number {

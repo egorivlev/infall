@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { describeChanges, groupActivities, replay } from './activities'
+import { describeChanges, groupActivities, groupShapes, replay } from './activities'
 import type { Entities } from './board-state'
 import { ops } from './ops'
-import { fakeRunResult } from './testing'
+import { fakeRunResult, loadActivityFixture } from './testing'
 import type { Change, Checkpoint, Op, Origin } from './types'
 
 const MIN = 60_000
@@ -111,12 +111,34 @@ describe('groupActivities: grouping', () => {
     expect(out.map((a) => a.kind)).toEqual(['edit', 'merge'])
     expect(out[1]!.lines).toEqual(['Merged from another Branch'])
   })
-  it('attaches Checkpoints to the Activity whose (fromSeq, toSeq] holds them', () => {
-    const changes = [ch(card('a'), 0, 'me'), ch(card('b'), 0, 'me'), ch(card('c'), 0, 'other')]
+  it('ends an Activity at every Checkpoint inside it and attaches each Checkpoint to the Activity it ends', () => {
+    const changes = [ch(card('a', 'A'), 0, 'me'), ch(card('b', 'B'), 0, 'me'), ch(card('c', 'C'), 0, 'other')]
     const all = [cp('zero', 0), cp('two', 2), cp('one', 1), cp('three', 3), cp('also two', 2)]
     const out = groupActivities(changes, all, {})
-    expect(out[0]!.checkpoints.map((c) => c.name)).toEqual(['one', 'also two', 'two'])
-    expect(out[1]!.checkpoints.map((c) => c.name)).toEqual(['three'])
+    expect(out.map((a) => [a.author, a.fromSeq, a.toSeq, a.lines])).toEqual([
+      ['me', 0, 1, ['Added Card A']],
+      ['me', 1, 2, ['Added Card B']],
+      ['other', 2, 3, ['Added Card C']],
+    ])
+    expect(out.map((a) => a.checkpoints.map((c) => c.name))).toEqual([['one'], ['also two', 'two'], ['three']])
+  })
+  it('splits a Merge or Restore batch at a Checkpoint too, each part keeping its kind', () => {
+    const merge: Origin = { Merge: { batch: 'm1', source: { branch: 'x', seq: 4 } } }
+    const out = groupActivities(many([card('a'), card('b'), card('c')], 0, 'me', merge), [cp('mid', 1)], {})
+    expect(out.map((a) => [a.kind, a.fromSeq, a.toSeq, a.count])).toEqual([
+      ['merge', 0, 1, 1],
+      ['merge', 1, 3, 2],
+    ])
+  })
+  it('starts a new Activity after a Checkpoint at the head of a tail', () => {
+    const base = boardOf([card('a', 'A')])
+    const out = groupActivities([ch(ops.setText('a', 'title', 'B')), ch(ops.setText('a', 'title', 'C'))], [cp('x', 6)], base, {
+      startSeq: 5,
+    })
+    expect(out.map((a) => [a.fromSeq, a.toSeq, a.lines])).toEqual([
+      [5, 6, ['Renamed Card A → B']],
+      [6, 7, ['Renamed Card B → C']],
+    ])
   })
   it('numbers moments from startSeq when given the tail of a log', () => {
     const base = boardOf([card('a', 'A')])
@@ -541,5 +563,40 @@ describe('describeChanges: Runs (M8)', () => {
   it('leaves Visuals as they were', () => {
     const visual = ops.addBlock({ id: 'v1', card: 'a', type: 'visual', text: '<p>', title: 'Demo', order: 'zz' })
     expect(said([visual])).toEqual([['Added Visual Demo to the Page of Threshold']])
+  })
+})
+
+describe('the shared fixture (docs/specs/branch-graph-activities.json)', () => {
+  it('groups every case exactly as the server does', async () => {
+    const fixture = await loadActivityFixture()
+    expect(fixture.cases.length).toBeGreaterThanOrEqual(10)
+    for (const c of fixture.cases) {
+      const shapes = groupShapes(c.changes, c.checkpoints, { gapMs: c.gap_ms })
+      const asWire = shapes.map((s) => ({
+        kind: s.kind,
+        author: s.author,
+        from_seq: s.fromSeq,
+        to_seq: s.toSeq,
+        started_at: s.startedAt,
+        ended_at: s.endedAt,
+        ...(s.source ? { source: s.source } : {}),
+        ...(s.to !== undefined ? { to: s.to } : {}),
+      }))
+      expect(asWire, c.name).toEqual(c.expected)
+    }
+  })
+  it('gives History the same Activities, with words', async () => {
+    const fixture = await loadActivityFixture()
+    for (const c of fixture.cases) {
+      const cps = c.checkpoints.map((seq, i) => cp(`cp${i}`, seq))
+      const out = groupActivities(c.changes, cps, {}, { gapMs: c.gap_ms })
+      expect(
+        out.map((a) => [a.kind, a.author, a.fromSeq, a.toSeq, a.startedAt, a.endedAt]),
+        c.name,
+      ).toEqual(c.expected.map((e) => [e.kind, e.author, e.from_seq, e.to_seq, e.started_at, e.ended_at]))
+      expect(out.every((a) => a.lines.length > 0 && a.count === a.toSeq - a.fromSeq)).toBe(true)
+      // Every Checkpoint inside the log sits at the end of an Activity.
+      for (const a of out) for (const k of a.checkpoints) expect(k.moment.seq).toBe(a.toSeq)
+    }
   })
 })

@@ -150,9 +150,22 @@ export function createHistory(boardSync: BoardSync) {
     if (checkpoints.some((c) => c.name === cp.name)) return
     checkpoints = [...checkpoints, cp].sort(byMoment)
     const seq = cp.moment.seq
-    activities = activities.map((a) =>
-      seq > a.fromSeq && seq <= a.toSeq ? { ...a, checkpoints: [...a.checkpoints, cp].sort(byMoment) } : a,
-    )
+    const k = activities.findIndex((a) => seq > a.fromSeq && seq <= a.toSeq)
+    if (k < 0) return
+    const a = activities[k]!
+    if (seq === a.toSeq) {
+      activities = activities.map((x, i) => (i === k ? { ...a, checkpoints: [...a.checkpoints, cp].sort(byMoment) } : x))
+      return
+    }
+    // A Checkpoint ends the Activity it falls in: this one becomes two. Only it is grouped again.
+    const last = k === activities.length - 1
+    const before = last ? tailBase : replay(base, changes.slice(0, a.fromSeq).map((c) => c.op))
+    const parts = groupActivities(changes.slice(a.fromSeq, a.toSeq), checkpoints, before, { startSeq: a.fromSeq })
+    activities = [...activities.slice(0, k), ...parts, ...activities.slice(k + 1)]
+    if (last) {
+      const newLast = parts[parts.length - 1]!
+      tailBase = replay(before, changes.slice(a.fromSeq, newLast.fromSeq).map((c) => c.op))
+    }
   }
 
   function handle(e: SyncEvent) {

@@ -470,3 +470,94 @@ export type LookupQuery = { doi: string } | { arxiv: string }
 
 /** The registry's details for a Source. `authors` in the Source field's form; '' where the registry has nothing. */
 export type LookupResult = { title: string; authors: string; year: string; doi: string | null; url: string | null }
+
+// ---- M15b: the Branch Graph (docs/specs/branch-graph.md; wire: docs/specs/api.md §18) ----
+
+/** One Activity of a Branch as `GET /api/graph` gives it: the Changes `(from_seq, to_seq]`, without their contents. */
+export type GraphActivity = {
+  kind: 'edit' | 'merge' | 'restore'
+  author: string // Member id
+  from_seq: number
+  to_seq: number
+  started_at: number // unix ms, its first Change
+  ended_at: number // its last Change
+  source?: Moment // kind 'merge': the moment of the other Branch it brought in
+  to?: number // kind 'restore': the moment of this Branch it returned to
+}
+
+export type GraphCheckpoint = { name: string; seq: number; author: string; at: number }
+
+/** The shape of one Branch. `activities` are in order and cover `(0, seq]`. */
+export type GraphBranch = {
+  id: string
+  name: string
+  seq: number
+  parent?: Moment // absent for main
+  created_by?: string
+  created_at?: number
+  checkpoints: GraphCheckpoint[] // by seq, then name; seq 0 = at its own start
+  activities: GraphActivity[]
+}
+
+/** `GET /api/graph`: main first, then by when each Branch was started. */
+export type GraphResponse = { branches: GraphBranch[] }
+
+/** A place on the drawn graph: a row (0 = the top, the newest) and a column (0 = main's). */
+export type GraphPoint = { row: number; column: number }
+
+/**
+ * One row of the graph: one Activity (a dot), or — the last row — the start of the Workspace, main at seq 0.
+ * Rows are newest first: by the time each Activity ended, never against a Branch's own order.
+ */
+export type GraphRow = {
+  key: string // `<branch id>:<from_seq>:<to_seq>`, 'start' for the start row: the same while the Activity is unchanged
+  kind: 'edit' | 'merge' | 'restore' | 'start'
+  branch: string // Branch id (main for the start row)
+  column: number
+  index: number // in its Branch's `activities`; -1 for the start row
+  activity: GraphActivity | null // null for the start row
+  moment: Moment // where a Branch started from this dot starts: right after the Activity; the start row: main at 0
+  checkpoints: GraphCheckpoint[] // the ◆ on this dot: its Branch's Checkpoints at `moment.seq` (start row: main's at 0)
+  forks: string[] // ids of the Branches whose line leaves this dot (started from a moment it holds)
+  source?: GraphPoint & { branch: string; seq: number } // kind 'merge': the dot holding the merged moment; absent when that Branch is unknown
+}
+
+/** One Branch's line. Its column is held from `forkRow` (bottom) up to `topRow`; no other line uses it in between. */
+export type GraphLane = {
+  branch: string // id
+  name: string
+  column: number
+  parent?: string // parent Branch id; absent for main
+  forkRow: number // where the line starts: the parent's dot holding the fork moment (main: the start row)
+  forkExact: boolean // the fork moment is exactly the end of that dot (false: started partway through it)
+  lastRow: number // its newest dot; forkRow when it has no Changes
+  topRow: number // lastRow, or the row of the Merge into its parent that took its last dot (`endsIn`)
+  endsIn?: number // that Merge's row: the line visibly ends in the parent there
+  rows: number[] // the rows of its dots, top first
+  startCheckpoints: GraphCheckpoint[] // Checkpoints at its own start (seq 0): drawn at (forkRow, column), its fork point
+}
+
+export type GraphEdge =
+  // the line leaving the parent: from the parent's dot to the child's column on the same row
+  | { kind: 'fork'; branch: string; from: GraphPoint; to: GraphPoint }
+  // a Merge: from the dot holding the source moment to the Merge's dot (`branch` is the Branch merged into)
+  | { kind: 'merge'; branch: string; from: GraphPoint; to: GraphPoint }
+
+/** `layoutGraph(response)`: a pure function of the `/api/graph` response. */
+export type GraphLayout = {
+  columns: number // how many columns the graph needs: the most Branches being worked on at once
+  rows: GraphRow[] // newest first; the last one is the start row
+  lanes: GraphLane[] // in the response's order, main first
+  edges: GraphEdge[] // forks (in lane order), then Merges (top first)
+}
+
+/** What the Branch Graph store holds. `layout` is `layoutGraph(graph)`, recomputed whenever `graph` changes. */
+export type GraphSnapshot = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error?: string
+  graph: GraphResponse | null // kept while a refetch runs and when one fails
+  layout: GraphLayout | null
+}
+
+/** One line of "Show every Change": a Change in plain words. */
+export type GraphChangeLine = { id: string; author: string; at: number; line: string }

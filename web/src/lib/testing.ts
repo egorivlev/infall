@@ -1,4 +1,5 @@
 // Test helpers: a fake qoop server (fetch + WebSocket) and a manual timer. Not exported from index.ts.
+import { groupShapes } from './activities'
 import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
@@ -15,6 +16,9 @@ import type {
   Conflict,
   ConflictKey,
   Decision,
+  GraphActivity,
+  GraphBranch,
+  GraphResponse,
   Member,
   MergePlan,
   Moment,
@@ -33,6 +37,22 @@ import type {
 export const ME: Member = { id: 'me', name: 'Me', role: 'member', color: '#111' }
 export const OTHER: Member = { id: 'other', name: 'Other', role: 'member', color: '#222' }
 export const GUEST: Member = { id: 'guest', name: 'Guest', role: 'guest', color: '#333' }
+
+/** The shared fixture of the Activity rule (docs/specs/branch-graph-activities.json), read by the server's tests too. */
+export type ActivityFixture = {
+  cases: {
+    name: string
+    gap_ms: number
+    checkpoints: number[]
+    changes: Change[]
+    expected: GraphActivity[]
+  }[]
+}
+
+export async function loadActivityFixture(): Promise<ActivityFixture> {
+  const { readFileSync } = await import('node:fs')
+  return JSON.parse(readFileSync(`${process.cwd()}/../docs/specs/branch-graph-activities.json`, 'utf8')) as ActivityFixture
+}
 
 export async function settle(): Promise<void> {
   for (let i = 0; i < 60; i++) await Promise.resolve()
@@ -470,6 +490,10 @@ export class FakeServer {
   lookups: Record<string, { title: string; authors: string; year: string; doi: string | null; url: string | null }> = {}
   lookupFail: { status: number; code: string; message: string } | null = null
   lookupGate: Promise<void> | null = null
+  /** M15b: when set, `GET /api/graph` waits for it. */
+  graphGate: Promise<void> | null = null
+  /** M15b: how many of the next `GET /api/graph` requests fail with a 500. */
+  failGraph = 0
   private n = 0
 
   private get main(): FakeBranch {
@@ -1011,6 +1035,42 @@ export class FakeServer {
     return { type: 'branches', branches: this.all.map((b) => this.info(b)) }
   }
 
+  /** What `GET /api/graph` answers (api.md §18): every Branch in the order made, grouped by the shared rule. */
+  graph(gapMs?: number): GraphResponse {
+    return {
+      branches: this.all.map((b) => {
+        const shapes = groupShapes(
+          b.log,
+          b.checkpoints.map((c) => c.moment.seq),
+          { gapMs },
+        )
+        const out: GraphBranch = {
+          id: b.info.id,
+          name: b.info.name,
+          seq: b.log.length,
+          checkpoints: b.checkpoints.map((c) => ({ name: c.name, seq: c.moment.seq, author: c.author, at: c.at })),
+          activities: shapes.map((s) => {
+            const a: GraphActivity = {
+              kind: s.kind,
+              author: s.author,
+              from_seq: s.fromSeq,
+              to_seq: s.toSeq,
+              started_at: s.startedAt,
+              ended_at: s.endedAt,
+            }
+            if (s.source) a.source = s.source
+            if (s.to !== undefined) a.to = s.to
+            return a
+          }),
+        }
+        if (b.info.parent) out.parent = b.info.parent
+        if (b.info.created_by !== undefined) out.created_by = b.info.created_by
+        if (b.info.created_at !== undefined) out.created_at = b.info.created_at
+        return out
+      }),
+    }
+  }
+
   private json(status: number, body: unknown) {
     const text = body === undefined ? '' : JSON.stringify(body)
     return { ok: status >= 200 && status < 300, status, text: async () => text } as Response
@@ -1056,6 +1116,16 @@ export class FakeServer {
       if (this.all.some((b) => b.info.name === name)) return this.respond(fail(409, 'name_taken'))
       return this.json(200, { branch: this.info(this.fork(name, from)) })
     }
+    if (path === '/api/graph' || path.startsWith('/api/graph?')) {
+      if (guest) return this.respond(forbidden)
+      if (this.graphGate) await this.graphGate
+      if (this.failGraph > 0) {
+        this.failGraph--
+        return this.respond(fail(500, 'internal', 'x'))
+      }
+      const gap = new URLSearchParams(path.split('?')[1] ?? '').get('gap_ms')
+      return this.json(200, this.graph(gap === null ? undefined : Number(gap)))
+    }
     if (path.startsWith('/api/merges')) return this.respond(await this.mergeRoute(path, method, body))
     if (path === '/api/todos' || path.startsWith('/api/todos/')) return this.respond(await this.todoRoute(path, method, body))
     if (path.startsWith('/api/suggestions')) return this.respond(await this.suggestionRoute(path, method, body))
@@ -1090,7 +1160,12 @@ export class FakeServer {
     if (what === 'changes' && method === 'GET') {
       if (guest) return this.respond(forbidden)
       if (this.failChanges) return this.respond(fail(500, 'internal', 'x'))
-      return this.json(200, { seq: b.log.length, changes: b.log.slice(Number(query.get('after') ?? 0)) })
+      const after = Number(query.get('after') ?? 0)
+      const before = query.has('before') ? Number(query.get('before')) : b.log.length
+      if (!(after >= 0 && after <= b.log.length && before >= after && before <= b.log.length)) {
+        return this.respond(fail(400, 'bad_request'))
+      }
+      return this.json(200, { seq: b.log.length, changes: b.log.slice(after, before) })
     }
     if (what === 'ops' && method === 'POST') {
       if (this.gate) await this.gate
