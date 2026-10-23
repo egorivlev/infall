@@ -220,6 +220,8 @@ pub async fn get_board(
 pub struct ChangesQuery {
     #[serde(default)]
     after: u64,
+    /// When given, only Changes with index below it.
+    before: Option<u64>,
 }
 
 pub async fn get_changes(
@@ -236,6 +238,20 @@ pub async fn get_changes(
     let changes = changes_after(branch, q.after).ok_or_else(|| {
         ApiError::BadRequest("`after` is past the head of this Branch.".to_string())
     })?;
+    let changes = match q.before {
+        None => changes,
+        Some(before) if before < q.after => {
+            return Err(ApiError::BadRequest(
+                "`before` is below `after`.".to_string(),
+            ));
+        }
+        Some(before) if before > branch.changes().len() as u64 => {
+            return Err(ApiError::BadRequest(
+                "`before` is past the head of this Branch.".to_string(),
+            ));
+        }
+        Some(before) => &changes[..(before - q.after) as usize],
+    };
     Ok(Json(
         json!({ "seq": branch.changes().len(), "changes": changes }),
     ))

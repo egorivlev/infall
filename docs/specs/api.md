@@ -1,4 +1,4 @@
-# Infall — server API contract (M1–M13)
+# Infall — server API contract (M1–M15b)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -124,7 +124,7 @@ Invites expire after 7 days and work once. Only a hash of the token is stored.
 |---|---|---|
 | `GET /api/branches` | — | `{ branches: BranchInfo[] }` |
 | `GET /api/branches/{id}/board` | — | `{ branch: string, seq: number, entities: Record<string, Entity> }` — the Board at the head, including deleted entities |
-| `GET /api/branches/{id}/changes?after={seq}` | — | `{ seq: number, changes: Change[] }` — the Changes with index ≥ `after`, in order; `seq` is the head |
+| `GET /api/branches/{id}/changes?after={seq}&before={seq}` | — | `{ seq: number, changes: Change[] }` — the Changes with index ≥ `after` (default 0) and, when `before` is given, < `before`, in order; `seq` is the head. `400 bad_request` if `after` or `before` is past the head or `before` is below `after` (M15b, §18) |
 | `POST /api/branches/{id}/ops` | `{ ops: Op[] }` (1–200) | `{ seq: number, changes: Change[] }` — all applied as one all-or-nothing batch authored by the caller, `origin: "Edit"`; `seq` is the new head. `409 rejected` if the core refuses any op, and then none is applied |
 
 ```ts
@@ -160,7 +160,7 @@ Server → client:
 
 ## 9. M2 — History, Checkpoints, Restore, Branches
 
-Everything in this section is for Members and Admins only; a Guest gets `403 forbidden` (a Guest has no history and no other Branches). The one M1 exception stays: a Guest may still `GET …/changes` on `main`, because the live-update catch-up uses it.
+Everything in this section is for Members and Admins only; a Guest gets `403 forbidden` (a Guest has no history and no other Branches). Since M6 this includes `GET …/changes`, on `main` too: a Guest's Board catches up by fetching the Board again (§13), never by reading Changes.
 
 ```ts
 type Checkpoint = { name: string; moment: Moment; author: string; at: number };
@@ -568,3 +568,39 @@ The answer:
 Nothing is stored; the web UI fills its form with the answer and saves through the ordinary ops (§11).
 
 Crossref is asked `GET <crossref>/works/<doi>` (everything but unreserved characters and `/` percent-encoded), arXiv `GET <arxiv>/api/query?id_list=<id>&max_results=1`.
+
+## 18. M15b — the Branch Graph
+
+Members and Admins only; a Guest gets `403 forbidden`. The same in a Team and a Local Workspace. Why and what the screen does with it: [branch-graph.md](branch-graph.md).
+
+| Method, path | Body | 200 response |
+|---|---|---|
+| `GET /api/graph?gap_ms={ms}` | — | `{ branches: GraphBranch[] }` — the shape of every Branch, without the contents of any Change. `gap_ms` (default 600000) is the longest pause inside one edit Activity; `400 bad_request` when it is not a whole number ≥ 0 |
+
+```ts
+type GraphBranch = {
+  id: string; name: string;
+  seq: number;                       // the head: how many Changes it has
+  parent?: Moment;                   // where it was started from; absent for main
+  created_by?: string; created_at?: number;   // absent for main
+  checkpoints: { name: string; seq: number; author: string; at: number }[];  // by seq, then name; seq 0 = at its own start
+  activities: GraphActivity[];       // oldest first
+};
+type GraphActivity = {
+  kind: "edit" | "merge" | "restore";
+  author: string;                    // the author of its first Change (one Member for every kind)
+  from_seq: number; to_seq: number;  // it covers the Changes (from_seq, to_seq] of its Branch
+  started_at: number; ended_at: number;   // `at` of its first and of its last Change
+  source?: Moment;                   // kind "merge" only: the moment of the other Branch it brought in
+  to?: number;                       // kind "restore" only: the moment of this Branch it returned to
+};
+```
+
+- `branches`: `main` first, then by `created_at`, ties by id.
+- The Activities of a Branch are in its own order, do not overlap, and together cover `(0, seq]`; a Branch without Changes has none.
+- Grouping (the same rule as History's, CONTEXT.md "Activity"): consecutive `Edit` Changes by one author with no pause over `gap_ms` between neighbours are one Activity (a clock that went backwards is no pause; the next pause is measured from that earlier time); the Changes of one Restore or Merge batch are one Activity of that kind; and **a Checkpoint always ends the Activity it falls in** — no Activity reaches across the moment of a Checkpoint of its Branch, a Merge or a Restore batch included (each part keeps the kind, `source` and `to`). A Checkpoint at seq 0 or at an Activity's end changes nothing. The rule is checked against the fixture [branch-graph-activities.json](branch-graph-activities.json) by the server's and the web library's tests.
+- A Merge that changed nothing appended no Change and so is in no Activity. A Restore that changed nothing likewise.
+- Built in one pass over each Branch's log, under the read lock; no Board is rebuilt. 50 000 Changes answer in well under a second.
+- Nothing pushes the graph: the `branches` frame (§9) is the signal that a Branch or a Merge was added, `changes` and `checkpoint` frames cover the open Branch.
+
+`GET /api/branches/{id}/changes` takes `before` (§6) so that the text of a few Activities can be read without the whole log: `?after={from_seq}&before={to_seq}` gives exactly the Changes of the Activities in between.
