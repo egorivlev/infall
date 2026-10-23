@@ -120,7 +120,7 @@ Behaviour:
 - More `lines` than the contract listed: "Added and removed Card …" (created and removed within one Activity), "Disconnected A → B" / "Reconnected A → B" (a Connection removed / brought back), "Labelled A → B: text", "Removed the label of A → B", "Marked A → B as contradicts", "Edited the summary of …", "Resized 1 Frame", "Moved and resized 2 Cards and 1 Frame", "Merged from another Branch", and "No lasting changes" when an Activity's edits cancel out (so `lines` is never empty).
 - `lines` describe the net effect of an Activity (Board before it vs after it), in the order things were first touched, the Moved/Resized line last. Two renames read as one ("Renamed Card A → C"); an entity that has a line of its own is not counted in "Moved N …"; an added Card is named by the title it has when the Activity ends. Counts are always numbers ("Moved 1 Card").
 - A Restore Activity always has the single line "Restored to an earlier moment"; `count` says how many Changes it took. A Restore that changes nothing adds no Changes and so no Activity.
-- A Checkpoint does not split an Activity. Checkpoints at seq 0 are only in `useHistory().checkpoints`, never in an Activity.
+- ~~A Checkpoint does not split an Activity.~~ Since M15b a Checkpoint **ends** the Activity it falls in (see the M15b section). Checkpoints at seq 0 are only in `useHistory().checkpoints`, never in an Activity.
 - `history.open()` needs the Board to be loaded (`board.open()` resolved); otherwise it rejects with 400 `board_not_open`, as do `createCheckpoint`, `restore`, and `branches.create` without `from`. Calling `open()` again while open is a no-op. If loading fails, `status` is `'error'` and the promise rejects; call `open()` again to retry.
 - `history.preview()` does nothing unless `status` is `'ready'`. The preview stays at its moment while new Changes arrive (`head` grows). Preview items keep their identity between scrub steps when unchanged, and the first preview reuses the live Board's item objects where they are equal.
 - Activities that did not change keep their object identity when Changes or Checkpoints arrive; only the last Activity (or the one that gained a Checkpoint) is replaced.
@@ -487,3 +487,93 @@ export function lookupSource(q: LookupQuery): Promise<LookupResult>   // POST /a
 - `lookupSource` resolves with `{ title, authors, year, doi, url }` trimmed; a missing or non-string field reads `''` (`doi` / `url`: `null`). It rejects with the ApiError of the answer — its `message` is the server's sentence (404 not known, 429 too many, 502 `lookup_failed`, 400) — or status 0 when the server cannot be reached; a Guest is refused locally (403) without a request.
 - Nothing else is new in the layer: BibTeX import and the exports are the UI's own (`ui/page/bibtex/`, `ui/page/export/`) and go through `board.submit` with the existing op builders, in batches of at most 200 ops and about 900 kB.
 - `testing.ts`: `server.lookups` (answers by DOI or arXiv id; anything else is 404), `server.lookupFail` (the next answer), `server.lookupGate`.
+
+## M15b — the Branch Graph (docs/specs/branch-graph.md; server: api.md §18)
+
+Types in `types.ts`: the wire types `GraphResponse`, `GraphBranch`, `GraphActivity`, `GraphCheckpoint`; the layout types `GraphLayout`, `GraphRow`, `GraphLane`, `GraphEdge`, `GraphPoint`; `GraphSnapshot`, `GraphChangeLine`. Code: `graph.ts` (the store), `graph-layout.ts` (pure layout), `graph-text.ts` (lazy words), `graph-start.ts` (pure wording of the start), and the grouping rule in `activities.ts` (`groupShapes`).
+
+```ts
+// ---- the store ----
+export function useGraph(): GraphSnapshot               // { status: 'idle'|'loading'|'ready'|'error', error?, graph, layout }; the same object until something changes
+export function useGraphLines(key: string): string[] | undefined   // the words of the row whose GraphRow.key is `key`; undefined until worked out
+export const graph: {
+  open(): Promise<void>                                 // GET /api/graph?gap_ms=600000, lays it out, starts staying current. Again while open: fetches again. Guest → 403 locally, no request. Rejects (status 'error') only when there is no graph yet
+  close(): void                                         // stops listening, forgets the graph and every word: 'idle'
+  refresh(): Promise<void>                              // fetches again now (one request at a time; asked meanwhile → exactly one more after). Never rejects once a graph is shown
+  need(rows: readonly number[]): Promise<void>          // works out the words of these rows of the current layout (pass the rows on screen plus a margin). Never rejects
+  changesOf(row: number): Promise<GraphChangeLine[]>    // "Show every Change": [{ id, author, at, line }] in order; [] for the start row. Rejects with the ApiError
+  addCheckpoint(branchId: string, name: string, seq: number): Promise<Checkpoint>   // "Add Checkpoint here" on any Branch: POST …/checkpoints { name, seq }, then fetches the graph again. 409 name_taken, 400; Guest 403 locally
+}
+export const GRAPH_GAP_MS: number                       // 600000: what `gap_ms` the client sends — History's ACTIVITY_GAP_MS
+
+// ---- pure ----
+export function layoutGraph(g: GraphResponse): GraphLayout
+export function linesAt(layout: GraphLayout, row: number): number[]          // columns with a line on that row, ascending
+export function rowOf(layout: GraphLayout, moment: Moment): number          // the row of the dot holding a moment (a Branch's fork point at seq 0); -1 unknown Branch
+export function nearestDot(layout: GraphLayout, row: number, direction: -1 | 1): number | null   // ←/→
+export function startLabel(g: GraphResponse, from: StartFrom, options?: StartLabelOptions): string
+export function formatWhen(ms: number, now?: number): string
+export type StartFrom = { moment: Moment; checkpoint?: string }
+export type StartLabelOptions = { nameOf?: (memberId: string) => string | undefined; me?: string; now?: number }
+```
+
+Starting a Branch and opening it need nothing new: `branches.create({ name, from: row.moment })` (or `{ branch, seq }` of a Checkpoint / a fork point), then `board.open(name)`. "Preview the Board": `board.open(name)`, `history.open()`, `history.preview(row.moment.seq)`.
+
+### The layout
+
+- `rows` are newest first. Every Activity of every Branch is one row (`kind` 'edit' | 'merge' | 'restore'); the **last row is the start row** (`kind: 'start'`, `key: 'start'`, `index: -1`, `activity: null`, column 0, `moment` main at 0, `checkpoints` main's at seq 0). `rows.length` is the number of Activities + 1, so a Workspace without Changes has just the start row.
+- Order: by `ended_at` across Branches; ties by Branch order (the response's: main first, then by start), then the Branch's own order. Constraints that win over the clocks: a Branch's own order; a Branch's first row is above the row it was started from; a Merge row is above the row holding its source moment.
+- `GraphRow`: `branch` (id), `column`, `index` (into that Branch's `activities`), `activity` (the wire object, for author, times, kind, `source`, `to`), `moment` (`{ branch, seq: to_seq }`: what "New Branch from here" starts from — the moment right after the Activity), `checkpoints` (the ◆ on this dot: Checkpoints of its Branch with `from_seq < seq ≤ to_seq`, which since M15b is always `seq = to_seq`), `forks` (ids of Branches whose line leaves this dot), `source` (a Merge: `{ row, column, branch, seq }` of the dot holding the merged moment; absent when that Branch is not in the response). `count` of Changes is `to_seq - from_seq`. `key` is `<branch id>:<from_seq>:<to_seq>`: stable for as long as the Activity is unchanged, use it as the React key and for `useGraphLines`.
+- `GraphLane` (one per Branch, response order, main first): `column`; `forkRow` (the parent's dot holding the fork moment; main and a Branch forked from main at seq 0: the start row; a Branch forked from another's seq 0: that one's fork point, recursively); `forkExact` (false when the fork moment lies inside that dot's Activity — e.g. started "from now" while someone went on editing; the line still leaves that dot); `rows` (its dots, top first; empty for a Branch without Changes); `lastRow` (`rows[0]`, or `forkRow`); `topRow` (= `lastRow`, or `endsIn`); `endsIn` (set when the parent has a Merge whose source is exactly this Branch's head: the row of that Merge — the line visibly ends in the parent there); `startCheckpoints` (its Checkpoints at seq 0, drawn on its fork point `(forkRow, column)`).
+- Draw a lane's line in its column from `forkRow` up to `topRow` (both inclusive): main's too stops at its newest dot. A Branch without Changes is just its fork point: a dot-like target at `(forkRow, column)` that starts from `{ branch, seq: 0 }`.
+- Columns: main has column 0 and no one else ever does. The other lanes, in the order of their forks from the bottom up (ties by response order), take the lowest column ≥ 1 whose lanes so far all have `topRow` strictly below their `forkRow`; so a column is reused only above the row where the previous line ended (not on that row). `columns` is the number of columns used (≥ 1).
+- `edges`: `{ kind: 'fork', branch: <child>, from: (forkRow, parent column), to: (forkRow, child column) }` for every Branch but main, in lane order; then `{ kind: 'merge', branch: <merged into>, from: source dot, to: merge dot }` for every Merge row with a `source`, top first — both *Merge into parent* and *Update from parent*. A Merge that changed nothing has no row and no edge.
+- For a screen that renders only rows in view: draw a lane where `[topRow, forkRow]` meets the view, and an edge where `[to.row, from.row]` meets it. `linesAt(layout, r)` gives the columns crossing row `r`.
+- `rowOf(layout, { branch, seq })`: `seq > 0` → the row of the Activity with `from_seq < seq ≤ to_seq`; `seq ≤ 0` → that lane's `forkRow`. `nearestDot(layout, row, ±1)`: among lanes with dots strictly left / right of this row's column, the nearest column, then its dot nearest in rows (ties within one line: the upper one); null when none (fork points of Branches without Changes are not dots for it).
+- Speed (measured, vitest/jsdom on the M-series laptop this was written on): 62 370 Changes, 6 425 Activities, 60 Branches → **≈10 ms** per `layoutGraph`. The store lays out again on every graph change (each live dot).
+
+### The words
+
+- Rows start without words. Call `graph.need(rows)` with the rows on screen plus a margin (and again as the view moves). Per Branch with unknown rows among them it fetches **one** `GET …/board?at=<from_seq of the earliest>` and **one** `GET …/changes?after=<that>&before=<to_seq of the latest>`, and runs `describeChanges` forward through every Activity in between. If the earliest is at most 2 000 Changes after a moment already worked out on that Branch, it goes on from there and skips the Board. Rows already known or on their way are not asked again. Results last until `graph.close()` (keys never go stale: history is append-only).
+- `useGraphLines(row.key)` re-renders that row only when its own words arrive (an array per row, never changed afterwards). Until then show author, time and a placeholder of the same height; a failure leaves the row without words and the next `need` tries again.
+- The words are History's: an edit Activity has exactly the `lines` History gives it (at most 6, the last "and N more"). A Merge: first `Merged <source Branch> into <this Branch>` ("Merged exp-A into main", "Merged main into exp-A"; "another Branch" if unknown), then up to 5 lines of what it changed. A Restore: `Restored to an earlier moment` (its `activity.to` is the moment returned to). Show the first line and "+N" for the rest.
+- `graph.changesOf(row)`: the Board at `from_seq` and the Changes of the Activity, each described alone (`describeChanges` of that one Change, lines joined by "; "), with its `author` and `at`. Not cached. Its length is the Activity's `to_seq - from_seq`.
+- Measured: 30 rows (6 000 Changes) of a 20 000-Change Branch: ≈16 ms after the two requests.
+
+### Where the Branch will start (the name field)
+
+`startLabel(graph, { moment, checkpoint? }, { nameOf, me, now })`, in this order:
+
+- a ◆ was chosen (`checkpoint` names a Checkpoint of that Branch at `moment.seq`): "from Checkpoint before-review on main";
+- `moment.seq` ≥ the Branch's `seq`: "from now on main" (also a Branch without Changes, at its fork point);
+- `seq` 0: "from the start of exp-A";
+- a dot (an Activity ending at `seq`): "from Ana's work at 13:50 on exp-A"; a Merge "from Ana's Merge at …", a Restore "from Ana's Restore at …"; the signed-in Member's own (`me`) "from your work at …"; a name `nameOf` does not know "Someone's";
+- anything else: "from Change 12 of main"; a Branch not in the graph: "from a Branch that is not there".
+
+The time is the Activity's `ended_at` by `formatWhen`: "13:50" today, "12 Nov, 13:50" this year, "3 Jan 2025, 07:05" before, in this device's time. For "New Branch…" from the switcher, select `lane.lastRow` of the open Branch: it reads "from now on <name>".
+
+### Staying current
+
+While open, the store fetches the graph again (coalesced) on:
+
+- any change of the Branch list — the `branches` frame (a Branch was created or a Merge applied, sent to every Member) and every `branches.reload()` / `create()`;
+- a `checkpoint` frame of the open Branch (its Activity is split there, the times come from the server), and after `graph.addCheckpoint`;
+- the socket subscribing again after a drop;
+- the Board opening a Branch whose `seq` differs from the graph's;
+- Changes of the open Branch that do not follow on from what the graph has (the Board had to reload);
+- the window's `focus` (other Branches' new dots appear then, and on `open()`).
+
+New Changes of the open Branch are added **without a request** (`extendGraph`, the same rule as the server's: they join its last Activity when the server would). A fetch answer older than dots added meanwhile does not take them away. Other Branches' new dots are not followed live. Guests: `open` rejects with 403; the store closes itself when the session ends or becomes a Guest's.
+
+### Activities end at Checkpoints (History too)
+
+- `groupActivities` (History) and `groupShapes` (the shapes alone, as the server computes them) end an Activity at every Checkpoint inside it: an Activity never reaches across a Checkpoint's moment of its Branch — edits, a Merge or a Restore batch alike (each part keeps its kind). A Checkpoint at seq 0 or exactly at an Activity's end changes nothing; a Checkpoint at the head means the next Change starts a new Activity. So every `Activity.checkpoints` entry has `moment.seq === toSeq`.
+- `useHistory()`: when a Checkpoint arrives (socket frame or `history.createCheckpoint`) inside an Activity, that Activity is replaced by its parts (words worked out again); the others keep their identity. A fresh load gives the same.
+- The rule is checked on both sides against `docs/specs/branch-graph-activities.json` (Change logs and the Activities expected; `crates/core/tests/activity.rs` and `activities.test.ts`). Add a case there, not to one side only.
+
+### Notes for the screen
+
+- `layout.rows[i].activity.author` is a Member id: names from `useMembers()` (call `members.reload()` once); a Member who left reads as History reads them.
+- Rows' height must not depend on whether words have arrived.
+- A dot's spoken name: Branch name, author, `formatWhen(ended_at)`, first line (or "loading"), and its ◆ names.
+- `testing.ts`: `server.graph(gapMs?)` (what `/api/graph` answers for the fake Branches, grouped by `groupShapes`), `GET /api/graph` (Guests 403), `server.graphGate`, `server.failGraph` (a count of 500s), `…/changes?before=` (400 for a bad range), and `loadActivityFixture()` for the shared fixture.

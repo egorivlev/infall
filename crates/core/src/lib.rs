@@ -1,5 +1,6 @@
 //! Pure-logic core of a versioned research board.
 
+pub mod activity;
 pub mod board;
 pub mod diff;
 pub mod ids;
@@ -7,6 +8,7 @@ pub mod merge;
 pub mod schema;
 pub mod workspace;
 
+pub use activity::{ACTIVITY_GAP_MS, Activity, ActivityKind, activities};
 pub use board::{ApplyError, Board, Entity, Op};
 pub use diff::diff_ops;
 pub use ids::{BatchId, BranchId, ChangeId, EntityId, MemberId};

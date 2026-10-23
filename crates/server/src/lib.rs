@@ -10,6 +10,7 @@ pub mod boards;
 pub mod chat;
 pub mod config;
 pub mod error;
+pub mod graph;
 pub mod history;
 pub mod live;
 pub mod local;

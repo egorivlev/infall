@@ -25,7 +25,8 @@ use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
 use crate::tokens::RateLimit;
 use crate::{
-    Clock, boards, chat, history, local, mcp, merges, people, sources, suggestions, todos, tokens,
+    Clock, boards, chat, graph, history, local, mcp, merges, people, sources, suggestions, todos,
+    tokens,
 };
 
 /// Request bodies over this are refused.
@@ -134,6 +135,7 @@ pub fn router(st: Shared) -> Router {
             "/branches/{id}/ops",
             post(boards::post_ops).layer(DefaultBodyLimit::max(boards::OPS_BODY_LIMIT)),
         )
+        .route("/graph", get(graph::get_graph))
         .route("/merges/plan", get(merges::plan))
         .route("/merges", post(merges::apply))
         .route("/todos", get(todos::list_todos).post(todos::create_todo))
