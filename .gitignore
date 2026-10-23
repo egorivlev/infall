@@ -3,3 +3,4 @@ target/
 .dev/
 dist/
 .DS_Store
+.claude/worktrees/
