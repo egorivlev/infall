@@ -4,7 +4,8 @@ use crate::board::{ApplyError, Board, Op};
 use crate::diff::diff_ops;
 use crate::ids::{BatchId, BranchId, ChangeId, MemberId};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 
 /// A point in a Branch's history: how many of its own Changes have been applied.
@@ -113,6 +114,63 @@ pub enum WsError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Workspace {
     branches: BTreeMap<BranchId, Branch>,
+    /// The Board at the head of each Branch, once worked out (docs/specs/scale.md). Only a
+    /// shortcut: never stored, never compared, and always the same as replaying the Changes.
+    #[serde(skip)]
+    heads: Heads,
+}
+
+/// Head Boards already worked out, by Branch, each with the `seq` it is the Board at.
+///
+/// Changes are only ever appended, so an entry whose `seq` is the Branch's head is right;
+/// any other is ignored. A clone of the Workspace shares the Boards until either side
+/// records on that Branch.
+#[derive(Default)]
+struct Heads(Mutex<HashMap<BranchId, (u64, Arc<Board>)>>);
+
+impl Heads {
+    fn lock(&self) -> MutexGuard<'_, HashMap<BranchId, (u64, Arc<Board>)>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn get(&self, at: Moment) -> Option<Arc<Board>> {
+        self.lock()
+            .get(&at.branch)
+            .filter(|(seq, _)| *seq == at.seq)
+            .map(|(_, board)| board.clone())
+    }
+
+    fn take(&self, at: Moment) -> Option<Arc<Board>> {
+        let mut map = self.lock();
+        match map.get(&at.branch) {
+            Some((seq, _)) if *seq == at.seq => map.remove(&at.branch).map(|(_, b)| b),
+            _ => None,
+        }
+    }
+
+    fn put(&self, at: Moment, board: Arc<Board>) {
+        self.lock().insert(at.branch, (at.seq, board));
+    }
+}
+
+impl Clone for Heads {
+    fn clone(&self) -> Heads {
+        Heads(Mutex::new(self.lock().clone()))
+    }
+}
+
+impl PartialEq for Heads {
+    fn eq(&self, _: &Heads) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Heads {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Heads")
+    }
 }
 
 impl Workspace {
@@ -132,6 +190,7 @@ impl Workspace {
         (
             Workspace {
                 branches: BTreeMap::from([(id, main)]),
+                heads: Heads::default(),
             },
             id,
         )
@@ -162,8 +221,26 @@ impl Workspace {
         })
     }
 
+    /// The Board at the head of `branch`, shared: worked out once per head, not per call.
+    pub fn head_board(&self, branch: BranchId) -> Result<Arc<Board>, WsError> {
+        let head = self.head(branch)?;
+        if let Some(board) = self.heads.get(head) {
+            return Ok(board);
+        }
+        let board = Arc::new(self.replay(head)?);
+        self.heads.put(head, board.clone());
+        Ok(board)
+    }
+
     /// The Board at `moment`: the parent's Board at the fork moment, then this Branch's first `seq` Changes.
     pub fn board_at(&self, moment: Moment) -> Result<Board, WsError> {
+        if let Some(board) = self.heads.get(moment) {
+            return Ok(Board::clone(&board));
+        }
+        self.replay(moment)
+    }
+
+    fn replay(&self, moment: Moment) -> Result<Board, WsError> {
         let b = self
             .branches
             .get(&moment.branch)
@@ -387,7 +464,12 @@ impl Workspace {
         origin: Origin,
     ) -> Result<Moment, WsError> {
         let head = self.head(branch)?;
-        let mut board = self.board_at(head)?;
+        // The head Board is taken out while the ops are tried on it: if one is refused, the
+        // half-changed Board is dropped and worked out again when next asked for.
+        let mut board = match self.heads.take(head) {
+            Some(board) => Arc::try_unwrap(board).unwrap_or_else(|shared| Board::clone(&shared)),
+            None => self.replay(head)?,
+        };
         for op in &ops {
             board.apply(op)?;
         }
@@ -400,7 +482,9 @@ impl Workspace {
                 origin: origin.clone(),
             }));
         }
-        self.head(branch)
+        let head = self.head(branch)?;
+        self.heads.put(head, Arc::new(board));
+        Ok(head)
     }
 }
 
@@ -450,5 +534,52 @@ mod tests {
         ));
         assert_eq!(ws, before);
         assert_eq!(ws.board_at(ws.head(main).unwrap()).unwrap(), board_before);
+    }
+
+    #[test]
+    fn the_remembered_head_board_is_always_the_replayed_one() {
+        let (mut ws, main) = Workspace::new();
+        let me = MemberId::new();
+        let mut ids = Vec::new();
+        for i in 0..30u32 {
+            let id = crate::ids::EntityId::new();
+            ids.push(id);
+            ws.record(main, me, i64::from(i), create(id)).unwrap();
+            if i % 3 == 0 {
+                // A clone records on its own; the original keeps what it had.
+                let before = ws.head_board(main).unwrap();
+                let mut copy = ws.clone();
+                copy.record(main, me, 0, create(crate::ids::EntityId::new()))
+                    .unwrap();
+                assert_eq!(*ws.head_board(main).unwrap(), *before);
+                assert_eq!(
+                    *copy.head_board(main).unwrap(),
+                    copy.replay(copy.head(main).unwrap()).unwrap()
+                );
+            }
+            if i % 5 == 0 {
+                // A refused batch leaves the head as it was.
+                let refused = ws.record_all(main, me, 0, vec![create(ids[0])]);
+                assert!(refused.is_err());
+            }
+            let head = ws.head(main).unwrap();
+            assert_eq!(*ws.head_board(main).unwrap(), ws.replay(head).unwrap());
+            assert_eq!(ws.board_at(head).unwrap(), ws.replay(head).unwrap());
+        }
+        let fork = ws.head(main).unwrap();
+        let side = ws.fork("side", fork, me, 99).unwrap();
+        ws.record(side, me, 100, Op::Delete { entity: ids[1] })
+            .unwrap();
+        ws.record(main, me, 101, create(crate::ids::EntityId::new()))
+            .unwrap();
+        for branch in [main, side] {
+            let head = ws.head(branch).unwrap();
+            assert_eq!(*ws.head_board(branch).unwrap(), ws.replay(head).unwrap());
+        }
+        // What is remembered is never stored.
+        let json = serde_json::to_string(&ws).unwrap();
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ws);
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
     }
 }

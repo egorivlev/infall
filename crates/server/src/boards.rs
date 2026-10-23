@@ -1,12 +1,13 @@
 //! Branches, the Board, Changes and posting ops (contract §6 "Branches and the Board").
 
-use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::http::header::CONTENT_TYPE;
+use axum::response::{IntoResponse, Response};
 use qoop_core::{
-    Branch, BranchId, Change, Entity, EntityId, MemberId, Moment, Op, Value as FieldValue,
-    Workspace, WsError,
+    Board, Branch, BranchId, Change, MemberId, Moment, Op, Value as FieldValue, Workspace, WsError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -78,7 +79,7 @@ impl CheckedOps {
     /// `head`. Call it under the Workspace write lock, right before recording them.
     pub(crate) fn on_board(self, ws: &Workspace, head: Moment) -> Result<Vec<Op>, ApiError> {
         if self.carries_result {
-            let board = ws.board_at(head).map_err(ApiError::internal)?;
+            let board = ws.head_board(head.branch).map_err(ApiError::internal)?;
             runs::check_set_on_runs(&self.ops, &board)?;
         }
         Ok(self.ops)
@@ -162,10 +163,29 @@ pub async fn list_branches(State(st): State<Shared>, who: SignedIn) -> Json<Valu
 }
 
 #[derive(Serialize)]
-struct BoardView {
+struct BoardView<'b> {
     branch: BranchId,
     seq: u64,
-    entities: BTreeMap<EntityId, Entity>,
+    entities: Entities<'b>,
+}
+
+/// A Board's entities as one JSON object, written straight from the Board: at size (docs/specs/scale.md)
+/// copying them first, or building a `serde_json::Value` of them, costs more than writing them.
+struct Entities<'b> {
+    board: &'b Board,
+    /// Guests get the present only: no tombstones, nothing that points at one.
+    guest: bool,
+}
+
+impl Serialize for Entities<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let (board, guest) = (self.board, self.guest);
+        s.collect_map(
+            board
+                .entities()
+                .filter(|(id, _)| !guest || board.is_visible(*id)),
+        )
+    }
 }
 
 #[derive(Deserialize)]
@@ -180,7 +200,7 @@ pub async fn get_board(
     who: SignedIn,
     Path(id): Path<String>,
     ApiQuery(q): ApiQuery<BoardQuery>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Response, ApiError> {
     let guest = who.member.role == Role::Guest;
     if q.at.is_some() && guest {
         return Err(ApiError::Forbidden("Guests cannot read History."));
@@ -200,20 +220,22 @@ pub async fn get_board(
         },
         None => head,
     };
-    let board = ws.board_at(moment).map_err(ApiError::internal)?;
+    let board = if moment == head {
+        ws.head_board(head.branch).map_err(ApiError::internal)?
+    } else {
+        Arc::new(ws.board_at(moment).map_err(ApiError::internal)?)
+    };
+    drop(ws);
     let view = BoardView {
         branch: moment.branch,
         seq: moment.seq,
-        // Guests get the present only: no tombstones, nothing that points at one.
-        entities: board
-            .entities()
-            .filter(|(id, _)| !guest || board.is_visible(*id))
-            .map(|(id, e)| (id, e.clone()))
-            .collect(),
+        entities: Entities {
+            board: &board,
+            guest,
+        },
     };
-    serde_json::to_value(view)
-        .map(Json)
-        .map_err(ApiError::internal)
+    let body = serde_json::to_vec(&view).map_err(ApiError::internal)?;
+    Ok(([(CONTENT_TYPE, "application/json")], body).into_response())
 }
 
 #[derive(Deserialize)]
