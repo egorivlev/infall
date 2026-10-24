@@ -27,6 +27,7 @@ import { EmptyState, ErrorNote, LoadingNote } from './BoardMessage'
 import { boardScaleKey, typingIn } from './boardScaleKeys'
 import { ConnectionPopover } from './ConnectionPopover'
 import { ConnectionEdge } from './edges/ConnectionEdge'
+import { ConnectionsOverview } from './edges/ConnectionsOverview'
 import { createEdgeBuilder, createNodeBuilder } from './elements'
 import {
   FRAME_TITLE_SPACE,
@@ -59,6 +60,7 @@ import type { Transient } from './uiStore'
 import { useBoardActions } from './useBoardActions'
 import type { Removal } from './useBoardActions'
 import { ZoomHud } from './ZoomHud'
+import { useZoomLevel } from './useZoomLevel'
 
 const nodeTypes = { card: CardNode, frame: FrameNode }
 const edgeTypes = { connection: ConnectionEdge }
@@ -80,6 +82,20 @@ const ARIA_LABELS = {
 }
 const backToNow = () => history.preview(null)
 const NO_CARDS: ReadonlySet<string> = new Set()
+/**
+ * From this many Cards, Frames and Connections on, only what is in view is drawn (docs/specs/scale.md): a Card or
+ * Connection off screen has no element until it comes into view. Below it everything is drawn, as before.
+ */
+export const DRAW_IN_VIEW_FROM = 400
+/**
+ * From this many Connections on, a Board seen from further away than its 'full' zoom level draws them all as one
+ * picture (ConnectionsOverview): no labels (unreadable there anyway) and no picking one by one, but no thousands of
+ * separate SVGs either, which is what made panning and zooming slow.
+ */
+export const OVERVIEW_FROM = 300
+const NO_EDGES: ConnectionEdgeType[] = []
+/** How many frames a focus waits for a Card that is coming into view to be drawn. */
+const FOCUS_FRAMES = 30
 const TYPING = 'input, textarea, select, [contenteditable="true"], .qb-inspector, .qb-popover, .qb-status-menu, .qb-toasts'
 
 /**
@@ -263,6 +279,8 @@ function BoardCanvas() {
     () => buildEdges(connections, cardsById, selected),
     [buildEdges, connections, cardsById, selected],
   )
+  // Far away on a large Board, Connections are one picture (ConnectionsOverview) rather than thousands of edges.
+  const overview = useZoomLevel() !== 'full' && connections.length >= OVERVIEW_FROM
 
   // ---- viewport ----
   const viewportCentre = useCallback(() => {
@@ -548,9 +566,11 @@ function BoardCanvas() {
     wrapRef.current?.focus({ preventScroll: true })
   }, [latest, actions])
 
-  const focusNode = (id: string) => {
+  // A Card off screen may not be drawn yet (DRAW_IN_VIEW_FROM): wait a few frames for it while the view moves to it.
+  const focusNode = (id: string, frames = FOCUS_FRAMES) => {
     const el = wrapRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(id)}"]`)
-    el?.focus({ preventScroll: true })
+    if (el) el.focus({ preventScroll: true })
+    else if (frames > 0) requestAnimationFrame(() => focusNode(id, frames - 1))
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -660,7 +680,7 @@ function BoardCanvas() {
     >
       <ReactFlow<BoardNode, ConnectionEdgeType>
         nodes={nodes}
-        edges={edges}
+        edges={overview ? NO_EDGES : edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
@@ -696,8 +716,10 @@ function BoardCanvas() {
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
         ariaLabelConfig={ARIA_LABELS}
+        onlyRenderVisibleElements={nodes.length + edges.length >= DRAW_IN_VIEW_FROM}
       >
         <Background gap={24} size={1.6} color="var(--q-grid)" />
+        {overview && <ConnectionsOverview connections={connections} cards={cardsById} transient={transient} />}
         {suggestion && suggestedFrom && suggestedTo && (
           <SuggestedConnection
             from={placed(suggestedFrom, transient)}

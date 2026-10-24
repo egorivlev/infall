@@ -637,3 +637,6 @@
 .qb-toolbar__menu-wrap { position: relative; display: inline-flex; }
 .qb-toolbar__caret { font-size: calc(9px * var(--q-text, 1)); color: var(--q-ink-3); }
 .qb-toolbar__menu { left: 0; }
+
+/* ---- a large Board from far away (docs/specs/scale.md) ---- */
+.qb-overview { position: absolute; z-index: -1; /* under the Cards, over the Frames (z-index -1, earlier) */ left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
