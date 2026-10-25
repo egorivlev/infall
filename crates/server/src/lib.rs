@@ -18,6 +18,7 @@ pub mod mcp;
 pub mod merges;
 pub mod people;
 pub mod runs;
+pub mod scale;
 pub mod secret;
 pub mod sources;
 pub mod store;
