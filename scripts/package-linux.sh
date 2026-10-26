@@ -59,7 +59,11 @@
 #
 # Environment: QOOP_PACKAGE_RUST (Rust version in the image, default 1.96.0),
 # QOOP_PACKAGE_NODE (Node.js version in the image, default 22.23.5),
-# QOOP_PACKAGE_MAINTAINER (the control file's Maintainer field).
+# QOOP_PACKAGE_MAINTAINER (the control file's Maintainer field),
+# QOOP_PACKAGE_CACHE (a folder on this computer to keep downloaded crates, npm's cache and the
+# build output in, instead of the volume: what the continuous build caches between runs, and a
+# way to keep a few GB out of a Docker machine whose own disk is small. The build runs as root,
+# so what it writes there belongs to root on Linux).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -163,6 +167,23 @@ case "$(docker info --format '{{.Architecture}}')" in
     *) die "this Docker runs on a processor this script does not know" ;;
 esac
 
+# A full Docker disk does not say so: apt in the image build reports "At least one invalid
+# signature was encountered" for every source instead. So look first. The image takes about
+# 3 GB, each check's snapshot about 1 GB; the volume, unless QOOP_PACKAGE_CACHE moves it out,
+# grows to about 4 GB per architecture.
+need_gb=2
+for arch in "${archs[@]}"; do
+    docker image inspect "$prefix:$base_release-$arch" >/dev/null 2>&1 || need_gb=$((need_gb + 3))
+done
+if [ -z "${QOOP_PACKAGE_CACHE:-}" ] && ! docker volume inspect "$volume" >/dev/null 2>&1; then
+    need_gb=$((need_gb + 4 * ${#archs[@]}))
+fi
+free_kb="$(docker run --rm --quiet --platform "linux/$native" "ubuntu:$base_release" df -Pk / 2>/dev/null |
+    awk 'NR == 2 { print $4 }')"
+if [ -n "$free_kb" ] && [ "$free_kb" -lt $((need_gb * 1024 * 1024)) ]; then
+    die "Docker's own disk has $((free_kb / 1024 / 1024)) GB free and this needs about $need_gb GB (docker system df shows what uses it; QOOP_PACKAGE_CACHE keeps the build output outside it)"
+fi
+
 triple_of() {
     case "$1" in
         amd64) echo x86_64-unknown-linux-gnu ;;
@@ -186,7 +207,15 @@ trap finish EXIT
 trap 'exit 130' INT TERM
 
 mkdir -p "$dist"
-docker volume create "$volume" >/dev/null
+# What is mounted at /cargo in the build container: the volume, or the folder named by
+# QOOP_PACKAGE_CACHE.
+if [ -n "${QOOP_PACKAGE_CACHE:-}" ]; then
+    mkdir -p "$QOOP_PACKAGE_CACHE" || die "QOOP_PACKAGE_CACHE: cannot make $QOOP_PACKAGE_CACHE"
+    cache="$(cd "$QOOP_PACKAGE_CACHE" && pwd)"
+else
+    cache="$volume"
+    docker volume create "$volume" >/dev/null
+fi
 
 # --- The image: Ubuntu 22.04, Rust, and the libraries of the package's architecture ---------------
 # The image is always of this computer's kind. For the other architecture, Ubuntu's multiarch
@@ -272,7 +301,7 @@ build_package() { # <arch>
     docker rm -f "$builder" >/dev/null 2>&1 || true
     containers+=("$builder")
     docker run -i --quiet --name "$builder" --platform "linux/$native" \
-        -v "$volume":/cargo -v "$root":/src:ro \
+        -v "$cache":/cargo -v "$root":/src:ro \
         -e ARCH="$arch" -e TRIPLE="$triple" -e CRATE="$crate" -e PACKAGE="$package" \
         -e NAME="$name" -e VERSION="$version" -e MAINTAINER="$maintainer" -e DEB="$deb" \
         "$prefix:$base_release-$arch" bash -s <<'BUILD'
@@ -438,8 +467,13 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 fail() { echo "FAILED: $*" >&2; exit 1; }
 
+# A name lookup that fails now and then (seen in M16 with a Docker machine on a Mac on
+# battery) should not fail the check: apt tries each download again.
+echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+# Without the archive's lists apt says only "held broken packages", which is about the network,
+# not the package: say so.
+apt-get update -qq --error-on=any || fail "apt could not read Ubuntu's archive (the network, not the package)"
 # The way a Member installs it, recommended packages included.
-apt-get update -qq
 apt-get install -y -qq "/pkg/$DEB" >/tmp/apt.log 2>&1 || { tail -n 30 /tmp/apt.log >&2; fail "apt could not install the package"; }
 [ "$(dpkg-query -W -f '${Status}' "$PACKAGE")" = "install ok installed" ] || fail "the package is not installed"
 echo "    installed with apt: $(dpkg-query -W -f '${Package} ${Version} ${Architecture}' "$PACKAGE")"
@@ -511,9 +545,12 @@ app="$(pgrep -u member -x "$PACKAGE" | head -n 1)"
 echo "    started with no network and a fresh home, showed its window, stayed up $STAY_UP s; its page process runs"
 
 # The program's listening TCP sockets, as "address:port" in the kernel's hexadecimal notation.
+# Its open files are read as member, its owner: root in a container lacks CAP_SYS_PTRACE and
+# may not read another user's /proc/<pid>/fd (until M16 this found nothing, and the check
+# failed with "no Workspace server started" although the Workspace had opened).
 listening() {
     local inodes
-    inodes=" $(find "/proc/$app/fd" -lname 'socket:*' -printf '%l\n' 2>/dev/null | tr -dc '0-9\n' | tr '\n' ' ') "
+    inodes=" $(runuser -u member -- find "/proc/$app/fd" -lname 'socket:*' -printf '%l\n' 2>/dev/null | tr -dc '0-9\n' | tr '\n' ' ') "
     awk 'FNR > 1 && $4 == "0A" { print $2, $10 }' /proc/net/tcp /proc/net/tcp6 2>/dev/null |
         while read -r address inode; do
             case "$inodes" in *" $inode "*) echo "$address" ;; esac
