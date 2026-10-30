@@ -405,11 +405,17 @@ describe('when what a step needs was removed', () => {
       suggestions: [],
       branches: [BRANCHES.main],
     }))
+    // Each note waits MISSING_AFTER_MS before it shows: move the clock rather than wait for it, so that a loaded
+    // machine cannot make this slow. Not a moment less than that wait, though: just before it, there is no note.
     const note = async (step: string, text: RegExp) => {
       await act(async () => handsOn.goTo(step as never))
-      await waitFor(() => expect(within(dialog()!).getByRole('note')).toHaveTextContent(text), { timeout: MISSING_AFTER_MS + 1000 })
+      act(() => void vi.advanceTimersByTime(MISSING_AFTER_MS - 1))
+      expect(within(dialog()!).queryByRole('note')).toBeNull()
+      act(() => void vi.advanceTimersByTime(1))
+      expect(within(dialog()!).getByRole('note')).toHaveTextContent(text)
     }
     await open()
+    vi.useFakeTimers()
     await note('visual', /The Page of “Watch a walk” has no Visual any more/)
     await note('run', /There is no Card called “Random walk experiment”/)
     await note('todo', /adding one of your own is enough/)

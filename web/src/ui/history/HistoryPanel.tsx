@@ -7,6 +7,7 @@ import { ApiError, history, useBoard, useHistory, useMembers } from '../../lib'
 import { toasts } from '../board/toastStore'
 import { historyPanel } from '../bridge'
 import { Detail } from './Detail'
+import { graphPreview, useGraphPreview } from './fromGraph'
 import { FORMER_MEMBER, count, momentLabel, personOf } from './format'
 import type { Person } from './format'
 import { activityAt, buildLanes, dayTicks, positionOf, seqForStep } from './model'
@@ -69,6 +70,8 @@ export function HistoryPanel({ onClose }: Props) {
       // An Undo offer belongs to this Branch's History; it must not outlive it.
       if (undoToast.current !== null) toasts.dismiss(undoToast.current)
       undoToast.current = null
+      // A preview asked for by the Branch Graph ends here without a way back: the Member went elsewhere by hand.
+      graphPreview.left()
       history.close()
     }
   }, [branchId])
@@ -77,6 +80,21 @@ export function HistoryPanel({ onClose }: Props) {
   const n = activities.length
   const ready = hist.status === 'ready'
   const branch = hist.branch?.name ?? snap.branch?.name ?? 'main'
+
+  // "Preview the Board" from the Branch Graph: once this Branch's History is loaded, show that moment; when the
+  // preview ends ("Back to now", scrubbing to now, closing History), go back to the graph.
+  const fromGraph = useGraphPreview((s) => s.current)
+  const histBranchId = hist.branch?.id
+  useEffect(() => {
+    if (fromGraph?.phase !== 'opening' || !ready || histBranchId !== fromGraph.branchId) return
+    graphPreview.asked()
+    history.preview(fromGraph.seq)
+  }, [fromGraph, ready, histBranchId])
+  const previewing = preview !== null
+  useEffect(() => {
+    if (fromGraph?.phase === 'asked' && previewing) graphPreview.shown()
+    else if (fromGraph?.phase === 'shown' && !previewing) graphPreview.finish()
+  }, [fromGraph, previewing])
 
   const headRef = useRef(head)
   useLayoutEffect(() => {
@@ -115,6 +133,8 @@ export function HistoryPanel({ onClose }: Props) {
     const ok = await runRestore(preview.seq)
     setRestoring(false)
     if (!ok) return
+    // A Restore is not "leaving the preview": stay here with its Undo offer rather than going back to the graph.
+    graphPreview.drop()
     history.preview(null)
     // The button is gone at "now"; keep keyboard focus in the panel.
     rootRef.current?.querySelector<HTMLElement>('.qh-range')?.focus({ preventScroll: true })
@@ -138,6 +158,7 @@ export function HistoryPanel({ onClose }: Props) {
   const close = () => {
     historyPanel.close()
     onClose?.()
+    graphPreview.finish() // asked for by the Branch Graph: closing History ends the preview, back to the graph
   }
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Escape' || e.defaultPrevented) return
@@ -166,6 +187,11 @@ export function HistoryPanel({ onClose }: Props) {
             </span>
           )}
           <span className="qh-spacer" />
+          {fromGraph && (
+            <button type="button" className="q-btn q-btn--sm" onClick={() => graphPreview.finish()}>
+              Back to Branches
+            </button>
+          )}
           <button
             type="button"
             className="q-btn q-btn--icon q-btn--quiet q-btn--sm"

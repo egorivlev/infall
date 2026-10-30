@@ -32,6 +32,7 @@ vi.mock('../../lib', () => ({
 }))
 vi.mock('../board', () => ({ BoardView: () => <div data-testid="board" /> }))
 vi.mock('../todos', () => ({ Todos: () => <div data-testid="todos" /> }))
+vi.mock('../branches', () => ({ BranchGraph: () => <div data-testid="branch-graph" /> }))
 
 import { aiPanel, useAiPanel } from '../bridge'
 import { App } from './App'

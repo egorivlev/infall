@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BoardSnapshot, BranchInfo, Checkpoint, HistorySnapshot, Member, SessionSnapshot } from '../../lib'
+import type { BoardSnapshot, BranchInfo, HistorySnapshot, Member, SessionSnapshot } from '../../lib'
 
 // Plain functions, not vi.fn(): vitest attaches an unhandled-rejection handler to a mock's rejected Promise.
 type Fn = (...a: unknown[]) => Promise<unknown>
@@ -65,10 +65,18 @@ vi.mock('../../lib', () => ({
   },
 }))
 vi.mock('../board', () => ({ BoardView: () => <div data-testid="board" /> }))
+// The Branch Graph has its own tests against the data layer (ui/branches/BranchGraph.test.tsx).
+vi.mock('../branches', () => ({
+  BranchGraph: ({ current }: { current: string }) => (
+    <div data-testid="branch-graph" data-current={current}>
+      <h1>Branches</h1>
+    </div>
+  ),
+}))
 
 import { historyPanel, useHistoryPanel } from '../bridge'
 import { App } from './App'
-import { newBranchIntent } from './newBranchIntent'
+import { newBranchIntent, useNewBranchIntent } from './newBranchIntent'
 import { rememberBranch } from './router'
 import { resetThemeCache } from './theme'
 
@@ -83,14 +91,8 @@ const MAIN: BranchInfo = { id: 'b-main', name: 'main', seq: 40, checkpoints: 2 }
 const QEC: BranchInfo = { id: 'b-qec', name: 'try-QEC', seq: 14, checkpoints: 0, parent: { branch: 'b-main', seq: 30 }, created_by: 'm', created_at: at(14) }
 const CART: BranchInfo = { id: 'b-cart', name: 'ana/cartpole lr', seq: 3, checkpoints: 0, parent: { branch: 'b-main', seq: 12 }, created_by: 'n', created_at: at(19, 16, 40) }
 
-const KICKOFF: Checkpoint = { name: 'Kick-off', moment: { branch: 'b-main', seq: 12 }, author: 'a', at: at(3) }
-const READING: Checkpoint = { name: 'Reading group', moment: { branch: 'b-main', seq: 25 }, author: 'm', at: at(9) }
-
 function snapshot(over: Partial<BoardSnapshot> = {}): BoardSnapshot {
   return { status: 'live', seq: 40, branch: MAIN, cards: [], frames: [], connections: [], presence: [MEI], pending: 0, readOnly: false, ...over }
-}
-function historyOf(branch: BranchInfo, checkpoints: Checkpoint[]): HistorySnapshot {
-  return { status: 'ready', branch, head: branch.seq, activities: [], checkpoints, preview: null }
 }
 const IDLE: HistorySnapshot = { status: 'idle', head: 0, activities: [], checkpoints: [], preview: null }
 
@@ -225,7 +227,7 @@ describe('Branch switcher', () => {
       'maindefault Branch',
       '✓try-QECfrom main · Mei · 14 Nov',
       'ana/cartpole lrfrom main · Ana · 19 Nov',
-      'New Branch from now…',
+      'New Branch…',
       'All Branches…',
     ])
     expect(items[1]).toHaveAttribute('aria-current', 'true')
@@ -273,16 +275,19 @@ describe('Branch switcher', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('"New Branch from now…" goes to Branches with the cursor in Name; "All Branches…" just goes there', async () => {
+  it('"New Branch…" goes to the Branch Graph and asks it for the name field; "All Branches…" just goes there', async () => {
+    go('/b/try-QEC')
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Branch main' }))
+    await user.click(screen.getByRole('button', { name: 'Branch try-QEC' }))
     await user.click(screen.getByRole('menuitem', { name: 'All Branches…' }))
     expect(window.location.pathname).toBe('/branches')
-    expect(screen.getByRole('textbox', { name: 'Name' })).not.toHaveFocus()
-    await user.click(screen.getByRole('button', { name: 'Branch main' }))
-    await user.click(screen.getByRole('menuitem', { name: 'New Branch from now…' }))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveFocus())
+    expect(screen.getByTestId('branch-graph')).toHaveAttribute('data-current', 'try-QEC')
+    expect(useNewBranchIntent.getState().pending).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Branch try-QEC' }))
+    await user.click(screen.getByRole('menuitem', { name: 'New Branch…' }))
+    expect(window.location.pathname).toBe('/branches')
+    expect(useNewBranchIntent.getState().pending).toBe(true) // the graph selects the newest dot of try-QEC, cursor in the field
   })
 
   it('asks for the list again when it is still empty', async () => {
@@ -403,146 +408,18 @@ describe('History button', () => {
 })
 
 describe('Branches screen', () => {
-  beforeEach(() => {
-    go('/branches')
-    h.hist = historyOf(MAIN, [KICKOFF, READING])
-  })
-
-  const rows = () =>
-    within(screen.getByRole('table'))
-      .getAllByRole('row')
-      .slice(1)
-      .map((r) => Array.from(r.children).map((c) => c.textContent))
-
-  it('renders one row per Branch with where it started, who made it and its Changes', () => {
-    render(<App />)
-    expect(screen.getByRole('heading', { name: 'Branches', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText('3 Branches')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Branch', 'Started from', 'Created by', 'Changes', 'Actions'])
-    expect(rows()).toEqual([
-      ['mainopen', '—', '—', '40', 'default BranchOpen'],
-      ['try-QEC', 'main · 14 Nov, 10:02', 'Mei Lin', '14', 'Open'],
-      ['ana/cartpole lr', 'main · ◆ Kick-off', 'Ana Ruiz', '3', 'Open'],
-    ])
-    expect(screen.getByRole('link', { name: 'Open ana/cartpole lr' })).toHaveAttribute('href', '/b/ana%2Fcartpole%20lr')
-    expect(screen.getByRole('link', { name: 'Open main' })).toHaveAttribute('href', '/')
-    expect(screen.queryByText(/Compare|Merge into|Update from|vs main/)).toBeNull() // no Merge is allowed here
-  })
-
-  it('marks the open Branch and opens another from its row', async () => {
+  it('is the Branch Graph, told which Branch the Board has open; it loads no History of its own', async () => {
     go('/b/try-QEC')
-    h.board = snapshot({ branch: QEC, seq: 14 })
-    h.hist = historyOf(QEC, [])
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('link', { name: 'Branches' }))
-    expect(rows()[1]?.[0]).toBe('try-QECopen')
-    expect(rows()[0]?.[0]).toBe('main')
-    await user.click(screen.getByRole('link', { name: 'Open ana/cartpole lr' }))
-    expect(window.location.pathname).toBe('/b/ana%2Fcartpole%20lr')
-    expect(opened()).toEqual(['try-QEC', 'ana/cartpole lr'])
-  })
-
-  it('loads the Checkpoints through History, and closes it again on leaving', async () => {
-    h.hist = IDLE
-    const user = userEvent.setup()
-    render(<App />)
-    expect(h.calls.historyOpen).toBe(1)
-    await user.click(screen.getByRole('link', { name: 'Board' }))
-    expect(h.calls.historyClose).toBe(1)
-  })
-
-  it('does not close History on leaving while the History panel is open', async () => {
-    useHistoryPanel.setState({ open: true })
-    const user = userEvent.setup()
-    render(<App />)
-    expect(h.calls.historyOpen).toBe(0) // already loaded for this Branch
+    expect(window.location.pathname).toBe('/branches')
+    expect(screen.getByRole('heading', { name: 'Branches', level: 1 })).toBeInTheDocument()
+    expect(screen.getByTestId('branch-graph')).toHaveAttribute('data-current', 'try-QEC')
+    expect(opened()).toEqual(['try-QEC'])
+    expect(h.calls.historyOpen).toBe(0)
     await user.click(screen.getByRole('link', { name: 'Board' }))
     expect(h.calls.historyClose).toBe(0)
-  })
-
-  it('creates a Branch from now and switches to it', async () => {
-    h.create = async () => ({ ...QEC, id: 'b-new', name: 'decoder rewrite/v2' })
-    const user = userEvent.setup()
-    render(<App />)
-    const panel = screen.getByRole('region', { name: 'New Branch' })
-    expect(within(panel).getByText('A Branch is a full copy of the Board. Work on it stays there until you Merge.')).toBeInTheDocument()
-    const now = within(panel).getByRole('radio', { name: /^Now/ })
-    expect(now).toBeChecked()
-    expect(now.closest('label')).toHaveTextContent(/^Nowmain as of \d{1,2} [A-Z][a-z]{2}, \d\d:\d\d$/)
-    await user.type(within(panel).getByRole('textbox', { name: 'Name' }), '  decoder rewrite/v2 ')
-    await user.click(within(panel).getByRole('button', { name: 'Create Branch and switch to it' }))
-    await waitFor(() => expect(window.location.pathname).toBe('/b/decoder%20rewrite%2Fv2'))
-    expect(h.calls.create).toEqual([[{ name: 'decoder rewrite/v2' }]])
-    expect(opened()).toEqual(['main', 'decoder rewrite/v2'])
-    expect(screen.getByTestId('board')).toBeInTheDocument()
-  })
-
-  it('creates a Branch from a Checkpoint, newest first, with that moment', async () => {
-    h.create = async () => ({ ...QEC, id: 'b-new', name: 'fit' })
-    const user = userEvent.setup()
-    render(<App />)
-    const panel = screen.getByRole('region', { name: 'New Branch' })
-    const select = within(panel).getByRole('combobox', { name: 'Checkpoint' })
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['◆ Reading group · 9 Nov', '◆ Kick-off · 3 Nov'])
-    await user.type(within(panel).getByRole('textbox', { name: 'Name' }), 'fit')
-    await user.selectOptions(select, 'Kick-off')
-    expect(within(panel).getByRole('radio', { name: 'A Checkpoint' })).toBeChecked()
-    await user.keyboard('{Enter}')
-    await user.click(within(panel).getByRole('button', { name: 'Create Branch and switch to it' }))
-    await waitFor(() => expect(window.location.pathname).toBe('/b/fit'))
-    expect(h.calls.create).toEqual([[{ name: 'fit', from: { branch: 'b-main', seq: 12 } }]])
-  })
-
-  it('uses the newest Checkpoint when the radio is chosen without touching the list', async () => {
-    h.create = async () => ({ ...QEC, id: 'b-new', name: 'fit' })
-    const user = userEvent.setup()
-    render(<App />)
-    const panel = screen.getByRole('region', { name: 'New Branch' })
-    await user.click(within(panel).getByRole('radio', { name: 'A Checkpoint' }))
-    await user.type(within(panel).getByRole('textbox', { name: 'Name' }), 'fit{Enter}')
-    await waitFor(() => expect(h.calls.create).toEqual([[{ name: 'fit', from: { branch: 'b-main', seq: 25 } }]]))
-  })
-
-  it('disables "A Checkpoint" when the open Branch has none', () => {
-    h.hist = historyOf(MAIN, [])
-    render(<App />)
-    const radio = screen.getByRole('radio', { name: 'A Checkpoint' })
-    expect(radio).toBeDisabled()
-    expect(radio).toHaveAccessibleDescription('This Branch has no Checkpoints yet.')
-    expect(screen.queryByRole('combobox', { name: 'Checkpoint' })).toBeNull()
-  })
-
-  it('says when the name is taken, under the field, and stays', async () => {
-    h.create = async () => {
-      throw { status: 409, code: 'name_taken' }
-    }
-    const user = userEvent.setup()
-    render(<App />)
-    const name = screen.getByRole('textbox', { name: 'Name' })
-    await user.type(name, 'try-QEC{Enter}')
-    expect(await screen.findByText('A Branch with that name already exists.')).toBeInTheDocument()
-    expect(name).toHaveAccessibleDescription('A Branch with that name already exists.')
-    expect(name).toHaveFocus()
-    expect(window.location.pathname).toBe('/branches')
-  })
-
-  it('requires a name of at most 60 characters, and puts other failures in a plain sentence', async () => {
-    h.create = async () => {
-      throw { status: 500, code: 'internal' }
-    }
-    const user = userEvent.setup()
-    render(<App />)
-    const name = screen.getByRole('textbox', { name: 'Name' })
-    await user.click(screen.getByRole('button', { name: 'Create Branch and switch to it' }))
-    expect(screen.getByText('Give the Branch a name.')).toBeInTheDocument()
-    await user.type(name, 'x'.repeat(61))
-    await user.keyboard('{Enter}')
-    expect(screen.getByText('Use 60 characters or fewer.')).toBeInTheDocument()
-    expect(h.calls.create).toEqual([])
-    await user.keyboard('{Backspace}{Enter}')
-    expect(await screen.findByText('Something went wrong on our side. Try again.')).toBeInTheDocument()
-    expect(h.calls.create).toHaveLength(1)
   })
 })
 

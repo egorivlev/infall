@@ -186,7 +186,7 @@ describe('BoardView in preview', () => {
     expect(screen.getByTestId('card-old1')).toBeInTheDocument()
     expect(viewport().style.transform).toBe(before)
     fireEvent.change(screen.getByRole('slider'), { target: { value: '0' } })
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '4' } })
+    fireEvent.change(screen.getByRole('slider'), { target: { value: screen.getByRole('slider').getAttribute('max') } }) // now
     expect(screen.getByTestId('card-live1')).toBeInTheDocument()
     expect(viewport().style.transform).toBe(before)
   })

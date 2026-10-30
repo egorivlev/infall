@@ -9,7 +9,8 @@
 --q-ins:oklch(0.80 0.12 155 / 0.20);--q-del:oklch(0.72 0.15 25 / 0.22);
 --q-page:oklch(0.185 0.007 255);--q-scrim:oklch(0.1 0.01 255 / 0.55);
 --q-shadow:0 1px 0 oklch(0 0 0 / .25),0 10px 30px oklch(0 0 0 / .35);
---q-chrome:var(--q-surface);--q-chrome-line:var(--q-line-soft);--q-cur-branch:var(--q-ink);}
+--q-chrome:var(--q-surface);--q-chrome-line:var(--q-line-soft);--q-cur-branch:var(--q-ink);
+--q-lane-0:oklch(0.80 0.008 255);--q-lane-1:oklch(0.76 0.13 300);--q-lane-2:oklch(0.78 0.10 195);--q-lane-3:oklch(0.80 0.12 80);--q-lane-4:oklch(0.77 0.12 150);--q-lane-5:oklch(0.74 0.13 25);--q-lane-6:oklch(0.76 0.11 250);}
 [data-theme="light"]{color-scheme:light;
 --q-sunken:oklch(0.925 0.005 85);--q-canvas:oklch(0.962 0.004 85);--q-surface:oklch(0.982 0.003 85);--q-raised:oklch(0.998 0.001 85);--q-hover:oklch(0.94 0.005 85);
 --q-line:oklch(0.83 0.006 85);--q-line-soft:oklch(0.895 0.005 85);
@@ -21,7 +22,8 @@
 --q-ins:oklch(0.60 0.12 155 / 0.18);--q-del:oklch(0.55 0.17 25 / 0.16);
 --q-page:oklch(0.995 0.002 85);--q-scrim:oklch(0.3 0.01 255 / 0.28);
 --q-shadow:0 1px 0 oklch(0 0 0 / .04),0 10px 30px oklch(0.3 0.02 255 / .14);
---q-chrome:var(--q-surface);--q-chrome-line:var(--q-line-soft);--q-cur-branch:var(--q-ink);}
+--q-chrome:var(--q-surface);--q-chrome-line:var(--q-line-soft);--q-cur-branch:var(--q-ink);
+--q-lane-0:oklch(0.42 0.012 255);--q-lane-1:oklch(0.50 0.17 300);--q-lane-2:oklch(0.50 0.10 200);--q-lane-3:oklch(0.55 0.13 65);--q-lane-4:oklch(0.50 0.12 150);--q-lane-5:oklch(0.52 0.16 28);--q-lane-6:oklch(0.50 0.14 255);}
 [data-branch]:not([data-branch="main"]){--q-chrome:color-mix(in srgb,var(--q-surface) 87%,var(--q-branch));--q-chrome-line:color-mix(in srgb,var(--q-line-soft) 55%,var(--q-branch));--q-cur-branch:var(--q-branch);}
 body{margin:0;background:var(--q-sunken);color:var(--q-ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:calc(13px * var(--q-text, 1));-webkit-font-smoothing:antialiased;}
 a{color:var(--q-accent);text-decoration:none}a:hover{text-decoration:underline;color:var(--q-ink)}

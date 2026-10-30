@@ -1,14 +1,16 @@
-// M3 in the shell: the Merge route, who may use it, and the entry points on the Branches screen.
+// M3 in the shell: the Merge route, who may use it, and the entry points on the Branches screen — since M15b the
+// labels at the top end of each Branch's line on the Branch Graph.
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BoardSnapshot, BranchInfo, HistorySnapshot, Member, SessionSnapshot } from '../../lib'
+import type { BoardSnapshot, BranchInfo, GraphResponse, GraphSnapshot, HistorySnapshot, Member, SessionSnapshot } from '../../lib'
 
 type Options = { intoParent?: BranchInfo; fromParent?: BranchInfo }
 const h = vi.hoisted(() => ({
   session: { status: 'signed_out' } as unknown as SessionSnapshot,
   board: {} as unknown as BoardSnapshot,
   list: [] as BranchInfo[],
+  graph: { status: 'idle', graph: null, layout: null } as GraphSnapshot,
   options: ((): Options => ({})) as (b: BranchInfo, all: BranchInfo[]) => Options,
   opened: [] as string[],
   mounts: [] as string[],
@@ -19,7 +21,14 @@ const noAi = vi.hoisted(() => ({
   snapshot: { setup: { provider: 'none', reason: 'loading', desktop: false, openrouter: { enabled: false } }, conversations: [], current: null, busy: false },
 }))
 
-vi.mock('../../lib', () => ({
+vi.mock('../../lib', async (importOriginal) => ({
+  // The Branch Graph's pure parts are the real ones; what it is fed is the test's.
+  layoutGraph: (await importOriginal<typeof import('../../lib')>()).layoutGraph,
+  startLabel: (await importOriginal<typeof import('../../lib')>()).startLabel,
+  formatWhen: (await importOriginal<typeof import('../../lib')>()).formatWhen,
+  useGraph: () => h.graph,
+  useGraphLines: () => undefined,
+  graph: { open: async () => {}, close: () => {}, refresh: async () => {}, need: async () => {}, changesOf: async () => [], addCheckpoint: async () => ({}) },
   useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
   workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,
@@ -54,9 +63,26 @@ vi.mock('../merge', async () => {
   }
 })
 
+import { layoutGraph } from '../../lib'
 import { App } from './App'
 import { rememberBranch } from './router'
 import { resetThemeCache } from './theme'
+
+/** The graph of these Branches, none with Changes of its own: one label per Branch, all in view. */
+function graphOf(list: BranchInfo[]): GraphSnapshot {
+  const graph: GraphResponse = {
+    branches: list.map((b) => ({
+      id: b.id,
+      name: b.name,
+      seq: 0,
+      ...(b.parent ? { parent: { branch: b.parent.branch, seq: 0 } } : {}),
+      ...(b.created_by ? { created_by: b.created_by } : {}),
+      checkpoints: [],
+      activities: [],
+    })),
+  }
+  return { status: 'ready', graph, layout: layoutGraph(graph) }
+}
 
 const MEI: Member = { id: 'm', name: 'Mei Lin', role: 'member', color: '#bbb' }
 const GUEST: Member = { id: 'g', name: 'Priya Nair', role: 'guest', color: '#ccc' }
@@ -75,7 +101,8 @@ const withParent = (b: BranchInfo, all: BranchInfo[]): Options => {
 const go = (path: string) => window.history.replaceState(null, '', path)
 const signedIn = (member: Member) => (h.session = { status: 'signed_in', member })
 const here = () => window.location.pathname + window.location.search
-const row = (name: string) => screen.getByRole('rowheader', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).closest('tr') as HTMLElement
+/** The label of a Branch on the graph. */
+const row = (name: string) => screen.getByText(name, { selector: '.qg-label__name' }).closest('.qg-label') as HTMLElement
 
 beforeEach(() => {
   go('/')
@@ -84,6 +111,7 @@ beforeEach(() => {
   rememberBranch('main')
   h.board = { status: 'live', seq: 40, branch: MAIN, cards: [], frames: [], connections: [], presence: [MEI], pending: 0, readOnly: false }
   h.list = [MAIN, QEC, CART, LOST]
+  h.graph = graphOf(h.list)
   h.options = withParent
   h.opened = []
   h.mounts = []
@@ -150,7 +178,7 @@ describe('Merge route', () => {
   })
 })
 
-describe('Merge entry points on the Branches screen', () => {
+describe('Merge entry points on the Branch labels', () => {
   beforeEach(() => go('/branches'))
 
   it('offers both directions on each Branch that can merge with the Branch it was started from', () => {
@@ -183,7 +211,7 @@ describe('Merge entry points on the Branches screen', () => {
     expect(within(row('ana/Cartpole & lr')).getAllByRole('link').map((a) => a.textContent)).toEqual(['Update from try-QEC…', 'Open'])
   })
 
-  it('opens the review from a row', async () => {
+  it('opens the review from a label', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('link', { name: 'Update ana/Cartpole & lr from try-QEC…' }))

@@ -10,6 +10,7 @@ const { HistoryPanel, RESTORE_FAILED, RESTORE_OFFLINE } = await import('./Histor
 const { Toast } = await import('../board/Toast')
 const { toasts } = await import('../board/toastStore')
 const { historyPanel, useHistoryPanel } = await import('../bridge')
+const { useGraphPreview } = await import('./fromGraph')
 const { ACTIVITIES, IDLE, MAIN, READY, at } = await import('./testkit')
 
 const { history, historyStore, boardStore, membersStore } = fake
@@ -47,11 +48,11 @@ describe('timeline', () => {
     renderPanel()
     expect(screen.getByRole('region', { name: 'History of main' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'History of main' })).toBeInTheDocument()
-    expect(screen.getByTestId('history-counts')).toHaveTextContent('4 Activities · 9 Changes · 3 Checkpoints')
+    expect(screen.getByTestId('history-counts')).toHaveTextContent('5 Activities · 9 Changes · 3 Checkpoints')
   })
 
   it('counts in the singular', () => {
-    historyStore.setState({ head: 1, activities: [ACTIVITIES[2]!], checkpoints: [READY.checkpoints[0]!] })
+    historyStore.setState({ head: 1, activities: [ACTIVITIES[3]!], checkpoints: [READY.checkpoints[0]!] })
     renderPanel()
     expect(screen.getByTestId('history-counts')).toHaveTextContent('1 Activity · 1 Change · 1 Checkpoint')
   })
@@ -77,12 +78,13 @@ describe('timeline', () => {
       'Ana Ruiz · 14 Nov, 09:00–09:12 · 3 Changes',
       'Ana Ruiz · 15 Nov, 12:00 · Restore · 3 Changes',
     ])
-    expect(block('a2')).toHaveAccessibleName('Mei Tanaka · 14 Nov, 10:00 · 2 Changes')
-    expect(block('a2')).toHaveAttribute('title', 'Mei Tanaka · 14 Nov, 10:00 · 2 Changes')
-    expect(block('a3')).toHaveAccessibleName('Former Member · 15 Nov, 11:00 · 1 Change')
+    expect(block('a2')).toHaveAccessibleName('Mei Tanaka · 14 Nov, 10:00 · 1 Change')
+    expect(block('a2')).toHaveAttribute('title', 'Mei Tanaka · 14 Nov, 10:00 · 1 Change')
+    expect(block('a3')).toHaveAccessibleName('Mei Tanaka · 14 Nov, 10:00 · 1 Change')
+    expect(block('a4')).toHaveAccessibleName('Former Member · 15 Nov, 11:00 · 1 Change')
     // width 6 + 3 × count; a Restore shows the glyph instead of a plain block
     expect(block('a1')).toHaveStyle({ width: '15px' })
-    expect(block('a4')).toHaveTextContent('↺')
+    expect(block('a5')).toHaveTextContent('↺')
     expect(block('a1')).toHaveTextContent('')
   })
 
@@ -90,7 +92,7 @@ describe('timeline', () => {
     renderPanel()
     expect(block('a1')).toHaveClass('is-past')
     expect(block('a1').style.getPropertyValue('--qh-tint')).toBe('rgb(200, 120, 40)')
-    expect(block('a3').style.getPropertyValue('--qh-tint')).toBe('var(--q-ink-3)')
+    expect(block('a4').style.getPropertyValue('--qh-tint')).toBe('var(--q-ink-3)')
 
     scrub(1)
     expect(block('a1')).toHaveClass('is-past')
@@ -142,8 +144,8 @@ describe('scrubber', () => {
     renderPanel()
     expect(range()).toHaveAttribute('type', 'range')
     expect(range()).toHaveAttribute('min', '0')
-    expect(range()).toHaveAttribute('max', '4')
-    expect(range()).toHaveValue('4')
+    expect(range()).toHaveAttribute('max', '5')
+    expect(range()).toHaveValue('5')
     expect(range()).toHaveAttribute('aria-valuetext', 'now')
   })
 
@@ -155,17 +157,20 @@ describe('scrubber', () => {
     expect(range()).toHaveAttribute('aria-valuetext', 'the start')
 
     scrub(2)
-    expect(history.preview).toHaveBeenLastCalledWith(5)
+    expect(history.preview).toHaveBeenLastCalledWith(4) // the moment of Kick-off, which ends Mei's first Activity
     expect(range()).toHaveValue('2')
     expect(range()).toHaveAttribute('aria-valuetext', '14 Nov, 10:00')
 
     scrub(3)
-    expect(history.preview).toHaveBeenLastCalledWith(6)
+    expect(history.preview).toHaveBeenLastCalledWith(5)
 
     scrub(4)
+    expect(history.preview).toHaveBeenLastCalledWith(6)
+
+    scrub(5)
     expect(history.preview).toHaveBeenLastCalledWith(null)
     expect(range()).toHaveAttribute('aria-valuetext', 'now')
-    expect(history.preview).toHaveBeenCalledTimes(4)
+    expect(history.preview).toHaveBeenCalledTimes(5)
   })
 
   it('follows a preview set elsewhere (e.g. "Back to now" on the Board)', () => {
@@ -173,39 +178,41 @@ describe('scrubber', () => {
     act(() => history.preview(3))
     expect(range()).toHaveValue('1')
     act(() => history.preview(null))
-    expect(range()).toHaveValue('4')
+    expect(range()).toHaveValue('5')
   })
 })
 
 describe('selecting', () => {
   it('clicking a block scrubs to the end of that Activity and selects it', () => {
     renderPanel()
-    fireEvent.click(block('a2'))
+    fireEvent.click(block('a3'))
     expect(history.preview).toHaveBeenLastCalledWith(5)
-    expect(block('a2')).toHaveAttribute('aria-current', 'true')
-    expect(block('a2')).toHaveClass('is-selected')
+    expect(block('a3')).toHaveAttribute('aria-current', 'true')
+    expect(block('a3')).toHaveClass('is-selected')
     expect(block('a1')).not.toHaveAttribute('aria-current')
-    expect(range()).toHaveValue('2')
+    expect(range()).toHaveValue('3')
     expect(detail()).toHaveTextContent('Mei Tanaka')
   })
 
   it('clicking the latest block is "now"', () => {
     renderPanel()
     fireEvent.click(block('a2'))
-    fireEvent.click(block('a4'))
+    fireEvent.click(block('a5'))
     expect(history.preview).toHaveBeenLastCalledWith(null)
     expect(detail()).toHaveTextContent('This is the Board as it is now.')
   })
 
-  it('clicking a Checkpoint scrubs to exactly its moment, even inside an Activity', () => {
+  it('clicking a Checkpoint scrubs to exactly its moment: the end of the Activity it ends', () => {
     renderPanel()
     fireEvent.click(screen.getByTestId('checkpoint-Kick-off'))
     expect(history.preview).toHaveBeenLastCalledWith(4)
     expect(screen.getByTestId('checkpoint-Kick-off')).toHaveAttribute('aria-current', 'true')
     expect(block('a2')).toHaveAttribute('aria-current', 'true')
+    expect(block('a3')).not.toHaveAttribute('aria-current')
     expect(range()).toHaveValue('2')
     expect(detail()).toHaveTextContent('Checkpoint Kick-off')
-    expect(detail()).toHaveTextContent('This moment is partway through the Activity.')
+    expect(detail()).toHaveTextContent('1 Change in this Activity')
+    expect(detail()).not.toHaveTextContent('partway') // a Checkpoint never falls inside an Activity any more
 
     fireEvent.click(screen.getByTestId('checkpoint-Start'))
     expect(history.preview).toHaveBeenLastCalledWith(0)
@@ -214,7 +221,21 @@ describe('selecting', () => {
 
     fireEvent.click(screen.getByTestId('checkpoint-Reading group'))
     expect(history.preview).toHaveBeenLastCalledWith(6)
-    expect(block('a3')).toHaveAttribute('aria-current', 'true')
+    expect(block('a4')).toHaveAttribute('aria-current', 'true')
+    expect(detail()).not.toHaveTextContent('partway')
+  })
+
+  it('a moment inside an Activity — not a step of the scrubber, set from elsewhere — reads as partway through it', () => {
+    renderPanel()
+    act(() => history.preview(8)) // two of the three Changes of Ana's Restore
+    expect(block('a5')).toHaveAttribute('aria-current', 'true')
+    expect(range()).toHaveValue('5') // the scrubber rounds up to the end of that Activity
+    expect(range()).toHaveAttribute('aria-valuetext', '15 Nov, 12:00')
+    expect(detail()).toHaveTextContent('Restored to an earlier moment')
+    expect(detail()).toHaveTextContent('This moment is partway through the Activity.')
+    expect(detail()).not.toHaveTextContent('Checkpoint')
+
+    scrub(4) // any step of the scrubber is the end of an Activity
     expect(detail()).not.toHaveTextContent('partway')
   })
 })
@@ -238,7 +259,7 @@ describe('detail column', () => {
 
   it('uses the singular for one Change, and shows a Former Member', () => {
     renderPanel()
-    scrub(3)
+    scrub(4)
     expect(detail()).toHaveTextContent('Former Member')
     expect(detail()).toHaveTextContent('1 Change in this Activity')
   })
@@ -279,7 +300,7 @@ describe('Restore', () => {
     await act(async () => land())
     await flush()
     expect(history.preview).toHaveBeenLastCalledWith(null)
-    expect(range()).toHaveValue('4')
+    expect(range()).toHaveValue('5')
     expect(range()).toHaveFocus()
     expect(screen.getByTestId('toast')).toHaveTextContent('Restored main to 14 Nov, 09:12.')
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
@@ -287,7 +308,7 @@ describe('Restore', () => {
 
   it('Undo restores to the head from just before', async () => {
     renderPanel()
-    scrub(2)
+    scrub(3)
     fireEvent.click(screen.getByRole('button', { name: 'Restore main to here' }))
     await flush()
     expect(history.restore).toHaveBeenLastCalledWith(5)
@@ -425,6 +446,80 @@ describe('opening and closing History', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close History' }))
     expect(useHistoryPanel.getState().open).toBe(false)
     act(() => historyPanel.close())
+  })
+})
+
+describe('a preview asked for by the Branch Graph', () => {
+  const ask = (seq: number, hadPanel = false, branchId = MAIN.id) =>
+    useGraphPreview.setState({ current: { branch: 'main', branchId, seq, back: '/branches', hadPanel, phase: 'opening' } })
+  beforeEach(() => window.history.replaceState(null, '', '/'))
+  afterEach(() => useGraphPreview.setState({ current: null }))
+
+  it('shows that moment once History of that Branch is loaded, and "Back to now" returns to the graph', () => {
+    ask(4)
+    renderPanel()
+    expect(history.preview).toHaveBeenLastCalledWith(4)
+    expect(useGraphPreview.getState().current?.phase).toBe('shown')
+    expect(block('a2')).toHaveAttribute('aria-current', 'true')
+    expect(window.location.pathname).toBe('/')
+
+    act(() => history.preview(null)) // the Board's "Back to now"
+    expect(window.location.pathname).toBe('/branches')
+    expect(useGraphPreview.getState().current).toBeNull()
+    expect(useHistoryPanel.getState().open).toBe(false) // it was opened for the preview
+  })
+
+  it('waits for History of the Branch it is about', () => {
+    ask(2, false, 'other-id')
+    renderPanel()
+    expect(history.preview).not.toHaveBeenCalled()
+    act(() => historyStore.setState({ branch: { id: 'other-id', name: 'exp-A', seq: 9, checkpoints: 0 } }))
+    expect(history.preview).toHaveBeenLastCalledWith(2)
+  })
+
+  it('scrubbing to another moment stays; scrubbing to now goes back, leaving a History panel that was open before', () => {
+    ask(4, true)
+    renderPanel()
+    scrub(1)
+    expect(window.location.pathname).toBe('/')
+    scrub(5)
+    expect(window.location.pathname).toBe('/branches')
+    expect(useHistoryPanel.getState().open).toBe(true)
+  })
+
+  it('"Back to Branches" and closing History both go back to the graph', () => {
+    ask(4)
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Branches' }))
+    expect(window.location.pathname).toBe('/branches')
+    cleanup()
+
+    window.history.replaceState(null, '', '/')
+    useHistoryPanel.setState({ open: true })
+    ask(4)
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Close History' }))
+    expect(window.location.pathname).toBe('/branches')
+  })
+
+  it('a Restore from it stays on the Board with its Undo offer', async () => {
+    ask(4)
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Restore main to here' }))
+    await flush()
+    expect(history.restore).toHaveBeenCalledWith(4)
+    expect(window.location.pathname).toBe('/')
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    expect(useGraphPreview.getState().current).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Back to Branches' })).toBeNull()
+  })
+
+  it('is forgotten when History closes another way (the Member went elsewhere)', () => {
+    ask(4)
+    const view = renderPanel()
+    view.unmount()
+    expect(useGraphPreview.getState().current).toBeNull()
+    expect(window.location.pathname).toBe('/')
   })
 })
 
