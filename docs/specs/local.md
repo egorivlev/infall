@@ -172,7 +172,7 @@ Each step: a title, one to three sentences, what to do, and it moves on by itsel
 11. Execute the Run on `Random walk experiment` (desktop app, Python needed — decision 6).
 12. Name a Checkpoint.
 13. Switch to `longer-walks`, look, switch back.
-14. Merge `longer-walks` into `main` and decide the Conflict.
+14. Merge `longer-walks` into `main` and decide the Conflict (since M15b: **Merge into main…** on the label of `longer-walks` on the Branch Graph, which the step points at when it is on screen).
 15. Open History; Restore to `Before the tutorial`'s moment or just look (either passes).
 16. Open the AI sidebar and ask something; Pin an answer to a Page (decision 6).
 17. The end: what was tried and what was not; what a Team Workspace adds (Members, Guests, invites — said in words, they do not exist here); **Back to workspaces** (`switchWorkspace`, when there is a bridge).

@@ -111,14 +111,20 @@ function memberSteps(role: Role, desktop: boolean, local: boolean, startScreen: 
       body: [
         'To-dos shows who is doing what.',
         'Suggestions holds Sources and Connections proposed by AI until someone accepts them.',
-        role === 'admin' && !local ? 'Branches lists every Branch, and Members is where you invite people.' : 'Branches lists every Branch.',
+        role === 'admin' && !local
+          ? 'Branches draws every Branch as a graph of its work, and Members is where you invite people.'
+          : 'Branches draws every Branch as a graph of its work.',
       ],
       anchor: ['rail'],
     },
     {
       id: 'branch',
       title: 'The Branch switcher',
-      body: ['A Branch is a separate line of work: what you change there stays there until you Merge.', 'main is the Branch everybody shares.'],
+      body: [
+        'A Branch is a separate line of work: what you change there stays there until you Merge.',
+        'main is the Branch everybody shares.',
+        '“New Branch…” in this menu opens the Branch Graph, where any moment on any Branch can be where a new one starts.',
+      ],
       anchor: ['branch'],
     },
     {

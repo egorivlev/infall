@@ -148,8 +148,9 @@ export const STEPS: HandsOnStep[] = [
       'A Merge brings the Changes of one Branch into another.',
       'Where both Branches changed the same thing there is a Conflict, and a Member decides it.',
     ],
-    todo: `Under Branches, merge ${SAMPLE.branch} into ${SAMPLE.main}, decide its Conflict, then press “Merge into ${SAMPLE.main}”.`,
-    anchor: ['branches', 'rail'],
+    todo: `Under Branches, find the label of ${SAMPLE.branch} at the top of its line and press “Merge into ${SAMPLE.main}…”. Decide its Conflict, then press “Merge into ${SAMPLE.main}”.`,
+    // The label's own button when the Branch Graph shows it; otherwise the way there.
+    anchor: [`merge-into:${SAMPLE.branch}`, 'branches', 'rail'],
   },
   {
     id: 'history',

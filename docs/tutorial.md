@@ -118,14 +118,16 @@ First name the present moment, so it can be found again:
 
 Then branch:
 
-2. Press the Branch control at the top left (it reads **Branch main**) and choose **New Branch from now…**.
-3. Under **New Branch**, enter the **Name** `colour-codes`, leave **Start from** on **Now**, and press **Create Branch and switch to it**. The top bar now shows `colour-codes` and changes colour, so you can tell you are not on `main`.
+2. Press the Branch control at the top left (it reads **Branch main**) and choose **New Branch…**. The **Branches** screen opens on the Branch Graph, with the newest dot of `main` selected and the cursor in the field **New Branch**.
+3. Type `colour-codes`. The line under the field says **Starts from now on main**. Press Enter (or **Create Branch and switch to it**). The top bar now shows `colour-codes` and changes colour, so you can tell you are not on `main`.
 4. Add a Card, `Colour code`, and change the summary of `Surface code`.
 5. Open the Branch control again and choose `main`. Neither change is there.
 
+The Branch Graph draws every Branch from the first Change: one row per stretch of someone's work (an Activity), newest at the top, each Branch a line of its own colour with its name on a label at the top end of the line, a **◆** where a Checkpoint is. To start a Branch from an earlier moment, click a dot or a **◆**, on any Branch, before pressing Enter: the line under the field says where it will start ("from Checkpoint Before trying colour codes on main"). Keyboard: ↑ ↓ move between rows, ← → to the neighbouring line, Enter shows what can be done there, N goes to the field, Esc goes back.
+
 Then merge:
 
-6. Open **Branches** in the left rail. In the row of `colour-codes`, press **Merge into main…**.
+6. Open **Branches** in the left rail. On the label of `colour-codes`, at the top end of its line, press **Merge into main…**.
 7. The review shows what **Merges automatically** and, if `main` changed the same things meanwhile, a list of **Conflicts**. Each Conflict needs a decision: one Branch's version, the other's, or **Edit by hand**. With nobody else editing there are none.
 8. The field **Checkpoint on main before merging** is filled in for you. Press **Merge into main**.
 
@@ -138,6 +140,8 @@ What is not there: a Branch can be merged only with the Branch it was started fr
 1. On **Board**, with `main` open, press **History** in the top bar. A panel opens under the Board: one row per Member, a block for each stretch of their work (an Activity), and a **◆** for each Checkpoint.
 2. Click a block, click a **◆**, or drag the slider. The Board above shows that moment, marked "Previewing main at … read-only". The right side of the panel says who made those Changes and what they were.
 3. Press **Back to now** to leave the preview.
+
+The same preview is on **Branches**: select a dot and press **Preview the Board**. That Branch opens with History at that moment; leaving the preview brings you back to the graph.
 
 To go back for good, preview the moment and press **Restore main to here**. A Restore does not erase anything: it adds new Changes that bring the Board back, so it shows in History too and can itself be undone. Right after it, a notice offers **Undo** for ten seconds.
 
@@ -288,7 +292,8 @@ A Guest has no **AI access** and no **Runs**.
 | Take back a delete | **Undo** on the notice, within a few seconds |
 | Go back further | **History**, then **Restore … to here** |
 | Name a moment | **Checkpoint**, top bar |
-| Work apart, then bring it in | Branch control, then **Branches** and **Merge into …** |
+| Work apart, then bring it in | Branch control, **New Branch…**; then **Branches** and **Merge into …** on the Branch's label |
+| Start a Branch from an earlier moment | **Branches**: click a dot or a **◆**, type a name in **New Branch**, Enter |
 | See who owes what | **To-dos**, left rail |
 | Review what an AI proposed | **Suggestions**, left rail |
 | Fill in a Source from its DOI or arXiv id | **Look up**, beside **URL or DOI** |

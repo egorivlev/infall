@@ -28,8 +28,8 @@ For a Member or an Admin, in this order. The text of each step is written by the
 3. **A Card** (the first one on the Board, if there is one; otherwise this step stays on "+ Card") — its status, and that opening it shows its Page.
 4. **Connections** — drawn from one Card to another, with a label (anchored to the Board; says where to drag from).
 5. **Search** — finds Cards; the keyboard shortcut.
-6. **The rail** — To-dos, Suggestions, Branches (and Members, for an Admin).
-7. **The Branch switcher** — a Branch is a private line of work; `main` is what everybody shares.
+6. **The rail** — To-dos, Suggestions, Branches (the Branch Graph, since M15b) (and Members, for an Admin).
+7. **The Branch switcher** — a Branch is a private line of work; `main` is what everybody shares; its **New Branch…** opens the Branch Graph, where any moment can be where a new Branch starts (M15b).
 8. **Checkpoint and History** — name a moment; go back and look.
 9. **The AI sidebar** — asks about the Board; private Conversation; "Pin to Page".
 10. **Runs** — code on a Page runs in the desktop app only, on the Member's own computer, after they approve it. In a browser the step says that the result of the last Run is shown instead.
