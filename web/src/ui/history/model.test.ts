@@ -9,24 +9,27 @@ describe('timeline model', () => {
     expect(lanes.map((l) => l.author)).toEqual(['ana', 'mei', 'gone'])
     expect(lanes[0]!.items.map((i) => [i.activity.id, i.index])).toEqual([
       ['a1', 0],
-      ['a4', 3],
+      ['a5', 4],
     ])
+    expect(lanes[1]!.items.map((i) => i.activity.id)).toEqual(['a2', 'a3']) // Mei's work, split at Kick-off
   })
 
   it('maps scrubber steps to moments: 0 at the start, an Activity end in between, null at now', () => {
     expect(seqForStep(ACTIVITIES, 0)).toBe(0)
     expect(seqForStep(ACTIVITIES, 1)).toBe(3)
-    expect(seqForStep(ACTIVITIES, 3)).toBe(6)
-    expect(seqForStep(ACTIVITIES, 4)).toBeNull()
+    expect(seqForStep(ACTIVITIES, 2)).toBe(4) // Kick-off: a Checkpoint is always a step of its own
+    expect(seqForStep(ACTIVITIES, 4)).toBe(6)
+    expect(seqForStep(ACTIVITIES, 5)).toBeNull()
     expect(seqForStep([], 0)).toBeNull()
   })
 
   it('places a moment on the evenly spaced axis, fractional inside an Activity', () => {
     expect(positionOf(ACTIVITIES, 0)).toBe(0)
     expect(positionOf(ACTIVITIES, 3)).toBe(1)
-    expect(positionOf(ACTIVITIES, 4)).toBe(1.5)
-    expect(positionOf(ACTIVITIES, 9)).toBe(4)
-    expect(positionOf(ACTIVITIES, 99)).toBe(4)
+    expect(positionOf(ACTIVITIES, 4)).toBe(2)
+    expect(positionOf(ACTIVITIES, 8)).toBeCloseTo(4 + 2 / 3)
+    expect(positionOf(ACTIVITIES, 9)).toBe(5)
+    expect(positionOf(ACTIVITIES, 99)).toBe(5)
     expect(positionOf([], 0)).toBe(0)
   })
 
@@ -34,14 +37,15 @@ describe('timeline model', () => {
     expect(activityAt(ACTIVITIES, 0)).toBe(-1)
     expect(activityAt(ACTIVITIES, 3)).toBe(0)
     expect(activityAt(ACTIVITIES, 4)).toBe(1)
-    expect(activityAt(ACTIVITIES, 9)).toBe(3)
+    expect(activityAt(ACTIVITIES, 5)).toBe(2)
+    expect(activityAt(ACTIVITIES, 9)).toBe(4)
     expect(activityAt(ACTIVITIES, 10)).toBe(-1)
   })
 
   it('labels the first Activity of each day', () => {
     expect(dayTicks(ACTIVITIES)).toEqual([
       { index: 0, label: '14 Nov' },
-      { index: 2, label: '15 Nov' },
+      { index: 3, label: '15 Nov' },
     ])
   })
 
@@ -80,8 +84,8 @@ describe('words', () => {
 
   it('writes full labels for blocks and markers', () => {
     expect(activityLabel(ACTIVITIES[0]!, 'Ana Ruiz')).toBe('Ana Ruiz · 14 Nov, 09:00–09:12 · 3 Changes')
-    expect(activityLabel(ACTIVITIES[2]!, 'Former Member')).toBe('Former Member · 15 Nov, 11:00 · 1 Change')
-    expect(activityLabel(ACTIVITIES[3]!, 'Ana Ruiz')).toBe('Ana Ruiz · 15 Nov, 12:00 · Restore · 3 Changes')
+    expect(activityLabel(ACTIVITIES[3]!, 'Former Member')).toBe('Former Member · 15 Nov, 11:00 · 1 Change')
+    expect(activityLabel(ACTIVITIES[4]!, 'Ana Ruiz')).toBe('Ana Ruiz · 15 Nov, 12:00 · Restore · 3 Changes')
     expect(checkpointLabel(CHECKPOINTS[1]!, 'Mei Tanaka')).toBe('Checkpoint Kick-off · named by Mei Tanaka, 14 Nov, 10:30')
   })
 })
