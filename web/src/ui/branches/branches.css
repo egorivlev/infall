@@ -1,0 +1,125 @@
+/* The Branch Graph (/branches; docs/specs/branch-graph.md). Plain and consistent with DESIGN.md; the final look
+   (colours, line shapes, spacing) is M17's design pass. Lane colours are the --q-lane-* tokens of both themes. */
+.qg { container: qg / inline-size; height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+
+.qg-c0 { color: var(--q-lane-0); }
+.qg-c1 { color: var(--q-lane-1); }
+.qg-c2 { color: var(--q-lane-2); }
+.qg-c3 { color: var(--q-lane-3); }
+.qg-c4 { color: var(--q-lane-4); }
+.qg-c5 { color: var(--q-lane-5); }
+.qg-c6 { color: var(--q-lane-6); }
+
+/* ---- the header: the title, and the name field that starts a Branch ---- */
+.qg-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--q-s3) var(--q-s5); padding: var(--q-s4) var(--q-s5) var(--q-s3); border-bottom: 1px solid var(--q-line-soft); }
+.qg-title { display: flex; align-items: baseline; gap: 14px; padding-top: 3px; }
+.qg-h { margin: 0; font: 600 calc(22px * var(--q-text, 1))/1.2 var(--q-serif); }
+.qg-new { flex: 1 1 440px; min-width: 0; max-width: 760px; margin-left: auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; column-gap: var(--q-s3); row-gap: 6px; }
+.qg-new__label { padding-top: 8px; font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); white-space: nowrap; }
+.qg-new__field { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.qg-new .q-input { height: 32px; font-size: calc(13px * var(--q-text, 1)); }
+.qg-new__from { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.4; color: var(--q-ink-2); overflow-wrap: anywhere; }
+.qg-new .q-error { margin: 0; }
+.qg-new .q-btn { height: 32px; }
+@container qg (max-width: 560px) {
+  .qg-new { grid-template-columns: minmax(0, 1fr); }
+  .qg-new__label { padding-top: 0; }
+  .qg-new .q-btn { justify-self: start; }
+}
+
+/* ---- the body: the graph, and beside it the selected dot ---- */
+.qg-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 32%, 340px); }
+@container qg (max-width: 700px) {
+  .qg-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 44%); }
+  .qg-detail { border-left: 0; border-top: 1px solid var(--q-line-soft); }
+}
+/* The graph scrolls inside its box, also sideways when the text column is at its narrowest; the page never does. */
+.qg-scroll { position: relative; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--q-canvas); }
+.qg-scroll:has(.qg-list:focus-visible) { outline: 2px solid var(--q-accent); outline-offset: -2px; }
+.qg-canvas { position: relative; width: 100%; }
+.qg-list { position: absolute; inset: 0; pointer-events: none; }
+.qg-list:focus, .qg-list:focus-visible { outline: none; }
+.qg-labels { position: absolute; inset: 0; pointer-events: none; }
+.qg-status { display: flex; align-items: center; gap: var(--q-s3); padding: var(--q-s5); color: var(--q-ink-3); }
+
+/* ---- a dot's row ---- */
+.qg-row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: var(--q-s2); padding: 0 var(--q-s4) 0 calc(var(--qg-lines-w) + 4px); font-size: calc(12.5px * var(--q-text, 1)); white-space: nowrap; color: var(--q-ink); cursor: pointer; pointer-events: auto; }
+.qg-row:hover { background: color-mix(in oklch, var(--q-hover) 55%, transparent); }
+.qg-row.is-selected { background: var(--q-accent-soft); }
+.qg-list:focus-visible .qg-row.is-selected { box-shadow: inset 3px 0 0 var(--q-accent); }
+.qg-row__who { flex: none; width: 6.5em; overflow: hidden; text-overflow: ellipsis; color: var(--q-ink-2); }
+.qg-row__when { flex: none; min-width: 12ch; font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); font-variant-numeric: tabular-nums; }
+.qg-row__line { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.qg-row__line--start, .qg-row__glyph { color: var(--q-ink-3); }
+.qg-row__wait { flex: 0 1 220px; min-width: 40px; height: 7px; border-radius: 4px; background: var(--q-line-soft); }
+.qg-row__more { flex: none; font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
+.qg-row__cp { flex: none; max-width: 16em; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line); font: 500 calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-2); cursor: pointer; }
+.qg-row__cp:hover { border-color: var(--q-ink-3); color: var(--q-ink); }
+
+/* ---- the drawing: lines, forks, Merges, dots and ◆ (colour from the lane's class, via currentColor) ---- */
+.qg-svg { position: absolute; left: 0; z-index: 1; overflow: visible; pointer-events: none; }
+.qg-svg line, .qg-svg path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.qg-svg .qg-merge-line { stroke-width: 1.6; }
+.qg-svg .qg-dot { fill: currentColor; stroke: var(--q-canvas); stroke-width: 1.5; }
+.qg-svg .qg-hollow { fill: var(--q-canvas); stroke: currentColor; stroke-width: 2; }
+.qg-svg .qg-diamond { fill: currentColor; stroke: var(--q-canvas); stroke-width: 1.2; }
+.qg-svg .qg-diamond--hollow { fill: var(--q-canvas); stroke: currentColor; stroke-width: 1.8; }
+.qg-svg .qg-merge-ring { fill: none; stroke: currentColor; stroke-width: 1.4; }
+.qg-svg .qg-ring { fill: none; stroke: var(--q-accent); stroke-width: 2; }
+.qg-svg .qg-pick { pointer-events: auto; cursor: pointer; }
+
+/* A fork point that can be chosen: a target over its mark. */
+.qg-fork { position: absolute; z-index: 2; border-radius: 50%; pointer-events: auto; cursor: pointer; }
+.qg-list:focus-visible .qg-fork.is-selected { outline: 2px solid var(--q-accent); outline-offset: 1px; }
+
+/* ---- the label at the top end of a Branch's line ---- */
+.qg-label { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: var(--q-s2); padding: 0 var(--q-s4) 0 calc(var(--qg-lines-w) + 4px); white-space: nowrap; font-size: calc(12px * var(--q-text, 1)); }
+.qg-label > * { pointer-events: auto; }
+.qg-label__swatch { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.qg-label__name { flex: none; max-width: 18em; overflow: hidden; text-overflow: ellipsis; font: 600 calc(12.5px * var(--q-text, 1))/1.2 var(--q-mono); color: var(--q-ink); }
+.qg-label__open { flex: none; }
+.qg-label__meta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--q-ink-3); }
+.qg-label__acts { flex: none; display: flex; gap: 6px; }
+.qg-label .q-btn { height: 22px; padding: 0 7px; font-size: calc(11.5px * var(--q-text, 1)); color: var(--q-ink); }
+.qg-label a.q-btn:hover { text-decoration: none; background: var(--q-hover); }
+.qg-label__merge { gap: 0; white-space: pre; }
+.qg-label__target { font-family: var(--q-mono); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- beside the graph: the selected dot ---- */
+.qg-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: var(--q-s3) var(--q-s4); border-left: 1px solid var(--q-line-soft); background: var(--q-surface); }
+.qg-detail > .qg-detail__note { margin-top: var(--q-s4); }
+.qg-detail__scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--q-s2); }
+.qg-detail__note { margin: 0; color: var(--q-ink-2); font-size: calc(13px * var(--q-text, 1)); line-height: 1.45; text-wrap: pretty; }
+.qg-detail__keys { margin: var(--q-s2) 0 0; font-size: calc(11.5px * var(--q-text, 1)); line-height: 1.9; color: var(--q-ink-3); }
+.qg-detail__keys kbd { font: calc(10.5px * var(--q-text, 1))/1 var(--q-mono); padding: 1px 4px; border: 1px solid var(--q-line); border-radius: var(--q-r-chip); color: var(--q-ink-2); }
+.qg-detail__branch { display: flex; align-items: center; gap: var(--q-s2); min-width: 0; }
+.qg-detail__bname { min-width: 0; font: 600 calc(13px * var(--q-text, 1))/1.3 var(--q-mono); overflow-wrap: anywhere; }
+.qg-detail__who { display: flex; align-items: center; gap: var(--q-s2); min-width: 0; }
+.qg-detail__who .qh-avatar { font-size: calc(9px * var(--q-text, 1)); }
+.qg-detail__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qg-detail__when { font: calc(11.5px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qg-detail__count { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
+.qg-detail__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--q-s1); font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); }
+.qg-detail__lines li { padding-left: 10px; text-indent: -10px; overflow-wrap: anywhere; }
+.qg-detail__lines li::before { content: '· '; }
+.qg-detail__hint { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-3); }
+.qg-detail__source { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.6; color: var(--q-ink-2); }
+.qg-detail__cps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.qg-detail__cps li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.qg-detail__cp { max-width: 100%; padding: 2px 7px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line); background: transparent; font: 500 calc(11.5px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink); overflow-wrap: anywhere; text-align: left; cursor: pointer; }
+.qg-detail__cp:hover { background: var(--q-hover); }
+.qg-detail__cp.is-chosen { border-color: var(--q-accent); background: var(--q-accent-soft); }
+.qg-detail__cpmeta { font-size: calc(11.5px * var(--q-text, 1)); color: var(--q-ink-3); }
+.qg-detail__acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--q-s1); padding-top: var(--q-s3); border-top: 1px solid var(--q-line-soft); }
+.qg-detail__form { display: flex; flex-direction: column; gap: 6px; padding-top: var(--q-s1); }
+.qg-detail__form .q-input { height: 30px; }
+.qg-detail__form .q-error { margin: 0; }
+.qg-detail__formacts { display: flex; gap: 6px; }
+.qg-changes { display: flex; flex-direction: column; gap: 6px; padding-top: var(--q-s2); }
+.qg-changes__h { margin: 0; display: flex; align-items: baseline; gap: var(--q-s2); font: 600 calc(12.5px * var(--q-text, 1))/1.3 var(--q-sans); }
+.qg-changes__h .q-mono { font-weight: 400; font-size: calc(11px * var(--q-text, 1)); color: var(--q-ink-3); }
+.qg-changes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: calc(12px * var(--q-text, 1)); }
+.qg-changes__list li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.qg-changes__when { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qg-changes__who { color: var(--q-ink-2); white-space: nowrap; }
+.qg-changes__line { overflow-wrap: anywhere; }
