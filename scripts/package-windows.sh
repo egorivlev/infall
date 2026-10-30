@@ -16,6 +16,10 @@
 # None of these asks anyone to accept a licence. Microsoft's own compiler and SDK are
 # deliberately not used: they do.
 #
+# Run on macOS (Homebrew's mingw-w64, which links the Universal CRT) and, since M16, on Ubuntu
+# 22.04 in a container (mingw-w64 8, NSIS 3.08, which link the older msvcrt.dll; both are part of
+# Windows). The continuous build runs it on Ubuntu 24.04 (.github/workflows/package.yml).
+#
 # The app compiles the Infall server (crates/server) into itself. Its C parts are compiled by
 # x86_64-w64-mingw32-gcc, the same compiler as above: SQLite (rusqlite's bundled copy) and
 # AWS-LC (aws-lc-sys, the cryptography under rustls, which reqwest uses). Nothing else is needed
@@ -164,10 +168,14 @@ web_marker="$(sed -n 's/.*src="\/\(assets\/[^"]*\.js\)".*/\1/p' "$web/dist/index
 # --- Build ------------------------------------------------------------------------------------
 # custom-protocol: the app's own files (desktop/ui) are served from inside the binary.
 # No `devtools` feature anywhere, so there is no web inspector (see Cargo.toml).
+# The C parts are compiled for Windows 10 and newer, whatever mingw-w64 assumes by itself: older
+# mingw-w64 (Ubuntu 22.04's, version 8) assumes Windows XP, and SQLite then does not compile
+# ("'GetTickCount64' undeclared", seen in M16); newer ones assume Windows 10 already.
 say "Building (release, custom-protocol, $target)"
 (
     cd "$app_src"
     CARGO_INCREMENTAL=0 \
+    CFLAGS_x86_64_pc_windows_gnu="${CFLAGS_x86_64_pc_windows_gnu:-} -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00" \
         cargo build --release --locked -p "$binary" --features custom-protocol --target "$target"
 )
 out="$app_src/target/$target/release"

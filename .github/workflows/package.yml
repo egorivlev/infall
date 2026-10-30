@@ -1,0 +1,150 @@
+# The installers, on every push and pull request, each built by the script a person runs by
+# hand (docs/specs/release.md, section 9), and kept as the run's artifacts:
+#
+#   macOS arm64, macOS x64   scripts/package-macos.sh --no-verify, on a Mac of that kind
+#   Windows x64              scripts/package-windows.sh, cross-compiled on Ubuntu with mingw-w64
+#                            and NSIS, as from any Linux machine (the program is never started:
+#                            the CI workflow's Windows job compiles and tests it natively)
+#   Ubuntu amd64, arm64      scripts/package-linux.sh <arch>, on a runner of that kind, with
+#                            the script's own checks: installed in clean Ubuntu 22.04 and 24.04
+#                            containers, started with no network under a virtual display, a
+#                            Tutorial Workspace created and its server asked on 127.0.0.1
+#
+# Not signed (docs/plans/2026-11-24-road-to-1.0.md, M20). An artifact is a build for testing,
+# not a release: hand out only a file whose SHA-256 the job log prints.
+name: Packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.96.0"
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: package-macos
+      # --no-verify: the start check opens a window and lists it; on a shared runner that is
+      # not something to rely on. The check is run by hand before a release.
+      - name: Package
+        run: scripts/package-macos.sh --no-verify
+      - name: Name the disk image after its processor
+        run: |
+          cd dist
+          for dmg in *.dmg; do mv "$dmg" "${dmg%.dmg}-${{ matrix.arch }}.dmg"; done
+          shasum -a 256 ./*.dmg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: infall-macos-${{ matrix.arch }}
+          path: dist/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: mingw-w64 and NSIS
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mingw-w64 nsis
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Rust ${{ env.RUST_TOOLCHAIN }} for x86_64-pc-windows-gnu
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target x86_64-pc-windows-gnu
+          rustup default "$RUST_TOOLCHAIN"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: package-windows
+      - name: Package
+        run: scripts/package-windows.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: infall-windows-x64
+          path: dist/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  ubuntu:
+    name: Ubuntu ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      # Instead of the script's Docker volume, a folder this cache keeps between runs:
+      # downloaded crates, npm's cache and cargo's build output (QOOP_PACKAGE_CACHE below).
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/package-linux-cache
+          key: package-linux-${{ matrix.arch }}-rust${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'desktop/src-tauri/Cargo.lock', 'web/package-lock.json') }}
+          restore-keys: |
+            package-linux-${{ matrix.arch }}-rust${{ env.RUST_TOOLCHAIN }}-
+      - name: Package and check
+        env:
+          QOOP_PACKAGE_CACHE: ${{ runner.temp }}/package-linux-cache
+          QOOP_PACKAGE_RUST: ${{ env.RUST_TOOLCHAIN }}
+        run: scripts/package-linux.sh ${{ matrix.arch }}
+      # The build runs as root in its container; the cache is saved by this runner's user.
+      - name: Hand the cache back to the runner's user
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "${{ runner.temp }}/package-linux-cache" || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: infall-ubuntu-${{ matrix.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14

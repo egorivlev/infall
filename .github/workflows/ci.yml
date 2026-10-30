@@ -1,0 +1,117 @@
+# The three test suites, on every push and pull request (docs/specs/release.md, section 9).
+#
+#   server    root `cargo test` (crates/core, crates/server), Ubuntu
+#   web       web/: typecheck, lint, tests, build, Ubuntu
+#   desktop   desktop/src-tauri `cargo test` (the app, driver, proc, runner) on Ubuntu,
+#             macOS and Windows: the app's platform code compiles and its tests pass on each.
+#
+# Rust is the version the Ubuntu package is built with (scripts/package-linux.sh,
+# QOOP_PACKAGE_RUST); Node.js the major the packages are built with.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.96.0"
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server
+      - name: cargo test
+        run: cargo test --locked
+
+  web:
+    name: Web UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  desktop:
+    name: Desktop tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            runner: ubuntu-24.04
+          - name: macOS
+            runner: macos-15
+          - name: Windows
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Libraries the app links (WebKitGTK 4.1, GTK 3)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+            libgtk-3-dev libdbus-1-dev
+      # The app embeds web/dist when it is compiled (desktop/src-tauri/build.rs), tests included.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: desktop
+      # The Runner's tests against a real Python use the runner's own Python (no matplotlib:
+      # the figure tests say SKIPPED and pass). Most of them are Unix-only (cfg(unix)).
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test --locked
