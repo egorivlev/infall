@@ -256,7 +256,7 @@ In Docker it creates only things named `qoop-package-linux…` (one image per ar
 
 To forget everything, Local Workspaces included, which exist nowhere else: `rm -rf ~/.config/app.qoop.desktop ~/.local/share/app.qoop.desktop`.
 
-**The menu** is a bar in each window with one menu, **Infall**: Switch Workspace…, Runner settings…, Quit (Ctrl+Q). GTK cannot draw most of the items the macOS menu has (it would show them greyed out, Quit included), so on Linux they are left out (`build_menu` in `src/shell.rs`); copy and paste work from the keyboard and the page's own context menu.
+**The menu** is a bar in each window with two menus: **Infall** (Switch Workspace…, Runner settings…, Quit (Ctrl+Q)) and **Edit** (Undo and Redo, greyed out unless the page names a step; no keyboard shortcuts on Linux, so Ctrl+Z reaches text fields — the page handles it). GTK cannot draw most of the items the macOS menu has (it would show them greyed out, Quit included), so on Linux they are left out (`build_menu` in `src/shell.rs`); copy and paste work from the keyboard and the page's own context menu.
 
 ### What the Runner does and does not do on Linux
 
