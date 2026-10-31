@@ -374,3 +374,54 @@ Verified on macOS 26.5 arm64, Python 3.12.13, in a throwaway virtual environment
 Read from PyPI, not run: `qdk` 1.34.0 has wheels for macOS arm64 (11.0+) and x64 (10.12+), Linux x64 and arm64 (`manylinux_2_28`, glibc 2.28+), Windows x64 and arm64, all `cp310-abi3` (any CPython 3.10 or newer; the package requires `>=3.10`). `pyqir` 0.12.8 has the same platforms.
 
 Not verified, to confirm in M16/M19b on each system: Windows x64 and Linux (x64, arm64) — the import, the output through the pipe, `-X utf8` with non-Latin text, stopping (a job object on Windows), and that nothing is written outside the Run's directory; a Python older than 3.10 when the switch is turned on.
+
+# M15 — Undo in the Edit menu
+
+The Edit menu's **Undo** and **Redo** name the open Branch's next step and take it ([undo.md](undo.md), decisions 6, 7 and 11). The web UI does all the undoing; the app shows what the page says and passes a click on to it.
+
+## The keys are the page's
+**On every platform the page handles Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z and Ctrl+Y itself, as in a browser. The menu never acts on these keys in its place.** For the web UI this means:
+- When focus is not in a field being edited, act on the key **and call `preventDefault()` on the event**. Do that also when all it does is say "Nothing to undo".
+- When focus is in a field being edited, leave the event alone (no `preventDefault()`). The field's own text undo then happens, on macOS through the system's Edit menu item.
+- Do not look for the desktop app. There is no flag to check: the handler is the same as in a browser.
+
+Why one press is one undo:
+- **macOS.** WKWebView gives a key pressed with ⌘ to the page first. It passes the key on to the menu only when the page did not prevent its default (it sends the unhandled event to the application again). The items keep the key equivalents the system's items had (⌘Z, ⇧⌘Z). So a key the page took never reaches the menu, and a key it left reaches the system's text undo.
+- **Windows.** The items keep the keys the system's items had (Ctrl+Z, Ctrl+Y). The web view has the keyboard, so the page gets the key.
+- **Linux.** The items have no key. GTK gives a menu's keys to the menu before the focused web view, so a Ctrl+Z there would take text undo away from every field.
+
+## What each item is
+Undo and Redo each follow one rule (`bridge::edit_item`):
+- **The main window has focus and its page names a step**: the app's own item, titled with the step ("Undo Move 3 Cards"). Choosing it calls the page's `undo()` or `redo()`.
+- **Otherwise, on macOS and Windows**: the system's own item, exactly as before M15. Text fields in the page, on the start screen and in the Runner settings keep their undo. The two items are swapped in place and are never in the menu together, since they have the same key. The system's item is never greyed out, on macOS either: the menu library turns off the system's automatic enabling of items, so nothing asks the focused field whether it has anything to undo. Choosing the system's item with nothing to undo does nothing.
+- **Otherwise, on Linux**: the app's own item, plain "Undo" or "Redo", greyed out. GTK has no working system item. On Linux the menu bar has a second menu, **Edit**, with just these two items.
+
+The page's state is `{ undo: null, redo: null }` both when there is nothing to do and while a field is being edited. The app cannot tell these apart, so in both cases it falls back to the system's item.
+
+The title is the page's label, made one line of plain text: control characters become spaces, runs of space become one, and characters that change the direction of text are removed. A label that does not start with the item's verb gets it put in front: whatever a page says, the item starts with what it does. At most 80 characters, cut with "…".
+
+## How the menu learns the page's state
+Only through the bridge, under its rules (the open Workspace's origin, the top frame, the main window, the bridge key). The page gets nothing new: `window.qoopDesktop` is unchanged.
+- The bridge script watches the page's `window.__infallUndo`. It sees the object as soon as the page sets it, through an accessor the script puts on `window` before the page's scripts run. When it finds the object, it calls `subscribe`. When `state()` gives two labels other than the last ones sent, it posts them to the app with the bridge command `undo_state` (`{ key, undo: string | null, redo: string | null }`, each label at most 200 characters). Posts are sent one at a time, in order, and only when something changed.
+- It also reads `state()` again after every `focusin`, `focusout`, `pointerup` and `keyup`. Entering or leaving a field changes what the menu should be, even if the page does not notify. This also covers a page that sets its object without assigning to `window.__infallUndo`. **The web UI's `subscribe` should still notify on every change of `state()`, focus included.** Then the title is right also for Changes that arrive without a gesture (a Merge clears the list).
+- `undo_state` is refused unless the call passes `bridge::check_caller`, like every bridge command. It is never accepted from the start screen, the Runner settings or an approval window, or from another origin.
+- The app pulls nothing. muda, the menu library, has no "menu will open" event, so the page has to push.
+- When the main window's page starts loading or the window is destroyed, the steps are forgotten. When the window gains or loses focus, both items are decided again.
+- Without the object (an older web UI, a Team server's page that is not Infall's) nothing is posted. The menu is then exactly what it was before M15.
+
+The main window's bridge grants eleven commands: those of M13 and `undo_state`.
+
+## Choosing the app's own item
+The app runs a short script in the main window's page, and only while that window still shows the open Workspace's origin (`bridge::page_step_script`). The script checks `state()` once more. If the state still names a step, it calls the page's own `undo()` or `redo()`. If not (a field was entered after the menu was last told), it runs `document.execCommand('undo')` (or `'redo'`), which is what the system's item would have done. Errors stay in the page.
+
+## Not in M15
+A menu item that tells "nothing to undo" apart from "a field is being edited" (the page's state does not say which). An Undo item for the start screen or the Runner windows beyond the system's own. Key equivalents on Linux.
+
+**Seen on macOS 26.5 (arm64)**, in a scratch build against a fake page object, with the app driven from the background:
+- the page's state reached the menu: Undo became the app's own item, "Undo Rename R&D" (the `&` shown once);
+- choosing it called the page's `undo()` once. Through `subscribe` the titles then moved to "Undo Move 3 Cards" and "Redo Rename R&D";
+- choosing Redo called `redo()` once and put the system's Redo back.
+
+That build treated the main window as focused, because a window of an app in the background is never the focused one. In the real build, run the same way, the items stayed the system's own, as the rule says.
+
+**Not seen:** the focus rule switching to the app's own items in a frontmost window; a real ⌘Z (WebKit giving the key to the page first, and `preventDefault()` keeping it from the menu); the fallback to text undo in a field; Windows; Linux.
