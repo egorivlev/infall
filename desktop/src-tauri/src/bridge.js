@@ -203,6 +203,99 @@
     };
   }
 
+  // Undo (M15). The page's own `window.__infallUndo` says what Undo and Redo would do; this
+  // tells the app, whose Edit menu names the step and calls the page's own `undo()` and
+  // `redo()`. Only the two labels go to the app, with the key, and nothing comes back. With
+  // no such object (an older web UI, another server's pages) nothing is sent, and the menu
+  // stays the system's own. The keys are the page's: see docs/specs/desktop.md, M15.
+  var MAX_STEP_LABEL = 200;
+  var undoValue; // what the page set as `window.__infallUndo`
+  var undoWatched; // the object subscribed to, and its unsubscribe
+  var undoStop = null;
+  var sentUndo = null; // what the app was last told
+  var sentRedo = null;
+  var undoQueued = false;
+  var undoBusy = false; // a state is on its way to the app; another waits behind it
+  var undoAgain = false;
+
+  function undoLabel(state, which) {
+    var label = state ? state[which] : null;
+    return typeof label === 'string' && label !== '' ? label.slice(0, MAX_STEP_LABEL) : null;
+  }
+
+  function tellUndo() {
+    undoQueued = false;
+    var source = window.__infallUndo;
+    if (source !== undoWatched) {
+      if (undoStop) {
+        try {
+          undoStop();
+        } catch (error) {}
+      }
+      undoStop = null;
+      undoWatched = source;
+      try {
+        if (source && typeof source.subscribe === 'function') {
+          var stop = source.subscribe(queueUndo);
+          if (typeof stop === 'function') undoStop = stop;
+        }
+      } catch (error) {}
+    }
+    var undo = null;
+    var redo = null;
+    try {
+      var state = source && typeof source.state === 'function' ? source.state() : null;
+      undo = undoLabel(state, 'undo');
+      redo = undoLabel(state, 'redo');
+    } catch (error) {
+      undo = redo = null;
+    }
+    if (undo === sentUndo && redo === sentRedo) return;
+    if (undoBusy) {
+      undoAgain = true;
+      return;
+    }
+    undoBusy = true;
+    sentUndo = undo;
+    sentRedo = redo;
+    function sent() {
+      undoBusy = false;
+      if (undoAgain) {
+        undoAgain = false;
+        queueUndo();
+      }
+    }
+    call('undo_state', { undo: undo, redo: redo }).then(sent, sent);
+  }
+
+  function queueUndo() {
+    if (undoQueued) return;
+    undoQueued = true;
+    setTimeout(tellUndo, 0);
+  }
+
+  // Seen as soon as the page sets it (this script runs before the page's own).
+  try {
+    if (!Object.prototype.hasOwnProperty.call(window, '__infallUndo')) {
+      Object.defineProperty(window, '__infallUndo', {
+        configurable: true,
+        enumerable: false,
+        get: function () {
+          return undoValue;
+        },
+        set: function (value) {
+          undoValue = value;
+          queueUndo();
+        }
+      });
+    }
+  } catch (error) {}
+  // And looked at again after every focus change and gesture: entering or leaving a field
+  // changes what the menu should do, and the page may have put its object there another way.
+  ['focusin', 'focusout', 'pointerup', 'keyup'].forEach(function (type) {
+    window.addEventListener(type, queueUndo, true);
+  });
+
   Object.defineProperty(window, 'qoopDesktop', {
     value: Object.freeze({
       version: VERSION,

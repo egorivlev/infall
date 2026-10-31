@@ -16,15 +16,19 @@ use qoop_server::local::{
 };
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{CapabilityBuilder, Channel};
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{
+    MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder,
+};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, RunEvent, State, Url, Webview, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
+    WindowEvent, Wry,
 };
 
 use crate::address::{self, Navigation};
-use crate::bridge::{self, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest};
+use crate::bridge::{
+    self, EditItem, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest, Step, UndoSteps,
+};
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
 use crate::webui;
 use crate::workspaces::{self, Entry, Kind, Registry};
@@ -33,6 +37,8 @@ const SWITCH_WORKSPACE: &str = "switch-workspace";
 const RUNNER_SETTINGS: &str = "runner-settings";
 #[cfg(target_os = "linux")]
 const QUIT: &str = "quit";
+const UNDO: &str = "undo";
+const REDO: &str = "redo";
 
 /// How long quitting waits for Runs, `claude` and the embedded server to stop.
 const EXIT_BUDGET: Duration = Duration::from_secs(4);
@@ -227,6 +233,7 @@ pub fn run() {
             switch_workspace,
             save_file,
             print_page,
+            undo_state,
             runner_status,
             runner_configure,
             runner_run,
@@ -285,6 +292,8 @@ pub fn run() {
             RUNNER_SETTINGS => {
                 let _ = open_runner_settings(app);
             }
+            UNDO => page_step(app, Step::Undo),
+            REDO => page_step(app, Step::Redo),
             #[cfg(target_os = "linux")]
             QUIT => app.exit(0),
             _ => {}
@@ -328,7 +337,8 @@ pub fn run() {
 /// The menu on Linux, a bar in every window. GTK draws most of the predefined items of the
 /// menu below greyed out (Quit among them), and its copy and paste items do nothing without
 /// a library that fakes key presses: so only the app's own two items, and a Quit that works.
-/// Copy and paste work from the keyboard and the page's own context menu.
+/// Copy and paste work from the keyboard and the page's own context menu. Since M15 also an
+/// Edit menu with the app's own Undo and Redo (see `EditMenu`).
 #[cfg(target_os = "linux")]
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let switch = MenuItemBuilder::with_id(SWITCH_WORKSPACE, "Switch Workspace…").build(app)?;
@@ -343,7 +353,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .separator()
         .item(&quit)
         .build()?;
-    app.set_menu(MenuBuilder::new(app).item(&app_menu).build()?)?;
+    let edit = EditMenu::build(app, |edit| edit)?;
+    app.set_menu(MenuBuilder::new(app).item(&app_menu).item(&edit).build()?)?;
     Ok(())
 }
 
@@ -364,16 +375,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .separator()
         .quit()
         .build()?;
-    // Without an Edit menu, copy and paste shortcuts do nothing on macOS.
-    let edit = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
-        .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
-        .build()?;
+    // Without an Edit menu, copy and paste shortcuts do nothing on macOS. Undo and Redo: see
+    // `EditMenu`.
+    let edit = EditMenu::build(app, |edit| {
+        edit.separator().cut().copy().paste().select_all()
+    })?;
     let window = SubmenuBuilder::new(app, "Window")
         .minimize()
         .fullscreen()
@@ -449,6 +455,8 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     // printing the page (macOS; see `bridge::OWN_PRINT`).
                     .permission("allow-save-file")
                     .permission("allow-print-page")
+                    // What the page's Undo and Redo would do, for the Edit menu (M15).
+                    .permission("allow-undo-state")
                     // The top bar's first row is the window's title bar (macOS has none of
                     // its own, see below): pressing on an empty part of it moves the window,
                     // a double click zooms it. Nothing else about the window is reachable.
@@ -491,6 +499,8 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
             if payload.event() == PageLoadEvent::Started {
                 window.state::<AppState>().run.cancel();
                 window.state::<RunnerState>().cancel_all();
+                // Its steps went with it.
+                EditMenu::page_said(window.app_handle(), UndoSteps::default());
             }
         });
     // On macOS the page draws the title bar: its top row (30px) holds the traffic lights,
@@ -522,6 +532,9 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
     let runs = runner(app);
     let closed_app = app.clone();
     window.on_window_event(move |event| {
+        if let WindowEvent::Focused(focused) = event {
+            EditMenu::main_focused(&closed_app, *focused);
+        }
         if matches!(
             event,
             WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
@@ -530,6 +543,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
             runs.cancel_all();
         }
         if matches!(event, WindowEvent::Destroyed) {
+            EditMenu::page_said(&closed_app, UndoSteps::default());
             // The Workspace is left: its server stops.
             let state = closed_app.state::<AppState>();
             let mut open = state.open.lock().unwrap();
@@ -1253,6 +1267,191 @@ async fn print_page(
     webview
         .print()
         .map_err(|_| "The page could not be printed.".to_owned())
+}
+
+/// What the page's Undo and Redo would do now (`window.__infallUndo.state()`, sent by the
+/// bridge script), for the Edit menu's two items. The page gets nothing back.
+#[tauri::command]
+fn undo_state(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    undo: Option<String>,
+    redo: Option<String>,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    EditMenu::page_said(&app, UndoSteps::from_page(undo.as_deref(), redo.as_deref()));
+    Ok(())
+}
+
+// ---- Undo and Redo in the Edit menu (docs/specs/undo.md, decision 11; desktop.md, M15) ---
+//
+// The keys are the page's: the menu takes none it did not take before M15. Each item is,
+// by `bridge::edit_item`, the app's own item naming the page's step while the main window
+// has focus and its page names one, and otherwise the system's own item (macOS, Windows)
+// or a greyed-out one (Linux, where GTK has no working system item).
+
+/// The app's own items' key equivalents: those of the system's items they stand in for, so
+/// that swapping one for the other changes no key. None on Linux: GTK lets a menu's keys go
+/// before the focused web view, so a Ctrl+Z there would take text undo from every field.
+fn step_keys(step: Step) -> Option<&'static str> {
+    match step {
+        Step::Undo if cfg!(target_os = "macos") => Some("Cmd+Z"),
+        Step::Redo if cfg!(target_os = "macos") => Some("Cmd+Shift+Z"),
+        Step::Undo if cfg!(windows) => Some("Ctrl+Z"),
+        Step::Redo if cfg!(windows) => Some("Ctrl+Y"),
+        _ => None,
+    }
+}
+
+struct EditSlot {
+    step: Step,
+    /// Its place at the top of the Edit menu.
+    index: usize,
+    own: MenuItem<Wry>,
+    /// The system's own item; none on Linux.
+    system: Option<PredefinedMenuItem<Wry>>,
+}
+
+impl EditSlot {
+    fn new(app: &AppHandle, step: Step, id: &str, index: usize) -> tauri::Result<EditSlot> {
+        let mut own = MenuItemBuilder::with_id(id, step.verb()).enabled(false);
+        if let Some(keys) = step_keys(step) {
+            own = own.accelerator(keys);
+        }
+        let system = match step {
+            _ if cfg!(target_os = "linux") => None,
+            Step::Undo => Some(PredefinedMenuItem::undo(app, None)?),
+            Step::Redo => Some(PredefinedMenuItem::redo(app, None)?),
+        };
+        Ok(EditSlot {
+            step,
+            index,
+            own: own.build(app)?,
+            system,
+        })
+    }
+
+    /// Makes the item `item`, which until now was `before` (`None`: as built).
+    fn show(&self, edit: &Submenu<Wry>, item: &EditItem, before: Option<&EditItem>) {
+        let own = match item {
+            EditItem::Step(title) => {
+                let _ = self.own.set_text(bridge::menu_text(title));
+                let _ = self.own.set_enabled(true);
+                true
+            }
+            EditItem::Off => {
+                let _ = self.own.set_text(self.step.verb());
+                let _ = self.own.set_enabled(false);
+                true
+            }
+            EditItem::System => false,
+        };
+        let Some(system) = &self.system else {
+            return;
+        };
+        // Never both at once: they have the same key.
+        let own_shown = matches!(before, Some(EditItem::Step(_) | EditItem::Off));
+        if own && !own_shown {
+            let _ = edit.remove(system);
+            let _ = edit.insert(&self.own, self.index);
+        } else if !own && own_shown {
+            let _ = edit.remove(&self.own);
+            let _ = edit.insert(system, self.index);
+        }
+    }
+}
+
+/// The Edit menu's Undo and Redo, managed as app state once the menu is built.
+struct EditMenu {
+    edit: Submenu<Wry>,
+    slots: [EditSlot; 2],
+    /// What the page last said, and what each item is now (`None`: as built).
+    shown: Mutex<(UndoSteps, [Option<EditItem>; 2])>,
+}
+
+impl EditMenu {
+    /// The Edit menu: Undo and Redo, then what `below` adds.
+    fn build(
+        app: &AppHandle,
+        below: impl FnOnce(SubmenuBuilder<'_, Wry, AppHandle>) -> SubmenuBuilder<'_, Wry, AppHandle>,
+    ) -> tauri::Result<Submenu<Wry>> {
+        let slots = [
+            EditSlot::new(app, Step::Undo, UNDO, 0)?,
+            EditSlot::new(app, Step::Redo, REDO, 1)?,
+        ];
+        let mut edit = SubmenuBuilder::new(app, "Edit");
+        for slot in &slots {
+            edit = match &slot.system {
+                Some(system) => edit.item(system),
+                None => edit.item(&slot.own),
+            };
+        }
+        let edit = below(edit).build()?;
+        app.manage(EditMenu {
+            edit: edit.clone(),
+            slots,
+            shown: Mutex::default(),
+        });
+        Ok(edit)
+    }
+
+    /// What the main window's page said (nothing, when it went away).
+    fn page_said(app: &AppHandle, steps: UndoSteps) {
+        Self::refresh(app, Some(steps), None);
+    }
+
+    /// The main window gained or lost focus.
+    fn main_focused(app: &AppHandle, focused: bool) {
+        Self::refresh(app, None, Some(focused));
+    }
+
+    /// On the main thread, where the menu lives (and where every caller already is: commands
+    /// without `async`, menu, window and page events run there, so this happens at once).
+    fn refresh(app: &AppHandle, steps: Option<UndoSteps>, focused: Option<bool>) {
+        let app = app.clone();
+        let _ = app.clone().run_on_main_thread(move || {
+            let Some(menu) = app.try_state::<EditMenu>() else {
+                return;
+            };
+            let mut shown = menu.shown.lock().unwrap();
+            if let Some(steps) = steps {
+                shown.0 = steps;
+            }
+            let named = shown.0 != UndoSteps::default();
+            let focused = named
+                && focused.unwrap_or_else(|| {
+                    app.get_webview_window(MAIN_WINDOW)
+                        .and_then(|main| main.is_focused().ok())
+                        .unwrap_or(false)
+                });
+            for (i, slot) in menu.slots.iter().enumerate() {
+                let item =
+                    bridge::edit_item(shown.0.get(slot.step), focused, slot.system.is_some());
+                if shown.1[i].as_ref() != Some(&item) {
+                    slot.show(&menu.edit, &item, shown.1[i].as_ref());
+                    shown.1[i] = Some(item);
+                }
+            }
+        });
+    }
+}
+
+/// The app's own Undo or Redo was chosen: the main window's page does it (see
+/// `bridge::page_step_script`), if that window still shows the open Workspace.
+fn page_step(app: &AppHandle, step: Step) {
+    let Some(main) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    let origin = app.state::<AppState>().granted.lock().unwrap().clone();
+    let on_origin = matches!(
+        (main.url().ok(), origin),
+        (Some(page), Some(origin)) if address::same_origin(&page, &origin)
+    );
+    if on_origin {
+        let _ = main.eval(bridge::page_step_script(step));
+    }
 }
 
 /// Is the `claude` command available on this machine (`claude --version`).

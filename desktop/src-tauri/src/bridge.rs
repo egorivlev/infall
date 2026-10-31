@@ -127,6 +127,134 @@ pub fn check_approval_caller(window: &str, page: Option<&Url>) -> Result<u64, St
     }
 }
 
+// ---- Undo and Redo in the Edit menu (docs/specs/undo.md, decision 11; desktop.md, M15) ---
+
+/// One of the Edit menu's two items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Undo,
+    Redo,
+}
+
+impl Step {
+    /// The item's plain title, and the word its titles start with.
+    pub fn verb(self) -> &'static str {
+        match self {
+            Step::Undo => "Undo",
+            Step::Redo => "Redo",
+        }
+    }
+}
+
+/// The longest title the menu shows for a step, in characters, "…" included.
+pub const MAX_STEP_TITLE: usize = 80;
+
+/// What the page's `window.__infallUndo.state()` last said, as the menu may show it: the
+/// title of the step Undo would take back and of the one Redo would do again. `None` is
+/// "nothing named": nothing to do, or a text field being edited (the page does not say which).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UndoSteps {
+    pub undo: Option<String>,
+    pub redo: Option<String>,
+}
+
+impl UndoSteps {
+    /// From the labels the bridge script sent (each a string or null).
+    pub fn from_page(undo: Option<&str>, redo: Option<&str>) -> UndoSteps {
+        UndoSteps {
+            undo: undo.and_then(|label| step_title(Step::Undo, label)),
+            redo: redo.and_then(|label| step_title(Step::Redo, label)),
+        }
+    }
+
+    pub fn get(&self, step: Step) -> Option<&str> {
+        match step {
+            Step::Undo => self.undo.as_deref(),
+            Step::Redo => self.redo.as_deref(),
+        }
+    }
+}
+
+/// The menu title for a step the page names. The page's labels are already titles ("Undo
+/// Move 3 Cards"); a label without the verb gets it put in front, so whatever a page says,
+/// the item starts with what it does. Made one short line of plain text: no control
+/// characters, nothing that turns the direction of the text around, runs of space as one.
+/// `None` when nothing is left.
+pub fn step_title(step: Step, label: &str) -> Option<String> {
+    let plain: String = label
+        .chars()
+        .filter(|&c| !is_direction_control(c))
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let text = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+    let verb = step.verb();
+    let title = match text.strip_prefix(verb) {
+        Some(rest) if rest.is_empty() || rest.starts_with(' ') => text,
+        _ => format!("{verb} {text}"),
+    };
+    if title.chars().count() <= MAX_STEP_TITLE {
+        return Some(title);
+    }
+    let kept: String = title.chars().take(MAX_STEP_TITLE - 1).collect();
+    Some(format!("{}…", kept.trim_end()))
+}
+
+fn is_direction_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// A title as the menu library takes it: there `&` marks a mnemonic, `&&` is one `&`.
+pub fn menu_text(title: &str) -> String {
+    title.replace('&', "&&")
+}
+
+/// What one of the two items is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditItem {
+    /// The app's own item, with this title, calling the page's own `undo()` or `redo()`.
+    Step(String),
+    /// The system's own item: the text undo of whatever field has focus, in any window, as
+    /// before M15 (macOS, Windows).
+    System,
+    /// The app's own item, plainly "Undo" or "Redo", greyed out: where there is no system
+    /// item (Linux).
+    Off,
+}
+
+/// The rule for each item: the page's step only while the main window has focus and its page
+/// names one; otherwise the system's own item, so text fields — in the page, on the start
+/// screen, in the Runner settings — keep their own undo; and where there is none, nothing.
+pub fn edit_item(title: Option<&str>, main_focused: bool, has_system_item: bool) -> EditItem {
+    match title {
+        Some(title) if main_focused => EditItem::Step(title.to_owned()),
+        _ if has_system_item => EditItem::System,
+        _ => EditItem::Off,
+    }
+}
+
+/// What the app's own item runs in the main window's page: the page's own `undo()` or
+/// `redo()` while its state still names a step; otherwise (a field was entered after the menu
+/// was last told) the web view's text undo, which is what the system's item would have done.
+pub fn page_step_script(step: Step) -> String {
+    const SCRIPT: &str = "(function () { try { var u = window.__infallUndo; \
+var s = u && typeof u.state === 'function' ? u.state() : null; \
+if (s && typeof s.STEP === 'string' && s.STEP !== '' && typeof u.STEP === 'function') u.STEP(); \
+else document.execCommand('STEP'); } catch (e) {} })();";
+    SCRIPT.replace(
+        "STEP",
+        match step {
+            Step::Undo => "undo",
+            Step::Redo => "redo",
+        },
+    )
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len()
         && !a.is_empty()
@@ -534,6 +662,202 @@ mod tests {
         assert!(!js.contains("</script>"));
         assert!(js.contains(r#"var VERSION = "1\n2";"#));
         assert!(js.contains(r#"var KEY = "k\\";"#));
+    }
+
+    #[test]
+    fn the_script_tells_the_app_what_undo_and_redo_would_do_and_nothing_more() {
+        let js = script("http://localhost:8787", "0.1.0", KEY);
+        assert!(js.contains("'undo_state'"));
+        // It reads the page's own object, watches it, and posts only the two labels.
+        assert!(js.contains("'__infallUndo'"));
+        assert!(js.contains("source.subscribe(queueUndo)"));
+        assert!(js.contains("call('undo_state', { undo: undo, redo: redo })"));
+        // The page gets nothing new: `qoopDesktop` has the same five members as before.
+        assert!(js.contains(
+            "version: VERSION,\n      claude: claude,\n      runner: runner,\n      \
+             switchWorkspace: switchWorkspace,\n      saveFile: saveFile\n    }"
+        ));
+    }
+
+    #[test]
+    fn the_undo_state_is_taken_only_from_the_main_windows_page() {
+        // `undo_state` is checked like every bridge command: the main window, on the open
+        // Workspace's origin, with the key. Never the app's own windows.
+        let page = url("https://qoop.example.org/board/1");
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
+        for window in [
+            "setup",
+            "runner-settings",
+            "runner-approval-7",
+            "main-2",
+            "",
+        ] {
+            assert!(
+                check_caller(window, Some(&page), Some(ORIGIN), KEY, KEY).is_err(),
+                "{window}"
+            );
+        }
+        for local in [
+            "tauri://localhost/index.html",
+            "tauri://localhost/approval.html",
+            "http://tauri.localhost/runner.html",
+        ] {
+            assert!(check_caller("main", Some(&url(local)), Some(ORIGIN), KEY, KEY).is_err());
+        }
+        // Another server's page in the main window, or the Workspace's page without the key.
+        assert!(
+            check_caller(
+                "main",
+                Some(&url("https://evil.example/")),
+                Some(ORIGIN),
+                KEY,
+                KEY
+            )
+            .is_err()
+        );
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), "", KEY).is_err());
+    }
+
+    #[test]
+    fn a_step_is_titled_with_its_verb_first() {
+        let title = |step, label| step_title(step, label);
+        // The page's labels are titles already.
+        assert_eq!(
+            title(Step::Undo, "Undo Move 3 Cards").as_deref(),
+            Some("Undo Move 3 Cards")
+        );
+        assert_eq!(
+            title(Step::Redo, "Redo Delete Card Axions").as_deref(),
+            Some("Redo Delete Card Axions")
+        );
+        assert_eq!(title(Step::Undo, "Undo").as_deref(), Some("Undo"));
+        // A bare label gets the verb.
+        assert_eq!(
+            title(Step::Undo, "Move 3 Cards").as_deref(),
+            Some("Undo Move 3 Cards")
+        );
+        assert_eq!(
+            title(Step::Redo, "Import BibTeX").as_deref(),
+            Some("Redo Import BibTeX")
+        );
+        // The item always starts with what it does, whatever the page says.
+        assert_eq!(
+            title(Step::Undo, "Redo Move").as_deref(),
+            Some("Undo Redo Move")
+        );
+        assert_eq!(
+            title(Step::Redo, "Undo Move").as_deref(),
+            Some("Redo Undo Move")
+        );
+        assert_eq!(title(Step::Undo, "Undone").as_deref(), Some("Undo Undone"));
+        assert_eq!(
+            title(Step::Undo, "undo it").as_deref(),
+            Some("Undo undo it")
+        );
+        // Any language.
+        assert_eq!(
+            title(Step::Undo, "Undo Переименовать карточку «Аксионы»").as_deref(),
+            Some("Undo Переименовать карточку «Аксионы»")
+        );
+        assert_eq!(
+            title(Step::Undo, "Undo 移动 3 张卡片").as_deref(),
+            Some("Undo 移动 3 张卡片")
+        );
+    }
+
+    #[test]
+    fn a_label_becomes_one_short_line_of_plain_text() {
+        fn title(label: &str) -> Option<String> {
+            step_title(Step::Undo, label)
+        }
+        assert_eq!(
+            title("  Undo\tMove\n\n3   Cards  ").as_deref(),
+            Some("Undo Move 3 Cards")
+        );
+        assert_eq!(
+            title("Undo Move\u{0}\u{7}\u{1b}[31m Card").as_deref(),
+            Some("Undo Move [31m Card")
+        );
+        // Nothing may turn the text around to make the item read as something else.
+        assert_eq!(
+            title("Undo \u{202E}tiuQ\u{202C} Card").as_deref(),
+            Some("Undo tiuQ Card")
+        );
+        assert_eq!(
+            title("\u{2067}Undo\u{2069} x\u{200F}\u{061C}").as_deref(),
+            Some("Undo x")
+        );
+        // Joiners that scripts need are kept.
+        assert_eq!(
+            title("Undo می\u{200C}خواهم").as_deref(),
+            Some("Undo می\u{200C}خواهم")
+        );
+        // Nothing left: no step named.
+        for empty in ["", "   ", "\n\t", "\u{202E}\u{202C}", "\u{0}"] {
+            assert_eq!(title(empty), None, "{empty:?}");
+        }
+        // Long labels are cut, at a character, and say so.
+        let long = title(&format!("Undo Rename Card {}", "é".repeat(200))).unwrap();
+        assert_eq!(long.chars().count(), MAX_STEP_TITLE);
+        assert!(long.starts_with("Undo Rename Card éé") && long.ends_with('…'));
+        let spaced = title(&format!("Undo {} tail", "a".repeat(MAX_STEP_TITLE - 7))).unwrap();
+        assert!(spaced.ends_with("a…"), "{spaced}");
+        let exact = format!("Undo {}", "b".repeat(MAX_STEP_TITLE - 5));
+        assert_eq!(title(&exact).as_deref(), Some(exact.as_str()));
+    }
+
+    #[test]
+    fn the_state_from_the_page_is_two_titles_or_none() {
+        assert_eq!(UndoSteps::from_page(None, None), UndoSteps::default());
+        let steps = UndoSteps::from_page(Some("Undo Move 3 Cards"), None);
+        assert_eq!(steps.get(Step::Undo), Some("Undo Move 3 Cards"));
+        assert_eq!(steps.get(Step::Redo), None);
+        let steps = UndoSteps::from_page(Some(" "), Some("Redo Add Card"));
+        assert_eq!(steps.get(Step::Undo), None);
+        assert_eq!(steps.get(Step::Redo), Some("Redo Add Card"));
+        // Each label gets its own verb.
+        let steps = UndoSteps::from_page(Some("Add Card"), Some("Add Card"));
+        assert_eq!(steps.undo.as_deref(), Some("Undo Add Card"));
+        assert_eq!(steps.redo.as_deref(), Some("Redo Add Card"));
+    }
+
+    #[test]
+    fn an_ampersand_in_a_title_is_shown_as_one() {
+        assert_eq!(menu_text("Undo Rename R&D"), "Undo Rename R&&D");
+        assert_eq!(menu_text("Undo A && B"), "Undo A &&&& B");
+        assert_eq!(menu_text("Undo Move"), "Undo Move");
+    }
+
+    #[test]
+    fn the_menu_names_the_step_only_for_the_focused_main_window() {
+        let named = Some("Undo Move 3 Cards");
+        let step = EditItem::Step("Undo Move 3 Cards".to_owned());
+        // macOS and Windows: the page's step, else the system's text undo.
+        assert_eq!(edit_item(named, true, true), step);
+        assert_eq!(edit_item(named, false, true), EditItem::System);
+        assert_eq!(edit_item(None, true, true), EditItem::System);
+        assert_eq!(edit_item(None, false, true), EditItem::System);
+        // Linux: the page's step, else greyed out.
+        assert_eq!(edit_item(named, true, false), step);
+        assert_eq!(edit_item(named, false, false), EditItem::Off);
+        assert_eq!(edit_item(None, true, false), EditItem::Off);
+        assert_eq!(edit_item(None, false, false), EditItem::Off);
+    }
+
+    #[test]
+    fn the_menu_item_calls_the_page_or_falls_back_to_text_undo() {
+        let undo = page_step_script(Step::Undo);
+        assert!(undo.contains("var u = window.__infallUndo;"));
+        assert!(undo.contains("typeof s.undo === 'string' && s.undo !== ''"));
+        assert!(undo.contains("u.undo();"));
+        assert!(undo.contains("document.execCommand('undo');"));
+        assert!(!undo.contains("redo") && !undo.contains("STEP"));
+        let redo = page_step_script(Step::Redo);
+        assert!(redo.contains("u.redo();"));
+        assert!(redo.contains("document.execCommand('redo');"));
+        assert!(!redo.contains("undo") && !redo.contains("STEP"));
+        // Whatever the page does, nothing escapes into the app.
+        assert!(undo.starts_with("(function () { try {") && undo.ends_with("} catch (e) {} })();"));
     }
 
     fn request() -> SendRequest {

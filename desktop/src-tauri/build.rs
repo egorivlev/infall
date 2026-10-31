@@ -31,6 +31,8 @@ fn main() {
             // Saving a file and printing the page (docs/specs/portability.md, Contract D).
             "save_file",
             "print_page",
+            // What the page's Undo and Redo would do, for the Edit menu (docs/specs/undo.md).
+            "undo_state",
             // The Runner, for the server's pages: status, open the settings, ask for a Run,
             // cancel it. Nothing that chooses an interpreter or approves.
             "runner_status",
