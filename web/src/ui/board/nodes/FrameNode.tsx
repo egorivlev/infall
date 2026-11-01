@@ -37,7 +37,7 @@ function FrameNodeImpl({ id, data, selected }: NodeProps<FrameNodeType>) {
             label="Frame title"
             placeholder="Untitled"
             className="qb-frame__title-edit"
-            onCommit={(t) => void actions.submit([ops.setText(id, 'title', t)])}
+            onCommit={(t) => void actions.submit([ops.setText(id, 'title', t)], { join: `new:${id}` })}
             onDone={() => ui.stopEditing(id)}
           />
         ) : (

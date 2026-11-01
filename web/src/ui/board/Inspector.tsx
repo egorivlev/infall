@@ -131,7 +131,7 @@ export function Inspector({ card, connections, cards, readOnly, onSelectCard, on
               label="Title"
               value={card.title}
               placeholder="Untitled"
-              onCommit={(t) => void actions.submit([ops.setText(card.id, 'title', t)])}
+              onCommit={(t) => void actions.submit([ops.setText(card.id, 'title', t)], { join: `new:${card.id}` })}
             />
             <TextField
               key={`${card.id}-summary`}

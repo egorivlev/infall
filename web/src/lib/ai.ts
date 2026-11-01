@@ -11,6 +11,7 @@ import type { BoardSync } from './board-sync'
 import { ApiError, request } from './http'
 import { newId, ops } from './ops'
 import { orderBetween } from './order'
+import { undoFor } from './undo-store'
 import { sessionStore } from './session-store'
 import type { AiConversation, AiEvent, AiOpenRouter, AiMessage, AiModel, AiScope, AiSetup, AiSnapshot, Member, QoopDesktop, SessionSnapshot } from './types'
 
@@ -488,7 +489,8 @@ export function createAi(options: AiOptions = {}) {
       pinnedBy: me.id,
       pinnedAt: now(),
     })
-    await board.submit([op])
+    // A Pin is a step of Undo like any edit of a Page (decision 4).
+    await undoFor(board).gesture(() => board.submit([op]))
     // The Member may have signed out, or removed the Conversation, while the Block was on its way.
     if (owner === me.id && find(home.id)) {
       const where = { card: card.id, cardTitle: card.title, block }

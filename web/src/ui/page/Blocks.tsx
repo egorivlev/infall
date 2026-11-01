@@ -213,9 +213,11 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
       const focusEnd = () => {
         if (result.keyboard) queueMicrotask(() => endRef.current?.focus({ preventScroll: true }))
       }
+      // A Block just added: what is typed into it, or its removal, joins the step that added it.
+      const step = { join: `new:${id}` }
       if (before.trim() === '' && (!result.commit || text === '')) {
-        // An empty Block left empty is removed again — quietly: there is nothing to bring back.
-        void actions.submit([ops.remove(id)])
+        // An empty Block left empty is removed again — quietly: there is nothing to bring back (and no step).
+        void actions.submit([ops.remove(id)], step)
         focusEnd()
       } else if (!result.commit) {
         // Esc: the text stays as it was.
@@ -224,7 +226,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
         actions.removeWithUndo([{ id, kind: 'Block' }])
         focusEnd()
       } else if (text !== before) {
-        void actions.submit([ops.setBlockText(id, text)])
+        void actions.submit([ops.setBlockText(id, text)], step)
       }
     },
     [actions],
@@ -265,7 +267,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
       const batch = []
       if (result.title !== undefined) batch.push(ops.setBlockTitle(id, result.title))
       if (result.source !== undefined) batch.push(ops.setBlockText(id, result.source))
-      void actions.submit(batch)
+      void actions.submit(batch, { join: `new:${id}` })
     },
     [actions],
   )
@@ -281,7 +283,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
         : 'run' in start
           ? ops.addBlock({ id, card, type: 'run', title: start.title, text: start.source, order })
           : ops.addBlock({ id, card, type: 'visual', title: start.title, text: start.source, order })
-      void actions.submit([op])
+      void actions.submit([op], { key: `new:${id}` })
       setEditing((s) => new Set(s).add(id))
     },
     [actions],

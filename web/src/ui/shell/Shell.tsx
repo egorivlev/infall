@@ -17,6 +17,7 @@ import { Rail } from './Rail'
 import { branchPath, currentPath, MAIN, navigate, parseRoute, rememberBranch, SETTINGS_PATH } from './router'
 import type { Route } from './router'
 import { TopBar } from './TopBar'
+import { UndoKeys } from './UndoKeys'
 
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
@@ -146,6 +147,8 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
         )}
       </main>
       {aiOpen && <AiSidebar branch={branch} />}
+      {/* Undo / Redo keys and the desktop Edit menu's bridge (docs/specs/undo.md): once, for the whole window. */}
+      <UndoKeys />
       {/* Keyed by Member: the offer and its answer are each person's own. A Tutorial Workspace has the Tutorial instead of the offer. */}
       <Tour key={member.id} member={member} view={missing ? 'missing' : view} offer={!tutorialWorkspace} />
       {tutorialWorkspace && <Tutorial key={member.id} />}

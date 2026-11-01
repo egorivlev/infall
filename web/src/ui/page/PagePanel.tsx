@@ -10,6 +10,7 @@ import { StatusGlyph } from '../board/StatusGlyph'
 import { StatusMenu } from '../board/StatusMenu'
 import { STATUS_LABEL, STATUS_TOKEN } from '../board/status'
 import { Toast } from '../board/Toast'
+import { UndoButtons } from '../board/UndoButtons'
 import { useBoardActions } from '../board/useBoardActions'
 import { formatTime } from '../shell/dates'
 import { initials } from '../shell/initials'
@@ -121,7 +122,8 @@ function Title({ card, canEdit, headingRef }: { card: CardVM; canEdit: boolean; 
             refocus.current = r.keyboard
             setEditing(false)
             const text = r.text.replace(/\s*\n\s*/g, ' ').trim()
-            if (r.commit && text !== card.title) void actions.submit([ops.setText(card.id, 'title', text)])
+            // A Card just added and named here: one step with adding it.
+            if (r.commit && text !== card.title) void actions.submit([ops.setText(card.id, 'title', text)], { join: `new:${card.id}` })
           }}
         />
       ) : canEdit ? (
@@ -267,6 +269,7 @@ export function PagePanel({ cardId, full, onClose }: Props) {
         {card && <StatusPicker card={card} readOnly={readOnly} />}
         <span className="qp-spacer" />
         {card && <span className="qp-sync">{sync}</span>}
+        {card && !readOnly && <UndoButtons buttonClass="qp-head__btn" align="end" />}
         {card && (
           <MoreMenu
             label="Page tools"
