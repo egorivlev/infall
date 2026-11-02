@@ -663,7 +663,9 @@
   box-shadow: var(--q-shadow);
   font: 500 calc(12px * var(--q-text, 1)) / 1.35 var(--q-sans);
   color: var(--q-ink);
-  white-space: nowrap;
+  /* A step named after a long Card title wraps instead of running out of the window. */
+  width: max-content;
+  max-width: min(320px, 70vw);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms var(--q-ease);
@@ -671,7 +673,7 @@
 .q-undo-pair--end .q-undo__tip { left: auto; right: 0; }
 .q-undo:hover .q-undo__tip { opacity: 1; transition-delay: 250ms; }
 .q-undo:has(> button:focus-visible) .q-undo__tip { opacity: 1; transition-delay: 0ms; }
-.q-undo__keys { font: 500 calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
+.q-undo__keys { flex: none; white-space: nowrap; font: 500 calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
 @media (prefers-reduced-motion: reduce) {
   .q-undo__tip { transition: none; }
 }
