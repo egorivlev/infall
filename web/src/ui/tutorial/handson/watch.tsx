@@ -3,7 +3,7 @@
 // for the step that is showing; what was there when it was mounted is its baseline, per Branch, so that switching
 // Branch never reads another Branch's Cards as new ones. Watchers only look: they never make a Change.
 import { useEffect, useState } from 'react'
-import { ai, runs, useAi, useBoard, useBranches, useMerge, usePage, useRuns, useSuggestions, useTodos } from '../../../lib'
+import { ai, runs, undo, useAi, useBoard, useBranches, useMerge, usePage, useRuns, useSuggestions, useTodos } from '../../../lib'
 import type { AiSetup, BoardSnapshot, CardVM, PageVM, RunnerSetup } from '../../../lib'
 import { useHistoryPanel, usePagePanel, useSearchUse } from '../../bridge'
 import { frameCounts } from '../../shell/frameCounts'
@@ -12,6 +12,7 @@ import { SAMPLE } from './names'
 import type { StepId } from './steps'
 import { handsOn } from './store'
 import type { StepCheck, ToolCheck } from './store'
+import { undid } from './undid'
 
 /** How long a missing thing must stay missing before the step says so (a list still loading is not "gone"). */
 export const MISSING_AFTER_MS = 800
@@ -74,6 +75,23 @@ function useNewCard(): Report {
   const base = useBaseline(b, () => new Set(b.cards.map((c) => c.id)))
   const made = base ? b.cards.find((c) => !base.has(c.id) && c.title.trim() !== '' && c.status !== 'idea') : undefined
   return { done: made !== undefined, made: made ? { card: made.id } : undefined }
+}
+
+/**
+ * An Undo on the open Branch, by any way in (the keys, the buttons, the Edit menu, a delete's notice): seen in the
+ * lib's own list of steps. Every change is followed, not just the ones a render happens to see.
+ */
+function useUndone(): Report {
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    let was = undo.current()
+    return undo.subscribe(() => {
+      const now = undo.current()
+      if (undid(was, now)) setDone(true)
+      was = now
+    })
+  }, [])
+  return { done }
 }
 
 /** Blocks of a Page as they were when this watcher first saw that Page. */
@@ -292,6 +310,7 @@ const NOTHING = (): Report => ({ done: false })
 const WATCHERS: Record<StepId, (card: string | null) => Report> = {
   look: useLook,
   card: useNewCard,
+  undo: useUndone,
   page: useWrite,
   source: useSource,
   connection: useConnection,

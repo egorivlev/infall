@@ -29,15 +29,38 @@ describe('the stored progress', () => {
     expect(JSON.stringify({ state: { ...freshProgress(), results, card: 'x'.repeat(36) } }).length).toBeLessThan(1024)
   })
 
+  it('reads what the Tutorial of seventeen steps saved, before Undo was a step, as it was', () => {
+    // Steps are kept by id: every id it could have written is still a step, at the same place in the order.
+    const old = { v: 1, status: 'running', step: 'merge', results: { look: 'done', card: 'done', page: 'skipped', run: 'not_tried' }, card: 'c1' }
+    expect(readProgress(old)).toEqual(old)
+    expect(readProgress({ ...old, status: 'finished', step: 'end' })).toEqual({ ...old, status: 'finished', step: 'end' })
+    expect(readProgress({ v: 1, status: 'running', step: 'undo', results: { undo: 'done' } })).toEqual({ v: 1, status: 'running', step: 'undo', results: { undo: 'done' } })
+  })
+
   it('a fresh start is step 1 with nothing done', () => {
     expect(freshProgress()).toEqual({ v: 1, status: 'running', step: 'look', results: {} })
   })
 })
 
 describe('the steps', () => {
-  it('are the seventeen of the contract, in order', () => {
+  it('are the eighteen of the contract, in order: Undo right after the first Card of one’s own', () => {
     expect(STEPS.map((s) => s.id)).toEqual(STEP_IDS)
-    expect(STEPS).toHaveLength(17)
+    expect(STEP_IDS).toEqual(['look', 'card', 'undo', 'page', 'source', 'connection', 'frame', 'search', 'todo', 'suggestion', 'visual', 'run', 'checkpoint', 'branch', 'merge', 'history', 'ai', 'end'])
+  })
+
+  it('the old seventeen keep their order, so a place saved among them means the same step', () => {
+    const old = ['look', 'card', 'page', 'source', 'connection', 'frame', 'search', 'todo', 'suggestion', 'visual', 'run', 'checkpoint', 'branch', 'merge', 'history', 'ai', 'end']
+    expect(STEP_IDS.filter((id) => id !== 'undo')).toEqual(old)
+  })
+
+  it('Undo says whose gestures it takes back, how far, and what goes further', () => {
+    const step = STEPS.find((s) => s.id === 'undo')!
+    expect(step.title).toBe('Undo')
+    expect(step.body.join(' ')).toMatch(/your own latest gestures/)
+    expect(step.body.join(' ')).toMatch(/never what someone else did/)
+    expect(step.body.join(' ')).toMatch(/History and Restore go further back/)
+    expect(step.todo).toMatch(/^Drag a Card somewhere else on purpose, then take it back: press (⌘Z|Ctrl\+Z), or the Undo arrow/)
+    expect(step.anchor).toEqual(['undo', 'board'])
   })
 
   it('each has a title, one to three sentences, and something to do (the last one excepted), in the project’s words', () => {
