@@ -5,6 +5,7 @@ import { forgetDesktopToken } from './ai-providers'
 import type { AiProvider, AiTurn } from './ai-providers'
 import { storageKey } from './ai-storage'
 import { createBoardSync } from './board-sync'
+import { undoFor } from './undo-store'
 import { ApiError } from './http'
 import { ops } from './ops'
 import { membersStore } from './people'
@@ -1240,6 +1241,8 @@ describe('pin', () => {
     ])
     expect(sync.page('a').blocks.map((b) => b.id)).toEqual(['k1', 'k2', block])
     expect(sync.page('a').blocks[2]!.ai).toEqual({ model: 'openai/gpt-5-2026', pinnedBy: 'me', pinnedAt: 7777 })
+    // A Pin is a step of Undo (docs/specs/undo.md decision 4).
+    expect(undoFor(sync).current().undo).toBe('Pin an AI answer to the Page of Threshold')
     expect(answer(a).pinned).toEqual([{ card: 'a', cardTitle: 'Threshold', block }])
     a.flush()
     expect(stored().conversations[0].messages[1].pinned).toEqual([{ card: 'a', cardTitle: 'Threshold', block }])

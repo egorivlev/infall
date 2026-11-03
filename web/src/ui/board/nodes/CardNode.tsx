@@ -78,7 +78,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
                 label="Title"
                 placeholder="Untitled"
                 className="qb-card__title-edit"
-                onCommit={(t) => void actions.submit([ops.setText(id, 'title', t)])}
+                onCommit={(t) => void actions.submit([ops.setText(id, 'title', t)], { join: `new:${id}` })}
                 onDone={() => ui.stopEditing(id)}
               />
             ) : (

@@ -9,6 +9,7 @@ import { ApiError, request } from './http'
 import { newId, ops } from './ops'
 import { sessionStore } from './session-store'
 import { findSourceIn, normalizeDoi, normalizeUrl } from './sources'
+import { undoFor } from './undo-store'
 import type { CardVM, Change, Member, Op, SourceVM, Suggestion, SuggestionVM } from './types'
 
 /** What a Suggestion is read against: the live Cards and Sources of the open Branch, and its name. */
@@ -251,7 +252,11 @@ export function createSuggestions(boardSync: BoardSync) {
         change(id, (s) => ({ ...s, state: 'accepted', decided_by: me.id, decided_at: now })),
         () => request<Answer & { seq: number; changes: Change[] }>('POST', path(id, 'accept'), { ops: toSend }),
         // The Changes are ordinary edits: the Board takes them from here or from the socket, whichever comes first.
-        (answer) => boardSync.internal.confirm(at.token, answer.seq, answer.changes),
+        // Accepting is one step of Undo (decision 4): taking it back removes what it added.
+        (answer) => {
+          boardSync.internal.confirm(at.token, answer.seq, answer.changes)
+          undoFor(boardSync).internal.record(at.token, toSend, answer.changes, answer.seq)
+        },
       )
       return made
     },

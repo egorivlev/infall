@@ -59,6 +59,7 @@ import { ui, useBoardUi } from './uiStore'
 import type { Transient } from './uiStore'
 import { useBoardActions } from './useBoardActions'
 import type { Removal } from './useBoardActions'
+import { useUndoPlace } from './undoActions'
 import { ZoomHud } from './ZoomHud'
 import { useZoomLevel } from './useZoomLevel'
 
@@ -232,6 +233,9 @@ function BoardCanvas() {
   const latest = useLatest(view)
 
   useLayoutEffect(() => ui.setReadOnly(readOnly), [readOnly])
+  // Undo works where the Board of the open Branch is shown and editable (docs/specs/undo.md decision 12).
+  useLayoutEffect(() => useUndoPlace.setState({ here: !readOnly }), [readOnly])
+  useEffect(() => () => useUndoPlace.setState({ here: false }), [])
   // No browser text selection may start on the Board or survive a press on it (see textSelection.ts).
   useEffect(() => {
     const el = wrapRef.current
@@ -392,7 +396,8 @@ function BoardCanvas() {
   const createCardAt = useCallback(
     (x: number, y: number) => {
       const id = newId()
-      void actions.submit([ops.createCard({ id, x, y, status: 'idea' })])
+      // Its title, typed in right after, joins this step: adding and naming it is one Undo.
+      void actions.submit([ops.createCard({ id, x, y, status: 'idea' })], { key: `new:${id}` })
       ui.select([id])
       ui.edit(id, 'title')
     },
@@ -405,7 +410,7 @@ function BoardCanvas() {
   const addFrameAtCentre = useCallback(() => {
     const c = viewportCentre()
     const id = newId()
-    void actions.submit([ops.createFrame({ id, x: c.x - NEW_FRAME_W / 2, y: c.y - NEW_FRAME_H / 2, w: NEW_FRAME_W, h: NEW_FRAME_H })])
+    void actions.submit([ops.createFrame({ id, x: c.x - NEW_FRAME_W / 2, y: c.y - NEW_FRAME_H / 2, w: NEW_FRAME_W, h: NEW_FRAME_H })], { key: `new:${id}` })
     ui.select([id])
     ui.edit(id, 'title')
   }, [viewportCentre, actions])

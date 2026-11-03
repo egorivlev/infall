@@ -2,7 +2,7 @@ import '../port.css'
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ApiError, board, page } from '../../../lib'
+import { ApiError, board, page, undo } from '../../../lib'
 import { readFileText } from '../files'
 import { count } from '../people'
 import { packBatches, planBoardImport, planCardImport } from './importPlan'
@@ -38,19 +38,27 @@ type Stage =
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-/** Sends the batches one after the other, so the person sees it move and the Board stays responsive. */
-async function send(plan: ImportPlan, onProgress: (done: number) => void): Promise<{ done: number; error?: unknown }> {
+/**
+ * Sends the batches one after the other, so the person sees it move and the Board stays responsive. All of them are
+ * one step of Undo, however many entries (docs/specs/undo.md decision 3).
+ */
+async function send(plan: ImportPlan, entries: number, onProgress: (done: number) => void): Promise<{ done: number; error?: unknown }> {
   let done = 0
-  for (const batch of packBatches(plan)) {
-    try {
-      await board.submit(batch.ops)
-    } catch (error) {
-      return { done, error }
+  const step = undo.begin({ label: `Import ${count(entries, 'entry', 'entries')} from BibTeX` })
+  try {
+    for (const batch of packBatches(plan)) {
+      try {
+        await step.add(() => board.submit(batch.ops))
+      } catch (error) {
+        return { done, error }
+      }
+      done += batch.entries
+      onProgress(done)
+      // A breath between batches: React paints the progress, other Members' Changes come in.
+      await new Promise((resolve) => setTimeout(resolve, 0))
     }
-    done += batch.entries
-    onProgress(done)
-    // A breath between batches: React paints the progress, other Members' Changes come in.
-    await new Promise((resolve) => setTimeout(resolve, 0))
+  } finally {
+    step.end()
   }
   return { done }
 }
@@ -126,7 +134,7 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
         ? planCardImport(entries, target.cardId, (input) => page.findSource(input))
         : planBoardImport(entries, target.place(), fileTitle(name) || 'Imported BibTeX', (input) => page.findSource(input))
     setStage({ kind: 'importing', done: 0, total: entries.length })
-    const result = await send(plan, (done) => setStage({ kind: 'importing', done, total: entries.length }))
+    const result = await send(plan, entries.length, (done) => setStage({ kind: 'importing', done, total: entries.length }))
     if (result.error !== undefined) {
       setStage({ kind: 'stopped', done: result.done, total: entries.length, why: stoppedBecause(result.error) })
       return
@@ -178,7 +186,7 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
     if (stage.kind === 'stopped') {
       return [
         `The import stopped after ${stage.done} of ${count(stage.total, 'entry', 'entries')}: ${stage.why}`,
-        stage.done > 0 ? 'What arrived is kept. To take it back, Restore the Branch from History.' : 'Nothing was added.',
+        stage.done > 0 ? 'What arrived is kept. To take it back, use Undo.' : 'Nothing was added.',
       ]
     }
     return []

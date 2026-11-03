@@ -577,3 +577,49 @@ New Changes of the open Branch are added **without a request** (`extendGraph`, t
 - Rows' height must not depend on whether words have arrived.
 - A dot's spoken name: Branch name, author, `formatWhen(ended_at)`, first line (or "loading"), and its ◆ names.
 - `testing.ts`: `server.graph(gapMs?)` (what `/api/graph` answers for the fake Branches, grouped by `groupShapes`), `GET /api/graph` (Guests 403), `server.graphGate`, `server.failGraph` (a count of 500s), `…/changes?before=` (400 for a bad range), and `loadActivityFixture()` for the shared fixture.
+
+## M15 — Undo (docs/specs/undo.md)
+
+Code: `undo.ts` (pure: the parts of a gesture, inverses, the check of decision 5, the list rules, the words), `undo-store.ts` (the lists of this window, per Branch: `undo`, `useUndo`, `undoFor`), two hooks in `board-sync.ts` (`internal.observe`, `internal.entities`), one call each in `suggestions.ts` (an accepted Suggestion is a step) and `ai.ts` (a Pin is a step). `index.ts` adds `undo`, `useUndo` and the types `GestureOptions`, `Gesture`, `UndoResult`, `UndoSnapshot`. No server change.
+
+```ts
+export function useUndo(): UndoSnapshot                 // { undo: string | null; redo: string | null } — the open Branch's next steps by name ("Move 3 Cards"); the same object until a name changes
+export const undo: {
+  gesture<T>(send: () => T, options?: GestureOptions): T // every board.submit called synchronously inside `send` is ONE step (a Board gesture split into several 200-op batches too)
+  begin(options?: GestureOptions): Gesture              // batches sent over time (Import BibTeX): `const g = undo.begin({ label }); await g.add(() => board.submit(a)); …; g.end()`
+  undo(key?: string): Promise<UndoResult | null>        // the open Branch's newest step; with `key`, only if the newest step has that key
+  redo(): Promise<UndoResult | null>
+  current(): UndoSnapshot
+  subscribe(fn: () => void): () => void                 // called whenever a name changes
+}
+type GestureOptions = { label?: string; key?: string; join?: string }
+type UndoResult = { done: boolean; note: string }       // the note to show and announce. null: no Board open, the Branch switched meanwhile, or `key` is not the newest step
+```
+
+- **What is a step.** Only what is sent inside `undo.gesture` / `Gesture.add`, or recorded by the layer itself (`suggestions.accept`, `ai.pin`). A `board.submit` outside a gesture is no step — a Run's result, "Record again". Ops sent by Undo and Redo register nothing. The Board layer tells the store of every batch it takes (`internal.observe(fn)`: the ops, the Board just before — optimistic edits included — and just after; `fn` may return a callback that gets the server's answer `{ seq, changes }`, or null when the batch was refused, dropped or the Board closed). The store records the parts of the batch against the Board as it was (the value a field had; the Connections a deleted Card showed) and, from the answer, the batch's Change ids and the head after it. A refused batch is taken out of its step; a step left empty is dropped.
+- **Names** are History's words (`describeChanges` of the gesture: Board before vs after) in the present tense: "Move 3 Cards", "Delete Card Axions" ("Removed Card/Frame" reads "Delete"), "Disconnect A → B", "Connect A → B", "Rename Card A → B", "Status: A → Understood" (as History has it), "Edit the summary of A", "Label A → B: text", "Mark A → B as contradicts", "Resize 1 Frame", "Add Card Axions", "Add a block to the Page of X", "Edit the Page of X", "Remove a block from the Page of X", "Reorder the Page of X", "Add Visual T to the Page of X", "Edit Visual T in the Page of X", "Add Source T to X", "Remove Source T from X", "Edit Source T", "Pin an AI answer to the Page of X", "Mark an AI answer as reviewed in the Page of X", "Clear the output of Run T in the Page of X". Several deletions or additions of Cards, Frames and Connections are counted ("Delete 2 Cards and 1 Connection", "Add 250 Cards"); anything else is its first line "and N more". `label` overrides them (Import BibTeX: "Import 12 entries from BibTeX"). The name is fixed when the gesture is sent (a joined batch renames it: "Add Card Untitled" becomes "Add Card Axions").
+- **Joining.** `key` names a step; a later gesture with `join: key` becomes part of it while it is still the open Branch's newest step (otherwise it is a step of its own). The UI uses `new:<id>` for a Card, Frame or block just added, so the title or text typed into it right after is one step with adding it, and an empty block removed again leaves no step at all.
+- **The list.** Per Branch, per window, newest first, at most 100 (the 101st back is dropped silently). A new step clears Redo. Undo moves a step to Redo and Redo moves it back; presses are done one at a time in order, each after the Board answered the one before (the Board shows each at once: it is optimistic). A step whose every part was left is dropped; the next press goes to the one before. Switching Branch keeps each list; on return the store fetches `GET …/changes?after=<last seq it saw>` once and checks those Changes too. A Branch's lists are cleared when a Change with a Merge or Restore origin lands on it, by anyone (live, from `history.restore`, from a Merge, or found by that fetch); when the Board had to be fetched again (Changes never seen, so nothing can be checked); when that fetch fails; and all lists when the signed-in Member changes. Nothing is stored; a reload starts empty.
+- **The check (decision 5).** Before a step is undone or redone, each part is checked against the Branch's Changes after the batch that last did it, except this list's own (its gestures, Undos and Redos — known by Change id): everyone else's Changes and the Member's own from outside the list (another window, a Run's result) count. A field is left when someone set the same field since; a thing the step added is not removed when someone changed it or anything referring to it (its blocks, Connections, Attachments); a thing it deleted is not brought back when someone brought it back. A part that would no longer apply (its thing was deleted since) is left. Fields of a thing the step added, written by a later batch of the same step, go with the thing (taken back or kept with it) — except that a value someone else wrote in between is given back.
+- **A deleted Card comes back whole**: Undelete of the same id. Its blocks, Attachments and Connections were never deleted, so they show again; a Connection whose other Card is gone stays hidden and is counted in the note.
+- **Notes** (`UndoResult.note`): "Undid Move 3 Cards." · "Undid Move 3 Cards. 1 left as it is — Ana changed it since." · "… 2 left as they are — Ana and Ben changed them since." · "… 1 left as it is — it was removed since." · "Undid Delete Card Axions. 1 Connection left out — the Card at its other end is gone." · "Not undone — Ana changed this since." · "Not undone — you changed this since." (my own Changes from outside the list) · "Not undone — it was removed since." · "Redid …" / "Not redone — …" · "Nothing to undo. To go further back, use History." · "Nothing to redo." · "Could not undo Move 3 Cards — the Board was updated meanwhile. Try again." (the server refused the Undo's ops; the step stays). Names are first names from the Member list; the signed-in Member is "you"; an id nobody knows "Someone".
+- History shows an Undo as ordinary Changes by the Member (`origin: "Edit"`); Restore goes back across them. Nothing is removed.
+- `testing.ts`: nothing new; `undo-store.test.ts` drives the store against the fake server, `undo.test.ts` has the randomised test.
+
+### The desktop Edit menu's bridge — `window.__infallUndo`
+
+Set by the shell (`ui/shell/UndoKeys.tsx`) while the signed-in app is mounted in the main page; absent on the sign-in screen and in every other page (the Visual frame, other windows). Treat absence as nothing to do.
+
+```ts
+window.__infallUndo = {
+  state(): { undo: string | null; redo: string | null }  // "Undo Move 3 Cards" / "Redo Delete Card Axions", ready to show; cheap (no work beyond reading two stores)
+  undo(): void
+  redo(): void
+  subscribe(fn: () => void): () => void
+}
+```
+
+- `state()` is `{ undo: null, redo: null }` wherever Undo does not work (decision 12: no Board shown, History previewing an earlier moment, a Guest, Settings and other screens), **while focus is in a text field** (an input of a text type, a textarea, contenteditable, `role=textbox/combobox`, a select) — so the menu leaves the key to the field's own text undo, as the system's items do — and while focus is inside a modal dialog (Import BibTeX…). Otherwise the open Branch's next steps, each null when there is none.
+- `undo()` / `redo()` do what the keys do (the note included, "Nothing to undo…" too), and nothing where `state()` is all null.
+- `subscribe(fn)` calls `fn` whenever a name changes, when Undo becomes possible here or stops being so, and when focus moves (`focusin` / `focusout` on the document). It returns the unsubscribe.
+- **Keys**: the page owns Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z and Ctrl+Y (not on a Mac) on every platform, in the desktop app as in a browser, and calls `preventDefault()` whenever it acts on one — "Nothing to undo" included — so one press is one Undo (WebKit gives the menu a ⌘ key only when the page did not prevent it). In a field being edited, in a modal dialog and where Undo does not work it leaves the event alone (no `preventDefault`). Never with Alt, never with Cmd and Ctrl together. The page does not ask whether it runs in the desktop app.

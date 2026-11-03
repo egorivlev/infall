@@ -47,7 +47,7 @@ export type BoardSyncOptions = {
 
 type Batch = {
   ops: Op[]
-  resolve: () => void
+  resolve: (r: ChangesResponse) => void
   reject: (e: unknown) => void
   inflight: boolean
   echoed: boolean // its Changes already arrived over the socket; hidden from the overlay
@@ -75,6 +75,20 @@ export type BoardEvent =
   | { type: 'reconnected' }
   | { type: 'closed' }
   | { type: 'suggestions'; suggestions: Suggestion[] }
+
+/**
+ * Told of every batch `submit` takes, at the moment it is taken (internal; Undo records its steps here): the ops,
+ * the Board as the UI saw it just before (`before`, optimistic edits included) and just after. What it returns is
+ * called once when the batch settles: with the server's answer — the batch's own Changes and the head after them —
+ * or with null when it was refused, dropped or the Board closed.
+ */
+export type BatchObserver = (batch: {
+  ops: readonly Op[]
+  before: Entities
+  after: Entities
+  branch: string
+  token: number
+}) => ((result: ChangesResponse | null) => void) | void
 
 const MAX_OPS = 200
 const BACKOFF_START = 1000
@@ -157,6 +171,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
   const checkpointNames = new Set<string>() // Checkpoints of the open Branch met so far, for counting each once
   const listeners = new Set<(e: SyncEvent) => void>()
   const watchers = new Set<(e: BoardEvent) => void>()
+  const observers = new Set<BatchObserver>()
   let wasLive = false // the socket has been subscribed at least once since open()
 
   function emit(e: SyncEvent) {
@@ -454,7 +469,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         queue = queue.filter((x) => x !== b)
         prune()
         rebuild()
-        b.resolve()
+        b.resolve(r)
         pump()
       },
       (e: unknown) => {
@@ -715,10 +730,28 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     if (!loaded) throw new ApiError(400, 'board_not_open', 'The Board is not open.')
     if (opsIn.length === 0) return
     if (opsIn.length > MAX_OPS) throw new ApiError(400, 'bad_request', `At most ${MAX_OPS} operations per batch.`)
-    const r = applyOps(currentView(), opsIn)
+    const before = currentView()
+    const r = applyOps(before, opsIn)
     if (!r.ok) throw new ApiError(409, 'rejected', r.rejection.message, r.rejection)
+    const told: ((result: ChangesResponse | null) => void)[] = []
+    for (const fn of [...observers]) {
+      const settle = fn({ ops: opsIn, before, after: r.entities, branch: branchId, token: gen })
+      if (settle) told.push(settle)
+    }
     await new Promise<void>((resolve, reject) => {
-      queue.push({ ops: [...opsIn], resolve, reject, inflight: false, echoed: false })
+      queue.push({
+        ops: [...opsIn],
+        resolve: (answer) => {
+          for (const fn of told) fn(answer)
+          resolve()
+        },
+        reject: (e) => {
+          for (const fn of told) fn(null)
+          reject(e)
+        },
+        inflight: false,
+        echoed: false,
+      })
       dirty = true
       rebuild()
       pump()
@@ -793,6 +826,18 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
   }
 
+  function observe(fn: BatchObserver): () => void {
+    observers.add(fn)
+    return () => {
+      observers.delete(fn)
+    }
+  }
+
+  // The Board as the UI sees it now — optimistic edits included, deleted things too.
+  function entities(): Entities {
+    return currentView()
+  }
+
   return {
     store,
     open,
@@ -803,7 +848,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     findSource,
     startEditing,
     stopEditing,
-    internal: { target, confirm, checkpoints, listen, watch },
+    internal: { target, confirm, checkpoints, listen, watch, observe, entities },
   }
 }
 
