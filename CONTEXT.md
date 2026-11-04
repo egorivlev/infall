@@ -99,7 +99,7 @@ An alternative line of Research Content that can diverge from and be merged back
 _Avoid_: Snapshot, version, checkpoint
 
 **Merge**:
-Bringing the changes made on one Branch into another.
+Bringing the changes made on one Branch into the Branch it was started from, or the other way round. Two Branches that are not parent and child are not merged directly.
 
 **Conflict**:
 A place where two Branches being merged disagree in a way that cannot be combined: the same field of the same card changed on both, or a card edited on one and deleted on the other. A team member decides each one before the Merge lands. Disagreements about where a card sits are not Conflicts.
@@ -138,6 +138,10 @@ _Avoid_: Task, ticket
 **Comment**:
 A Member's remark in the thread of one Card, visible to all Members, the same on every Branch, and outliving the Card. May mention other Members, who then find it in their list of mentions. A thread can be marked resolved.
 _Avoid_: Note, message, chat
+
+**Comment**:
+A Member's remark in the thread attached to one Card, for the other Members to read. A fact about the team's discussion, so it is the same on every Branch, is not in History, and outlives the Card if it is removed. May mention a Member by name.
+_Avoid_: Note, message, chat, review
 
 **Conversation**:
 A Member's private exchange with an AI about what they are looking at. Not Research Content, and not visible to anyone else.
