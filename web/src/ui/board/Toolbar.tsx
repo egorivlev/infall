@@ -30,7 +30,7 @@ export function Toolbar({ readOnly, onAddCard, onAddFrame, onImportBibtex, onExp
               + Frame
             </button>
           </div>
-          <div className="qb-toolbar" role="toolbar" aria-label="Undo and Redo">
+          <div className="qb-toolbar" data-tour="undo" role="toolbar" aria-label="Undo and Redo">
             <UndoButtons buttonClass="q-btn q-btn--sm qb-toolbar__btn qb-toolbar__icon" />
           </div>
         </>

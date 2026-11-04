@@ -83,6 +83,7 @@ function memberSteps(role: Role, desktop: boolean, local: boolean, startScreen: 
       body: [
         '“+ Card” puts a new Card in the middle of what you see. Double-clicking empty space puts one where you click.',
         '“+ Frame” adds a Frame: a named region for the Cards of one theme.',
+        'The arrows beside them are Undo and Redo of your own latest gestures.',
       ],
       anchor: ['add'],
     },

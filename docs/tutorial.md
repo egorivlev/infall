@@ -14,7 +14,7 @@ Keys are written for a Mac; elsewhere use Ctrl for ⌘. The app also has a short
 Two things to know before you start:
 
 - **There is no save button.** Every edit is a Change, recorded with your name and sent to everyone at once. The bottom of the left rail says **Synced** when nothing is waiting.
-- **There is no general undo.** ⌘Z does nothing on the Board. After a delete, a small notice offers **Undo** for a few seconds. For anything older, use History (part 8).
+- **⌘Z takes back your own last gesture**, on the Board and in a Page (see "Undo" at the end of part 1). For anything older, or anything Undo does not take back, use History (part 8).
 
 ## 1. A Card
 
@@ -28,6 +28,18 @@ Two things to know before you start:
 Drag empty space or scroll to move around the Board; hold ⌘ and scroll to zoom. **Fit** at the bottom right shows everything. Zoomed far out, Cards show only a title or a status, and their text cannot be edited until you zoom back in.
 
 **Search Cards** at the top (⌘K) finds a Card by its title or summary on the Branch that is open, and jumps to it. It does not search inside Pages.
+
+### Undo
+
+7. Drag `Threshold theorem` somewhere else, then press ⌘Z. It goes back where it was. ⇧⌘Z (Redo) moves it again. On Windows and Linux the keys are Ctrl+Z, and Ctrl+Y or Shift+Ctrl+Z.
+
+- **What it takes back**: your own latest gestures on the Branch that is open, newest first, one per press. A Card, Frame or Connection added, moved, resized or deleted (a deleted Card comes back whole, with its Page, its Sources and its Connections); a title, summary, status, label or kind changed; anything done on a Page (blocks, Sources, a Pin); an accepted Suggestion; a whole **Import BibTeX…**. A drag of five Cards is one step.
+- **Where**: the two arrows beside **+ Card** and **+ Frame** at the top left of the Board, and the same two in a Page's header. Pointing at one names the step and its key ("Undo Move 3 Cards ⌘Z"). In the desktop app, **Edit → Undo** and **Edit → Redo** name it too. After each one a small notice at the bottom says what was done ("Undid Move 3 Cards.").
+- **While you type in a field**, ⌘Z undoes your typing, as in any editor. Once you leave the field, what you wrote there is one step.
+- **What it never does**: take back someone else's Changes. If another Member changed the same thing since, it is left as they made it, and the notice says so ("1 left as it is — Ana changed it since."). It does not touch To-dos, and does not take back a Merge, a Restore, a Checkpoint or a new Branch. When a Merge or a Restore lands on the Branch, by anyone, there is nothing left to undo on it. It does not work while History shows an earlier moment, and a Guest has none.
+- **How far**: what you did in this window since it was opened, up to 100 steps per Branch. Reloading or closing the app starts from nothing. The way further back is a Restore (part 8).
+
+An Undo is recorded like any edit, as new Changes by you that History shows. Nothing is erased.
 
 ## 2. The Page
 
@@ -227,7 +239,7 @@ A Source with a DOI becomes an `@article`, any other an `@misc`. Keys are the fi
 - in a Page's **Sources** row: every entry becomes a Source on that Card;
 - on the Board, **BibTeX ▾** → **Import BibTeX…**: every entry becomes a Card (its title is the entry's title, its status **Idea**, the Source attached), laid out in a grid inside a new Frame named after the file.
 
-In the window that opens, choose the file under **BibTeX file**, or paste the entries under **Or paste the entries**; it says how many entries it found. Press **Import** (it reads, for example, **Import 40 entries**), then **Done**. An entry whose DOI or URL is already a Source reuses that Source instead of making a second one. Infall reads `title`, `author`, `year` (or the year in `date`), `doi`, `url` and `note`; it skips the rest. Entries it could not read are counted, and the message after the import says how many. A whole import is one Activity in History: to take it back, Restore to the moment before it (part 8).
+In the window that opens, choose the file under **BibTeX file**, or paste the entries under **Or paste the entries**; it says how many entries it found. Press **Import** (it reads, for example, **Import 40 entries**), then **Done**. An entry whose DOI or URL is already a Source reuses that Source instead of making a second one. Infall reads `title`, `author`, `year` (or the year in `date`), `doi`, `url` and `note`; it skips the rest. Entries it could not read are counted, and the message after the import says how many. A whole import is one step of Undo (⌘Z right after it takes all of it back) and one Activity in History: later, Restore to the moment before it (part 8).
 
 **From Zotero**, in three steps:
 
@@ -289,8 +301,9 @@ A Guest has no **AI access** and no **Runs**.
 | Add a Card or a Frame | **+ Card**, **+ Frame**, top left of the Board |
 | Find a Card | **Search Cards**, ⌘K |
 | Write on a Card | select it, **Open Page** (or O) |
-| Take back a delete | **Undo** on the notice, within a few seconds |
-| Go back further | **History**, then **Restore … to here** |
+| Take back your own last gesture | ⌘Z (Ctrl+Z), or the Undo arrow beside **+ Frame** or in a Page's header; in the desktop app also **Edit → Undo**; after a delete also **Undo** on the notice |
+| Do it again | ⇧⌘Z (Ctrl+Y), or the Redo arrow beside it |
+| Go back further, or past someone else's work | **History**, then **Restore … to here** |
 | Name a moment | **Checkpoint**, top bar |
 | Work apart, then bring it in | Branch control, **New Branch…**; then **Branches** and **Merge into …** on the Branch's label |
 | Start a Branch from an earlier moment | **Branches**: click a dot or a **◆**, type a name in **New Branch**, Enter |

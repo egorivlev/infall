@@ -1,10 +1,13 @@
-// The seventeen steps of the Tutorial (docs/specs/local.md, "The Tutorial (web UI)"): what each one says and what
+// The eighteen steps of the Tutorial (docs/specs/local.md, "The Tutorial (web UI)"): what each one says and what
 // it points at. How each one notices that it has been done is in watch.tsx. The words are CONTEXT.md's.
+// Progress is kept by step id, never by number, so a step can be added anywhere (Undo, M15, came after 'card'): a
+// saved place still names the same step, and a step added before it simply has no result yet.
 import { SAMPLE } from './names'
 
 export const STEP_IDS = [
   'look',
   'card',
+  'undo',
   'page',
   'source',
   'connection',
@@ -37,7 +40,10 @@ export type HandsOnStep = {
   tool?: 'runner' | 'ai'
 }
 
-const SEARCH_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'
+const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const SEARCH_KEY = MAC ? '⌘K' : 'Ctrl K'
+/** As the Undo button's tooltip writes it (ui/board/undoActions.ts). */
+const UNDO_KEY = MAC ? '⌘Z' : 'Ctrl+Z'
 
 export const STEPS: HandsOnStep[] = [
   {
@@ -56,6 +62,18 @@ export const STEPS: HandsOnStep[] = [
     body: ['A Card is one idea, paper or question.', 'Its status says where it stands: Idea, Reading, Understood, Open question or Dead end.'],
     todo: 'Press “+ Card” or double-click empty space, type a title, then give it a status other than Idea.',
     anchor: ['add'],
+  },
+  {
+    // Right after the first edit of the person's own: the first moment there is something of theirs to take back,
+    // and before the steps where slips happen.
+    id: 'undo',
+    title: 'Undo',
+    body: [
+      'Undo takes back your own latest gestures on the open Branch, newest first, and never what someone else did.',
+      'It reaches what you did in this window since it was opened; History and Restore go further back.',
+    ],
+    todo: `Drag a Card somewhere else on purpose, then take it back: press ${UNDO_KEY}, or the Undo arrow at the top left of the Board.`,
+    anchor: ['undo', 'board'],
   },
   {
     id: 'page',

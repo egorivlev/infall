@@ -34,6 +34,12 @@ describe('the steps', () => {
     expect(rail(member)).not.toContain('Members')
   })
 
+  it('the step at the Board’s toolbar names its Undo and Redo, and the Tour has no step of its own for them', () => {
+    const add = stepsFor({ role: 'member', desktop: false }).find((s) => s.id === 'add')!
+    expect(add.body.at(-1)).toBe('The arrows beside them are Undo and Redo of your own latest gestures.')
+    expect(add.anchor).toEqual(['add'])
+  })
+
   it('the Runs step says something else in a browser than in the desktop app', () => {
     const runs = (desktop: boolean) => stepsFor({ role: 'member', desktop }).find((s) => s.id === 'runs')!.body.join(' ')
     expect(runs(false)).toContain('only in the Infall desktop app')

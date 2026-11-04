@@ -302,7 +302,7 @@ A control in the top bar that exists only while `useRuns().live` is non-null (a 
 `design/QTopBar.dc.html`. Replaces the single 44px bar.
 - **Row 1, 30px — the window's title bar** (`q-titlebar`, background `--q-chrome` mixed 68% with `--q-sunken`): 224px brand cell (Infall mark 18px: a black hole in its ring, the disc crossing in front + "Infall"), the search field centred (22px high, max 380px), then presence ("On <branch>" + 20px avatars), a divider, the theme toggle and the account button (18px avatar + name). In the macOS desktop app the window has no title bar of its own (Tauri `TitleBarStyle::Overlay`): the traffic lights sit at the left of this row, the brand cell leaves 75px for them, and the row is a `data-tauri-drag-region="deep"` (empty parts move the window; a double click zooms).
 - **Row 2, 36px — the Branch toolbar** (`q-toolbar`, `--q-chrome`): Branch switcher, divider, Checkpoint, History; on the right the Runner monitor (while a Run is in flight), a divider and AI. Guests: the plain "main · read-only" label and the Guest badge on the right. Toolbar buttons are 26px with a transparent border until hovered or pressed.
-- Not taken from the mock-up: Undo/Redo (there is no general undo yet), "All changes saved" (the rail already says "Synced"; never "saved"), the team name next to the logo (no such data), and the Windows menu bar + caption buttons (Windows keeps its native title bar).
+- Not taken from the mock-up: Undo/Redo in the top bar (since M15 they are on the Board's toolbar and in the Page header: see "M15 — Undo" below), "All changes saved" (the rail already says "Synced"; never "saved"), the team name next to the logo (no such data), and the Windows menu bar + caption buttons (Windows keeps its native title bar).
 
 
 ---
@@ -339,3 +339,22 @@ Spec: [docs/specs/branch-graph.md](../../../docs/specs/branch-graph.md) (binding
 - Every dot's spoken name: "<Branch>, <full name>, <time>, <first line or 'loading'>, Checkpoint <name>"; `aria-posinset` / `aria-setsize` give its place among all rows. A fork point: "<Branch>, the start, no Changes yet".
 - Nothing moves: no animated lines, no smooth scrolling (reduced motion or not).
 - Loading: "Loading Branches…" after 150 ms. Failure: "The Branch Graph could not be loaded." + "Try again". Guests never reach the screen.
+
+
+---
+
+# M15 — Undo
+
+Spec: [docs/specs/undo.md](../../../docs/specs/undo.md) (binding). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M15 — Undo" (`useUndo`, `undo.*`, the notes). Code: `ui/board/UndoButtons.tsx` (the buttons), `ui/board/undoActions.ts` (the keys, where Undo works, the note), `ui/shell/UndoKeys.tsx` (the keys, and `window.__infallUndo` for the desktop app's Edit menu). Vocabulary: Undo, Redo, step, gesture, Change. Never "revert", "rollback" or "history" for this.
+
+## The Undo and Redo buttons (`UndoButtons`)
+- A pair of 26px icon buttons, 2px apart: a curved arrow back, and the same arrow mirrored. One component in two places: the Board's toolbar, right of "+ Card" / "+ Frame" in a toolbar of its own (`aria-label` "Undo and Redo", `data-tour="undo"`, the toolbar's button look), and the Page header, between the sync text and Page tools (`qp-head__btn`, `align="end"`). Neither in read-only mode: not for Guests, not while History previews a moment.
+- Each button is named by its step: `aria-label` "Undo Move 3 Cards" / "Redo Delete Card Axions", or "Nothing to undo" / "Nothing to redo". With nothing to do it is `aria-disabled` (not `disabled`, so focus stays on it when the last step is undone), `--q-ink-3`, `cursor: not-allowed`, and a click does nothing. `aria-keyshortcuts` gives the keys.
+- **Tooltip** (`q-undo__tip`, not `title`): the step's name, then the keys in a `<kbd>` (mono 11, `--q-ink-3`): "⌘Z" / "⇧⌘Z" on a Mac, "Ctrl+Z" / "Ctrl+Y" elsewhere. `--q-raised`, 1px `--q-line`, `--q-shadow`, sans 12/500, at most min(320px, 70vw) wide so that a long Card title wraps. Under the button, lined up with its left edge (Board) or its right edge (Page header). Shown after 250 ms of hover, at once on keyboard focus; opacity only, and no transition under reduced motion. `aria-hidden`: the label already says it.
+
+## The note after an Undo or Redo
+- One line in the Board's toast region (bottom centre, `role="status"`, polite) for 5 s, one at a time: a new note replaces the last. The words are the lib's (`UndoResult.note`), shown as they are: "Undid Move 3 Cards.", "Undid Move 3 Cards. 1 left as it is — Ana changed it since.", "Not undone — Ana changed this since.", "Nothing to undo. To go further back, use History.", "Redid …", "Could not undo … — the Board was updated meanwhile. Try again." No button on it.
+- A delete's toast ("Deleted 2 Cards." with "Undo" for 6 s) is the same step: its "Undo" undoes that step while it is still the newest one, and the note says what was done; once another step came after it, it brings the things back as a step of its own. An Undo or Redo by key or button takes the delete's toast away.
+
+## Keys
+- Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, and Ctrl+Y off a Mac, handled once in the shell, wherever the Board of the open Branch is shown and editable. In a field being edited and in a modal dialog the key is the field's (its own text undo); anywhere else it does nothing. Never with Alt, never with Cmd and Ctrl together; the Board scale keys (Shift + "+", "−", 0) are not these.

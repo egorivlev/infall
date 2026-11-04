@@ -74,7 +74,7 @@ describe('starting and keeping its place', () => {
   it('starts by itself at step 1 the first time, and keeps that on the server', async () => {
     await open()
     expect(title()).toBe('The Board')
-    expect(screen.getByText('Tutorial, step 1 of 17')).toBeInTheDocument()
+    expect(screen.getByText('Tutorial, step 1 of 18')).toBeInTheDocument()
     expect(dialog()).toHaveFocus()
     expect(lastSaved()).toEqual({ v: 1, status: 'running', step: 'look', results: {} })
   })
@@ -82,7 +82,57 @@ describe('starting and keeping its place', () => {
   it('carries on where it was', async () => {
     await open('checkpoint', { look: 'done', card: 'skipped' })
     expect(title()).toBe('A Checkpoint')
-    expect(screen.getByLabelText('Step 12 of 17')).toBeInTheDocument()
+    expect(screen.getByLabelText('Step 13 of 18')).toBeInTheDocument()
+  })
+
+  describe('progress saved before Undo was a step (seventeen steps)', () => {
+    // Exactly what the Tutorial of seventeen steps wrote: steps by id, no 'undo' anywhere.
+    const before = { v: 1, status: 'running', step: 'page', results: { look: 'done', card: 'done' }, card: 'new' }
+
+    it('loads, and carries on at the very step it was on, with what was done and the Card made', async () => {
+      kit().stored = before
+      render(<Screen />)
+      await waitFor(() => expect(useHandsOn.getState().phase).toBe('running'))
+      expect(title()).toBe('Its Page')
+      expect(screen.getByLabelText('Step 4 of 18')).toBeInTheDocument()
+      expect(useHandsOn.getState()).toMatchObject({ step: 'page', results: { look: 'done', card: 'done' }, card: 'new' })
+      expect(kit().saved).toEqual([]) // loading writes nothing back
+    })
+
+    it('shows Undo as still to do, and it can be gone back to', async () => {
+      kit().stored = before
+      render(<Screen />)
+      await waitFor(() => expect(useHandsOn.getState().phase).toBe('running'))
+      const rail = screen.getByRole('complementary', { name: 'rail' })
+      await userEvent.click(within(rail).getByRole('button', { name: 'All steps' }))
+      const items = within(within(rail).getByRole('list', { name: 'Steps of the tutorial' })).getAllByRole('button')
+      expect(items[1]).toHaveTextContent('2. A Card of your ownDone')
+      expect(items[2]).toHaveTextContent('3. UndoTo do')
+      expect(items[3]).toHaveTextContent('4. Its PageShowing')
+      await userEvent.click(items[2]!)
+      expect(title()).toBe('Undo')
+    })
+
+    it('left at step 2, goes on to Undo once the Card is made', async () => {
+      kit().stored = { v: 1, status: 'left', step: 'card', results: { look: 'done' } }
+      render(<Screen />)
+      await waitFor(() => expect(useHandsOn.getState().phase).toBe('left'))
+      act(() => handsOn.resume())
+      expect(title()).toBe('A Card of your own')
+      act(() => kit().board((b) => ({ cards: [...b.cards, card('new', 'Drift', { status: 'reading' })] })))
+      await waitFor(() => expect(showing()).toBe('undo'))
+    })
+
+    it('left at the end, lists Undo as not reached', async () => {
+      const results = { look: 'done', card: 'done', page: 'done', source: 'skipped', connection: 'done', frame: 'done', search: 'done', todo: 'done', suggestion: 'done', visual: 'done', run: 'not_tried', checkpoint: 'done', branch: 'done', merge: 'done', history: 'done', ai: 'not_tried' }
+      kit().stored = { v: 1, status: 'running', step: 'end', results }
+      render(<Screen />)
+      await waitFor(() => expect(useHandsOn.getState().phase).toBe('running'))
+      const box = within(dialog()!)
+      expect(box.getByRole('region', { name: 'Not reached' })).toHaveTextContent(/^Not reachedUndo$/)
+      expect(box.getByRole('region', { name: 'Tried' })).not.toHaveTextContent('Undo')
+      expect(screen.getByLabelText('Step 18 of 18')).toBeInTheDocument()
+    })
   })
 
   it('stays away once left, until the account menu asks for it', async () => {
@@ -114,7 +164,7 @@ describe('starting and keeping its place', () => {
     expect(kit().saved.length).toBe(before)
     act(() => void vi.advanceTimersByTime(SAVE_MS))
     expect(kit().saved.length).toBe(before + 1)
-    expect(lastSaved()).toMatchObject({ step: 'source', results: { look: 'skipped', card: 'skipped', page: 'skipped' } })
+    expect(lastSaved()).toMatchObject({ step: 'page', results: { look: 'skipped', card: 'skipped', undo: 'skipped' } })
   })
 
   it('“Leave the tutorial” leaves at any step, is written at once, and “Tutorial” brings it back there', async () => {
@@ -148,14 +198,15 @@ describe('starting and keeping its place', () => {
     await userEvent.click(within(rail).getByRole('button', { name: 'All steps' }))
     const list = within(rail).getByRole('list', { name: 'Steps of the tutorial' })
     const items = within(list).getAllByRole('button')
-    expect(items).toHaveLength(17)
+    expect(items).toHaveLength(18)
     expect(items[0]).toHaveTextContent('1. The BoardDone')
     expect(items[1]).toHaveTextContent('2. A Card of your ownSkipped')
-    expect(items[7]).toHaveTextContent('8. To-dosShowing')
-    expect(items[7]).toHaveAttribute('aria-current', 'step')
-    expect(items[10]).toHaveTextContent('11. A RunNot tried')
-    expect(items[11]).toHaveTextContent('12. A CheckpointTo do')
-    await userEvent.click(items[2]!)
+    expect(items[2]).toHaveTextContent('3. UndoTo do')
+    expect(items[8]).toHaveTextContent('9. To-dosShowing')
+    expect(items[8]).toHaveAttribute('aria-current', 'step')
+    expect(items[11]).toHaveTextContent('12. A RunNot tried')
+    expect(items[12]).toHaveTextContent('13. A CheckpointTo do')
+    await userEvent.click(items[3]!)
     expect(title()).toBe('Its Page')
   })
 
@@ -179,7 +230,7 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('card'))
     expect(useHandsOn.getState().results.look).toBe('done')
     expect(board).toHaveFocus() // reached by doing: focus stays with the person
-    expect(screen.getByRole('status')).toHaveTextContent('Done: The Board. Step 2 of 17: A Card of your own.')
+    expect(screen.getByRole('status')).toHaveTextContent('Done: The Board. Step 2 of 18: A Card of your own.')
   })
 
   it('2: a new Card with a title and a status — not one that was there, and not one left as an Idea', async () => {
@@ -189,7 +240,7 @@ describe('each step moves on by itself once it has been done', () => {
     act(() => kit().board((b) => ({ cards: [...b.cards, card('new2', '', { status: 'reading' })] })))
     expect(showing()).toBe('card')
     act(() => kit().board((b) => ({ cards: b.cards.map((c) => (c.id === 'new' ? { ...c, status: 'open_question' } : c)) })))
-    await waitFor(() => expect(showing()).toBe('page'))
+    await waitFor(() => expect(showing()).toBe('undo'))
     expect(useHandsOn.getState().card).toBe('new')
   })
 
@@ -200,7 +251,42 @@ describe('each step moves on by itself once it has been done', () => {
     expect(showing()).toBe('card')
   })
 
-  it('3: a line of text with a formula on a Page', async () => {
+  it('3: an Undo — the slip made on purpose, taken back', async () => {
+    await open('undo')
+    act(() => kit().setUndo({ undo: 'Move Card Pólya 1921', redo: null })) // the slip: a new step, nothing undone
+    expect(showing()).toBe('undo')
+    act(() => kit().setUndo({ undo: 'Status: Drift → Reading', redo: 'Move Card Pólya 1921' })) // ⌘Z, a button, the Edit menu
+    await waitFor(() => expect(showing()).toBe('page'))
+    expect(useHandsOn.getState().results.undo).toBe('done')
+  })
+
+  it('3: taking back step 2’s own work counts too, down to the last step there is', async () => {
+    kit().setUndo({ undo: 'Add Card Drift', redo: null })
+    await open('undo')
+    act(() => kit().setUndo({ undo: null, redo: 'Add Card Drift' }))
+    await waitFor(() => expect(showing()).toBe('page'))
+  })
+
+  it('3: what is not an Undo — a Redo, a step not undone, a Merge emptying the list, another Branch’s list', async () => {
+    kit().setUndo({ undo: 'Status: Drift → Reading', redo: 'Move Card Pólya 1921' }) // undone before the step began
+    await open('undo')
+    act(() => kit().setUndo({ undo: 'Move Card Pólya 1921', redo: null })) // Redo
+    act(() => kit().setUndo({ undo: 'Status: Drift → Reading', redo: null })) // "Not undone — …": dropped, never in Redo
+    act(() => kit().setUndo({ undo: null, redo: null })) // a Merge landed; or the Board closed for a Branch switch
+    act(() => kit().setUndo({ undo: 'Add Card Walks', redo: 'Move Card Drift' })) // the other Branch's list
+    act(() => kit().board((b) => ({ cards: b.cards.map((c) => (c.id === 'paper-a' ? { ...c, x: 640, y: 40 } : c)) }))) // a Card moved back by hand
+    expect(showing()).toBe('undo')
+  })
+
+  it('3: rings the Board’s Undo and Redo buttons', async () => {
+    const view = await open('undo').then(() => render(<div data-tour="undo" />))
+    const target = view.container.firstElementChild as HTMLElement
+    target.getBoundingClientRect = () => ({ left: 160, top: 80, width: 56, height: 30, right: 216, bottom: 110, x: 160, y: 80, toJSON: () => ({}) })
+    act(() => kit().board((b) => ({ ...b }))) // anything that makes the ring look again
+    await waitFor(() => expect(document.querySelector<HTMLElement>('.q-tour-ring')).toHaveStyle({ left: '156px', top: '76px' }))
+  })
+
+  it('4: a line of text with a formula on a Page', async () => {
     await open('page')
     act(() => kit().set((w) => ({ board: { ...w.board, cards: [...w.board.cards, card('mine', 'Drift', { status: 'reading' })] } })))
     act(() => useHandsOn.setState({ card: 'mine' }))
@@ -211,7 +297,7 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('source'))
   })
 
-  it('3: the formula that was already on the open Page does not count', async () => {
+  it('4: the formula that was already on the open Page does not count', async () => {
     act(() => pagePanel.open('welcome'))
     await open('page')
     expect(showing()).toBe('page')
@@ -219,13 +305,13 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('source'))
   })
 
-  it('4: a Source attached to a Card', async () => {
+  it('5: a Source attached to a Card', async () => {
     await open('source')
     act(() => kit().board((b) => ({ cards: b.cards.map((c) => (c.id === 'paper-b' ? { ...c, sources: 1 } : c)) })))
     await waitFor(() => expect(showing()).toBe('connection'))
   })
 
-  it('5: a new Connection with a label', async () => {
+  it('6: a new Connection with a label', async () => {
     await open('connection')
     act(() => kit().board((b) => ({ connections: [...b.connections, { id: 'k2', from: 'welcome', to: 'run', kind: 'directed', label: '' }] })))
     expect(showing()).toBe('connection')
@@ -233,7 +319,7 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('frame'))
   })
 
-  it('6: a new Frame with a Card in it', async () => {
+  it('7: a new Frame with a Card in it', async () => {
     await open('frame')
     act(() => kit().board((b) => ({ frames: [...b.frames, { id: 'f2', title: 'Mine', x: 2000, y: 2000, w: 520, h: 360 }] })))
     expect(showing()).toBe('frame')
@@ -241,13 +327,13 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('search'))
   })
 
-  it('7: a Card chosen from Search', async () => {
+  it('8: a Card chosen from Search', async () => {
     await open('search')
     act(() => searchUse.chose('run'))
     await waitFor(() => expect(showing()).toBe('todo'))
   })
 
-  it('8: the To-do ticked and another one made, in either order', async () => {
+  it('9: the To-do ticked and another one made, in either order', async () => {
     await open('todo')
     act(() => kit().set((w) => ({ todos: [...w.todos, { id: 'pending:1', owner: 'me', text: 'Plot it', done: false, created_by: 'me', created_at: Date.now() }] })))
     expect(showing()).toBe('todo')
@@ -255,13 +341,13 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('suggestion'))
   })
 
-  it('9: the waiting Suggestion accepted or rejected', async () => {
+  it('10: the waiting Suggestion accepted or rejected', async () => {
     await open('suggestion')
     act(() => kit().set((w) => ({ suggestions: w.suggestions.map((s) => ({ ...s, suggestion: { ...s.suggestion, state: 'rejected' as const } })) })))
     await waitFor(() => expect(showing()).toBe('visual'))
   })
 
-  it('10: on the Page of “Watch a walk”, using its Visual', async () => {
+  it('11: on the Page of “Watch a walk”, using its Visual', async () => {
     await open('visual')
     const frame = screen.getByTitle('Visual: A walk')
     act(() => frame.focus()) // on another Page: not this Visual
@@ -272,7 +358,7 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('run'))
   })
 
-  it('11: the Run executed — a new result on its Page', async () => {
+  it('12: the Run executed — a new result on its Page', async () => {
     await open('run')
     expect(within(dialog()!).queryByText(/Check again/)).toBeNull() // Python is there
     act(() =>
@@ -283,13 +369,13 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('checkpoint'))
   })
 
-  it('12: a Checkpoint added to the open Branch', async () => {
+  it('13: a Checkpoint added to the open Branch', async () => {
     await open('checkpoint')
     act(() => kit().board((b) => ({ branch: { ...b.branch!, checkpoints: 2 } })))
     await waitFor(() => expect(showing()).toBe('branch'))
   })
 
-  it('13: to longer-walks and back to main', async () => {
+  it('14: to longer-walks and back to main', async () => {
     await open('branch')
     act(() => kit().board({ status: 'live', branch: BRANCHES.longer }))
     expect(showing()).toBe('branch')
@@ -297,7 +383,7 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('merge'))
   })
 
-  it('14: the Merge of longer-walks into main landed', async () => {
+  it('15: the Merge of longer-walks into main landed', async () => {
     await open('merge')
     act(() => kit().set((w) => ({ merge: { ...w.merge, status: 'ready', source: BRANCHES.longer, target: BRANCHES.main } })))
     expect(showing()).toBe('merge')
@@ -305,13 +391,13 @@ describe('each step moves on by itself once it has been done', () => {
     await waitFor(() => expect(showing()).toBe('history'))
   })
 
-  it('15: History opened (a Restore is not needed)', async () => {
+  it('16: History opened (a Restore is not needed)', async () => {
     await open('history')
     act(() => historyPanel.toggle())
     await waitFor(() => expect(showing()).toBe('ai'))
   })
 
-  it('16: an answer pinned to a Page', async () => {
+  it('17: an answer pinned to a Page', async () => {
     await open('ai')
     const answer = { id: 'a1', role: 'assistant' as const, text: 'It grows like n.', at: 1, status: 'done' as const }
     const conversation = { id: 'c1', title: 'q', createdAt: 1, updatedAt: 1, messages: [answer] }
@@ -323,13 +409,13 @@ describe('each step moves on by itself once it has been done', () => {
 
   it('“Skip this step” is always there, and moves on with the step marked skipped', async () => {
     await open()
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 17; i++) {
       expect(within(dialog()!).getByRole('button', { name: 'Skip this step' })).toBeInTheDocument()
       await press('Skip this step')
       expect(dialog()).toHaveFocus()
     }
     expect(title()).toBe('The end')
-    expect(Object.values(useHandsOn.getState().results)).toEqual(Array(16).fill('skipped'))
+    expect(Object.values(useHandsOn.getState().results)).toEqual(Array(17).fill('skipped'))
   })
 
   it('never makes a Change: a step that is skipped or done leaves the Board as it was', async () => {
@@ -443,18 +529,23 @@ describe('when what a step needs was removed', () => {
 
 describe('the end', () => {
   it('says what was tried, skipped and not tried, and what a Team Workspace adds', async () => {
-    await open('end', { look: 'done', card: 'done', run: 'not_tried', ai: 'not_tried', merge: 'skipped' })
+    await open('end', { look: 'done', card: 'done', undo: 'done', run: 'not_tried', ai: 'not_tried', merge: 'skipped' })
     const box = within(dialog()!)
-    expect(box.getByRole('region', { name: 'Tried' })).toHaveTextContent('The Board · A Card of your own')
+    expect(box.getByRole('region', { name: 'Tried' })).toHaveTextContent(/^TriedThe Board · A Card of your own · Undo$/)
     expect(box.getByRole('region', { name: 'Skipped' })).toHaveTextContent('A Merge')
     expect(box.getByRole('region', { name: /Not tried/ })).toHaveTextContent('A Run · The AI sidebar')
-    expect(box.getByRole('region', { name: 'Not reached' })).toHaveTextContent('Its Page')
+    expect(box.getByRole('region', { name: 'Not reached' })).toHaveTextContent(/^Not reachedIts Page · A Source/)
     expect(box.getByRole('region', { name: 'What a Team Workspace adds' })).toHaveTextContent(/Members.*invites.*Guests/)
     expect(box.queryByRole('button', { name: 'Back to workspaces' })).toBeNull() // no desktop app
     expect(box.queryByRole('button', { name: 'Skip this step' })).toBeNull()
     await press('Finish')
     expect(dialog()).toBeNull()
     expect(lastSaved()).toMatchObject({ status: 'finished' })
+  })
+
+  it('lists Undo as skipped when it was skipped', async () => {
+    await open('end', { look: 'done', card: 'done', undo: 'skipped' })
+    expect(within(dialog()!).getByRole('region', { name: 'Skipped' })).toHaveTextContent(/^SkippedUndo$/)
   })
 
   it('“Back to workspaces” in the desktop app calls its bridge', async () => {
@@ -486,7 +577,7 @@ describe('on screen', () => {
     await open()
     const box = screen.getByRole('region', { name: 'The Board' })
     expect(screen.getByRole('complementary', { name: 'rail' })).toContainElement(box)
-    expect(box).toHaveAccessibleDescription(/^Tutorial, step 1 of 17 This Tutorial Workspace is yours alone/)
+    expect(box).toHaveAccessibleDescription(/^Tutorial, step 1 of 18 This Tutorial Workspace is yours alone/)
   })
 
   it('lays nothing over the app but the ring, which lets clicks through', async () => {

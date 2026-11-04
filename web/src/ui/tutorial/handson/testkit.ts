@@ -18,6 +18,7 @@ import type {
   RunsSnapshot,
   SuggestionVM,
   Todo,
+  UndoSnapshot,
 } from '../../../lib'
 import { SAMPLE } from './names'
 
@@ -31,6 +32,8 @@ export type World = {
   branches: BranchInfo[]
   /** Blocks of each Card's Page, by Card id. */
   blocks: Record<string, BlockVM[]>
+  /** The open Branch's next Undo and Redo, by name (`useUndo`, `undo.current`). */
+  undo: UndoSnapshot
 }
 
 const MAIN: BranchInfo = { id: 'main-id', name: 'main', seq: 10, checkpoints: 1 }
@@ -78,6 +81,8 @@ export function sampleWorld(): World {
       run: [block('b-run', 'run', { type: 'run', title: 'msd', text: 'print(1)', run: { result, broken: false } })],
       visual: [block('b-vis', 'visual', { type: 'visual', title: 'A walk', text: '<canvas></canvas>' })],
     },
+    // Step 2 was just done: the Card made and its status are the newest steps.
+    undo: { undo: 'Status: Drift → Reading', redo: null },
   }
 }
 
@@ -119,6 +124,10 @@ export function makeKit() {
     setAi(setup: AiSetup) {
       kit.set((w) => ({ ai: { ...w.ai, setup } }))
     },
+    /** What the Undo store would say after a gesture, an Undo or a Redo. */
+    setUndo(undo: UndoSnapshot) {
+      kit.set({ undo })
+    },
     module: {} as Record<string, unknown>,
   }
   const subscribe = (l: () => void) => {
@@ -147,6 +156,9 @@ export function makeKit() {
     useAi: () => use((w) => w.ai),
     useBranches: () => use((w) => w.branches),
     usePage: (id: string | null) => use((w) => pageOf(w, id)),
+    useUndo: () => use((w) => w.undo),
+    // Called on every change of the world, as a store may call more often than a name changes.
+    undo: { current: () => kit.w.undo, subscribe },
     runs: { refresh: vi.fn(async () => void kit.calls.runsRefresh++), configure: vi.fn(async () => void kit.calls.runsConfigure++) },
     ai: { refresh: vi.fn(async () => void kit.calls.aiRefresh++) },
     workspace: {

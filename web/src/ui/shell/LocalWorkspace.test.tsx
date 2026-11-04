@@ -160,6 +160,7 @@ describe('a Tutorial Workspace', () => {
     await waitFor(() => expect(useHandsOn.getState().phase).toBe('running'))
     act(() => handsOn.skip())
     act(() => handsOn.skip())
+    act(() => handsOn.skip())
     await userEvent.click(screen.getByRole('button', { name: 'Leave the tutorial' }))
     await waitFor(() => expect(server.tutorialState).toMatchObject({ status: 'left', step: 'page' }))
     expect(screen.queryByRole('region', { name: 'Tutorial' })).toBeNull()
