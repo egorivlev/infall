@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { MoreMenu } from '../page/MoreMenu'
 import type { MenuItem } from '../page/MoreMenu'
 import { UndoButtons } from './UndoButtons'
@@ -10,14 +11,16 @@ type Props = {
   onImportBibtex?: () => void
   /** M13: Export BibTeX — every Source on the Branch (anyone who reads the Board, Guests too). */
   onExportBibtex?: () => void
+  /** M19: "Export ▾" — the Board as SVG or PNG (anyone who reads the Board, Guests and History previews too). */
+  exportMenu?: ReactNode
 }
 
-/** Top-left of the Board: adding and Undo / Redo (absent in read-only mode), then BibTeX in and out. */
-export function Toolbar({ readOnly, onAddCard, onAddFrame, onImportBibtex, onExportBibtex }: Props) {
+/** Top-left of the Board: adding and Undo / Redo (absent in read-only mode), then BibTeX in and out, then Export. */
+export function Toolbar({ readOnly, onAddCard, onAddFrame, onImportBibtex, onExportBibtex, exportMenu }: Props) {
   const bibtex: MenuItem[] = []
   if (!readOnly && onImportBibtex) bibtex.push({ label: 'Import BibTeX…', onPick: onImportBibtex })
   if (onExportBibtex) bibtex.push({ label: 'Export BibTeX', onPick: onExportBibtex })
-  if (readOnly && bibtex.length === 0) return null
+  if (readOnly && bibtex.length === 0 && !exportMenu) return null
   return (
     <div className="qb-tools">
       {!readOnly && (
@@ -50,6 +53,11 @@ export function Toolbar({ readOnly, onAddCard, onAddFrame, onImportBibtex, onExp
             buttonClass="q-btn q-btn--sm qb-toolbar__btn"
             menuClass="qb-toolbar__menu"
           />
+        </div>
+      )}
+      {exportMenu && (
+        <div className="qb-toolbar" role="toolbar" aria-label="Export the Board">
+          {exportMenu}
         </div>
       )}
     </div>
