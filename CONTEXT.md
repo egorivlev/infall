@@ -34,6 +34,10 @@ _Avoid_: Onboarding, walkthrough, wizard
 A read-only sequence of pointers at the controls of any Workspace. It never makes a Change.
 _Avoid_: Tutorial, walkthrough
 
+**Workspace file**:
+A single file holding a whole Workspace — its Research Content, history, To-dos and Comments, with its Members as names only and nothing secret — used to keep a copy, to move a Workspace onto a Team server, or to take one home.
+_Avoid_: Backup file, archive, dump
+
 ### Content
 
 **Board**:
@@ -130,6 +134,10 @@ _Avoid_: Revert, rollback
 **To-do**:
 A task owned by one Member, visible to all Members, and assignable by any Member; only its owner marks it done. A fact about real-world work, so it is the same on every Branch. May point at one Card, and outlives that Card if it is removed.
 _Avoid_: Task, ticket
+
+**Comment**:
+A Member's remark in the thread of one Card, visible to all Members, the same on every Branch, and outliving the Card. May mention other Members, who then find it in their list of mentions. A thread can be marked resolved.
+_Avoid_: Note, message, chat
 
 **Conversation**:
 A Member's private exchange with an AI about what they are looking at. Not Research Content, and not visible to anyone else.
