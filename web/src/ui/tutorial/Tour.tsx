@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { Member } from '../../lib'
+import { renderInline } from '../page/markdown'
 import { readAnswer, writeAnswer } from './memory'
 import { useFollow } from './follow'
 import { placePopover, ringBox } from './position'
@@ -86,7 +87,7 @@ function StepPopover({ step, index, count }: { step: TourStep; index: number; co
         </h2>
         <div className="q-tour__body" id={`${id}-body`}>
           {step.body.map((sentence) => (
-            <p key={sentence}>{sentence}</p>
+            <p key={sentence}>{renderInline(sentence)}</p>
           ))}
         </div>
         <div className="q-tour__actions">

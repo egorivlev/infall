@@ -42,6 +42,8 @@
 .q-lesson__body p, .q-lesson__tool p, .q-lesson__summary p { margin: 0; }
 .q-lesson__todo { margin: 0; padding: 6px 8px; border-left: 2px solid var(--q-accent); background: var(--q-accent-soft); border-radius: 0 var(--q-r) var(--q-r) 0; font-size: calc(12.5px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink); }
 .q-lesson__todo .q-caps { display: block; margin-bottom: 3px; color: var(--q-ink-2); }
+/* What to type, in a step's text: as a Page shows `code` (page.css, .qp-md code), at the rail's size. */
+.q-lesson__body code, .q-lesson__todo code { padding: 1px 4px; border-radius: var(--q-r-chip); background: var(--q-sunken); font: calc(11.5px * var(--q-text, 1))/1.45 var(--q-mono); color: var(--q-ink); overflow-wrap: anywhere; }
 .q-lesson__note { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-2); }
 .q-lesson__tool { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--q-line-soft); border-radius: var(--q-r); font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; }
 .q-lesson__instead { margin: 0; font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-3); }

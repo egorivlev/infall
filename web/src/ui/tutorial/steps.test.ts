@@ -50,6 +50,19 @@ describe('the steps', () => {
     expect(runs(true)).not.toEqual(runs(false))
   })
 
+  it('no step’s text has Markdown or TeX in it: the Tour shows its words as they are', () => {
+    const audiences = [
+      { role: 'admin', desktop: true, local: true, startScreen: true },
+      { role: 'admin', desktop: false },
+      { role: 'member', desktop: true },
+      { role: 'member', desktop: false },
+      { role: 'guest', desktop: false },
+    ] as const
+    const words = audiences.flatMap((a) => stepsFor(a).flatMap((s) => [s.title, ...s.body]))
+    expect(words.length).toBeGreaterThan(30)
+    for (const text of words) expect(text).not.toMatch(/[$`\\*]|\]\(/)
+  })
+
   it('the last step names the start screen only when the app can go there', () => {
     const more = (startScreen: boolean) => stepsFor({ role: 'member', desktop: true, startScreen }).find((s) => s.id === 'more')!
     expect(more(false).body).toHaveLength(2)

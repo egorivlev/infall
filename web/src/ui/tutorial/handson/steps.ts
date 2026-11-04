@@ -30,9 +30,13 @@ export type StepId = (typeof STEP_IDS)[number]
 export type HandsOnStep = {
   id: StepId
   title: string
-  /** One to three plain sentences: what this part of Infall is for. */
+  /**
+   * One to three plain sentences: what this part of Infall is for. Drawn as a Page draws a line of text
+   * (ui/page/markdown.tsx, inline only): `code` and $math$ are shown as such, so a literal `*`, `$` or backtick needs a
+   * backslash before it.
+   */
   body: string[]
-  /** What to do, in one or two sentences. Empty for the last step. */
+  /** What to do, in one or two sentences, drawn as `body` is. Empty for the last step. */
   todo: string
   /** `data-tour` names of the control to ring, in order of preference (the first one on screen). */
   anchor: string[]
@@ -78,7 +82,11 @@ export const STEPS: HandsOnStep[] = [
   {
     id: 'page',
     title: 'Its Page',
-    body: ['Behind every Card is its Page: the write-up of what the Card is about.', 'Text is Markdown, and math goes between dollar signs: $\\langle x^2 \\rangle = n$.'],
+    body: [
+      'Behind every Card is its Page: the write-up of what the Card is about.',
+      // What to type, as code, and what the Page then shows.
+      'Text is Markdown, and math goes between dollar signs: `$\\langle x^2 \\rangle = n$` shows as $\\langle x^2 \\rangle = n$.',
+    ],
     todo: 'Open the Page of your Card and write a line of text with a formula in it.',
     anchor: ['page', 'made', 'board'],
   },
