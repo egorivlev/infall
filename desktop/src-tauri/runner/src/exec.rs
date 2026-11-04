@@ -34,6 +34,21 @@ pub const MAX_FIGURE_BYTES: usize = 120_000;
 /// At most this many packages are reported.
 pub const MAX_PACKAGES: usize = 8;
 
+/// Usage reports that packages often imported in a Run send by default, turned off for every
+/// Run, over whatever the login shell says: each is the package's own documented switch
+/// (docs/specs/desktop.md, "How a Run is executed").
+pub const NO_USAGE_REPORTS: &[(&str, &str)] = &[
+    // qdk, and qsharp from 1.28 on: their READMEs on PyPI, "Telemetry".
+    ("QDK_PYTHON_TELEMETRY", "none"),
+    // Older qsharp releases: their README on PyPI (1.20.0, "Telemetry").
+    ("QSHARP_PYTHON_TELEMETRY", "none"),
+    // huggingface_hub, for transformers, datasets, diffusers and the rest: its documentation,
+    // "Environment variables".
+    ("HF_HUB_DISABLE_TELEMETRY", "1"),
+    // mlflow 3.2 and later: its documentation, "Usage Tracking".
+    ("MLFLOW_DISABLE_TELEMETRY", "true"),
+];
+
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const ENV_FILE: &str = "qoop-env.json";
 
@@ -296,6 +311,7 @@ impl Exec {
             .current_dir(cwd)
             .env_clear()
             .envs(self.env.iter().map(|(k, v)| (k, v)))
+            .envs(NO_USAGE_REPORTS.iter().copied())
             .env("MPLBACKEND", "Agg")
             .env("PYTHONUNBUFFERED", "1")
             .env("PYTHONIOENCODING", "utf-8")

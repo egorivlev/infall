@@ -20,5 +20,6 @@ The fonts are part of Infall; nothing is fetched from a font service.
 ## Not Infall, but worth knowing
 
 - **A Run** is code you approved; it runs with your rights and may use the network itself ([tutorial](tutorial.md), part 10).
+- **A Run** is started with the usage reporting of the packages that document a switch for it turned off: `qdk` and `qsharp` (Microsoft), `huggingface_hub` (with `transformers`, `datasets` and the rest) and `mlflow` ([desktop spec](specs/desktop.md), "Usage reports off").
 - **A Visual** runs in a sandbox with no network.
 - **A Workspace file** (`.infall`) holds the Workspace's Research Content and your name, but no sign-ins, no access tokens and no OpenRouter key. Whoever you give it to can read all of that Research Content.
