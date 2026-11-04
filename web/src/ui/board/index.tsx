@@ -54,6 +54,7 @@ import { FrameNode } from './nodes/FrameNode'
 import { Toast } from './Toast'
 import { toasts } from './toastStore'
 import { Toolbar } from './Toolbar'
+import { BoardExportMenu } from './export/ExportMenu'
 import type { BoardNode, ConnectionEdgeType } from './types'
 import { ui, useBoardUi } from './uiStore'
 import type { Transient } from './uiStore'
@@ -741,6 +742,7 @@ function BoardCanvas() {
         onAddFrame={addFrameAtCentre}
         onImportBibtex={previewing ? undefined : () => setImporting(true)}
         onExportBibtex={previewing ? undefined : exportBibtex}
+        exportMenu={<BoardExportMenu />}
       />
       {importing && !readOnly && <ImportBibtex target={importTarget} onClose={() => setImporting(false)} />}
       <ZoomHud cards={cards.length} frames={frames.length} onFit={() => fit(true)} />
