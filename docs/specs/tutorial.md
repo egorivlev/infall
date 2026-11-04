@@ -2,7 +2,7 @@
 
 A new team member opens Infall and sees a Board they did not build. M11 gives them two things: a short Tour inside the app that points at the real controls, and a written tutorial they can read next to it. Neither changes what Infall can do, and neither writes anything to the Board.
 
-Words are CONTEXT.md's. The **Tour** (section 1) is read-only and points at controls. The **Tutorial** is something else: hands-on steps in a Tutorial Workspace that wait for the Member to do each thing, added in M12 and specified in [local.md](local.md#the-tutorial-web-ui), not here. The Tutorial runs only in a Tutorial Workspace; every other Workspace keeps the Tour as specified below. The written tutorial (section 2) is a page in `docs/`, neither of the two.
+Words are CONTEXT.md's. The **Tour** (section 1) is read-only and points at controls. The **Tutorial** is something else: hands-on steps in a Tutorial Workspace that wait for the Member to do each thing, added in M12 and specified in [local.md](local.md#the-tutorial-web-ui), not here; since M15 it has eighteen steps, step 3 being Undo (a slip made on purpose and taken back, right after the first Card of one's own). The Tutorial runs only in a Tutorial Workspace; every other Workspace keeps the Tour as specified below. The written tutorial (section 2) is a page in `docs/`, neither of the two.
 
 ## 1. The Tour (in the app)
 
@@ -24,7 +24,7 @@ The Tour never changes the Board, a Page or anything on the server. It only open
 For a Member or an Admin, in this order. The text of each step is written by the builder in the project's words (CONTEXT.md), short, and says what the control is for, not how the tutorial works.
 
 1. **The Board** — the canvas: Cards are the team's ideas, papers and questions; drag to move, scroll to pan.
-2. **+ Card / + Frame** — how a Card and a Frame are made.
+2. **+ Card / + Frame** — how a Card and a Frame are made; since M15 also that the arrows beside them are Undo and Redo of one's own latest gestures (no step of their own).
 3. **A Card** (the first one on the Board, if there is one; otherwise this step stays on "+ Card") — its status, and that opening it shows its Page.
 4. **Connections** — drawn from one Card to another, with a label (anchored to the Board; says where to drag from).
 5. **Search** — finds Cards; the keyboard shortcut.
@@ -57,6 +57,6 @@ Steps that wait for the Member to do something, a sample Board, videos, progress
 `docs/tutorial.md`: one page, read top to bottom in about fifteen minutes, that takes one person from an empty Board to having used every main part once: a Card, its Page (text, math, a Visual, a Source), a Connection, a Frame, a To-do, a Suggestion, a Branch with a Checkpoint and a merge back, History, the AI sidebar (both ways of connecting it, said honestly: which needs what), a Run in the desktop app, and inviting a Guest.
 
 - Every control is named exactly as the screen names it; every sentence was checked against the source or the running app.
-- It says what is not there (no general undo; Runs only in the desktop app; one Run at a time) where a reader would otherwise look for it.
+- It says what is not there (Runs only in the desktop app; one Run at a time; until M15, no general undo) where a reader would otherwise look for it. Since M15 it has a short part on Undo: what it takes back, the keys and buttons, and what it never does.
 - `docs/first-day.md` links to it as the next thing to read, and the Tour's last step names it.
 - Since M12 it starts with the way in for someone without a team (the desktop app, a Tutorial Workspace) and says which parts do not exist in a Local Workspace (Members, invites, Guests).

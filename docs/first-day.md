@@ -29,6 +29,8 @@ If the Member will use the desktop app, also give them the package for their com
 3. Press **Join Infall**. You are signed in and see the Board.
 4. Press **+ Card** at the top left of the Board and give the Card a title. Everyone else sees it at once, with your name on the Change.
 
+⌘Z (Ctrl+Z on Windows and Linux) takes back your own last gesture and never another Member's work: what someone else changed since stays as they left it ([the tutorial](tutorial.md#undo), part 1).
+
 From then on, sign in at `https://qoop.example.org` with your email and that password. The link does not work a second time: it says "This invite is no longer valid."
 
 Forgot the password? Nobody can read it, and the Admin has no button for it: they set a new one on the server (deploy guide, "Forgot a password").

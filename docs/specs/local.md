@@ -161,21 +161,26 @@ Each step: a title, one to three sentences, what to do, and it moves on by itsel
 
 1. Move around the Board; open `Welcome to Infall`.
 2. Make a Card; give it a title and a status.
-3. Write on its Page: text, a formula.
-4. Attach a Source to a Card.
-5. Draw a Connection and label it.
-6. Make a Frame and put a Card in it.
-7. Search for a Card.
-8. Tick the To-do; make another.
-9. Accept or dismiss the Suggestion.
-10. Open `Watch a walk` and use the Visual.
-11. Execute the Run on `Random walk experiment` (desktop app, Python needed — decision 6).
-12. Name a Checkpoint.
-13. Switch to `longer-walks`, look, switch back.
-14. Merge `longer-walks` into `main` and decide the Conflict (since M15b: **Merge into main…** on the label of `longer-walks` on the Branch Graph, which the step points at when it is on screen).
-15. Open History; Restore to `Before the tutorial`'s moment or just look (either passes).
-16. Open the AI sidebar and ask something; Pin an answer to a Page (decision 6).
-17. The end: what was tried and what was not; what a Team Workspace adds (Members, Guests, invites — said in words, they do not exist here); **Back to workspaces** (`switchWorkspace`, when there is a bridge).
+3. Undo (since M15, [undo.md](undo.md)): make a slip on purpose — drag a Card somewhere else — and take it back with Cmd/Ctrl+Z or the Undo button in the Board's toolbar, which the step points at. It passes once an Undo on the open Branch has taken something back, as the web UI's own list of steps shows it (`undo.subscribe`: the newest step moved to Redo), whichever way it was asked for: the keys, a button, the desktop app's Edit menu, a delete's notice. A Card moved back by hand does not pass it. The step says that Undo takes back only one's own latest gestures, and that History and Restore go further back.
+4. Write on its Page: text, a formula.
+5. Attach a Source to a Card.
+6. Draw a Connection and label it.
+7. Make a Frame and put a Card in it.
+8. Search for a Card.
+9. Tick the To-do; make another.
+10. Accept or dismiss the Suggestion.
+11. Open `Watch a walk` and use the Visual.
+12. Execute the Run on `Random walk experiment` (desktop app, Python needed — decision 6).
+13. Name a Checkpoint.
+14. Switch to `longer-walks`, look, switch back.
+15. Merge `longer-walks` into `main` and decide the Conflict (since M15b: **Merge into main…** on the label of `longer-walks` on the Branch Graph, which the step points at when it is on screen).
+16. Open History; Restore to `Before the tutorial`'s moment or just look (either passes).
+17. Open the AI sidebar and ask something; Pin an answer to a Page (decision 6).
+18. The end: what was tried and what was not; what a Team Workspace adds (Members, Guests, invites — said in words, they do not exist here); **Back to workspaces** (`switchWorkspace`, when there is a bridge).
+
+Why Undo is step 3: it is the first moment the person has a gesture of their own to take back (step 1 only opens a Page), and it comes before the steps where slips happen. The slip it asks for is a move, not the Card of step 2, which step 4 writes on.
+
+Progress names steps by id (`look`, `card`, `undo`, `page`, …), never by number, so adding a step needs no new version of what is stored. Progress saved before step 3 existed loads as it was and carries on at the very step it named; Undo has no result in it, so the list of steps shows it as to do and the end lists it as not reached.
 
 The Tour (docs/specs/tutorial.md §1) stays as it is in every other Workspace. In the desktop app its last step also says that a Tutorial Workspace can be made from the start screen, with a button that calls `switchWorkspace`.
 
