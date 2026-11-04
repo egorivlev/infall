@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { desktopSwitchWorkspace } from '../../bridge'
+import { renderInline } from '../../page/markdown'
 import { useFollow } from '../follow'
 import { ringBox } from '../position'
 import { tour } from '../store'
@@ -143,12 +144,12 @@ function StepText({ step, check, results, box }: { step: HandsOnStep; check: Ste
       </h3>
       <div className="q-lesson__body" id={`${id}-body`}>
         {step.body.map((sentence) => (
-          <p key={sentence}>{sentence}</p>
+          <p key={sentence}>{renderInline(sentence)}</p>
         ))}
       </div>
       {step.todo && (
         <p className="q-lesson__todo">
-          <span className="q-caps">Try it</span> {step.todo}
+          <span className="q-caps">Try it</span> {renderInline(step.todo)}
         </p>
       )}
       {check.missing && (

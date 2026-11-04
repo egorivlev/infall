@@ -11,7 +11,9 @@ vi.mock('../../../lib', async () => {
 })
 
 import { historyPanel, pagePanel, searchUse } from '../../bridge'
+import { renderInline } from '../../page/markdown'
 import { SAMPLE } from './names'
+import { STEPS } from './steps'
 import { handsOn, SAVE_MS, useHandsOn } from './store'
 import { block, BRANCHES, card } from './testkit'
 import { Tutorial, TutorialProgress } from './Tutorial'
@@ -601,11 +603,34 @@ describe('on screen', () => {
     await waitFor(() => expect(document.querySelector<HTMLElement>('.q-tour-ring')).toHaveStyle({ left: '296px', top: '196px' }))
   })
 
+  it('draws a formula in a step’s text as a Page does, with what to type for it as code', async () => {
+    await open('page')
+    const body = dialog()!.querySelector<HTMLElement>('.q-lesson__body')!
+    expect(body.querySelector('.qp-math .katex')).not.toBeNull()
+    expect(body.querySelector('code')).toHaveTextContent('$\\langle x^2 \\rangle = n$')
+    // Outside the code and the formula, nothing is left of the TeX as it was written.
+    const rest = body.cloneNode(true) as HTMLElement
+    for (const el of rest.querySelectorAll('code, .qp-math')) el.remove()
+    expect(rest.textContent).toBe('Behind every Card is its Page: the write-up of what the Card is about.Text is Markdown, and math goes between dollar signs:  shows as .')
+  })
+
   it('leaves Tab to the rest of the app', async () => {
     await open()
     fireEvent.keyDown(dialog()!, { key: 'Tab' })
     for (let i = 0; i < 6; i++) await userEvent.tab()
     expect(dialog()).not.toContainElement(document.activeElement as HTMLElement)
     expect(dialog()).toBeInTheDocument()
+  })
+})
+
+describe('the words of every step', () => {
+  // As StepText draws them: anything Markdown or TeX in them becomes code or a formula, never stays as typed.
+  it.each(STEPS.map((s) => [s.id, s] as const))('%s shows no Markdown or TeX as it was typed', (_, step) => {
+    for (const text of [...step.body, step.todo]) {
+      const { container, unmount } = render(<p>{renderInline(text)}</p>)
+      for (const el of container.querySelectorAll('code, .qp-math')) el.remove()
+      expect(container.textContent).not.toMatch(/[$`\\*]|\]\(/)
+      unmount()
+    }
   })
 })

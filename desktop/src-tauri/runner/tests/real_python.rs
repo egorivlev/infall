@@ -854,6 +854,38 @@ print(run_dir)
 }
 
 #[test]
+fn packages_usage_reports_are_off_in_every_run_whatever_the_shell_says() {
+    let python = python_or_skip!();
+    // The Member's login shell turned qdk's reporting on, and set something of its own.
+    let bench = bench_with(python, true, |o| {
+        let env = o.env.get_or_insert_with(Vec::new);
+        env.retain(|(k, _)| k != "QDK_PYTHON_TELEMETRY");
+        env.push(("QDK_PYTHON_TELEMETRY".into(), "on".into()));
+        env.push(("QOOP_TEST_OWN".into(), "kept".into()));
+    });
+    let code = r#"import os
+for name in ['QDK_PYTHON_TELEMETRY', 'QSHARP_PYTHON_TELEMETRY', 'HF_HUB_DISABLE_TELEMETRY', 'MLFLOW_DISABLE_TELEMETRY', 'QOOP_TEST_OWN']:
+    print(name, os.environ.get(name))
+"#;
+    let run = bench.run(code);
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(
+        run.output,
+        "QDK_PYTHON_TELEMETRY none\nQSHARP_PYTHON_TELEMETRY none\nHF_HUB_DISABLE_TELEMETRY 1\nMLFLOW_DISABLE_TELEMETRY true\nQOOP_TEST_OWN kept\n"
+    );
+    // The list the Runner sets is exactly these.
+    assert_eq!(
+        qoop_runner::exec::NO_USAGE_REPORTS,
+        [
+            ("QDK_PYTHON_TELEMETRY", "none"),
+            ("QSHARP_PYTHON_TELEMETRY", "none"),
+            ("HF_HUB_DISABLE_TELEMETRY", "1"),
+            ("MLFLOW_DISABLE_TELEMETRY", "true"),
+        ]
+    );
+}
+
+#[test]
 fn standard_output_and_standard_error_keep_their_order() {
     let python = python_or_skip!();
     let code = r#"import sys, os

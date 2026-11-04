@@ -46,6 +46,7 @@ import {
 } from './geometry'
 import type { Rect } from './geometry'
 import { Inspector } from './Inspector'
+import { freeSpot } from './place'
 import { PreviewBanner } from './PreviewBanner'
 import { SuggestedConnection } from './SuggestedConnection'
 import { guardBoardSelection } from './textSelection'
@@ -403,17 +404,44 @@ function BoardCanvas() {
     },
     [actions],
   )
+  /**
+   * Where "+ Card" and "+ Frame" put a new box: free space nearest the middle of the view (place.ts). If that is out
+   * of sight, the view follows it once it is made.
+   */
+  const placeNew = useCallback(
+    (w: number, h: number, head = 0) => {
+      const c = viewportCentre()
+      const size = canvasSize()
+      const zoom = rf.getZoom()
+      const view = { x: c.x - size.w / zoom / 2, y: c.y - size.h / zoom / 2, w: size.w / zoom, h: size.h / zoom }
+      const s = latest.current
+      const byId = new Map(s.cards.map((card) => [card.id, card]))
+      const labels = s.connections.flatMap((conn) => {
+        const from = conn.label ? byId.get(conn.from) : undefined
+        const to = from ? byId.get(conn.to) : undefined
+        return from && to ? [{ from, to, text: conn.label }] : []
+      })
+      const at = freeSpot({ size: { w, h }, head, view, cards: s.cards, frames: s.frames, labels })
+      const show = () => {
+        if (view.w > 0 && view.h > 0) reveal({ x: at.x, y: at.y - head, w, h: h + head })
+      }
+      return { ...at, show }
+    },
+    [viewportCentre, canvasSize, rf, latest, reveal],
+  )
   const addCardAtCentre = useCallback(() => {
-    const c = viewportCentre()
-    createCardAt(c.x - CARD_W / 2, c.y - CARD_H / 2)
-  }, [viewportCentre, createCardAt])
+    const at = placeNew(CARD_W, CARD_H)
+    createCardAt(at.x, at.y)
+    at.show()
+  }, [placeNew, createCardAt])
   const addFrameAtCentre = useCallback(() => {
-    const c = viewportCentre()
+    const at = placeNew(NEW_FRAME_W, NEW_FRAME_H, FRAME_TITLE_SPACE)
     const id = newId()
-    void actions.submit([ops.createFrame({ id, x: c.x - NEW_FRAME_W / 2, y: c.y - NEW_FRAME_H / 2, w: NEW_FRAME_W, h: NEW_FRAME_H })], { key: `new:${id}` })
+    void actions.submit([ops.createFrame({ id, x: at.x, y: at.y, w: NEW_FRAME_W, h: NEW_FRAME_H })], { key: `new:${id}` })
     ui.select([id])
     ui.edit(id, 'title')
-  }, [viewportCentre, actions])
+    at.show()
+  }, [placeNew, actions])
 
   // ---- M13: BibTeX in and out for the whole Branch ----
   const allSources = useSources()

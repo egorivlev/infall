@@ -100,6 +100,36 @@ describe('BoardView', () => {
     expect(screen.queryByTestId('history-panel')).toBeNull()
     expect(screen.getByTestId('board')).toHaveFocus()
   })
+
+  it('“+ Card” and “+ Frame” put the new thing beside what is in the middle of the view, never on it', () => {
+    type Created = { Create: { kind: string; fields: Record<string, unknown> } }
+    const made = (kind: string) => {
+      const op = submit.mock.calls.flatMap((c) => c[0] as Created[]).find((o) => o.Create?.kind === kind)!
+      const num = (k: string) => (op.Create.fields[k] as { Float: number }).Float
+      const at = { x: num('x'), y: num('y') }
+      expect(Number.isFinite(at.x) && Number.isFinite(at.y)).toBe(true)
+      return at
+    }
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    // A Card right on the middle (jsdom's view is a point at 0, 0) and a Frame around it.
+    const middle = card('mid', 'In the middle', { x: -112, y: -66 })
+    const frame = { id: 'f1', title: 'Reading', x: -400, y: -300, w: 800, h: 600 }
+    boardStore.setState({ cards: [...LIVE, middle], frames: [frame], connections: [] })
+    render(<BoardView />)
+
+    fireEvent.click(screen.getByTestId('toolbar-add-card'))
+    const c = made('Card')
+    for (const other of [...LIVE, middle]) expect(overlaps({ ...c, w: 224, h: 132 }, other)).toBe(false)
+    expect(overlaps({ ...c, w: 224, h: 132 }, { ...frame, y: frame.y - 40, h: frame.h + 40 })).toBe(false)
+
+    act(() => ui.reset())
+    fireEvent.click(screen.getByTestId('toolbar-add-frame'))
+    const f = made('Frame')
+    const box = { x: f.x, y: f.y - 40, w: 520, h: 360 + 40 } // with its title
+    for (const other of [...LIVE, middle]) expect(overlaps(box, other)).toBe(false)
+    expect(overlaps(box, { ...frame, y: frame.y - 40, h: frame.h + 40 })).toBe(false)
+  })
 })
 
 describe('BoardView in preview', () => {
