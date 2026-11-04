@@ -1,0 +1,159 @@
+# The Team server image (root Dockerfile; deploy/README.md), for amd64 and arm64.
+#
+#   tag v*         build both, push them, then one multi-arch tag <version> (and "latest")
+#   pull request   build both, push nothing (does the Dockerfile still build?)
+#   by hand        build both; pushes only when run on a v* tag
+#
+# Each processor is built on a runner of its own kind (no emulation), pushed by digest, and
+# the two digests are joined into one tag at the end.
+#
+# Registry: the repository variable INFALL_IMAGE, always with the registry host (e.g.
+# registry.example.org/team/infall, or docker.io/team/infall for Docker Hub);
+# unset, ghcr.io/<owner>/infall with the workflow's own token. For another registry, set the
+# secrets REGISTRY_USERNAME and REGISTRY_PASSWORD.
+name: Image
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Image name and version
+        id: names
+        env:
+          IMAGE_VAR: ${{ vars.INFALL_IMAGE }}
+          OWNER: ${{ github.repository_owner }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          image="${IMAGE_VAR:-ghcr.io/$OWNER/infall}"
+          version="0.0.0-${GITHUB_SHA::12}"
+          [[ "$GITHUB_REF" != refs/tags/v* ]] || version="${GITHUB_REF_NAME#v}"
+          {
+            echo "image=${image,,}"
+            echo "registry=${image%%/*}"
+            echo "pair=${PLATFORM//\//-}"
+            echo "version=$version"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to the registry
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.names.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: INFALL_VERSION=${{ steps.names.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=image-${{ steps.names.outputs.pair }}
+          cache-to: type=gha,mode=min,scope=image-${{ steps.names.outputs.pair }}
+          outputs: ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.names.outputs.image) || 'type=cacheonly' }}
+
+      - name: Keep the digest
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        if: env.PUSH == 'true'
+        with:
+          name: digest-${{ steps.names.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish the multi-arch tag
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Image name and version
+        id: names
+        env:
+          IMAGE_VAR: ${{ vars.INFALL_IMAGE }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="${IMAGE_VAR:-ghcr.io/$OWNER/infall}"
+          {
+            echo "image=${image,,}"
+            echo "registry=${image%%/*}"
+            echo "version=${GITHUB_REF_NAME#v}"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.names.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Join the digests into one tag
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          VERSION: ${{ steps.names.outputs.version }}
+        run: |
+          sources=()
+          for d in *; do sources+=("$IMAGE@sha256:$d"); done
+          [ "${#sources[@]}" -eq 2 ] || { echo "expected 2 digests, got ${#sources[@]}"; exit 1; }
+          tags=(-t "$IMAGE:$VERSION")
+          # A pre-release (v1.2.0-rc.1) does not move "latest".
+          [[ "$VERSION" == *-* ]] || tags+=(-t "$IMAGE:latest")
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"

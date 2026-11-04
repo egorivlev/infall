@@ -1,0 +1,14 @@
+# The image needs only the server's sources, the web UI's sources and the entrypoint.
+# Everything else stays out of the build context (allow-list).
+*
+!Cargo.toml
+!Cargo.lock
+!crates/
+!web/
+!deploy/container/
+
+# Build output and caches, even inside the allowed folders.
+**/target/
+web/node_modules/
+web/dist/
+**/.DS_Store
