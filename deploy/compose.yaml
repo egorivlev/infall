@@ -1,0 +1,85 @@
+# Infall Team server: the server, Caddy in front of it (HTTPS), and a daily backup job.
+# Settings come from .env next to this file (copy .env.example). Guide: README.md.
+#
+#   docker compose up -d                                   start, or apply a new version
+#   docker compose run --rm server create-admin --email you@example.org --name "Your Name"
+#   docker compose run --rm backup backup                  a backup now
+#   docker compose logs -f server                          the server's log
+name: infall
+
+services:
+  server:
+    # A version built from a checkout instead: README.md, "Build the image yourself".
+    image: ${INFALL_IMAGE:?set INFALL_IMAGE in .env}:${INFALL_VERSION:?set INFALL_VERSION in .env}
+    restart: unless-stopped
+    environment:
+      QOOP_PUBLIC_ORIGIN: ${INFALL_PUBLIC_ORIGIN:-https://${INFALL_DOMAIN:?set INFALL_DOMAIN in .env}}
+      QOOP_MAX_IMPORT_MB: ${INFALL_MAX_IMPORT_MB:-512}
+      # Empty: the entrypoint makes one in the data volume on first start (data/secret-key).
+      QOOP_SECRET_KEY: ${QOOP_SECRET_KEY:-}
+      INFALL_UPGRADE_KEEP: ${INFALL_UPGRADE_KEEP:-3}
+      RUST_LOG: ${RUST_LOG:-info}
+      NO_COLOR: "1"
+    volumes:
+      - data:/data
+    # Not published: only Caddy, on the compose network, reaches port 8787.
+    expose:
+      - "8787"
+    # Time to finish in-flight requests (a database write is never cut off).
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  caddy:
+    # Caddy 2.11; a newer 2.x is a one-line change here.
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      INFALL_DOMAIN: ${INFALL_DOMAIN}
+      INFALL_MAX_IMPORT_MB: ${INFALL_MAX_IMPORT_MB:-512}
+    ports:
+      - "${INFALL_HTTP_PORT:-80}:80"
+      - "${INFALL_HTTPS_PORT:-443}:443"
+      - "${INFALL_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./container/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+
+  backup:
+    image: ${INFALL_IMAGE}:${INFALL_VERSION}
+    restart: unless-stopped
+    command: ["backup-daemon"]
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      INFALL_BACKUP_KEEP: ${INFALL_BACKUP_KEEP:-14}
+      INFALL_BACKUP_TIME: ${INFALL_BACKUP_TIME:-03:30}
+    volumes:
+      - data:/data
+      - backups:/backups
+    healthcheck:
+      test: ["CMD", "infall", "backup-health"]
+      interval: 1h
+      start_period: 5m
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  data:
+  backups:
+  caddy-data:
+  caddy-config:

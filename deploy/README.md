@@ -1,20 +1,214 @@
-# Deploying Infall on a VPS
+# Running an Infall Team server
 
-Infall is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This guide takes a fresh Debian or Ubuntu VPS to a working server. It needs about an hour.
+A Team server holds one Team Workspace, which several Members share: each signs in from a browser or from the desktop app. One person trying Infall on their own does not need a server: the desktop app makes a Local Workspace on that computer by itself ([desktop/README.md](../desktop/README.md)).
 
-A server is what a team needs: it holds a Team Workspace, which several Members share. One person trying Infall on their own does not need one: the desktop app makes a Local Workspace on that computer by itself ([desktop/README.md](../desktop/README.md)).
+There are two ways to run one:
 
-Placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
+- **The container** (this section): Docker runs the server, Caddy in front of it for HTTPS, and a daily backup job. About fifteen minutes on a host that already has Docker.
+- **systemd on a VPS** ([below](#the-systemd-route)): the same server installed by hand, with encrypted backups. About an hour.
+
+Words used here: an **Admin** is a Member who also invites and removes people and looks after the server. A **Guest** is an outsider with time-limited read access.
+
+## The container route
+
+### What you need
+
+- A Linux host (a VPS or your own machine) with **Docker Engine and the Compose plugin**. Check with `docker compose version`; if that fails, install Docker from [docs.docker.com/engine/install](https://docs.docker.com/engine/install/). 1 GB of memory is enough.
+- **A domain name** whose DNS record (`A`, and `AAAA` if the host has IPv6) points at the host. Check with `dig +short infall.example.org`: it must print the host's address.
+- **Ports 80 and 443** open to the internet on the host and in any provider firewall. Caddy needs both to get the certificate; nothing else on the host may use them.
+- The image of the version you want, from your registry (`INFALL_IMAGE` below; "[Build the image yourself](#build-the-image-yourself)" if you have none).
+
+Before the server holds anything, do the host checklist in [harden.md](harden.md) (firewall, key-only SSH, automatic updates). Docker publishes ports past `ufw`, so the only ports this setup publishes are 80 and 443.
+
+### Steps
+
+1. **Copy this folder onto the host.** You need `compose.yaml`, `.env.example` and `container/Caddyfile`, with the same layout. With git: `git clone YOUR_REPOSITORY_URL infall && cd infall/deploy`. Run every command below from inside this folder.
+
+2. **Write the settings.**
+
+   ```sh
+   cp .env.example .env
+   nano .env
+   ```
+
+   Set `INFALL_DOMAIN` to your domain (no `https://`), `INFALL_IMAGE` to the image's name and `INFALL_VERSION` to the version to run. Leave the rest as it is. `.env` is read by `docker compose` only; it holds no password.
+
+3. **Start it.**
+
+   ```sh
+   docker compose pull
+   docker compose up -d
+   docker compose ps
+   ```
+
+   After half a minute `docker compose ps` shows `server` and `backup` as `(healthy)` and `caddy` as `Up`. Caddy fetches the certificate in the first minute: `docker compose logs caddy` shows `certificate obtained successfully`.
+
+4. **Create the first Admin.**
+
+   ```sh
+   docker compose run --rm server create-admin --email you@example.org --name "Your Name"
+   ```
+
+   It asks for a password (at least 12 characters) twice and does not show what you type. It prints `Created Admin Your Name <you@example.org>.` The password is deliberately not a command-line option: arguments end up in shell history and in `ps`. Use a password manager's generated password.
+
+5. **Check it.**
+
+   ```sh
+   curl -fsS https://infall.example.org/api/health      # prints {"ok":true}
+   ```
+
+   Then open `https://infall.example.org` in a browser and sign in with the Admin's email and password.
+
+6. **Invite the others.** As Admin, create an invite for each person: their email, and role Member, or Guest with an end date. Infall shows the invite link once; send it over a channel you trust. It works one time and expires after 7 days. There is no open sign-up.
+
+#### Try it on your own computer first
+
+Set `INFALL_DOMAIN=localhost` in `.env` and follow the same steps. Caddy then uses a certificate of its own instead of a public one: browsers warn about it once, and `curl` needs `-k` (`curl -kfsS https://localhost/api/health`). If ports 80 or 443 are taken on that computer, set `INFALL_HTTP_PORT`, `INFALL_HTTPS_PORT` and `INFALL_PUBLIC_ORIGIN` as `.env.example` explains.
+
+### What runs, and where the data is
+
+| Service | What it does |
+|---|---|
+| `server` | the Infall server, as an unprivileged user (uid 10001) with a read-only system; reachable only from Caddy |
+| `caddy` | HTTPS on ports 80 and 443, certificates, the request size limits |
+| `backup` | a copy of the database every day at `INFALL_BACKUP_TIME` (UTC), and one when it starts if none is younger than a day |
+
+Docker keeps the data in named volumes: `infall_data` (the database `qoop.db`, the secret key `secret-key`, and the copies made before upgrades in `pre-upgrade/`), `infall_backups` (the daily copies), and `infall_caddy-data` (certificates). `docker compose down` keeps them; only `docker compose down -v` or `docker volume rm` deletes them.
+
+#### The secret key
+
+The server seals Members' OpenRouter keys (for the AI sidebar in a browser) with a secret key. On first start it makes one in the data volume. Backups leave it out on purpose, so that a backup alone does not open the sealed keys. Keep a copy of it in your password manager:
+
+```sh
+docker compose run --rm --no-deps --entrypoint cat server /data/secret-key
+```
+
+Without it, a restored Workspace works fully, and each Member types their OpenRouter key again. To keep the key outside the volume instead, put it in `.env` as `QOOP_SECRET_KEY=`.
+
+### Back up and restore
+
+The `backup` service writes `infall-<UTC time>.db.gz` into the `infall_backups` volume every day and keeps the newest `INFALL_BACKUP_KEEP` (14 by default). Each is a consistent copy made while the server runs (SQLite's online backup), checked with `PRAGMA integrity_check` before it is kept.
+
+```sh
+docker compose run --rm backup backup          # make one now
+docker compose run --rm backup list-backups    # newest first
+docker compose cp backup:/backups/infall-20260101T033000Z.db.gz .   # copy one out of Docker
+```
+
+Copies in a volume on the same host do not survive losing the host. Copy one off the host regularly (the `cp` line above, then `scp` or your provider's object storage). These files are not encrypted; the systemd route's `backup.sh` shows how to encrypt with `age` if they leave machines you control.
+
+Backups are database copies, not Workspace files: the server has no command yet to write a Workspace file from the command line. Once it has one (`qoop-server export-workspace <file>`), the backup job is to use it.
+
+**Restore** (everything made after that backup is lost):
+
+```sh
+docker compose stop server
+docker compose run --rm --no-deps backup restore infall-20260101T033000Z.db.gz
+docker compose up -d
+```
+
+`restore` refuses while the server is running. It keeps the database it replaces as `qoop.db.before-restore-<time>` in the data volume; delete it once you are sure. To restore a file from outside Docker, give `-` and send it on standard input:
+
+```sh
+docker compose run --rm -T --no-deps backup restore - < infall-20260101T033000Z.db.gz
+```
+
+Do a test restore once now, on your own computer with `INFALL_DOMAIN=localhost`, and then every few months. A backup you have never restored is a hope.
+
+### Upgrade
+
+1. Make a backup now (`docker compose run --rm backup backup`).
+2. Set `INFALL_VERSION` in `.env` to the new version.
+3. Start it:
+
+   ```sh
+   docker compose pull
+   docker compose up -d
+   docker compose logs server | tail
+   ```
+
+Before a different server opens the database, the image copies it into `pre-upgrade/` in the data volume and says so in the log (`copying the database to /data/pre-upgrade/… first`). It keeps the last 3 such copies (`INFALL_UPGRADE_KEEP`). If that copy fails, the server does not start, and nothing has changed.
+
+A newer server may migrate the database in place, and an older one cannot be relied on to open a migrated file. **To go back**, set the old `INFALL_VERSION` again and restore the copy from before the upgrade:
+
+```sh
+docker compose stop server
+docker compose run --rm --no-deps --entrypoint ls server /data/pre-upgrade
+docker compose run --rm --no-deps backup restore /data/pre-upgrade/qoop-<time>-from-<version>-schema<n>.db
+docker compose up -d
+```
+
+### Move the data elsewhere
+
+To another host, or from this one to a fresh setup:
+
+1. On the old host: `docker compose stop server`, then `docker compose run --rm --no-deps backup backup` (`--no-deps` keeps the server stopped), then copy that file out (`docker compose cp …`, above) along with the secret key.
+2. On the new host: steps 1 and 2 of [Steps](#steps), with `QOOP_SECRET_KEY` set in `.env` to the old key. Skip creating an Admin: the Admins come with the data.
+3. On the new host, before the first start:
+
+   ```sh
+   docker compose run --rm -T --no-deps backup restore - < infall-<time>.db.gz
+   docker compose up -d
+   ```
+
+4. Point the domain's DNS at the new host. If the domain changes, change `INFALL_DOMAIN`: invite links already sent still name the old one.
+
+From the systemd route, the same works with the database file itself: copy `/var/lib/qoop/qoop.db` with `sqlite3 /var/lib/qoop/qoop.db ".backup /tmp/qoop.db"` and restore that file with `restore -` (a plain database file is taken as it is).
+
+**A Local Workspace onto this server** comes as a Workspace file, onto an empty server only. Once the server has it (M18), the Admin's first screen offers **Bring in a Workspace file…**, and on the command line:
+
+```sh
+docker compose run --rm -v "$PWD/project.infall:/in/project.infall:ro" server \
+  import-workspace /in/project.infall --admin-email you@example.org
+```
+
+The Admin named there must exist (step 4); the Workspace file's own Member becomes that Admin.
+
+### Forgot a password
+
+```sh
+docker compose run --rm server reset-password --email you@example.org
+```
+
+It asks for the new password like `create-admin`, and signs that person out everywhere.
+
+### Build the image yourself
+
+From the repository's root folder, on a machine with Docker and about 4 GB of free disk:
+
+```sh
+docker build -t infall:local .
+```
+
+Then set `INFALL_IMAGE=infall` and `INFALL_VERSION=local` in `.env`. The image is built for the machine's own processor (amd64 or arm64); the CI workflow `.github/workflows/image.yml` builds both and pushes them to a registry on every `v*` tag. A first build takes a few minutes; later ones reuse Docker's build cache.
+
+### Troubleshooting
+
+- **`server` is not `(healthy)`:** `docker compose logs server`. A line starting `infall:` says what the image did or refused (for example a data folder it cannot write). A line `qoop-server: …` is the server's own reason.
+- **The browser cannot connect, or warns about the certificate on a real domain:** `docker compose logs caddy`. Nearly always DNS not pointing at the host yet, or port 80 or 443 closed or taken (`sudo ss -tlnp | grep -E ':(80|443) '`). Caddy retries by itself; `docker compose restart caddy` retries now.
+- **Sign-in fails with "This request did not come from the Infall app":** the address in the browser is not exactly `https://` + `INFALL_DOMAIN`. With other ports, set `INFALL_PUBLIC_ORIGIN` with the port.
+- **`restore` says the server is still running:** `docker compose stop server` first.
+- **`create-admin` says the email exists:** that Admin is there already; use `reset-password` if the password is lost.
+- **Disk full:** `docker system df`. Old images of earlier versions can go: `docker image prune`. Do not remove volumes.
+- **The backup service is `(unhealthy)`:** no copy younger than 26 hours. `docker compose logs backup` says why.
+
+## The systemd route
+
+Infall is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This route takes a fresh Debian or Ubuntu VPS to a working server without Docker, and its backups are encrypted. It needs about an hour.
 
 This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
 
-## 1. Prerequisites
+On this route, placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
+
+This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
+
+### 1. Prerequisites
 
 1. A small VPS running a current Debian or Ubuntu LTS, with 1 GB RAM or more (2 GB if you build on it), and SSH access with a sudo-capable user.
 2. A domain name with an `A` record (and `AAAA` if the VPS has IPv6) pointing at the VPS. Caddy cannot get a certificate until this resolves: check with `dig +short qoop.example.org`.
 3. Do the checklist in [harden.md](harden.md) now (firewall, key-only SSH, automatic updates), before the server holds anything. The safe setup is the one done first.
 
-## 2. Create the service user and directories
+### 2. Create the service user and directories
 
 A dedicated user with no login means a bug in Infall cannot touch anything else on the machine.
 
@@ -32,11 +226,11 @@ sudo install -d -o root -g qoop -m 750 /etc/qoop
 - `/var/lib/qoop` (the database) is mode 700: nobody but `qoop` and root can read it.
 - `/etc/qoop` holds the config file, readable by `qoop` only.
 
-## 3. Get the program onto the server
+### 3. Get the program onto the server
 
 You need two things: the server binary and the built web UI. The binary must be built for Linux, so a binary built on a Mac or Windows laptop will not run. Build either on the VPS (3a) or on another Linux machine of the same distribution (3b). The web UI is plain files and can be built anywhere.
 
-### 3a. Build on the VPS
+#### 3a. Build on the VPS
 
 ```sh
 sudo apt update
@@ -56,7 +250,7 @@ cargo build --release --locked -p qoop-server
 
 If `cargo` is killed for lack of memory on a 1 GB VPS, add swap first, or use 3b.
 
-### 3b. Build elsewhere and copy
+#### 3b. Build elsewhere and copy
 
 On a Linux machine with the same distribution family and the same kind of processor as the VPS, run the same two build commands (`cargo build --release --locked -p qoop-server`, and `npm ci && npm run build` inside `web/`). Then copy the outputs and the kit files up:
 
@@ -68,7 +262,7 @@ scp -r deploy you@qoop.example.org:/tmp/qoop-deploy
 
 `/tmp` is emptied when the VPS restarts. For step 10 and for later changes to the backup you copy them up again.
 
-### Install the outputs
+#### Install the outputs
 
 Where each output goes:
 
@@ -86,7 +280,7 @@ sudo chown -R root:root /opt/qoop/web
 
 (For 3b use `/tmp/qoop-server` and `/tmp/qoop-web/.` as the sources.)
 
-## 4. Configuration and the systemd service
+### 4. Configuration and the systemd service
 
 Go into the kit folder: `cd qoop-src/deploy` (3a) or `cd /tmp/qoop-deploy` (3b). Steps 4, 6 and 9 name its files without a path.
 
@@ -105,7 +299,7 @@ sudo systemctl enable qoop
 
 Do not start it yet: the first Admin is created first.
 
-## 5. Create the first Admin
+### 5. Create the first Admin
 
 ```sh
 sudo -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
@@ -115,7 +309,7 @@ sudo chmod 600 /var/lib/qoop/qoop.db
 
 It asks for a password (at least 12 characters), twice, and does not show what you type. It prints `Created Admin Your Name <you@example.org>.` This command also creates the database file, and the server creates it private to the `qoop` account (mode 600), whichever command comes first; the folder around it keeps others out as well. The `chmod` is a second check that costs nothing: it changes nothing on a file made by this version, and makes private one that an earlier version left readable by everyone (the server never changes the rights of a file that is already there — it says so in its log instead). Use a password manager's generated password. The password is deliberately not a command-line option: arguments are visible to every user on the machine through `ps` and are saved in shell history. For the same reason do not put `QOOP_ADMIN_PASSWORD` in a file or in your shell. The command refuses if that email already exists.
 
-## 6. Install Caddy and start everything
+### 6. Install Caddy and start everything
 
 This is the official Caddy package repository, so Caddy receives updates through `apt`.
 
@@ -141,7 +335,7 @@ sudo systemctl reload caddy
 
 (Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
 
-## 7. First login and inviting the others
+### 7. First login and inviting the others
 
 1. Open `https://qoop.example.org` and sign in with the Admin email and password.
 2. As Admin, create an invite for each person: their email, and role Member (the students) or Guest (with an end date, for outside readers such as a professor you only want to give temporary access).
@@ -150,7 +344,7 @@ sudo systemctl reload caddy
 
 There is no open sign-up: nobody gets an account without an invite. To remove someone, delete their account in the people list; their past changes stay attributed to them.
 
-## 8. Check that it is healthy
+### 8. Check that it is healthy
 
 ```sh
 systemctl status qoop                 # should say "active (running)"
@@ -164,7 +358,7 @@ The health call succeeds once the server has opened its database, and reveals no
 
 The `curl -I` output should show `HTTP/2 200`, a `strict-transport-security` header (from Caddy), and `x-content-type-options: nosniff`, `referrer-policy: same-origin` and a `content-security-policy` header (from the server; the CSP is on the HTML page). Also check that plain HTTP redirects: `curl -I http://qoop.example.org/` should answer with a redirect to `https://`. If the page does not load, `journalctl -u caddy` explains certificate problems (usually DNS or a closed port 80/443).
 
-## Forgot a password
+### Forgot a password
 
 An Admin who forgot their password (or anyone, if no other Admin can help) is reset from the server shell:
 
@@ -175,7 +369,7 @@ sudo -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
 
 Type the new password at the prompt (at least 12 characters; not shown, not on the command line, for the reason in step 5). This also signs that person out everywhere. Needing shell access is deliberate: only someone who already administers the machine can take over an account.
 
-## 9. Backups
+### 9. Backups
 
 Everything lives in one file, so one encrypted daily copy is enough. The backups are encrypted with a public key; the matching private key stays on your own laptop, never on the server. That way a stolen backup (or a compromised server) does not leak the data.
 
@@ -213,7 +407,7 @@ Everything lives in one file, so one encrypted daily copy is enough. The backups
 
    Then uncomment `QOOP_BACKUP_REMOTE=offsite:qoop-backups` and `RCLONE_CONFIG=/etc/qoop/rclone.conf` in `/etc/qoop/qoop.env` and run the backup service again. Use credentials limited to that one bucket. The remote keeps every copy; set a retention rule on the provider's side. Pruning is only done locally.
 
-### Test a restore (do this once now, then every few months)
+#### Test a restore (do this once now, then every few months)
 
 A backup you have never restored is a hope, not a backup. Step A needs only your laptop and proves the file and the key work; step B is the real procedure.
 
@@ -243,7 +437,7 @@ systemctl status qoop
 
 The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale ones left from the old database would not match the restored file, which is why they are removed. (A backup is one self-contained file: the backup script's online copy already includes everything committed.) Everything made after the backup is lost; keep `qoop.db.before-restore` until you are sure, then delete it.
 
-## 10. Updating to a new version
+### 10. Updating to a new version
 
 The database format only moves forward: the server records a schema version in the file and a newer version migrates an older file in place when it starts, but an older version cannot be relied on to open a migrated file. So the backup is your way back. `systemctl stop qoop` sends SIGTERM, and the server shuts down gracefully: it finishes in-flight requests (a database write is never cut off) and exits within a few seconds.
 
@@ -263,14 +457,14 @@ systemctl status qoop && journalctl -u qoop -n 20 --no-pager
 
 ## What protects you, and what does not
 
-What this setup does:
+What both routes do:
 
 - **TLS.** Caddy serves only HTTPS with an automatically renewed certificate, and HSTS tells browsers never to try plain HTTP. Traffic cannot be read or altered on the way.
 - **Invite-only accounts.** There is no sign-up page. Invites work once and expire in 7 days; passwords are stored hashed (Argon2id); repeated wrong logins are rate-limited.
-- **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS. Infall listens on `127.0.0.1` only, so Caddy is the only way in, and SSH takes keys only.
-- **Contained service.** Infall runs as an unprivileged user, in a systemd sandbox that can write only to its own database folder.
-- **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves, step 10 and `sudo apt upgrade`).
-- **Encrypted backups** whose decryption key is not on the server, plus an off-machine copy if you set one up.
+- **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS, and SSH takes keys only. Caddy is the only way in: on the systemd route Infall listens on `127.0.0.1` only; in the container it is reachable only on the compose network, and only Caddy publishes ports.
+- **Contained service.** Infall runs as an unprivileged user that can write only to its own data folder: in a systemd sandbox, or in a container with a read-only system, no capabilities and `no-new-privileges`.
+- **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves — on the systemd route step 10 and `sudo apt upgrade`; in the container a new `INFALL_VERSION`, and a newer `caddy:2.x` tag in `compose.yaml`).
+- **Backups.** On the systemd route encrypted, with the decryption key off the server, plus an off-machine copy if you set one up. In the container daily, consistent and checked, but not encrypted and on the same host until you copy them off.
 - **Few outgoing requests.** The server connects out only for two things, and only when a Member uses them: the AI sidebar's OpenRouter path (once a Member has added a key), and **Look up** in the Source form, which sends one DOI to `api.crossref.org` or one arXiv id to `export.arxiv.org` over HTTPS, with nothing about the Workspace or the person. The firewall of [harden.md](harden.md) allows outgoing connections; if you restrict them, allow HTTPS to those hosts, or those two features say they could not reach them. The full list for Members: [docs/privacy.md](../docs/privacy.md).
 
 What it does not do:
@@ -278,5 +472,6 @@ What it does not do:
 - It is not hardened against a targeted attacker. It stops opportunistic scanning and casual mistakes, not a determined attempt on the box.
 - Whoever administers the VPS can read everything: the database, the running process, and any API keys Members store in Infall later. Hosting providers have the same technical ability. Do not put in anything you could not accept those people seeing, and keep the number of people with `sudo` and with the provider's account as small as possible.
 - Anyone holding a Member's password or session can read what that Member can. Use a password manager and long unique passwords.
-- Password resets need shell access to the server (see "Forgot a password").
-- Losing the backup private key means losing the backups.
+- Password resets need shell access to the server ("Forgot a password" in either route).
+- Losing the backup private key (systemd route) means losing the backups.
+- The container's backups are readable by whoever can read the host's Docker volumes, as the database itself is.

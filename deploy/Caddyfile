@@ -13,15 +13,21 @@ qoop.example.org {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	# Refuse oversized request bodies here, before they reach the server.
-	# These are the server's own limits: 2 MiB on the one route that carries
-	# the captured result of a Run, 1 MiB everywhere else. Keep them equal to
-	# the server's: a smaller limit here would refuse results the server
-	# accepts. (Write "MiB": Caddy's "MB" is 1000-based and a little smaller.)
+	# These are the server's own limits: 512 MiB for a Workspace file brought
+	# onto an empty server (QOOP_MAX_IMPORT_MB; change both together), 2 MiB on
+	# the one route that carries the captured result of a Run, 1 MiB everywhere
+	# else. Keep them equal to the server's: a smaller limit here would refuse
+	# what the server accepts. (Write "MiB": Caddy's "MB" is 1000-based and a
+	# little smaller.)
+	@import path /api/workspace/import
+	request_body @import {
+		max_size 512MiB
+	}
 	@ops path /api/branches/*/ops
 	request_body @ops {
 		max_size 2MiB
 	}
-	@other not path /api/branches/*/ops
+	@other not path /api/branches/*/ops /api/workspace/import
 	request_body @other {
 		max_size 1MiB
 	}
