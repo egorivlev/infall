@@ -4,7 +4,8 @@
 // even if it ever ran somewhere else.
 //
 // __QOOP_ORIGIN__, __QOOP_VERSION__ and __QOOP_KEY__ are replaced by JSON string literals,
-// __QOOP_OWN_PRINT__ by `true` or `false`.
+// __QOOP_OWN_PRINT__ by `true` or `false`, __QOOP_MAX_BINARY_BYTES__ and
+// __QOOP_MAX_MOVE_BYTES__ by the app's limits (numbers).
 (function () {
   'use strict';
   var ORIGIN = __QOOP_ORIGIN__;
@@ -196,6 +197,94 @@
     });
   }
 
+  // Bytes across the bridge (M18) travel as base64 text in pieces: this page may not reach
+  // the app's binary channel (see transfer.rs in the app).
+  var MAX_BINARY_BYTES = __QOOP_MAX_BINARY_BYTES__;
+  var MAX_MOVE_BYTES = __QOOP_MAX_MOVE_BYTES__;
+  var SAVE_CHUNK_BYTES = 3145728; // 3 MB of bytes, 4 MB of text, per call
+  var TOO_LARGE = 'The file is too large to save (at most ' + Math.round(MAX_BINARY_BYTES / 1048576) + ' MB).';
+
+  function toBase64(bytes) {
+    var parts = [];
+    for (var i = 0; i < bytes.length; i += 0x8000) {
+      parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)));
+    }
+    return btoa(parts.join(''));
+  }
+
+  // Decodes `text` into `target` from `at`; returns how many bytes it held.
+  function fromBase64(text, target, at) {
+    var raw = atob(text);
+    if (at + raw.length > target.length) throw new Error('The Workspace file changed while it was read. Try again.');
+    for (var i = 0; i < raw.length; i++) target[at + i] = raw.charCodeAt(i);
+    return raw.length;
+  }
+
+  // Saves bytes the page made (an image, a Workspace file) where the person chooses, in the
+  // system's save dialog (M18). Resolves true once written, false when the person cancelled;
+  // rejects with a sentence.
+  function saveBinaryFile(file) {
+    var name = file && file.suggestedName != null ? String(file.suggestedName) : '';
+    var bytes = file ? file.bytes : null;
+    if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
+    else if (ArrayBuffer.isView(bytes)) bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    else return Promise.reject(new Error('There is no file to save.'));
+    if (bytes.length > MAX_BINARY_BYTES) return Promise.reject(new Error(TOO_LARGE));
+    return call('save_binary_begin', { size: bytes.length })
+      .then(function (ticket) {
+        var offset = 0;
+        function next() {
+          if (offset >= bytes.length) {
+            return call('save_binary_finish', { ticket: ticket, suggestedName: name });
+          }
+          var end = Math.min(offset + SAVE_CHUNK_BYTES, bytes.length);
+          var at = offset;
+          var data = toBase64(bytes.subarray(at, end));
+          offset = end;
+          return call('save_binary_chunk', { ticket: ticket, offset: at, data: data }).then(next);
+        }
+        return next();
+      })
+      .then(function (saved) {
+        return saved === true;
+      });
+  }
+
+  // Moving a Local Workspace onto this server (docs/specs/team-move.md, Contract C). The app
+  // answers only on the origin of a server a move from this computer is pending to.
+  function moveHandover() {
+    return call('move_handover', {}).then(function (handover) {
+      if (!handover || typeof handover.name !== 'string' || typeof handover.size !== 'number') return null;
+      return { name: handover.name, size: handover.size };
+    });
+  }
+
+  function moveFile() {
+    return call('move_file_chunk', { offset: 0 }).then(function (first) {
+      var size = first && first.size;
+      if (typeof size !== 'number' || !(size >= 0) || size > MAX_MOVE_BYTES) {
+        throw new Error('The Workspace file could not be read. Try again.');
+      }
+      var out = new Uint8Array(size);
+      var at = 0;
+      function take(chunk) {
+        if (!chunk || chunk.size !== size || typeof chunk.data !== 'string') {
+          throw new Error('The Workspace file changed while it was read. Try again.');
+        }
+        var got = fromBase64(chunk.data, out, at);
+        at += got;
+        if (at >= size) return out;
+        if (got === 0) throw new Error('The Workspace file could not be read. Try again.');
+        return call('move_file_chunk', { offset: at }).then(take);
+      }
+      return take(first);
+    });
+  }
+
+  function moveDone(result) {
+    return call('move_done', { ok: !!(result && result.ok === true) }).then(function () {});
+  }
+
   // `window.print()` opens the system's print dialog for this page.
   if (OWN_PRINT) {
     window.print = function () {
@@ -302,7 +391,11 @@
       claude: claude,
       runner: runner,
       switchWorkspace: switchWorkspace,
-      saveFile: saveFile
+      saveFile: saveFile,
+      saveBinaryFile: saveBinaryFile,
+      moveHandover: moveHandover,
+      moveFile: moveFile,
+      moveDone: moveDone
     }),
     writable: false,
     configurable: false,

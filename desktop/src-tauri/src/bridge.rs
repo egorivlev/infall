@@ -40,6 +40,14 @@ fn script_with(origin: &str, version: &str, key: &str, own_print: bool) -> Strin
             "__QOOP_OWN_PRINT__;",
             if own_print { "true;" } else { "false;" },
         )
+        .replace(
+            "__QOOP_MAX_BINARY_BYTES__;",
+            &format!("{};", crate::transfer::MAX_BINARY_SAVE_BYTES),
+        )
+        .replace(
+            "__QOOP_MAX_MOVE_BYTES__;",
+            &format!("{};", crate::transfer::MAX_MOVE_BYTES),
+        )
 }
 
 /// Defence in depth behind Tauri's own access control: a bridge command runs only when it
@@ -672,11 +680,74 @@ mod tests {
         assert!(js.contains("'__infallUndo'"));
         assert!(js.contains("source.subscribe(queueUndo)"));
         assert!(js.contains("call('undo_state', { undo: undo, redo: redo })"));
-        // The page gets nothing new: `qoopDesktop` has the same five members as before.
+        // The page gets nothing new for it: `qoopDesktop`'s members are those of M13 and
+        // M18's binary save and move (see `the_script_offers_moves_and_binary_saves`).
         assert!(js.contains(
             "version: VERSION,\n      claude: claude,\n      runner: runner,\n      \
-             switchWorkspace: switchWorkspace,\n      saveFile: saveFile\n    }"
+             switchWorkspace: switchWorkspace,\n      saveFile: saveFile,\n      \
+             saveBinaryFile: saveBinaryFile,\n      moveHandover: moveHandover,\n      \
+             moveFile: moveFile,\n      moveDone: moveDone\n    }"
         ));
+    }
+
+    #[test]
+    fn the_script_offers_moves_and_binary_saves() {
+        let js = script("http://localhost:8787", "0.1.0", KEY);
+        for command in [
+            "move_handover",
+            "move_file_chunk",
+            "move_done",
+            "save_binary_begin",
+            "save_binary_chunk",
+            "save_binary_finish",
+        ] {
+            assert!(js.contains(&format!("'{command}'")), "{command}");
+        }
+        // The limits the page is told are the app's own; no placeholder is left.
+        assert!(js.contains(&format!(
+            "var MAX_BINARY_BYTES = {};",
+            crate::transfer::MAX_BINARY_SAVE_BYTES
+        )));
+        assert!(js.contains(&format!(
+            "var MAX_MOVE_BYTES = {};",
+            crate::transfer::MAX_MOVE_BYTES
+        )));
+        assert!(
+            !js.contains("__QOOP_MAX_BINARY_BYTES__;") && !js.contains("__QOOP_MAX_MOVE_BYTES__;")
+        );
+        // Pieces of 3 MB of bytes: their text stays under what one piece may carry.
+        assert!(js.contains("var SAVE_CHUNK_BYTES = 3145728;"));
+        assert!((3_145_728usize).div_ceil(3) * 4 <= crate::transfer::MAX_SAVE_CHUNK_TEXT);
+        // Moving starts nothing in the start screen's commands.
+        assert!(!js.contains("workspace_move"));
+    }
+
+    #[test]
+    fn a_move_is_handed_only_to_the_main_windows_page_of_its_server() {
+        // `move_handover`, `move_file_chunk` and `move_done` pass `check_caller` first, with
+        // the origin the bridge was granted to; the registry then answers only about a move
+        // pending to that same origin (workspaces.rs, `a_pending_move_is_kept_and_told_to_its_
+        // server_only`). So: another window, another server in the main window, or the
+        // granted origin's page without the key are all refused before the registry is read.
+        let server = "https://team.example.org";
+        let page = url("https://team.example.org/");
+        assert!(check_caller("main", Some(&page), Some(server), KEY, KEY).is_ok());
+        for window in ["setup", "runner-settings", "runner-approval-1"] {
+            assert!(check_caller(window, Some(&page), Some(server), KEY, KEY).is_err());
+        }
+        for other in [
+            "https://evil.example/",
+            "https://team.example.org.evil.example/",
+            "http://team.example.org/",
+            "http://127.0.0.1:24680/",
+            "tauri://localhost/index.html",
+        ] {
+            assert!(
+                check_caller("main", Some(&url(other)), Some(server), KEY, KEY).is_err(),
+                "{other}"
+            );
+        }
+        assert!(check_caller("main", Some(&page), Some(server), "", KEY).is_err());
     }
 
     #[test]

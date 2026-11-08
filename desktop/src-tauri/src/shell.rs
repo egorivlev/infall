@@ -30,6 +30,7 @@ use crate::bridge::{
     self, EditItem, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest, Step, UndoSteps,
 };
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
+use crate::transfer::{self, Upload};
 use crate::webui;
 use crate::workspaces::{self, Entry, Kind, Registry};
 
@@ -134,6 +135,9 @@ struct AppState {
     backups: Mutex<HashMap<String, JoinHandle<()>>>,
     /// Whether a save or open dialog is showing: one at a time.
     dialog: AtomicBool,
+    /// The file the main window's page is sending for `saveBinaryFile`, until it is saved.
+    /// One at a time; forgotten when the page goes away.
+    upload: Mutex<Option<Upload>>,
 }
 
 impl AppState {
@@ -216,6 +220,7 @@ pub fn run() {
             notice: Mutex::new(None),
             backups: Mutex::default(),
             dialog: AtomicBool::new(false),
+            upload: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             start_view,
@@ -227,6 +232,7 @@ pub fn run() {
             workspace_export,
             workspace_import,
             workspace_reveal,
+            workspace_move,
             claude_status,
             claude_send,
             claude_cancel,
@@ -234,6 +240,12 @@ pub fn run() {
             save_file,
             print_page,
             undo_state,
+            move_handover,
+            move_file_chunk,
+            move_done,
+            save_binary_begin,
+            save_binary_chunk,
+            save_binary_finish,
             runner_status,
             runner_configure,
             runner_run,
@@ -262,8 +274,12 @@ pub fn run() {
             app.manage::<RunnerState>(Arc::new(Runner::new(
                 qoop_runner::Options::from_process_env(config.clone()),
             )));
+            let registry = Registry::new(config, data.clone());
+            // What a move cut short left behind, and moves no page took within a week.
+            registry.sweep_moves();
+            registry.prune_moves(now_ms() as i64);
             app.manage(Workspaces {
-                registry: Mutex::new(Registry::new(config, data.clone())),
+                registry: Mutex::new(registry),
                 data_dir: data,
                 web_dir: OnceLock::new(),
             });
@@ -457,6 +473,17 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     .permission("allow-print-page")
                     // What the page's Undo and Redo would do, for the Edit menu (M15).
                     .permission("allow-undo-state")
+                    // Moving a Local Workspace onto this server: what is being moved, its
+                    // file, and that the server has it (M18). Each answers only the page of
+                    // a server a move is pending to.
+                    .permission("allow-move-handover")
+                    .permission("allow-move-file-chunk")
+                    .permission("allow-move-done")
+                    // Saving a file the page made (an image, a Workspace file) where the
+                    // Member chooses (M18).
+                    .permission("allow-save-binary-begin")
+                    .permission("allow-save-binary-chunk")
+                    .permission("allow-save-binary-finish")
                     // The top bar's first row is the window's title bar (macOS has none of
                     // its own, see below): pressing on an empty part of it moves the window,
                     // a double click zooms it. Nothing else about the window is reachable.
@@ -497,6 +524,8 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
             // A page that is going away cannot receive the rest of its run, and a Run it
             // asked for must not go on (or wait for approval) behind its back.
             if payload.event() == PageLoadEvent::Started {
+                // And a file it was sending will never be finished.
+                *window.state::<AppState>().upload.lock().unwrap() = None;
                 window.state::<AppState>().run.cancel();
                 window.state::<RunnerState>().cancel_all();
                 // Its steps went with it.
@@ -544,6 +573,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
         }
         if matches!(event, WindowEvent::Destroyed) {
             EditMenu::page_said(&closed_app, UndoSteps::default());
+            *closed_app.state::<AppState>().upload.lock().unwrap() = None;
             // The Workspace is left: its server stops.
             let state = closed_app.state::<AppState>();
             let mut open = state.open.lock().unwrap();
@@ -776,11 +806,6 @@ async fn start_embedded(app: &AppHandle, entry: &Entry) -> Result<LocalServer, S
             ws.web_dir.get_or_init(|| dir).clone()
         }
     };
-    let preset = entry
-        .preset
-        .as_deref()
-        .and_then(Preset::from_id)
-        .unwrap_or(Preset::Blank);
     let (db, port) = {
         let registry = ws.registry.lock().unwrap();
         // Without a remembered port (the list could not be saved) the OS chooses one; the
@@ -790,15 +815,7 @@ async fn start_embedded(app: &AppHandle, entry: &Entry) -> Result<LocalServer, S
             registry.port_for(&entry.id).ok().flatten(),
         )
     };
-    let options = LocalOptions {
-        db,
-        web_dir,
-        preset,
-        member_name: workspaces::member_name(),
-        // When it is taken the server listens on another port for this once; the
-        // remembered one is kept for the next start.
-        port,
-    };
+    let options = local_options(entry, db, web_dir, port);
     // The start screen gets a sentence; what the server said is not ours to word. Debug
     // builds print it for whoever is working on the app (it names files, never the key).
     start_local(options).await.map_err(|_error| {
@@ -806,6 +823,39 @@ async fn start_embedded(app: &AppHandle, entry: &Entry) -> Result<LocalServer, S
         eprintln!("The Local Workspace did not start: {_error}");
         NOT_STARTED.to_owned()
     })
+}
+
+/// How a Local Workspace's server is started. The one place that says whether it is
+/// read-only (a Workspace moved to a Team server, docs/specs/team-move.md, Contract A).
+fn local_options(entry: &Entry, db: PathBuf, web_dir: PathBuf, port: Option<u16>) -> LocalOptions {
+    let preset = entry
+        .preset
+        .as_deref()
+        .and_then(Preset::from_id)
+        .unwrap_or(Preset::Blank);
+    let read_only = entry.read_only();
+    // TODO(M18 zone 1): `LocalOptions::read_only` is not in the server crate yet. Once it is,
+    // delete this line and uncomment `read_only,` below.
+    let _ = read_only;
+    LocalOptions {
+        db,
+        web_dir,
+        preset,
+        member_name: workspaces::member_name(),
+        // When it is taken the server listens on another port for this once; the
+        // remembered one is kept for the next start.
+        port,
+        // read_only,
+    }
+}
+
+/// Contract A's `export_for_move` (docs/specs/team-move.md): a Workspace file to hand to a
+/// Team server. The same as `export_workspace` by the contract, under its own name so that a
+/// later difference has a place. TODO(M18 zone 1): once the server crate has
+/// `qoop_server::local::export_for_move`, make this body `export_for_move(db, dest)` (or
+/// import it in place of this function).
+fn export_for_move(db: &Path, dest: &Path) -> Result<(), PortError> {
+    export_workspace(db, dest)
 }
 
 // ---- backups (docs/specs/portability.md, decision 2) --------------------------------------
@@ -952,15 +1002,11 @@ fn start_view(
     state: State<'_, AppState>,
 ) -> Result<StartView, String> {
     check_setup_caller(&webview)?;
+    let registry = workspaces(&app);
+    let registry = registry.registry.lock().unwrap();
+    registry.prune_moves(now_ms() as i64);
     Ok(StartView {
-        workspaces: workspaces(&app)
-            .registry
-            .lock()
-            .unwrap()
-            .list()
-            .iter()
-            .map(Entry::listed)
-            .collect(),
+        workspaces: registry.list().iter().map(Entry::listed).collect(),
         notice: state.notice.lock().unwrap().take(),
     })
 }
@@ -1191,6 +1237,80 @@ fn workspace_reveal(webview: Webview, app: AppHandle, id: String) -> Result<(), 
         .map_err(|_| "The folder could not be shown.".to_owned())
 }
 
+/// Moves a Local Workspace onto a Team server (docs/specs/team-move.md, decision 4 and
+/// Contract C): checks the address as `workspace_connect` does, writes a Workspace file of
+/// it into the app's own private folder, remembers the pending move, remembers the Team
+/// Workspace and opens it. The server's page then takes the file through the bridge
+/// (`moveHandover`, `moveFile`, `moveDone`); until it says it has it, nothing about the Local
+/// Workspace changes.
+#[tauri::command]
+async fn workspace_move(
+    webview: Webview,
+    app: AppHandle,
+    id: String,
+    address: String,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    let entry = local_entry(&app, &id).map_err(|_| {
+        "Only a workspace on this computer can be moved to a Team server.".to_owned()
+    })?;
+    if let Some(to) = &entry.moved_to {
+        return Err(format!(
+            "This workspace was already moved to {}; open it there.",
+            to.split_once("://").map_or(to.as_str(), |(_, host)| host)
+        ));
+    }
+    let db = workspaces(&app).registry.lock().unwrap().db_path(&id);
+    if !db.is_file() {
+        return Err("This workspace has nothing in it to move yet.".to_owned());
+    }
+    let origin = address::parse_server_address(&address)?;
+    let checked = origin.clone();
+    tauri::async_runtime::spawn_blocking(move || address::check_health(&checked))
+        .await
+        .map_err(|_| "The address could not be checked. Try again.".to_owned())??;
+
+    // The Team Workspace is remembered first: a move is kept only towards one that is.
+    let team = workspaces(&app)
+        .registry
+        .lock()
+        .unwrap()
+        .remember_team(&origin)?;
+    let (file, dest) = workspaces(&app).registry.lock().unwrap().new_move_file()?;
+    const NOT_COPIED: &str = "The workspace could not be copied for the move.";
+    let written = dest.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        portable::write_replacing(
+            &written,
+            |tmp| export_for_move(&db, tmp).map_err(|e| port_sentence(e, NOT_COPIED)),
+            NOT_COPIED,
+        )
+    })
+    .await
+    .map_err(|_| NOT_COPIED.to_owned())??;
+    let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+    if size > transfer::MAX_MOVE_BYTES {
+        let _ = std::fs::remove_file(&dest);
+        return Err(format!(
+            "This workspace is too large to move in one file (at most {} MB).",
+            transfer::MAX_MOVE_BYTES / (1024 * 1024)
+        ));
+    }
+    let kept = workspaces(&app).registry.lock().unwrap().add_pending_move(
+        &id,
+        &origin,
+        &file,
+        now_ms() as i64,
+    );
+    if let Err(message) = kept {
+        let _ = std::fs::remove_file(&dest);
+        return Err(message);
+    }
+    // Should it not open now, the move stays pending (a week): signing in to that server
+    // later picks it up.
+    open_workspace(&app, team).await
+}
+
 // ---- commands behind `window.qoopDesktop` ----------------------------------------------
 
 fn check_bridge_caller(webview: &Webview, state: &AppState, key: &str) -> Result<String, String> {
@@ -1283,6 +1403,158 @@ fn undo_state(
     check_bridge_caller(&webview, &state, &key)?;
     EditMenu::page_said(&app, UndoSteps::from_page(undo.as_deref(), redo.as_deref()));
     Ok(())
+}
+
+// ---- moving a Local Workspace onto this server (docs/specs/team-move.md, Contract C) ----
+//
+// Each of these answers only the main window's page, on the open Workspace's origin, with
+// the key (`check_bridge_caller`), and only about a move pending to that origin: a page of
+// any other server learns nothing and gets nothing.
+
+/// The pending move's Workspace name and file size, or `None` when nothing is being moved
+/// to this server.
+#[tauri::command]
+fn move_handover(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<Option<workspaces::Handover>, String> {
+    let origin = check_bridge_caller(&webview, &state, &key)?;
+    Ok(workspaces(&app)
+        .registry
+        .lock()
+        .unwrap()
+        .handover(&origin, now_ms() as i64))
+}
+
+const NOTHING_TO_HAND_OVER: &str = "There is no workspace from this computer to bring in.";
+
+/// A piece of the pending move's Workspace file (see `transfer`): the bridge script calls
+/// it until it has the whole file.
+#[tauri::command]
+async fn move_file_chunk(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    offset: u64,
+) -> Result<transfer::Chunk, String> {
+    let origin = check_bridge_caller(&webview, &state, &key)?;
+    let path = {
+        let ws = workspaces(&app);
+        let registry = ws.registry.lock().unwrap();
+        let pending = registry
+            .pending_move(&origin, now_ms() as i64)
+            .ok_or(NOTHING_TO_HAND_OVER)?;
+        registry.move_file_path(&pending)
+    };
+    tauri::async_runtime::spawn_blocking(move || transfer::read_chunk(&path, offset))
+        .await
+        .map_err(|_| "The Workspace file could not be read. Try again.".to_owned())?
+}
+
+/// The page says whether this server took the Workspace. `ok`: the Local Workspace is marked
+/// as moved here (it opens read-only from now on) and its file is deleted. Not `ok`: the move
+/// stays, so the Admin can try again.
+#[tauri::command]
+fn move_done(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    ok: bool,
+) -> Result<(), String> {
+    let origin = check_bridge_caller(&webview, &state, &key)?;
+    let ws = workspaces(&app);
+    let registry = ws.registry.lock().unwrap();
+    if registry.pending_move(&origin, now_ms() as i64).is_none() {
+        return Err(NOTHING_TO_HAND_OVER.to_owned());
+    }
+    if ok {
+        registry.finish_move(&origin)?;
+    }
+    Ok(())
+}
+
+// ---- saving a file the page made (docs/specs/desktop.md, M18) ---------------------------
+//
+// `saveBinaryFile`: the bytes come first, in pieces (see `transfer`), then the save dialog,
+// as for `saveFile`. One file at a time; a new one, or the page going away, drops the last.
+
+/// Starts receiving a file of `size` bytes; the ticket names it in the next calls.
+#[tauri::command]
+fn save_binary_begin(
+    webview: Webview,
+    state: State<'_, AppState>,
+    key: String,
+    size: u64,
+) -> Result<String, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let upload = Upload::begin(size)?;
+    let ticket = upload.ticket().to_owned();
+    *state.upload.lock().unwrap() = Some(upload);
+    Ok(ticket)
+}
+
+/// The next piece of the file, as base64, starting at `offset`.
+#[tauri::command]
+fn save_binary_chunk(
+    webview: Webview,
+    state: State<'_, AppState>,
+    key: String,
+    ticket: String,
+    offset: u64,
+    data: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let mut slot = state.upload.lock().unwrap();
+    let pushed = match slot.as_mut() {
+        Some(upload) => upload.push(&ticket, offset, &data),
+        None => Err("The file could not be saved. Try again.".to_owned()),
+    };
+    if pushed.is_err() {
+        // Half a file is never saved: the page starts again.
+        *slot = None;
+    }
+    pushed
+}
+
+/// All of it has come: the system's save dialog, suggesting `suggested_name` (made safe as
+/// for `saveFile`), then the file is written whole. `false` when the Member cancelled.
+#[tauri::command]
+async fn save_binary_finish(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    ticket: String,
+    suggested_name: String,
+) -> Result<bool, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let upload = state.upload.lock().unwrap().take();
+    let bytes = upload
+        .ok_or_else(|| "The file could not be saved. Try again.".to_owned())?
+        .finish(&ticket)?;
+    let chosen = {
+        let _dialog = DialogSlot::take(&state)?;
+        let name = portable::safe_file_name(&suggested_name, "Untitled");
+        ask_save_path(&app, webview.window(), name, None).await?
+    };
+    let Some(dest) = chosen else {
+        return Ok(false);
+    };
+    const NOT_WRITTEN: &str = "The file could not be written there.";
+    tauri::async_runtime::spawn_blocking(move || {
+        portable::write_replacing(
+            &dest,
+            |tmp| std::fs::write(tmp, &bytes).map_err(|_| NOT_WRITTEN.to_owned()),
+            NOT_WRITTEN,
+        )
+    })
+    .await
+    .map_err(|_| NOT_WRITTEN.to_owned())??;
+    Ok(true)
 }
 
 // ---- Undo and Redo in the Edit menu (docs/specs/undo.md, decision 11; desktop.md, M15) ---

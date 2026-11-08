@@ -3399,6 +3399,7 @@ dependencies = [
 name = "qoop-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "getrandom 0.3.4",
  "qoop-claude-driver",
  "qoop-runner",
