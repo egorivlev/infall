@@ -1219,8 +1219,8 @@ export class FakeServer {
    * server.xhr())`. It reports progress in four steps and, when `uploadGate` is set, waits for it after the first.
    */
   xhr(): typeof XMLHttpRequest {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const server = this
+    const serverFetch = (path: string, init: RequestInit) => this.fetch(path, init)
+    const uploadGate = () => this.uploadGate
     class FakeXhr {
       status = 0
       responseText = ''
@@ -1251,10 +1251,11 @@ export class FakeServer {
             await Promise.resolve()
             if (this.aborted) return
             this.upload.onprogress?.({ loaded: Math.round((total * step) / 4), total, lengthComputable: true } as ProgressEvent)
-            if (step === 1 && server.uploadGate) await server.uploadGate
+            const gate = uploadGate()
+            if (step === 1 && gate) await gate
           }
           if (this.aborted) return
-          const res = await server.fetch(this.path, { method: this.method, body })
+          const res = await serverFetch(this.path, { method: this.method, body })
           if (this.aborted) return
           this.status = res.status
           this.responseText = await res.text()

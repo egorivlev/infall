@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { invites } from '../../lib'
+import type { Member } from '../../lib'
 import { endOfLocalDay, formatShortDate, todayYmd } from './dates'
 import { describeError } from './errorMessages'
 import { Field } from './Field'
@@ -26,7 +27,14 @@ function checkUntil(role: InviteRole, v: string): string | undefined {
   return end > Date.now() ? undefined : 'Choose a date in the future.'
 }
 
-export function InviteForm({ onCreated }: { onCreated: () => void }) {
+type Props = {
+  onCreated: () => void
+  /** M18: the unclaimed Member this invite is for: whoever accepts takes over that name and everything under it. */
+  claim?: Member | null
+  onClearClaim?: () => void
+}
+
+export function InviteForm({ onCreated, claim = null, onClearClaim }: Props) {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<InviteRole>('member')
   const [until, setUntil] = useState('')
@@ -37,6 +45,12 @@ export function InviteForm({ onCreated }: { onCreated: () => void }) {
   const busyRef = useRef(false)
   const emailRef = useRef<HTMLInputElement>(null)
   const untilRef = useRef<HTMLInputElement>(null)
+
+  // Choosing a name to invite brings the keyboard to the email: the Admin types it (emails never travel in a file).
+  const claimFor = claim?.id ?? null
+  useEffect(() => {
+    if (claimFor !== null) emailRef.current?.focus()
+  }, [claimFor])
 
   const onEmail = (v: string) => {
     setEmail(v)
@@ -66,8 +80,8 @@ export function InviteForm({ onCreated }: { onCreated: () => void }) {
     setResult(null)
     try {
       const sent = email.trim()
-      const input = role === 'guest' ? { email: sent, role, access_until: endOfLocalDay(until) ?? undefined } : { email: sent, role }
-      const { url } = await invites.create(input)
+      const base = role === 'guest' ? { email: sent, role, access_until: endOfLocalDay(until) ?? undefined } : { email: sent, role }
+      const { url } = await invites.create(claim ? { ...base, claims: claim.id } : base)
       setResult({ url, email: sent })
       setEmail('')
       setUntil('')
@@ -91,10 +105,18 @@ export function InviteForm({ onCreated }: { onCreated: () => void }) {
     <section className="q-invite" aria-labelledby="q-invite-h">
       <div className="q-invite__head">
         <h2 className="q-panel-title" id="q-invite-h">
-          Invite someone
+          {claim ? `Invite ${claim.name}` : 'Invite someone'}
         </h2>
         <span className="q-tag">Admin only</span>
       </div>
+      {claim && (
+        <p className="q-invite__claim">
+          <span>Whoever accepts takes over the name {claim.name} — their Changes, Checkpoints, To-dos and Comments.</span>
+          <button type="button" className="q-btn q-btn--sm q-btn--quiet" onClick={() => onClearClaim?.()}>
+            Invite someone new instead
+          </button>
+        </p>
+      )}
       <form className="q-access__form" onSubmit={submit} noValidate>
         <Field
           label="Email"
@@ -135,7 +157,7 @@ export function InviteForm({ onCreated }: { onCreated: () => void }) {
           />
         )}
         <button type="submit" className="q-btn q-btn--primary q-btn--lg q-access__submit" aria-disabled={busy} aria-busy={busy}>
-          {busy ? 'Creating invite…' : 'Create invite'}
+          {busy ? 'Creating invite…' : claim ? `Create invite for ${claim.name}` : 'Create invite'}
         </button>
         {formError && (
           <p className="q-error" role="alert">

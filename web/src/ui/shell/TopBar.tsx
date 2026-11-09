@@ -1,3 +1,4 @@
+import { useWorkspace } from '../../lib'
 import type { Member } from '../../lib'
 import { AccountMenu } from './AccountMenu'
 import { AiButton } from './AiButton'
@@ -21,6 +22,7 @@ import { macDesktopWindow } from './windowChrome'
  */
 export function TopBar({ member, branch, available }: { member: Member; branch: string; available: boolean }) {
   const guest = member.role === 'guest'
+  const moved = useWorkspace().readOnly === true // M18: a moved copy names no moments; History still reads
   return (
     <header className="q-topbar">
       <div className={macDesktopWindow() ? 'q-titlebar is-mac-window' : 'q-titlebar'} data-tauri-drag-region="deep">
@@ -58,7 +60,7 @@ export function TopBar({ member, branch, available }: { member: Member; branch: 
             {available && (
               <>
                 <span className="q-topbar__sep" aria-hidden="true" />
-                <CheckpointButton key={branch} />
+                {!moved && <CheckpointButton key={branch} />}
                 <HistoryButton />
               </>
             )}

@@ -17,6 +17,9 @@ export function Members({ me }: { me: Member }) {
   const refocus = useRef(false)
   const busyRef = useRef(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  // M18: whose name the next invite takes over. From the Invite button, or `/members?claim=<id>` (the first screen).
+  const [claimId, setClaimId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('claim'))
+  const claim = claimId === null ? null : (people.find((p) => p.id === claimId && p.claimed === false) ?? null)
 
   const loadInvites = useCallback(
     () =>
@@ -81,10 +84,18 @@ export function Members({ me }: { me: Member }) {
               setRemoveError('')
               setTarget({ member: m, opener })
             }}
+            onInvite={(m) => setClaimId(m.id)}
           />
           <PendingInvites pending={pending} loadError={loadError} onChanged={() => void loadInvites()} />
         </div>
-        <InviteForm onCreated={() => void loadInvites()} />
+        <InviteForm
+          claim={claim}
+          onClearClaim={() => setClaimId(null)}
+          onCreated={() => {
+            void loadInvites()
+            setClaimId(null)
+          }}
+        />
       </div>
       {target && (
         <ConfirmDialog

@@ -677,3 +677,10 @@
 @media (prefers-reduced-motion: reduce) {
   .q-undo__tip { transition: none; }
 }
+
+/* M18: the Card's thread — a speech mark and the count (full: in the footer row; compact: after the status word). */
+.qb-card__comments { display: inline-flex; align-items: center; gap: 3px; color: var(--q-ink-2); }
+.qb-card__comments.is-resolved { color: var(--q-ink-3); }
+.qb-card__comments--compact { margin-left: auto; font: 500 calc(12px * var(--q-text, 1))/1 var(--q-mono); letter-spacing: 0; }
+.qb-card__comments--compact svg { width: 13px; height: 13px; }
+.qb-card__status--compact { width: 100%; }

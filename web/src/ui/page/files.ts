@@ -1,6 +1,6 @@
 // Getting text out as a file: the desktop app's save dialog when it has one (Contract D), else the browser's
 // download. And reading a file a person picked, for the importers.
-import { desktopSaveFile } from '../bridge'
+import { desktopSaveBinaryFile, desktopSaveFile } from '../bridge'
 
 /** What became of a file: written where the person chose, not written (they cancelled), or handed to the browser. */
 export type Saved = 'saved' | 'cancelled' | 'downloaded'
@@ -45,6 +45,26 @@ export async function saveTextFile(suggestedName: string, text: string, type: st
   const save = desktopSaveFile()
   if (save && utf8Length(text) <= DESKTOP_LIMIT) return (await save({ suggestedName, text })) ? 'saved' : 'cancelled'
   download(suggestedName, text, type)
+  return 'downloaded'
+}
+
+/**
+ * M18: saves bytes under `suggestedName` — through the desktop app's save dialog when it can write bytes
+ * (`saveBinaryFile`), else as a browser download. Rejects only when the desktop app could not write the file.
+ */
+export async function saveBytesFile(suggestedName: string, bytes: Uint8Array, type: string): Promise<Saved> {
+  const save = desktopSaveBinaryFile()
+  if (save) return (await save({ suggestedName, bytes })) ? 'saved' : 'cancelled'
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = suggestedName
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
   return 'downloaded'
 }
 

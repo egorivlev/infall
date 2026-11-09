@@ -18,6 +18,7 @@ export type IconName =
   | 'suggestion'
   | 'ai'
   | 'rail'
+  | 'mention'
 
 const PATHS: Record<IconName, ReactNode> = {
   board: (
@@ -92,6 +93,13 @@ const PATHS: Record<IconName, ReactNode> = {
   suggestion: <path d="M7 1.6 L12.4 7 L7 12.4 L1.6 7 Z" />,
   // A four-point spark.
   ai: <path d="M7 1.5 C7.4 4.6 9.4 6.6 12.5 7 C9.4 7.4 7.4 9.4 7 12.5 C6.6 9.4 4.6 7.4 1.5 7 C4.6 6.6 6.6 4.6 7 1.5 Z" />,
+  // M18, For you: an at sign.
+  mention: (
+    <>
+      <circle cx="7" cy="7" r="2.3" />
+      <path d="M9.3 7 V8.1 a1.6 1.6 0 0 0 3.2 0 V7 A5.5 5.5 0 1 0 10.2 11.5" />
+    </>
+  ),
   // The rail: a window with its left column.
   rail: (
     <>

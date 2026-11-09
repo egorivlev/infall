@@ -120,7 +120,8 @@ export type BoardSnapshot = {
   connections: ConnectionVM[] // live Connections whose two Cards are both live, ordered by id
   presence: Member[] // Members connected to this Branch (resolved from ids), self included
   pending: number // optimistic ops not yet confirmed by the server
-  readOnly: boolean // true for Guests
+  readOnly: boolean // true for Guests, and (M18) in a Workspace moved to a Team server
+  moved?: true // M18: set only in a moved Workspace (read-only, but a Member: History still reads)
 }
 
 export type SessionSnapshot =

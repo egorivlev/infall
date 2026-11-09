@@ -21,12 +21,14 @@ type ItemProps = {
   onToggle: (todo: Todo, done: boolean) => void
   onEdit: (todo: Todo, text: string) => void
   onDelete: (todo: Todo) => void
+  /** M18: a moved copy — To-dos are read, not ticked or changed. */
+  readOnly?: boolean
 }
 
-export function TodoItem({ todo, owner, me, assignedBy, card, onToggle, onEdit, onDelete }: ItemProps) {
+export function TodoItem({ todo, owner, me, assignedBy, card, onToggle, onEdit, onDelete, readOnly = false }: ItemProps) {
   const textId = useId()
-  const mine = todo.owner === me.id
-  const canChange = mine || todo.created_by === me.id
+  const mine = todo.owner === me.id && !readOnly
+  const canChange = !readOnly && (todo.owner === me.id || todo.created_by === me.id)
   const [editing, setEditing] = useState(false)
   const editButton = useRef<HTMLButtonElement>(null)
   const refocus = useRef(false) // the editor was closed from the keyboard: focus goes back to "Edit"
@@ -46,7 +48,7 @@ export function TodoItem({ todo, owner, me, assignedBy, card, onToggle, onEdit, 
         disabled={!mine}
         aria-labelledby={editing ? undefined : textId}
         aria-label={editing ? todo.text : undefined}
-        title={mine ? (todo.done ? 'Mark not done' : 'Mark done') : `Only ${firstName(owner.name)} can tick this`}
+        title={readOnly ? 'This copy is read-only' : mine ? (todo.done ? 'Mark not done' : 'Mark done') : `Only ${firstName(owner.name)} can tick this`}
         onChange={(e) => onToggle(todo, e.target.checked)}
       />
       <div className="qt-item__main">

@@ -196,7 +196,7 @@ describe('the Page panel beside the Board', () => {
     openA()
     fireEvent.click(screen.getByRole('button', { name: 'Close Page' }))
     expect(panel()).toBeNull()
-    expect(usePagePanel.getState()).toEqual({ cardId: null, full: false })
+    expect(usePagePanel.getState()).toEqual({ cardId: null, full: false, comment: null })
     expect(node('a')).toHaveFocus()
     expect(screen.getByTestId('inspector')).toBeInTheDocument()
   })

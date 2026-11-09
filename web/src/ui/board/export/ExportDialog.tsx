@@ -10,7 +10,7 @@ import { DEFAULT_PNG_SCALE, PNG_SCALES, pngSize } from './png'
 import type { PngScale } from './png'
 import { makeExport } from './run'
 import type { ExportFormat } from './run'
-import { boardFileName, inDesktopApp, momentWords, savePng, saveSvg } from './save'
+import { boardFileName, canSaveBinary, inDesktopApp, momentWords, savePng, saveSvg } from './save'
 import type { Area, BoardContent } from './svg'
 
 type Props = {
@@ -103,7 +103,7 @@ export function ExportDialog({ format, content, branch, at, visibleArea, onClose
         await saveSvg(name, result.svg)
       } else {
         closeRef.current()
-        savePng(name, result.png)
+        await savePng(name, result.png)
       }
     } catch (e) {
       if (cancelled.current || (e instanceof DOMException && e.name === 'AbortError')) return
@@ -214,7 +214,7 @@ export function ExportDialog({ format, content, branch, at, visibleArea, onClose
           </fieldset>
         )}
 
-        {format === 'png' && inDesktopApp() && (
+        {format === 'png' && inDesktopApp() && !canSaveBinary() && (
           <p className="qb-export__note" role="note">
             This version of the desktop app saves text files only, so the PNG is offered as a download, which the app may not keep. Board as SVG… is saved where you choose.
           </p>

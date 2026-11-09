@@ -260,6 +260,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     }
     if (error !== undefined) next.error = error
     if (branch) next.branch = branch
+    if (moved()) next.moved = true
     editors = resolveEditors()
     const prev = store.getState()
     const snapshot = sameSnapshot(prev.snapshot, next) ? prev.snapshot : next

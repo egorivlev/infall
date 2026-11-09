@@ -46,12 +46,27 @@ describe('saving', () => {
     expect(toasts.show).toHaveBeenCalledWith({ message: 'Downloaded “Board of main.svg”.' })
   })
 
-  it('downloads the PNG, and says in the desktop app that it may not be kept', () => {
+  it('downloads the PNG, and says in an older desktop app that it may not be kept', async () => {
     const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })
-    expect(savePng('Board of main.png', png)).toBe('downloaded')
+    expect(await savePng('Board of main.png', png)).toBe('downloaded')
     expect(clicks).toEqual([{ href: 'blob:x', download: 'Board of main.png' }])
     g.qoopDesktop = { saveFile: vi.fn() }
-    expect(savePng('Board of main.png', png)).toBe('offered')
+    expect(await savePng('Board of main.png', png)).toBe('offered')
     expect(vi.mocked(toasts.show).mock.calls.at(-1)![0].message).toMatch(/may not keep it/)
+  })
+
+  it('M18: writes the PNG’s bytes through the app’s binary save when it has one — no download, no warning', async () => {
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })
+    const saveBinaryFile = vi.fn().mockResolvedValue(true)
+    g.qoopDesktop = { saveFile: vi.fn(), saveBinaryFile }
+    expect(await savePng('Board of main.png', png)).toBe('saved')
+    expect(saveBinaryFile).toHaveBeenCalledWith({ suggestedName: 'Board of main.png', bytes: new Uint8Array([137, 80, 78, 71]) })
+    expect(clicks).toEqual([])
+    expect(vi.mocked(toasts.show).mock.calls.at(-1)![0].message).toBe('Exported “Board of main.png”.')
+    saveBinaryFile.mockResolvedValue(false)
+    expect(await savePng('Board of main.png', png)).toBe('cancelled')
+    saveBinaryFile.mockRejectedValue(new Error('Disk full.'))
+    expect(await savePng('Board of main.png', png)).toBe('failed')
+    expect(vi.mocked(toasts.show).mock.calls.at(-1)![0].message).toMatch(/could not be written\. Disk full\./)
   })
 })

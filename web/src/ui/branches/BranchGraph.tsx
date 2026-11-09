@@ -5,7 +5,7 @@
 import './branches.css'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
-import { branches, formatWhen, graph, mergeOptions, startLabel, useBoard, useGraph, useMembers, useSession } from '../../lib'
+import { branches, formatWhen, graph, mergeOptions, startLabel, useBoard, useGraph, useMembers, useSession, useWorkspace } from '../../lib'
 import type { BranchInfo, GraphLayout } from '../../lib'
 import { personOf } from '../history/format'
 import { graphPreview } from '../history/fromGraph'
@@ -65,6 +65,7 @@ export function BranchGraph({ current }: { current: string }) {
   const snap = useGraph()
   const memberList = useMembers()
   const session = useSession()
+  const moved = useWorkspace().readOnly === true
   const me = session.status === 'signed_in' ? session.member.id : undefined
   const openId = useBoard().branch?.id
   const textSize = usePrefs((p) => p.textSize)
@@ -361,14 +362,15 @@ export function BranchGraph({ current }: { current: string }) {
       const parent = all.find((x) => x.id === b.parent!.branch)?.name
       const who = b.created_by ? personOf(people, b.created_by).name : ''
       const when = b.created_at !== undefined ? formatWhen(b.created_at) : ''
-      const { intoParent, fromParent } = mergeOptions(b, all)
+      // A moved copy (M18) is read-only: no Merges from it.
+      const { intoParent, fromParent } = moved ? {} : mergeOptions(b, all)
       return {
         meta: [parent && `from ${parent}`, who, when].filter(Boolean).join(' · '),
         into: intoParent?.name,
         update: fromParent?.name,
       }
     })
-  }, [data, layout, people])
+  }, [data, layout, people, moved])
 
   const loading = useDelayedFlag(snap.status === 'loading' || snap.status === 'idle', 150)
   const linesW = linesWidth(layout?.columns ?? 1)
@@ -452,7 +454,7 @@ export function BranchGraph({ current }: { current: string }) {
             </span>
           )}
         </div>
-        <NewBranchField inputRef={nameRef} from={from} create={create} onLeave={() => listRef.current?.focus({ preventScroll: true })} />
+        {!moved && <NewBranchField inputRef={nameRef} from={from} create={create} onLeave={() => listRef.current?.focus({ preventScroll: true })} />}
       </header>
       <div className="qg-body">
         <div className="qg-scroll" ref={scrollRef} onScroll={onScroll}>
@@ -509,6 +511,7 @@ export function BranchGraph({ current }: { current: string }) {
             onCheckpoint={onCheckpoint}
             onShowRow={onShowRow}
             onLeave={() => listRef.current?.focus({ preventScroll: true })}
+            readOnly={moved}
           />
         )}
       </div>

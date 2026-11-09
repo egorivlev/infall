@@ -24,6 +24,8 @@ const noAi = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
+  forYou: { reload: async () => {}, seen: async () => {}, onMention: () => () => {} },
   useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
   workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,

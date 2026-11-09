@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { todos, useBoard, useBranches, useMembers, useTodos } from '../../lib'
+import { todos, useBoard, useBranches, useForYou, useMembers, useTodos } from '../../lib'
 import type { Member, Todo } from '../../lib'
 import { initials } from '../shell/initials'
 import { useDelayedFlag } from '../shell/useDelayedFlag'
 import { cardRefOf, columnsOf, failure, FILTERS, firstName, matches, MAX_TEXT } from './model'
 import type { Column, Filter } from './model'
 import { TodoItem } from './TodoItem'
+import { TodoTabs } from './TodoTabs'
 import './todos.css'
 
 const UNDO_MS = 6000
@@ -24,6 +25,8 @@ export function Todos({ me }: { me: Member }) {
   const people = useMembers()
   const board = useBoard()
   const branches = useBranches()
+  const unseen = useForYou().unseen
+  const readOnly = board.readOnly // M18: a moved copy (Guests never come here)
 
   const [filter, setFilter] = useState<Filter>('open')
   const [failed, setFailed] = useState<Failure | null>(null)
@@ -109,6 +112,7 @@ export function Todos({ me }: { me: Member }) {
   return (
     <div className="qt">
       <header className="qt__head">
+        <TodoTabs current="todos" unseen={unseen} />
         <h1 className="qt__title">To-dos</h1>
         <span className="qt__count">
           {open} open · {columns.length} {columns.length === 1 ? 'Member' : 'Members'}
@@ -152,6 +156,7 @@ export function Todos({ me }: { me: Member }) {
               onAdd={add}
               onUndo={undo}
               onForget={forget}
+              readOnly={readOnly}
               renderItem={(todo) => (
                 <TodoItem
                   key={todo.id}
@@ -163,6 +168,7 @@ export function Todos({ me }: { me: Member }) {
                   onToggle={toggle}
                   onEdit={edit}
                   onDelete={remove}
+                  readOnly={readOnly}
                 />
               )}
             />
@@ -182,15 +188,16 @@ type ColumnProps = {
   onUndo: (todo: Todo) => void
   onForget: () => void
   renderItem: (todo: Todo) => ReactNode
+  readOnly?: boolean
 }
 
-function TodoColumn({ col, filter, failed, deleted, onAdd, onUndo, onForget, renderItem }: ColumnProps) {
+function TodoColumn({ col, filter, failed, deleted, onAdd, onUndo, onForget, renderItem, readOnly = false }: ColumnProps) {
   const headId = useId()
   const { member, mine } = col
   const shown = col.items.filter((t) => matches(filter, t))
   const role = member.role === 'admin' ? 'Admin' : 'Member'
   const empty =
-    col.items.length === 0 ? 'No To-dos yet. Add one below.' : filter === 'open' ? 'No open To-dos.' : filter === 'done' ? 'No done To-dos.' : ''
+    col.items.length === 0 ? (readOnly ? 'No To-dos.' : 'No To-dos yet. Add one below.') : filter === 'open' ? 'No open To-dos.' : filter === 'done' ? 'No done To-dos.' : ''
 
   return (
     <section className={`qt-col${mine ? ' qt-col--mine' : ''}`} aria-labelledby={headId}>
@@ -215,7 +222,7 @@ function TodoColumn({ col, filter, failed, deleted, onAdd, onUndo, onForget, ren
             {failed}
           </p>
         )}
-        <AddTodo owner={member} mine={mine} onAdd={onAdd} />
+        {!readOnly && <AddTodo owner={member} mine={mine} onAdd={onAdd} />}
       </div>
     </section>
   )

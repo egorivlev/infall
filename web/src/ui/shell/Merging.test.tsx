@@ -29,6 +29,8 @@ vi.mock('../../lib', async (importOriginal) => ({
   useGraph: () => h.graph,
   useGraphLines: () => undefined,
   graph: { open: async () => {}, close: () => {}, refresh: async () => {}, need: async () => {}, changesOf: async () => [], addCheckpoint: async () => ({}) },
+  useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
+  forYou: { reload: async () => {}, seen: async () => {}, onMention: () => () => {} },
   useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
   workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,

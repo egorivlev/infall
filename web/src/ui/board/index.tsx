@@ -108,7 +108,9 @@ const TYPING = 'input, textarea, select, [contenteditable="true"], .qb-inspector
  */
 export function BoardView() {
   const historyOpen = useHistoryPanel((s) => s.open)
-  const isGuest = useBoard().readOnly // Guests have no History
+  const snap = useBoard()
+  const isGuest = snap.readOnly && snap.moved !== true // Guests have no History; a moved copy (M18) reads it
+  const noSuggestions = snap.readOnly // nor Suggestions to decide, and a moved copy decides nothing
   const areaRef = useRef<HTMLDivElement>(null)
   const focusBoard = useCallback(() => {
     areaRef.current?.querySelector<HTMLElement>('.qb-board')?.focus({ preventScroll: true })
@@ -132,10 +134,10 @@ export function BoardView() {
 
   // Suggestions, docked left of the Board. Not for Guests, and not while History previews an earlier moment.
   const suggestionsOpen = useSuggestionsPanel((s) => s.open)
-  const showSuggestions = suggestionsOpen && !isGuest && !previewing
+  const showSuggestions = suggestionsOpen && !noSuggestions && !previewing
   useEffect(() => {
-    if (suggestionsOpen && (isGuest || previewing)) suggestionsPanel.close()
-  }, [suggestionsOpen, isGuest, previewing])
+    if (suggestionsOpen && (noSuggestions || previewing)) suggestionsPanel.close()
+  }, [suggestionsOpen, noSuggestions, previewing])
   // Leaving the Board takes the previewed Connection with it (the panel itself may stay open for the way back).
   useEffect(() => () => suggestionsPanel.preview(null), [])
 

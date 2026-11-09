@@ -6,7 +6,9 @@
 // download. In the desktop app that download is up to the webview: the shell registers no download handler, and on
 // macOS wry then cancels the download (wry 0.57 wkwebview/navigation.rs), so nothing is written; WebView2 and
 // WebKitGTK save to Downloads by their defaults (not checked here). Until the bridge has a binary save, the dialog
-// says so in the desktop app.
+// says so in the desktop app. M18: an app with `saveBinaryFile` writes the PNG through its save dialog instead, and
+// the dialog says nothing about downloads there.
+import { desktopSaveBinaryFile } from '../../bridge'
 import { formatWhen } from '../../history/format'
 import { exportFile } from '../../page/export/exportFile'
 import { fileName } from '../../page/files'
@@ -70,11 +72,31 @@ export function downloadBlob(name: string, blob: Blob): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
 
-/** What became of a PNG: downloaded by the browser, or offered to the desktop app's webview as a download. */
-export type PngSaved = 'downloaded' | 'offered'
+/**
+ * What became of a PNG: written where the person chose through the app's binary save (M18), not written (they
+ * cancelled), downloaded by the browser, or offered to an older desktop app's webview as a download.
+ */
+export type PngSaved = 'saved' | 'cancelled' | 'downloaded' | 'offered' | 'failed'
 
-/** Saves the PNG the only way there is for a file that is not text (see the top of this file), and says so. */
-export function savePng(name: string, blob: Blob): PngSaved {
+/** Whether the desktop app can write bytes through its own save dialog (M18's `saveBinaryFile`). */
+export function canSaveBinary(): boolean {
+  return desktopSaveBinaryFile() !== null
+}
+
+/** Saves the PNG: through the app's save dialog when it can write bytes, else as a download (see the top of this file), and says so. */
+export async function savePng(name: string, blob: Blob): Promise<PngSaved> {
+  const save = desktopSaveBinaryFile()
+  if (save) {
+    try {
+      const ok = await save({ suggestedName: name, bytes: new Uint8Array(await blob.arrayBuffer()) })
+      if (ok) toasts.show({ message: `Exported “${name}”.` })
+      return ok ? 'saved' : 'cancelled'
+    } catch (e) {
+      const why = e instanceof Error && e.message ? ` ${e.message}` : ''
+      toasts.show({ message: `“${name}” could not be written.${why} Try again, or choose another folder.` }, 10_000)
+      return 'failed'
+    }
+  }
   downloadBlob(name, blob)
   if (inDesktopApp()) {
     toasts.show({ message: `Offered “${name}” as a download. This version of the app may not keep it; Board as SVG… is saved where you choose.` }, 10_000)

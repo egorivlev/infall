@@ -42,14 +42,16 @@ export const historyPanel = {
 
 
 // ---- M4: the Page panel. Anything may ask to open a Card's Page; the Board area shows it. ----
-type PagePanelState = { cardId: string | null; full: boolean }
-export const usePagePanel = create<PagePanelState>(() => ({ cardId: null, full: false }))
+// M18: `comment` asks the Page to scroll to that Comment (For you); `nonce` repeats the ask for the same one.
+type PagePanelState = { cardId: string | null; full: boolean; comment: { id: string; nonce: number } | null }
+export const usePagePanel = create<PagePanelState>(() => ({ cardId: null, full: false, comment: null }))
+let commentNonce = 0
 export const pagePanel = {
-  open(cardId: string) {
-    usePagePanel.setState({ cardId })
+  open(cardId: string, options: { comment?: string } = {}) {
+    usePagePanel.setState({ cardId, comment: options.comment ? { id: options.comment, nonce: ++commentNonce } : null })
   },
   close() {
-    usePagePanel.setState({ cardId: null, full: false })
+    usePagePanel.setState({ cardId: null, full: false, comment: null })
   },
   toggleFull() {
     usePagePanel.setState((s) => ({ full: !s.full }))
@@ -135,4 +137,36 @@ export function desktopSaveFile(): SaveFile | null {
   if (typeof desktop !== 'object' || desktop === null) return null
   const fn = desktop.saveFile
   return typeof fn === 'function' ? (file) => Promise.resolve((fn as SaveFile).call(desktop, file)).then((ok) => ok !== false) : null
+}
+
+
+// ---- M18: saving bytes, and the move of a Local Workspace from this computer (team-move.md, Contract C). ----
+
+type SaveBinaryFile = (file: { suggestedName: string; bytes: Uint8Array }) => Promise<boolean>
+
+/** `window.qoopDesktop.saveBinaryFile`: the save dialog, then the bytes as they are; false when cancelled. Null in a browser and an older app. */
+export function desktopSaveBinaryFile(): SaveBinaryFile | null {
+  const desktop = (globalThis as { qoopDesktop?: { saveBinaryFile?: unknown } }).qoopDesktop
+  if (typeof desktop !== 'object' || desktop === null) return null
+  const fn = desktop.saveBinaryFile
+  return typeof fn === 'function' ? (file) => Promise.resolve((fn as SaveBinaryFile).call(desktop, file)).then((ok) => ok !== false) : null
+}
+
+/** The three calls of a move handed over by the desktop app; null unless all three are there (only on the origin of a pending move). */
+export type DesktopMove = {
+  handover(): Promise<{ name: string; size: number } | null>
+  file(): Promise<Uint8Array>
+  done(result: { ok: boolean }): Promise<void>
+}
+
+export function desktopMove(): DesktopMove | null {
+  const d = (globalThis as { qoopDesktop?: Record<string, unknown> }).qoopDesktop
+  if (typeof d !== 'object' || d === null) return null
+  const { moveHandover, moveFile, moveDone } = d
+  if (typeof moveHandover !== 'function' || typeof moveFile !== 'function' || typeof moveDone !== 'function') return null
+  return {
+    handover: () => Promise.resolve(moveHandover.call(d) as Promise<{ name: string; size: number } | null>),
+    file: () => Promise.resolve(moveFile.call(d) as Promise<Uint8Array>),
+    done: (result) => Promise.resolve(moveDone.call(d, result) as Promise<void>),
+  }
 }
