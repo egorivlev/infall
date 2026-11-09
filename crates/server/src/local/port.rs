@@ -14,12 +14,11 @@ use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
-use qoop_core::Workspace;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use super::{PRESET_SETTING, Preset, TUTORIAL_SETTING};
 use crate::auth::{hash_password, new_token};
-use crate::store::SCHEMA_VERSION;
+use crate::store::{SCHEMA_VERSION, workspace_in_file};
 
 /// The mark of a Workspace file in the SQLite header: "Infa".
 pub const APPLICATION_ID: i32 = 0x496e_6661;
@@ -271,7 +270,8 @@ fn import_via(file: &Path, scratch: &Path, db: &Path) -> Result<Imported, PortEr
 
 /// The checks of `import_workspace`, on the copy: a schema version this build knows, an
 /// intact database that is a Local Workspace (the tables, a Preset, exactly one Member, an
-/// Admin, a Workspace that reads). Returns whether the copy carries the Workspace-file mark,
+/// Admin, a Workspace that reads — from its JSON row in a file older than schema version 6,
+/// from its tables in a later one). Returns whether the copy carries the Workspace-file mark,
 /// and what the start screen needs.
 fn check(db: &Path) -> Result<(bool, Imported), PortError> {
     let not_ours = |_: rusqlite::Error| PortError::NotAWorkspaceFile;
@@ -304,7 +304,7 @@ fn check(db: &Path) -> Result<(bool, Imported), PortError> {
     if check != "ok" {
         return Err(PortError::NotAWorkspaceFile);
     }
-    for table in ["members", "workspace", "settings"] {
+    for table in ["members", "settings"] {
         if !has_table(&conn, table).map_err(not_ours)? {
             return Err(PortError::NotAWorkspaceFile);
         }
@@ -331,13 +331,9 @@ fn check(db: &Path) -> Result<(bool, Imported), PortError> {
     if roles != ["admin"] {
         return Err(PortError::NotAWorkspaceFile);
     }
-    let json: Option<String> = conn
-        .query_row("SELECT json FROM workspace WHERE id = 1", [], |r| r.get(0))
-        .optional()
-        .map_err(not_ours)?;
-    match json {
-        Some(json) if serde_json::from_str::<Workspace>(&json).is_ok() => {}
-        _ => return Err(PortError::NotAWorkspaceFile),
+    // Files from before schema version 6 hold it as one JSON row, later ones in tables.
+    if !matches!(workspace_in_file(&conn, version), Ok(Some(_))) {
+        return Err(PortError::NotAWorkspaceFile);
     }
     Ok((
         marked,

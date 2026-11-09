@@ -3,13 +3,15 @@
 //! Every method is blocking; async callers go through `tokio::task::spawn_blocking`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use qoop_core::{BranchId, MemberId, Workspace};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+mod content;
 
 /// What a person may do (contract §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,10 +261,12 @@ impl From<serde_json::Error> for StoreError {
 pub type StoreResult<T> = Result<T, StoreError>;
 
 /// Accounts, sessions, invites, To-dos, access tokens, Suggestions, AI settings and the
-/// Workspace snapshot.
+/// Workspace (its Research Content).
 pub trait Store: Send + Sync + 'static {
     fn load_workspace(&self) -> StoreResult<Option<Workspace>>;
-    /// Replaces the snapshot atomically.
+    /// Makes `ws` the stored Workspace, atomically. The SQLite store writes only what
+    /// differs from what it holds: for the usual `ws` — the stored one with Changes,
+    /// Checkpoints or Branches added — that is the new rows alone.
     fn save_workspace(&self, ws: &Workspace) -> StoreResult<()>;
 
     /// `EmailTaken` if the email is in use.
@@ -345,7 +349,7 @@ pub trait Store: Send + Sync + 'static {
         to: SuggestionState,
         decided: Option<(MemberId, i64)>,
     ) -> StoreResult<bool>;
-    /// Atomically replaces the Workspace snapshot and marks a pending Suggestion accepted;
+    /// Atomically saves the Workspace (as `save_workspace`) and marks a pending Suggestion accepted;
     /// false, and nothing written, if the Suggestion is not pending.
     fn save_workspace_accepting(
         &self,
@@ -375,7 +379,7 @@ pub trait Store: Send + Sync + 'static {
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -488,9 +492,26 @@ CREATE TABLE settings (
 );
 ";
 
+/// One step of `MIGRATIONS`.
+enum Step {
+    Sql(&'static str),
+    /// A step that moves data, not only the schema.
+    Code(fn(&Connection) -> StoreResult<()>),
+}
+
 /// Steps that bring a file from version `i` to `i + 1`; index 0 creates the schema.
-/// A later version appends its step here.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
+/// A later version appends its step here; a step is never changed once released, since
+/// files at every earlier version are still opened (tests/migrations.rs).
+const MIGRATIONS: &[Step] = &[
+    Step::Sql(SCHEMA_V1),
+    Step::Sql(SCHEMA_V2),
+    Step::Sql(SCHEMA_V3),
+    Step::Sql(SCHEMA_V4),
+    Step::Sql(SCHEMA_V5),
+    // Version 6: Research Content in tables (`store/content.rs`); the `workspace` row of
+    // versions 1–5 is read into them and dropped.
+    Step::Code(content::from_json_row),
+];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
@@ -505,25 +526,28 @@ impl SqliteStore {
     /// The rights of a file that is already there are never changed: one that others can read
     /// is left as it is — a second account may read it on purpose — and one line in the log
     /// says so.
+    ///
+    /// A file at an older schema version is brought up to this one (see `migrate`), with a
+    /// copy of it as it was kept beside it until that has succeeded.
     pub fn open(path: &Path) -> StoreResult<SqliteStore> {
         #[cfg(unix)]
         private_file::prepare(path);
         let conn = Connection::open(path)?;
-        Self::init(conn)
+        Self::init(conn, on_disk(path))
     }
 
     /// A private in-memory SQLite database (tests).
     pub fn open_in_memory() -> StoreResult<SqliteStore> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory()?, None)
     }
 
-    fn init(mut conn: Connection) -> StoreResult<SqliteStore> {
+    fn init(mut conn: Connection, file: Option<&Path>) -> StoreResult<SqliteStore> {
         // `journal_mode` returns a row, so it is read rather than executed.
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
         conn.execute_batch(
             "PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
         )?;
-        migrate(&mut conn)?;
+        migrate(&mut conn, file)?;
         Ok(SqliteStore {
             conn: Mutex::new(conn),
         })
@@ -536,7 +560,6 @@ impl SqliteStore {
     }
 }
 
-/// Runs every migration step past the file's `user_version`, each in its own transaction.
 /// Keeping the database file to its owner (unix).
 #[cfg(unix)]
 mod private_file {
@@ -581,21 +604,142 @@ mod private_file {
     }
 }
 
-fn migrate(conn: &mut Connection) -> StoreResult<()> {
+/// `path` if it names a file on disk (not an in-memory database or a `file:` URI).
+fn on_disk(path: &Path) -> Option<&Path> {
+    let name = path.to_string_lossy();
+    (!name.is_empty() && name != ":memory:" && !name.starts_with("file:")).then_some(path)
+}
+
+/// Where the copy of `db` at schema `version` is kept while it is migrated:
+/// `<db>.v<version>-backup`, beside it.
+pub fn migration_copy_path(db: &Path, version: i64) -> PathBuf {
+    let mut name = db.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".v{version}-backup"));
+    db.with_file_name(name)
+}
+
+/// Brings the file from its `user_version` to `SCHEMA_VERSION`: every step past it, all in
+/// one transaction, so a failure anywhere leaves the file exactly as it was.
+///
+/// The safety copy (`file` on disk, and not a new database): before the first step the
+/// file is copied, as it is, to `migration_copy_path` (`VACUUM INTO`: a consistent copy
+/// that takes in what is still in the `-wal`, private to its owner, synced to disk). It is
+/// removed only once the migration has verifiably succeeded: the steps themselves check
+/// what they moved (version 6 reads the Workspace back from its tables and compares it
+/// with the old row before it drops that), the transaction has committed, and
+/// `PRAGMA quick_check` of the migrated file passes. Otherwise it stays, and the error
+/// says where it is. A copy a run left behind because it stopped between the commit and
+/// the removal is removed by the next open that finds the file at this version.
+fn migrate(conn: &mut Connection, file: Option<&Path>) -> StoreResult<()> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if current > SCHEMA_VERSION {
         return Err(StoreError::Backend(format!(
             "database schema version {current} is newer than this binary ({SCHEMA_VERSION})"
         )));
     }
-    for (step, sql) in MIGRATIONS.iter().enumerate().skip(current.max(0) as usize) {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
-        // PRAGMA cannot take bound parameters; the value is our own integer.
-        tx.execute_batch(&format!("PRAGMA user_version = {}", step + 1))?;
-        tx.commit()?;
+    if current == SCHEMA_VERSION {
+        if let Some(db) = file {
+            for version in 1..SCHEMA_VERSION {
+                let left = migration_copy_path(db, version);
+                if left.exists() {
+                    let _ = std::fs::remove_file(&left);
+                    tracing::info!("removed {}, left by a finished migration", left.display());
+                }
+            }
+        }
+        return Ok(());
+    }
+    let copy = match file {
+        Some(db) if current > 0 => Some(safety_copy(conn, db, current)?),
+        _ => None,
+    };
+    let kept = |e: StoreError| match &copy {
+        Some(copy) => StoreError::Backend(format!(
+            "{e} (migrating from schema version {current}; the file is unchanged, and a copy of it is at {})",
+            copy.display()
+        )),
+        None => e,
+    };
+    let tx = conn.transaction()?;
+    for step in MIGRATIONS.iter().skip(current.max(0) as usize) {
+        match step {
+            Step::Sql(sql) => tx.execute_batch(sql).map_err(|e| kept(e.into()))?,
+            Step::Code(run) => run(&tx).map_err(kept)?,
+        }
+    }
+    // PRAGMA cannot take bound parameters; the value is our own integer.
+    tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+        .map_err(|e| kept(e.into()))?;
+    tx.commit().map_err(|e| kept(e.into()))?;
+    if let Some(copy) = copy {
+        // The pages the old layout used are given back (from before version 6: the whole
+        // Workspace as one row). Only space: the file is complete without it.
+        if let Err(e) = conn.execute_batch("VACUUM") {
+            tracing::warn!("the migrated database could not be compacted: {e}");
+        }
+        let check: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+        if check != "ok" {
+            return Err(StoreError::Backend(format!(
+                "the database failed its check after migrating from schema version {current} ({check}); a copy from before is at {}",
+                copy.display()
+            )));
+        }
+        // Not removable now: the next open at this version tries again.
+        if let Err(e) = std::fs::remove_file(&copy) {
+            tracing::warn!("the copy {} could not be removed: {e}", copy.display());
+        }
+        tracing::info!("migrated the database from schema version {current} to {SCHEMA_VERSION}");
     }
     Ok(())
+}
+
+/// Copies the database to `migration_copy_path` before a migration; see `migrate`.
+fn safety_copy(conn: &Connection, db: &Path, version: i64) -> StoreResult<PathBuf> {
+    let copy = migration_copy_path(db, version);
+    let failed = |e: String| {
+        StoreError::Backend(format!(
+            "no copy of the database could be made at {} before migrating it, so it was left as it is: {e}",
+            copy.display()
+        ))
+    };
+    // One that is there already is from an attempt that did not finish: the file itself is
+    // still at `version` (else no migration would run), so the copy is made again from it.
+    if std::fs::symlink_metadata(&copy).is_ok() {
+        std::fs::remove_file(&copy).map_err(|e| failed(e.to_string()))?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(&copy).map_err(|e| failed(e.to_string()))?;
+    let into = copy
+        .to_str()
+        .ok_or_else(|| failed("the folder's name cannot be used".to_string()))?;
+    conn.execute("VACUUM INTO ?1", params![into])
+        .map_err(|e| failed(e.to_string()))?;
+    std::fs::File::open(&copy)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| failed(e.to_string()))?;
+    Ok(copy)
+}
+
+/// The Workspace in an open database file at schema `version` (`PRAGMA user_version`),
+/// read without migrating it: from the `workspace` row before version 6, from the tables
+/// since. For checking a file (`local::port`).
+pub(crate) fn workspace_in_file(conn: &Connection, version: i64) -> StoreResult<Option<Workspace>> {
+    if version < 6 {
+        let json: Option<String> = conn
+            .query_row("SELECT json FROM workspace WHERE id = 1", [], |r| r.get(0))
+            .optional()?;
+        return Ok(match json {
+            Some(j) => Some(serde_json::from_str(&j)?),
+            None => None,
+        });
+    }
+    content::load(conn)
 }
 
 fn parse_uuid(s: &str) -> rusqlite::Result<Uuid> {
@@ -769,13 +913,7 @@ fn decide_suggestion_on(
 }
 
 fn save_workspace_on(conn: &Connection, ws: &Workspace) -> StoreResult<()> {
-    let json = serde_json::to_string(ws)?;
-    conn.execute(
-        "INSERT INTO workspace (id, json) VALUES (1, ?1)
-         ON CONFLICT(id) DO UPDATE SET json = excluded.json",
-        params![json],
-    )?;
-    Ok(())
+    content::save(conn, ws)
 }
 
 fn member_exists_on(conn: &Connection, id: &str) -> StoreResult<bool> {
@@ -824,13 +962,11 @@ fn insert_member_on(conn: &Connection, m: &MemberRecord) -> StoreResult<()> {
 impl Store for SqliteStore {
     fn load_workspace(&self) -> StoreResult<Option<Workspace>> {
         let conn = self.conn()?;
-        let json: Option<String> = conn
-            .query_row("SELECT json FROM workspace WHERE id = 1", [], |r| r.get(0))
-            .optional()?;
-        Ok(match json {
-            Some(j) => Some(serde_json::from_str(&j)?),
-            None => None,
-        })
+        // One read transaction, so the tables are read as of one moment.
+        conn.execute_batch("BEGIN")?;
+        let ws = content::load(&conn);
+        conn.execute_batch("COMMIT")?;
+        ws
     }
 
     fn save_workspace(&self, ws: &Workspace) -> StoreResult<()> {
