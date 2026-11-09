@@ -4,6 +4,7 @@ export type Route =
   | { name: 'branches' }
   | { name: 'members' }
   | { name: 'todos' }
+  | { name: 'for-you' }
   | { name: 'settings'; section: SettingsSection }
   | { name: 'merge'; from: string; into: string }
   | { name: 'invite'; token: string }
@@ -34,6 +35,9 @@ export function boardPath(): string {
 
 /** The To-dos screen (Members and Admins; the same list on every Branch). */
 export const TODOS_PATH = '/todos'
+
+/** M18: For you — the Comments that mention the signed-in Member (Members and Admins). */
+export const FOR_YOU_PATH = '/for-you'
 
 /** The sections of Settings, in the order they are listed. */
 export const SETTINGS_SECTIONS = ['appearance', 'board', 'ai', 'runs', 'workspace', 'about'] as const
@@ -81,6 +85,7 @@ export function parseRoute(pathname: string): Route {
   if (parts.length === 1 && parts[0] === 'members') return { name: 'members' }
   if (parts.length === 1 && parts[0] === 'branches') return { name: 'branches' }
   if (parts.length === 1 && parts[0] === 'todos') return { name: 'todos' }
+  if (parts.length === 1 && parts[0] === 'for-you') return { name: 'for-you' }
   if (parts.length === 1 && parts[0] === 'settings') return { name: 'settings', section: 'appearance' }
   if (parts.length === 2 && parts[0] === 'settings' && isSettingsSection(parts[1])) return { name: 'settings', section: parts[1] }
   if (parts.length === 2 && parts[0] === 'invite' && parts[1]) return { name: 'invite', token: decode(parts[1]) }

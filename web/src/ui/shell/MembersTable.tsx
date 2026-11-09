@@ -27,7 +27,15 @@ function RoleChip({ member, now }: { member: Member; now: number }) {
   )
 }
 
-export function MembersTable({ people, meId, onRemove }: { people: Member[]; meId: string; onRemove: (m: Member, trigger: HTMLElement) => void }) {
+type TableProps = {
+  people: Member[]
+  meId: string
+  onRemove: (m: Member, trigger: HTMLElement) => void
+  /** M18: a Member who came as a name in a Workspace file (`claimed: false`): invite the person to take it over. */
+  onInvite?: (m: Member) => void
+}
+
+export function MembersTable({ people, meId, onRemove, onInvite }: TableProps) {
   const [now] = useState(() => Date.now())
   return (
     <div className="q-tablebox">
@@ -54,6 +62,7 @@ export function MembersTable({ people, meId, onRemove }: { people: Member[]; meI
                     <span className="q-person__name">
                       {m.name}
                       {m.id === meId && <span className="q-person__you"> (you)</span>}
+                      {m.claimed === false && <span className="q-person__unclaimed"> — not signed in yet</span>}
                     </span>
                     {m.email && <span className="q-person__email">{m.email}</span>}
                   </span>
@@ -63,6 +72,11 @@ export function MembersTable({ people, meId, onRemove }: { people: Member[]; meI
                 <RoleChip member={m} now={now} />
               </td>
               <td className="q-table__act">
+                {m.claimed === false && onInvite && (
+                  <button type="button" className="q-btn q-btn--sm" aria-label={`Invite someone to take over ${m.name}`} onClick={() => onInvite(m)}>
+                    Invite
+                  </button>
+                )}
                 {m.id !== meId && (
                   <button
                     type="button"

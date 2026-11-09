@@ -38,6 +38,7 @@ vi.mock('../../lib', async () => {
     useMembers: () => h.people,
     useBoard: () => h.board,
     useBranches: () => h.branches,
+    useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
     todos: {
       reload: () => {
         h.calls.reload++

@@ -1,8 +1,8 @@
 import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps } from '@xyflow/react'
-import { ops } from '../../../lib'
-import type { Status } from '../../../lib'
+import { ops, useCommentCount } from '../../../lib'
+import type { CommentCount, Status } from '../../../lib'
 import { InlineText } from '../InlineText'
 import { StatusGlyph } from '../StatusGlyph'
 import { StatusMenu } from '../StatusMenu'
@@ -11,6 +11,23 @@ import type { CardNodeType } from '../types'
 import { ui, useBoardUi } from '../uiStore'
 import { useBoardActions } from '../useBoardActions'
 import { useZoomLevel } from '../useZoomLevel'
+
+/** M18: a Card's thread on the Board: a speech mark and the count, a tick when resolved. Words for screen readers. */
+function CommentBadge({ count, compact = false }: { count: CommentCount; compact?: boolean }) {
+  const words = `${count.open} ${count.open === 1 ? 'Comment' : 'Comments'}${count.resolved ? ', resolved' : ''}`
+  return (
+    <span className={`qb-card__comments${compact ? ' qb-card__comments--compact' : ''}${count.resolved ? ' is-resolved' : ''}`} title={words}>
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" aria-hidden="true">
+        <path d="M1.5 2 H8.5 V6.8 H4.4 L2.4 8.6 V6.8 H1.5 Z" />
+      </svg>
+      <span aria-hidden="true">
+        {count.open}
+        {count.resolved && ' ✓'}
+      </span>
+      <span className="qb-sr">{words}</span>
+    </span>
+  )
+}
 
 const SIDES = [
   [Position.Top, 't'],
@@ -27,6 +44,9 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
   const menuOpen = useBoardUi((s) => s.statusMenu === id)
   const actions = useBoardActions()
   const dead = card.status === 'dead_end'
+  // One store read per Card, from the counts the layer fetched once: no request and no work per frame.
+  const thread = useCommentCount(id)
+  const comments = thread !== null && (thread.open > 0 || thread.resolved) ? thread : null
   const canEdit = !readOnly && level === 'full'
 
   const pickStatus = (s: Status) => {
@@ -106,7 +126,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
                 {card.summary}
               </div>
             )}
-            {(card.blocks > 0 || card.sources > 0) && (
+            {(card.blocks > 0 || card.sources > 0 || comments) && (
               <div className="qb-card__foot">
                 {card.blocks > 0 && (
                   <span title={`Page: ${card.blocks} ${card.blocks === 1 ? 'block' : 'blocks'}`}>
@@ -121,6 +141,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
                     {card.sources} {card.sources === 1 ? 'Source' : 'Sources'}
                   </span>
                 )}
+                {comments && <CommentBadge count={comments} />}
               </div>
             )}
           </>
@@ -130,6 +151,7 @@ function CardNodeImpl({ id, data, selected, isConnectable }: NodeProps<CardNodeT
             <span className="qb-card__status qb-card__status--compact">
               <StatusGlyph status={card.status} size={14} label={null} />
               <span>{STATUS_SHORT[card.status]}</span>
+              {comments && <CommentBadge count={comments} compact />}
             </span>
             <div className={`qb-card__title${card.title ? '' : ' is-empty'}`}>{card.title || 'Untitled'}</div>
           </>

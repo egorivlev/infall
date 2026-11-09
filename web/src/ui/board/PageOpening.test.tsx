@@ -196,7 +196,7 @@ describe('the Page panel beside the Board', () => {
     openA()
     fireEvent.click(screen.getByRole('button', { name: 'Close Page' }))
     expect(panel()).toBeNull()
-    expect(usePagePanel.getState()).toEqual({ cardId: null, full: false })
+    expect(usePagePanel.getState()).toEqual({ cardId: null, full: false, comment: null })
     expect(node('a')).toHaveFocus()
     expect(screen.getByTestId('inspector')).toBeInTheDocument()
   })
@@ -353,6 +353,26 @@ describe('Card footer row', () => {
     expect(within(screen.getByTestId('card-s')).getByText('5 Sources')).toBeInTheDocument()
     expect(within(screen.getByTestId('card-s')).queryByText(/¶/)).toBeNull()
     expect(screen.getByTestId('card-c').querySelector('.qb-card__foot')).toBeNull()
+  })
+
+  it('M18: shows a Comment count at the full and compact levels (from the counts store), and nothing on a tile', async () => {
+    const { commentsInternal } = await import('../../lib/comments')
+    act(() => commentsInternal.store.setState({ counts: { a: { open: 2, resolved: false }, c: { open: 1, resolved: true } } }))
+    const { rerender } = render(<BoardView />)
+    expect(within(screen.getByTestId('card-a')).getByText('2 Comments')).toHaveClass('qb-sr')
+    expect(within(screen.getByTestId('card-a')).getByTitle('2 Comments').closest('.qb-card__foot')).not.toBeNull()
+    expect(within(screen.getByTestId('card-c')).getByText('1 Comment, resolved')).toBeInTheDocument()
+    expect(within(screen.getByTestId('card-b')).queryByText(/Comment/)).toBeNull()
+    // Only that Card's badge follows a change.
+    act(() => commentsInternal.store.setState({ counts: { ...commentsInternal.store.getState().counts, a: { open: 3, resolved: false } } }))
+    expect(within(screen.getByTestId('card-a')).getByText('3 Comments')).toBeInTheDocument()
+    zoom.level = 'compact'
+    rerender(<BoardView key="compact" />)
+    expect(within(screen.getByTestId('card-a')).getByTitle('3 Comments')).toHaveClass('qb-card__comments--compact')
+    zoom.level = 'tile'
+    rerender(<BoardView key="tile" />)
+    expect(within(screen.getByTestId('card-a')).queryByText(/Comment/)).toBeNull()
+    act(() => commentsInternal.reset())
   })
 
   it('follows the counts as they change', () => {

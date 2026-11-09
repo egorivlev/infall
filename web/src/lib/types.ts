@@ -10,6 +10,8 @@ export type Member = {
   color: string
   email?: string
   access_until?: number
+  /** M18: false for a Member who arrived as a name in a Workspace file and cannot sign in yet ("not signed in yet"). Absent (older servers) means true. */
+  claimed?: boolean
 }
 
 export type Invite = {
@@ -19,6 +21,8 @@ export type Invite = {
   access_until?: number
   expires_at: number
   created_by: string
+  /** M18: the unclaimed Member whose name the person who accepts takes over. */
+  claims?: string
 }
 
 export type Value = 'Null' | { Float: number } | { Text: string } | { Ref: string }
@@ -65,6 +69,8 @@ export type ServerFrame =
   | { type: 'todos'; todos: Todo[] }
   | { type: 'suggestions'; branch: string; suggestions: Suggestion[] }
   | { type: 'refresh'; branch: string; seq: number } // Guests only: fetch the Board again
+  | { type: 'comments'; card: string } // M18: the thread of that Card changed (Members only)
+  | { type: 'for_you'; count: number } // M18: your unseen mentions are now `count` (to that Member only)
 export type ClientFrame =
   | { type: 'subscribe'; branch: string; after: number }
   | { type: 'editing'; card: string | null }
@@ -114,7 +120,8 @@ export type BoardSnapshot = {
   connections: ConnectionVM[] // live Connections whose two Cards are both live, ordered by id
   presence: Member[] // Members connected to this Branch (resolved from ids), self included
   pending: number // optimistic ops not yet confirmed by the server
-  readOnly: boolean // true for Guests
+  readOnly: boolean // true for Guests, and (M18) in a Workspace moved to a Team server
+  moved?: true // M18: set only in a moved Workspace (read-only, but a Member: History still reads)
 }
 
 export type SessionSnapshot =
@@ -320,6 +327,14 @@ export type QoopDesktop = {
   switchWorkspace?: () => Promise<void>
   /** M13: the system's save dialog, then the text written as UTF-8 (at most 20 MB); false when cancelled. Absent in an older app. */
   saveFile?: (file: { suggestedName: string; text: string }) => Promise<boolean>
+  /** M18: the system's save dialog, then the bytes written as they are; false when cancelled. Absent in an older app. */
+  saveBinaryFile?: (file: { suggestedName: string; bytes: Uint8Array }) => Promise<boolean>
+  /** M18 (team-move.md, Contract C): the pending move to this origin — its Workspace name and file size — or null. Only on that origin. */
+  moveHandover?: () => Promise<{ name: string; size: number } | null>
+  /** M18: the pending move's Workspace file. */
+  moveFile?: () => Promise<Uint8Array>
+  /** M18: the import answered (`ok`) or failed; ok marks the Local Workspace Moved and forgets the move. */
+  moveDone?: (result: { ok: boolean }) => Promise<void>
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }
@@ -457,8 +472,13 @@ export type RunsSnapshot = { runner: RunnerSetup; live: RunLive | null; last: Ru
 /** Where this Workspace is kept (docs/specs/local.md, Contract B): on a team's server, or on this computer only. */
 export type WorkspaceKind = 'team' | 'local'
 
-/** `GET /api/workspace`. `preset`: the Preset a Local Workspace was made from ("tutorial", "blank", …); null for a Team Workspace. */
-export type WorkspaceInfo = { kind: WorkspaceKind; preset: string | null }
+/**
+ * `GET /api/workspace`. `preset`: the Preset a Local Workspace was made from ("tutorial", "blank", …); null for a Team Workspace.
+ * M18: `empty` — a Team server with nothing in it yet (only `main`, no Changes, Checkpoints, To-dos or Comments);
+ * `readOnly` — this copy was moved to a Team server and refuses every write (403 `moved`); `movedTo` — where it went,
+ * when the server says so (`moved_to`, NOT in Contract B: null when absent).
+ */
+export type WorkspaceInfo = { kind: WorkspaceKind; preset: string | null; empty: boolean; readOnly: boolean; movedTo: string | null }
 
 /** What the UI knows about the Workspace. Until it is known (`status` not `'ready'`) it reads as a Team Workspace. */
 export type WorkspaceSnapshot = WorkspaceInfo & { status: 'idle' | 'loading' | 'ready' }
@@ -561,3 +581,42 @@ export type GraphSnapshot = {
 
 /** One line of "Show every Change": a Change in plain words. */
 export type GraphChangeLine = { id: string; author: string; at: number; line: string }
+
+// ---- M18: moving a Workspace (docs/specs/team-move.md, Contract B) ----
+
+/** `POST /api/workspace/import`'s answer: every Member the file brought, and the name the importing Admin's work had. */
+export type ImportResult = { members: { id: string; name: string; claimed: boolean }[]; you_were: string }
+
+/** `GET /api/workspace/export`: the Workspace file and the name the server gave it. */
+export type ExportedFile = { name: string; bytes: Uint8Array }
+
+// ---- M18: Comments and For you (outside versioning, like To-dos) ----
+
+export type Comment = {
+  id: string
+  author: string // Member id
+  text: string // at most 10 000 characters; inline Markdown and math as a Page's text block
+  mentions: string[] // Member ids
+  created_at: number
+  edited_at: number | null
+}
+
+/** The thread of one Card. `card` need not be live on any Branch: a thread outlives its Card. */
+export type ThreadSnapshot = {
+  card: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error?: string
+  resolved: boolean
+  comments: Comment[] // oldest first
+}
+
+/** `GET /api/comments/counts`, per Card with a thread. */
+export type CommentCount = { open: number; resolved: boolean }
+
+export type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean }
+
+export type ForYouSnapshot = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  items: ForYouItem[] // newest first, at most 200
+  unseen: number
+}

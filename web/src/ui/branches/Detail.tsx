@@ -28,6 +28,8 @@ type Props = {
   onShowRow: (row: number) => void
   /** Esc in here: back to the graph, the selection kept. */
   onLeave: () => void
+  /** M18: a moved copy — reading only: no New Branch, no Checkpoint. */
+  readOnly?: boolean
 }
 
 const nameOf = (people: ReadonlyMap<string, Member>, id: string) => personOf(people, id).name
@@ -50,7 +52,7 @@ export function Detail(props: Props) {
   return <Selected key={key} {...props} placed={placed} />
 }
 
-function Selected({ layout, branches, placed, colour, people, actionsRef, onNewBranch, onPreview, onCheckpoint, onShowRow, onLeave }: Props & { placed: Placed }) {
+function Selected({ layout, branches, placed, colour, people, actionsRef, onNewBranch, onPreview, onCheckpoint, onShowRow, onLeave, readOnly = false }: Props & { placed: Placed }) {
   const row = placed.fork === undefined ? layout.rows[placed.row]! : null
   const lane = layout.lanes.find((l) => l.branch === placed.moment.branch)!
   const branch = branches.find((b) => b.id === placed.moment.branch)
@@ -156,15 +158,19 @@ function Selected({ layout, branches, placed, colour, people, actionsRef, onNewB
           </ul>
         )}
         <div className="qg-detail__acts" ref={actionsRef} role="group" aria-label="Actions">
-          <button type="button" className="q-btn q-btn--sm q-btn--primary" onClick={onNewBranch}>
-            New Branch from here
-          </button>
+          {!readOnly && (
+            <button type="button" className="q-btn q-btn--sm q-btn--primary" onClick={onNewBranch}>
+              New Branch from here
+            </button>
+          )}
           <button type="button" className="q-btn q-btn--sm" onClick={onPreview}>
             Preview the Board
           </button>
-          <button type="button" ref={addRef} className="q-btn q-btn--sm" aria-expanded={adding} onClick={() => setAdding((v) => !v)}>
-            Add Checkpoint here
-          </button>
+          {!readOnly && (
+            <button type="button" ref={addRef} className="q-btn q-btn--sm" aria-expanded={adding} onClick={() => setAdding((v) => !v)}>
+              Add Checkpoint here
+            </button>
+          )}
           {!start && row && (
             <button type="button" className="q-btn q-btn--sm" aria-expanded={showChanges} onClick={() => setShowChanges((v) => !v)}>
               Show every Change

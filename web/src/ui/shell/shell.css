@@ -194,3 +194,39 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 /* Unfolded: the whole rail, over the work area (it overflows its 48px column), under the top bar's menus. */
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open { position: relative; z-index: 3; width: 224px; box-shadow: var(--q-shadow); }
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open .q-rail__toggle { align-self: flex-start; margin-left: 12px; }
+
+/* ---- M18: a moved copy (a quiet bar over the work area, on every screen) ---- */
+.q-work.has-bar { display: flex; flex-direction: column; }
+.q-work__body { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.q-moved { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--q-s3); padding: 6px var(--q-s4); border-bottom: 1px solid var(--q-line); background: var(--q-surface); color: var(--q-ink-2); font-size: calc(12.5px * var(--q-text, 1)); }
+.q-moved__icon { flex: none; color: var(--q-ink-3); }
+.q-moved__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.q-moved__line { color: var(--q-ink); }
+.q-moved__hint { flex: 0 1 auto; min-width: 0; color: var(--q-ink-3); font-size: calc(12px * var(--q-text, 1)); }
+:root[data-room="narrow"] .q-moved__hint { display: none; }
+
+/* ---- M18: the first screen of an empty Team server (Admin) ---- */
+.q-first { position: absolute; inset: 0; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: var(--q-s7, 48px) var(--q-s4) var(--q-s5); background: var(--q-canvas); }
+.q-first__card { box-sizing: border-box; width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: var(--q-s4); }
+.q-first__title { margin: 0; font: 600 calc(26px * var(--q-text, 1))/1.25 var(--q-serif); color: var(--q-ink); }
+.q-first__title:focus { outline: none; }
+.q-first__text { margin: 0; font-size: calc(14px * var(--q-text, 1)); line-height: 1.55; color: var(--q-ink-2); text-wrap: pretty; }
+.q-first__actions { display: flex; flex-wrap: wrap; gap: var(--q-s2); }
+.q-first__actions .q-btn { max-width: 100%; white-space: normal; text-align: left; height: auto; min-height: 36px; padding-block: 6px; }
+.q-first .q-error, .q-first .q-hint { margin: 0; }
+.q-first__progress { display: flex; flex-direction: column; align-items: flex-start; gap: var(--q-s2); }
+.q-first__sending { margin: 0; font-size: calc(13px * var(--q-text, 1)); color: var(--q-ink); overflow-wrap: anywhere; }
+.q-first__bar { box-sizing: border-box; width: 100%; height: 8px; border: 1px solid var(--q-line); border-radius: 4px; background: var(--q-sunken); overflow: hidden; }
+.q-first__fill { display: block; height: 100%; background: var(--q-accent); transition: width 160ms ease-out; }
+.q-first__names { display: flex; flex-direction: column; gap: var(--q-s2); padding: var(--q-s3) var(--q-s4); border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); background: var(--q-surface); }
+.q-first__names h2 { margin: 0; }
+.q-first__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.q-first__name { display: flex; align-items: center; justify-content: space-between; gap: var(--q-s2); font-size: calc(13px * var(--q-text, 1)); overflow-wrap: anywhere; }
+.q-first__unclaimed { color: var(--q-ink-3); }
+
+/* ---- M18: the notice of a new mention (bottom right, above the Board, under menus) ---- */
+.q-notice-region { position: fixed; right: var(--q-s4); bottom: var(--q-s4); z-index: 45; max-width: min(420px, calc(var(--q-vw, 100vw) - 32px)); }
+.q-notice { display: flex; align-items: center; gap: var(--q-s2); padding: 10px 10px 10px 14px; border: 1px solid var(--q-line); border-radius: var(--q-r-panel); background: var(--q-raised); box-shadow: var(--q-shadow); font-size: calc(13px * var(--q-text, 1)); color: var(--q-ink); }
+.q-notice__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.q-notice__close { flex: none; width: 24px; height: 24px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink-3); font-size: calc(16px * var(--q-text, 1)); cursor: pointer; }
+.q-notice__close:hover { background: var(--q-hover); color: var(--q-ink); }

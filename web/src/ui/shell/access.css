@@ -25,6 +25,8 @@
 /* ---- Members ---- */
 .q-members { height: 100%; overflow: auto; }
 .q-members__inner { max-width: 980px; padding: var(--q-s6) 40px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--q-s6); align-items: start; }
+/* M18: with Invite beside Remove on unclaimed names, a narrower room stacks the invite form under the table. */
+:root:not([data-room="wide"]) .q-members__inner { grid-template-columns: minmax(0, 1fr); padding: var(--q-s5) var(--q-s4); }
 .q-members__main { display: flex; flex-direction: column; gap: 14px; }
 .q-members__title { display: flex; align-items: baseline; gap: 10px; }
 .q-screen-title { margin: 0; font: 600 calc(28px * var(--q-text, 1))/1.2 var(--q-serif); }
@@ -45,6 +47,9 @@
 .q-person__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .q-person__name { font-weight: 500; }
 .q-person__you { font-weight: 400; color: var(--q-ink-3); }
+.q-person__unclaimed { font-weight: 400; color: var(--q-ink-3); }
+.q-table__act .q-btn + .q-btn { margin-left: var(--q-s2); }
+.q-invite__claim { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--q-s2); margin: 0; padding: var(--q-s2) var(--q-s3); border: 1px solid var(--q-line-soft); border-radius: var(--q-r); background: var(--q-sunken); font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-2); }
 .q-person__email { font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-3); overflow-wrap: anywhere; }
 .q-role { display: inline-block; font: 500 calc(10px * var(--q-text, 1))/1 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; padding: 4px 6px; border-radius: var(--q-r-chip); border: 1px solid var(--q-line); color: var(--q-ink-2); }
 .q-role--admin { border-color: var(--q-ink-2); }

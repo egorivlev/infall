@@ -13,9 +13,11 @@ type Props = {
   checkpoints: readonly Checkpoint[] // Checkpoints at exactly the previewed moment
   restoring: boolean
   onRestore: () => void
+  /** M18: a moved copy reads its History but restores nothing. */
+  readOnly?: boolean
 }
 
-export function Detail({ branch, empty, preview, activity, person, checkpoints, restoring, onRestore }: Props) {
+export function Detail({ branch, empty, preview, activity, person, checkpoints, restoring, onRestore, readOnly = false }: Props) {
   if (empty) {
     return (
       <aside className="qh-detail" data-testid="history-detail" aria-label="Selected moment">
@@ -61,6 +63,7 @@ export function Detail({ branch, empty, preview, activity, person, checkpoints, 
         ))}
         {partway && <p className="qh-detail__hint">This moment is partway through the Activity.</p>}
       </div>
+      {!readOnly && (
       <div className="qh-detail__foot">
         <button type="button" className="q-btn qh-restore" disabled={restoring} onClick={onRestore}>
           {restoring ? 'Restoring…' : (
@@ -74,6 +77,7 @@ export function Detail({ branch, empty, preview, activity, person, checkpoints, 
           any time.
         </p>
       </div>
+      )}
     </aside>
   )
 }

@@ -15,6 +15,7 @@ import { useBoardActions } from '../board/useBoardActions'
 import { formatTime } from '../shell/dates'
 import { initials } from '../shell/initials'
 import { Blocks } from './Blocks'
+import { Comments } from './comments/Comments'
 import { DraftArea } from './DraftArea'
 import { exportFile } from './export/exportFile'
 import { pageMarkdown } from './export/markdown'
@@ -310,6 +311,8 @@ export function PagePanel({ cardId, full, onClose }: Props) {
             <Blocks cardId={cardId} blocks={vm.blocks} canEdit={canEdit} readOnly={readOnly || previewing} branchId={board.branch?.id} />
             <Sources cardId={cardId} cardTitle={card.title} sources={vm.sources} canEdit={canEdit} />
             {!readOnly && <PageTodos card={card} branchId={board.branch?.id} />}
+            {/* M18: the Card's thread; outside versioning like To-dos, and never shown to Guests. */}
+            <Comments card={cardId} />
             <Connections connections={vm.connections} />
           </div>
         ) : waiting ? (
@@ -326,6 +329,8 @@ export function PagePanel({ cardId, full, onClose }: Props) {
             <button type="button" className="q-btn" onClick={close}>
               Close
             </button>
+            {/* Its thread outlives it (For you leads here). */}
+            <Comments card={cardId} removed />
           </div>
         )}
       </div>

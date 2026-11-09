@@ -5,9 +5,11 @@ import type { FormEvent, RefObject } from 'react'
 import { runs, session, useRuns, useWorkspace, workspace } from '../../lib'
 import type { Member } from '../../lib'
 import { desktopSwitchWorkspace } from '../bridge'
-import { describeError, errorStatus } from '../shell/errorMessages'
+import { saveBytesFile } from '../page/files'
+import { describeError, errorStatus, serverSentence } from '../shell/errorMessages'
 import { Field } from '../shell/Field'
 import { Link } from '../shell/Link'
+import { movedWords } from '../shell/moved'
 import { settingsPath } from '../shell/router'
 import type { SettingsSection } from '../shell/router'
 import { clearSigningOut, noteSigningOut } from '../shell/sessionEnd'
@@ -257,7 +259,7 @@ function WorkspaceSection({ member, headingRef }: { member: Member } & HeadingPr
         <dl className="q-set-facts">
           <div>
             <dt>Kind</dt>
-            <dd>{local ? 'Local Workspace, kept on this computer' : <>Team Workspace at <span className="q-mono">{window.location.host}</span></>}</dd>
+            <dd>{local ? (ws.readOnly ? movedWords(ws.movedTo) : 'Local Workspace, kept on this computer') : <>Team Workspace at <span className="q-mono">{window.location.host}</span></>}</dd>
           </div>
           <div>
             <dt>You</dt>
@@ -266,7 +268,8 @@ function WorkspaceSection({ member, headingRef }: { member: Member } & HeadingPr
             </dd>
           </div>
         </dl>
-        {local && <ChangeName member={member} />}
+        {/* A moved copy is read-only: its Member's name is not changed here either. */}
+        {local && !ws.readOnly && <ChangeName member={member} />}
         <div className="q-set-actions">
           {member.role === 'admin' && !local && (
             <Link href="/members" className="q-btn">
@@ -291,7 +294,50 @@ function WorkspaceSection({ member, headingRef }: { member: Member } & HeadingPr
           </p>
         )}
       </div>
+      {!local && member.role === 'admin' && <ExportWorkspace />}
     </section>
+  )
+}
+
+/** M18 (team-move.md, decision 5): an Admin takes the Team Workspace out as a Workspace file. */
+function ExportWorkspace() {
+  const [state, setState] = useState<{ kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; text: string } | { kind: 'failed'; text: string }>({ kind: 'idle' })
+  const busy = state.kind === 'busy'
+
+  async function run() {
+    if (busy) return
+    setState({ kind: 'busy' })
+    try {
+      const file = await workspace.exportFile()
+      const saved = await saveBytesFile(file.name, file.bytes, 'application/octet-stream')
+      setState(
+        saved === 'cancelled'
+          ? { kind: 'idle' }
+          : { kind: 'done', text: saved === 'saved' ? `Exported “${file.name}”.` : `Downloaded “${file.name}”.` },
+      )
+    } catch (e) {
+      setState({ kind: 'failed', text: `The Workspace file could not be exported. ${serverSentence(e)}` })
+    }
+  }
+
+  return (
+    <div className="q-settings__card q-set-card" aria-labelledby="q-set-export-h" role="group">
+      <h2 className="q-panel-title" id="q-set-export-h">
+        Workspace file
+      </h2>
+      <p className="q-hint">
+        One file with every Branch, the history, Checkpoints, To-dos and Comments. Members come as names only — no emails, passwords, invites, access tokens or AI keys. It can go onto
+        another empty Team server, or open in the desktop app as a Local Workspace.
+      </p>
+      <div className="q-set-actions">
+        <button type="button" className="q-btn" aria-disabled={busy} aria-busy={busy} onClick={() => void run()}>
+          {busy ? 'Exporting…' : 'Export Workspace file…'}
+        </button>
+      </div>
+      <p className={state.kind === 'failed' ? 'q-error' : 'q-hint'} role={state.kind === 'failed' ? 'alert' : 'status'}>
+        {state.kind === 'done' || state.kind === 'failed' ? state.text : ''}
+      </p>
+    </div>
   )
 }
 

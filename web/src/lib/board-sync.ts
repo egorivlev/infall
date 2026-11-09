@@ -7,11 +7,12 @@ import { createStore } from 'zustand/vanilla'
 import type { Editors, Entities, PageIndex, SnapshotParts } from './board-state'
 import { applyOps, EMPTY_INDEX, EMPTY_PAGE, toPage, toPageIndex, toSnapshotParts } from './board-state'
 import { branchesStore, setBranches } from './branches-store'
-import { ApiError, request } from './http'
+import { ApiError, MOVED_SENTENCE, request } from './http'
 import { membersStore, members as membersApi } from './people'
 import { sessionStore } from './session-store'
 import { findSourceIn } from './sources'
 import { setTodos, todos as todosApi } from './todos'
+import { workspaceStore } from './workspace'
 import type {
   BoardResponse,
   BoardSnapshot,
@@ -75,6 +76,8 @@ export type BoardEvent =
   | { type: 'reconnected' }
   | { type: 'closed' }
   | { type: 'suggestions'; suggestions: Suggestion[] }
+  | { type: 'comments'; card: string } // M18: the `comments` frame (any Branch: Comments are outside versioning)
+  | { type: 'for_you'; count: number } // M18: the `for_you` frame
 
 /**
  * Told of every batch `submit` takes, at the moment it is taken (internal; Undo records its steps here): the ops,
@@ -182,10 +185,13 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
     for (const fn of [...watchers]) fn(e)
   }
 
+  // A Guest: the Guest's path through the socket and the Board (api.md §13).
   const readOnly = () => {
     const s = sessionStore.getState()
     return s.status === 'signed_in' && s.member.role === 'guest'
   }
+  // M18: a Local Workspace moved to a Team server refuses every write; a Member there reads as a Member otherwise.
+  const moved = () => workspaceStore.getState().readOnly
   const base = () => `/api/branches/${encodeURIComponent(branchId)}`
 
   function resolvePresence(): Member[] {
@@ -250,10 +256,11 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
       connections: parts.connections,
       presence,
       pending: queue.reduce((n, b) => (b.echoed ? n : n + b.ops.length), 0),
-      readOnly: readOnly(),
+      readOnly: readOnly() || moved(),
     }
     if (error !== undefined) next.error = error
     if (branch) next.branch = branch
+    if (moved()) next.moved = true
     editors = resolveEditors()
     const prev = store.getState()
     const snapshot = sameSnapshot(prev.snapshot, next) ? prev.snapshot : next
@@ -570,6 +577,12 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         break
       case 'refresh':
         break // for Guests only: a Member has the Changes themselves
+      case 'comments':
+        if (typeof f.card === 'string') tell({ type: 'comments', card: f.card })
+        break
+      case 'for_you':
+        if (typeof f.count === 'number' && Number.isFinite(f.count)) tell({ type: 'for_you', count: f.count })
+        break
       default:
         break // a frame type this build does not know
     }
@@ -689,6 +702,12 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
         adoptBranchInfo()
         rebuild()
       }),
+      // M18: the Workspace turning out to be moved makes the Board read-only at once.
+      workspaceStore.subscribe((w, before) => {
+        if (w.readOnly === before.readOnly) return
+        if (w.readOnly) stopEditing()
+        rebuild()
+      }),
     ]
     try {
       let info: BranchInfo | undefined
@@ -727,6 +746,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
 
   async function submit(opsIn: Op[]): Promise<void> {
     if (readOnly()) throw new ApiError(403, 'forbidden', 'Guests cannot edit the Board.')
+    if (moved()) throw new ApiError(403, 'moved', MOVED_SENTENCE)
     if (!loaded) throw new ApiError(400, 'board_not_open', 'The Board is not open.')
     if (opsIn.length === 0) return
     if (opsIn.length > MAX_OPS) throw new ApiError(400, 'bad_request', `At most ${MAX_OPS} operations per batch.`)
@@ -785,7 +805,7 @@ export function createBoardSync(options: BoardSyncOptions = {}) {
 
   // Claims the soft lock on a Card's Page. Kept until stopEditing(), close() or a Branch switch; Guests never claim.
   function startEditing(cardId: string) {
-    if (!loaded || readOnly() || editing === cardId) return
+    if (!loaded || readOnly() || moved() || editing === cardId) return
     editing = cardId
     if (subscribed) send({ type: 'editing', card: cardId })
   }

@@ -7,9 +7,13 @@ import { sidePanelsFit } from '../board/geometry'
 import { suggestionsPanel, useAiPanel, usePagePanel, useSuggestionsPanel } from '../bridge'
 import { MergeReview } from '../merge'
 import { Settings } from '../settings'
-import { Todos } from '../todos'
+import { ForYou, Todos } from '../todos'
 import { Tour, Tutorial, TUTORIAL_PRESET } from '../tutorial'
 import { Branches } from './Branches'
+import { FirstScreen } from './FirstScreen'
+import { MentionNotice } from './MentionNotice'
+import { MovedBar } from './MovedBar'
+import { useFirstScreen } from './moved'
 import { errorStatus } from './errorMessages'
 import { Link } from './Link'
 import { Members } from './Members'
@@ -22,15 +26,17 @@ import { UndoKeys } from './UndoKeys'
 // The data layer may reject (network, 403); the shell shows state via the Board status, so ignore here.
 const ignore = () => {}
 
-export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos' | 'settings'
+export type ShellView = 'board' | 'branches' | 'members' | 'merge' | 'todos' | 'for-you' | 'settings'
 
 /** What this person may see for a route; anything else falls back to the Board. */
-function viewFor(route: Route, member: Member, local: boolean): ShellView {
+function viewFor(route: Route, member: Member, local: boolean, readOnly = false): ShellView {
   // A Local Workspace has one Member and nobody to invite: no Members screen.
   if (route.name === 'members') return member.role === 'admin' && !local ? 'members' : 'board'
   if (route.name === 'branches') return member.role === 'guest' ? 'board' : 'branches'
-  if (route.name === 'merge') return member.role === 'guest' ? 'board' : 'merge'
+  // A moved copy is read-only: a Merge would change it.
+  if (route.name === 'merge') return member.role === 'guest' || readOnly ? 'board' : 'merge'
   if (route.name === 'todos') return member.role === 'guest' ? 'board' : 'todos' // To-dos are for the team, not for Guests
+  if (route.name === 'for-you') return member.role === 'guest' ? 'board' : 'for-you' // Comments are Members' only
   if (route.name === 'settings') {
     // A Guest has no access tokens and runs nothing: those two sections are not theirs.
     if (member.role === 'guest' && (route.section === 'ai' || route.section === 'runs')) return 'board'
@@ -43,8 +49,13 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
   const isGuest = member.role === 'guest'
   const ws = useWorkspace()
   const local = ws.kind === 'local'
-  const tutorialWorkspace = local && ws.preset === TUTORIAL_PRESET
-  const view = viewFor(route, member, local)
+  // M18: a copy moved to a Team server is read-only everywhere (its bar says so); the Tutorial makes Changes, so it waits.
+  const moved = ws.readOnly === true
+  const tutorialWorkspace = local && ws.preset === TUTORIAL_PRESET && !moved
+  const view = viewFor(route, member, local, moved)
+  // M18: an empty Team server greets its Admin (team-move.md, decision 4); kept up after an import to show the answer.
+  const holding = useFirstScreen((s) => s.holding)
+  const firstScreen = member.role === 'admin' && !local && (ws.empty === true || holding) && view === 'board'
 
   // What kind of Workspace this is: asked once per session; until it answers, it reads as a Team Workspace.
   useEffect(() => {
@@ -119,31 +130,45 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
     if (useSuggestionsPanel.getState().open && usePagePanel.getState().cardId !== null) suggestionsPanel.close()
   }, [aiOpen])
 
+  const content =
+    view === 'members' ? (
+      <Members me={member} />
+    ) : view === 'branches' ? (
+      <Branches current={branch} />
+    ) : view === 'todos' ? (
+      <Todos me={member} />
+    ) : view === 'for-you' ? (
+      <ForYou me={member} />
+    ) : view === 'settings' && route.name === 'settings' ? (
+      <Settings member={member} section={route.section} />
+    ) : view === 'merge' && route.name === 'merge' ? (
+      <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
+    ) : firstScreen ? (
+      <FirstScreen />
+    ) : missing ? (
+      <div className="q-missing" role="status">
+        <p className="q-missing__text">There is no Branch called “{branch}”.</p>
+        <Link href="/">Go to main</Link>
+      </div>
+    ) : (
+      <div className="q-board-host" data-tour="board">
+        <BoardView />
+      </div>
+    )
+
   return (
     <div className={aiOpen ? 'q-shell has-ai' : 'q-shell'} data-branch={branch}>
       <TopBar member={member} branch={branch} available={!missing} />
       {/* A Merge starts from the Branches screen, so that is where the rail points. */}
       <Rail member={member} route={view === 'merge' ? 'branches' : view} branch={branch} />
-      <main className="q-work" ref={work}>
-        {view === 'members' ? (
-          <Members me={member} />
-        ) : view === 'branches' ? (
-          <Branches current={branch} />
-        ) : view === 'todos' ? (
-          <Todos me={member} />
-        ) : view === 'settings' && route.name === 'settings' ? (
-          <Settings member={member} section={route.section} />
-        ) : view === 'merge' && route.name === 'merge' ? (
-          <MergeReview key={`${route.from}\n${route.into}`} from={route.from} into={route.into} />
-        ) : missing ? (
-          <div className="q-missing" role="status">
-            <p className="q-missing__text">There is no Branch called “{branch}”.</p>
-            <Link href="/">Go to main</Link>
-          </div>
+      <main className={moved ? 'q-work has-bar' : 'q-work'} ref={work}>
+        {moved ? (
+          <>
+            <MovedBar />
+            <div className="q-work__body">{content}</div>
+          </>
         ) : (
-          <div className="q-board-host" data-tour="board">
-            <BoardView />
-          </div>
+          content
         )}
       </main>
       {aiOpen && <AiSidebar branch={branch} />}
@@ -152,6 +177,8 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
       {/* Keyed by Member: the offer and its answer are each person's own. A Tutorial Workspace has the Tutorial instead of the offer. */}
       <Tour key={member.id} member={member} view={missing ? 'missing' : view} offer={!tutorialWorkspace} />
       {tutorialWorkspace && <Tutorial key={member.id} />}
+      {/* A mention arriving while you are here (M18). Guests have no Comments. */}
+      {!isGuest && <MentionNotice />}
     </div>
   )
 }

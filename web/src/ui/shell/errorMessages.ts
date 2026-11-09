@@ -41,6 +41,18 @@ export function describeLookupError(e: unknown): string {
   return isInviteGone(e) ? INVALID_INVITE : describeError(e)
 }
 
+/**
+ * M18: the server's own sentence for a refusal (a 4xx with a message: "This is not a Workspace file."), else the
+ * plain words of `describeError`. Never a code or a stack trace.
+ */
+export function serverSentence(e: unknown): string {
+  const { code, status } = read(e)
+  const message = e instanceof Error ? e.message.trim() : ''
+  if (code === 'network') return NETWORK_ERROR
+  if (status >= 400 && status < 500 && message && !/^Request failed \(\d+\)\.$/.test(message)) return message
+  return describeError(e)
+}
+
 /** The server's error code, or '' when the failure carries none. */
 export function errorCode(e: unknown): string {
   return read(e).code

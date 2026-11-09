@@ -72,6 +72,12 @@ describe('ExportDialog', () => {
     render(<ExportDialog format="png" content={content} branch="main" visibleArea={null} onClose={vi.fn()} />)
     expect(screen.getByRole('note')).toHaveTextContent(/saves text files only/)
   })
+
+  it('M18: says nothing about downloads when the app can save bytes', () => {
+    g.qoopDesktop = { saveFile: vi.fn(), saveBinaryFile: vi.fn() }
+    render(<ExportDialog format="png" content={content} branch="main" visibleArea={null} onClose={vi.fn()} />)
+    expect(screen.queryByRole('note')).toBeNull()
+  })
 })
 
 describe('Toolbar: Export (M19)', () => {

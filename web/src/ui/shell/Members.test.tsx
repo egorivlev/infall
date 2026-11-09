@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
+  forYou: { reload: async () => {}, seen: async () => {}, onMention: () => () => {} },
   useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
   workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useMembers: () => h.people,
@@ -245,5 +247,45 @@ describe('Invite form', () => {
     expect(h.created).toHaveLength(1)
     finish({ invite: {}, url: 'https://qoop.test/invite/T' })
     await screen.findByLabelText('Invite link for new@lab.org')
+  })
+})
+
+describe('M18: names that came in a Workspace file', () => {
+  const BEN: Member = { id: 'b', name: 'Ben Okafor', role: 'member', color: '#999', claimed: false }
+
+  it('lists an unclaimed Member as not signed in yet, with Invite, which makes an invite that claims the name', async () => {
+    h.people = [ELENA, ANA, BEN]
+    const user = userEvent.setup()
+    renderMembers()
+    const row = screen.getByText('Ben Okafor').closest('tr')!
+    expect(row).toHaveTextContent('Ben Okafor — not signed in yet')
+    expect(within(row).getByRole('button', { name: 'Remove Ben Okafor' })).toBeInTheDocument()
+    expect(within(screen.getByText('Ana Ruiz').closest('tr')!).queryByRole('button', { name: /Invite/ })).toBeNull()
+    await user.click(within(row).getByRole('button', { name: 'Invite someone to take over Ben Okafor' }))
+    expect(screen.getByRole('heading', { name: 'Invite Ben Okafor' })).toBeInTheDocument()
+    expect(screen.getByText(/takes over the name Ben Okafor/)).toBeInTheDocument()
+    const email = screen.getByLabelText('Email')
+    expect(email).toHaveFocus()
+    await user.type(email, 'ben@lab.org')
+    await user.click(screen.getByRole('button', { name: 'Create invite for Ben Okafor' }))
+    await waitFor(() => expect(h.created).toHaveLength(1))
+    expect(h.created[0]).toEqual([{ email: 'ben@lab.org', role: 'member', claims: 'b' }])
+    await screen.findByLabelText('Invite link for ben@lab.org')
+    expect(screen.getByRole('heading', { name: 'Invite someone' })).toBeInTheDocument()
+  })
+
+  it('arrives from the first screen with ?claim=<id>, and can go back to an ordinary invite', async () => {
+    h.people = [ELENA, BEN]
+    window.history.replaceState(null, '', '/members?claim=b')
+    const user = userEvent.setup()
+    renderMembers()
+    expect(screen.getByRole('heading', { name: 'Invite Ben Okafor' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Invite someone new instead' }))
+    expect(screen.getByRole('heading', { name: 'Invite someone' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Email'), 'x@lab.org')
+    await user.click(screen.getByRole('button', { name: 'Create invite' }))
+    await waitFor(() => expect(h.created).toHaveLength(1))
+    expect(h.created[0]).toEqual([{ email: 'x@lab.org', role: 'member' }])
+    window.history.replaceState(null, '', '/')
   })
 })

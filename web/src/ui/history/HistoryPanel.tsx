@@ -239,6 +239,7 @@ export function HistoryPanel({ onClose }: Props) {
           checkpoints={here}
           restoring={restoring}
           onRestore={() => void restore()}
+          readOnly={snap.readOnly}
         />
       )}
     </section>

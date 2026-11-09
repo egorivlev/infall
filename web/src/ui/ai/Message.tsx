@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { ai } from '../../lib'
+import { ai, useBoard } from '../../lib'
 import type { AiMessage } from '../../lib'
 import { pagePanel, suggestionsPanel } from '../bridge'
 import { MarkdownView } from '../page/MarkdownView'
@@ -10,6 +10,7 @@ import { useCopy } from './useCopy'
 import { proposed, readTools, scopeLabel, sendError, titleOf } from './words'
 
 const NO_CARD_TITLE = 'Select a Card to pin this to its Page'
+const READ_ONLY_TITLE = 'This copy is read-only. Open the Workspace on its server to pin answers.'
 
 /** Asks the question behind a failed answer once more; if that cannot start, the composer says why. */
 function retry(messageId: string) {
@@ -93,6 +94,8 @@ function Actions({ message, cardId, cardTitle }: { message: AiMessage; cardId: s
   // The failure belongs to the Card it was tried on: it goes away when the scope moves on.
   const [failedFor, setFailedFor] = useState<string | null>(null)
   const pins = message.pinned ?? []
+  // M18: a moved copy is read-only; so is the Board then (useBoard().readOnly).
+  const readOnly = useBoard().readOnly
   const pinnedHere = cardId !== null && pins.some((p) => p.card === cardId)
 
   const pin = () => {
@@ -122,9 +125,9 @@ function Actions({ message, cardId, cardTitle }: { message: AiMessage; cardId: s
           <span className="qa-act__text">Pinned to Page · {titleOf({ title: p.cardTitle })}</span>
         </button>
       ))}
-      {cardId === null ? (
+      {cardId === null || readOnly ? (
         // Not `disabled`: it stays reachable by keyboard, and the title (its description) says what is missing.
-        <button type="button" className="qa-act qa-act--pin" aria-disabled="true" title={NO_CARD_TITLE}>
+        <button type="button" className="qa-act qa-act--pin" aria-disabled="true" title={readOnly ? READ_ONLY_TITLE : NO_CARD_TITLE}>
           <PinIcon />
           <span className="qa-act__text">Pin to Page</span>
         </button>

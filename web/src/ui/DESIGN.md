@@ -358,3 +358,45 @@ Spec: [docs/specs/undo.md](../../../docs/specs/undo.md) (binding). Data layer: [
 
 ## Keys
 - Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, and Ctrl+Y off a Mac, handled once in the shell, wherever the Board of the open Branch is shown and editable. In a field being edited and in a modal dialog the key is the field's (its own text undo); anywhere else it does nothing. Never with Alt, never with Cmd and Ctrl together; the Board scale keys (Shift + "+", "−", 0) are not these.
+
+
+---
+
+# M18 — From alone to a team
+
+Spec: [docs/specs/team-move.md](../../../docs/specs/team-move.md) (binding). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M18". Vocabulary: Workspace file, Team server, Local Workspace, Member, Admin, Guest, Comment, For you. Never "backup", "archive", "note", "message", "chat", "thread" in a button (the section is "Comments").
+
+## Empty Team server (Admin) — `ui/shell/FirstScreen.tsx`
+- In place of the Board while `useWorkspace().empty` (Team only) for an Admin; Members see the ordinary empty Board. Serif "This Team server is empty", one line, then **Bring in <name> from this computer (<size>)** (primary; only when `desktopMove()` reports a pending move), **Bring in a Workspace file…** (primary when there is no move; opens a hidden, labelled file input "Workspace file", `.infall`), **Start empty**.
+- Sending: "Bringing in <file>…", a `role="progressbar"` (aria-valuetext "45 %" / "Sent; the server is reading the file"), "1.2 MB of 3.4 MB" in mono, **Stop**. A refusal: the server's sentence + "Choose another file, or try again." (`role="alert"`), the choice again.
+- Done: serif "The Workspace is in" (focused), "Your earlier work as <you_were> is now yours.", and when the file brought unclaimed names, a box "Names that came with the file" — "<name> — not signed in yet" with **Invite** (a link to `/members?claim=<id>`) — then **Open the Board**. The screen stays up after the import (`useFirstScreen.holding`) until that press or Start empty.
+- The desktop move is one press: `moveFile()` → the upload → `moveDone({ ok })` (ok false on any failure, so the app keeps the move).
+
+## A moved Local Workspace — `ui/shell/MovedBar.tsx`
+- A quiet bar over the work area on every screen (`q-moved`, `--q-surface`, a lock glyph): "Moved to <host>. This copy is read-only." ("Moved to a Team server. …" without `movedTo`). In the desktop app, **Open on the server** with the visible hint (its description) "Goes back to the start screen, where this Workspace’s row has Open on the server." (the page cannot open the server itself). The server's sentence of a refused write shows once in the bar's status line.
+- Read-only everywhere, the way a Guest's view is (the Board's `readOnly`): no + Card / + Frame / Import BibTeX / Undo / Redo, no editing on the Board, in the inspector or the Page, no Page To-dos, no Comment writing, no Checkpoint button, no "New Branch…" in the switcher, no name field / Merge buttons / New Branch from here / Add Checkpoint here on the Branch Graph, no Restore in History (History still reads), no Suggestions (rail item and panel), To-dos without ticking, adding, editing or deleting, AI answers not pinnable ("This copy is read-only…"), no Change name in Settings, no Merge route, no Tutorial. The rail footer says "Read-only".
+
+## Settings → Workspace (Team, Admin)
+- A card "Workspace file": what it holds (names only; no emails, passwords, invites, access tokens or AI keys), **Export Workspace file…** ("Exporting…"); then "Exported “<name>”." (desktop app, `saveBinaryFile`) or "Downloaded “<name>”." (browser), nothing when cancelled; a failure "The Workspace file could not be exported. <the server's sentence or plain words>".
+- The Board's PNG export goes through `saveBinaryFile` when the app has it ("Exported “…”."), and the dialog's "saves text files only" note is shown only in an app without it.
+
+## Members — unclaimed names
+- "<name> — not signed in yet" (no email), **Invite** beside **Remove**. Invite (or `?claim=<id>`) turns the form into "Invite <name>" with the line "Whoever accepts takes over the name <name> — their Changes, Checkpoints, To-dos and Comments." and "Invite someone new instead"; focus goes to Email; the button reads "Create invite for <name>"; the invite is sent with `claims`. Below a wide room the form stacks under the table.
+
+## Comments — `ui/page/comments/`
+- A section in the Page under Sources and To-dos (and under "This Card was removed." for a removed Card, with "On a Card that was removed. The thread is kept."). Head: "COMMENTS · n" (" · resolved"), **Resolve** / **Reopen** on the right (any Member, when there are Comments). In a Local Workspace: "Notes to yourself: …".
+- Each Comment: avatar, author (600), time (mono, full date in `title`), "· edited"; the text with paragraphs and line breaks as written and the Page's inline Markdown and `$math$` (`renderInline`), mentions in accent 600. **Edit** (own) and **Delete** (own; an Admin any), Delete asking inline "Delete this Comment? It cannot be brought back." **Delete** / **Keep it**. Editing reuses the write box: **Done** / **Cancel**, ⌘Enter / Esc; focus returns to Edit.
+- Resolved: collapsed to "This thread is resolved." + "Show all n Comments" / "Hide the Comments"; no write box ("Reopen the thread to add a Comment.").
+- Write box: label "Start the thread" (placeholder "A question or a remark about this Card…") or "Add a Comment"; hint "@ to mention a Member · Markdown and $math$ · ⌘Enter to add"; **Add Comment** ("Adding…"). From 9 000 characters a counter "9 412 / 10 000"; past 10 000 "… — 3 too many" in the danger colour and the button refuses. A failure: "The Comment could not be added. <the server's sentence>" with the text kept.
+- `@` completion (`MentionField`): the textarea is a combobox; a list "Members to mention" (avatar + name, ≤ 6) opens under it while a mention is typed; ↑ ↓ move (wrapping), Enter or Tab picks ("@Name "), Esc closes the list only (not the Page). Members and Admins only (never Guests); in a Local Workspace only yourself.
+- From For you: the Page opens at that Comment — a resolved thread opens, the Comment scrolls to the middle (smoothly only when motion is allowed), takes focus and is tinted `--q-accent-soft` for 2.4 s. "That Comment was deleted." when it is gone.
+- Guests: no section at all. A moved copy: the thread reads, nothing else.
+
+## The badge on a Card
+- Full level: in the footer row after "¶ n" / "n Sources": a speech-mark glyph and the count, "✓" after it when resolved (`--q-ink-3`); compact level: the same, right-aligned on the status row. Never on a tile. Screen readers hear "3 Comments" / "1 Comment, resolved". From `useCommentCount` — one store read per Card, no request, nothing per frame.
+
+## For you — `ui/todos/ForYou.tsx`, route `/for-you`
+- Rail item "For you" (an "@" glyph) right after To-dos, badge = unseen (accent when > 0), `aria-label` "For you, n unseen". Not for Guests (the route goes to the Board).
+- The To-dos screen pattern: the header starts with two tabs (links) "To-dos" | "For you n", then serif "For you", mono "n unseen · m mentions", **Mark all as seen**. One row per mention, newest first: avatar, "**Ana** mentioned you on Card <title>" (or "a Card that was removed"), time; unseen rows have a stronger border and "● NEW" (word and shape, not colour alone). A row is a button: it goes to the Board, opens the Page at the Comment and marks the mentions up to it as seen.
+- Empty: serif "No mentions yet", "When a Member writes @<you> in a Comment, it shows here, newest first." Loading after 150 ms: "Loading mentions…".
+- The notice (`ui/shell/MentionNotice.tsx`): bottom right, `role="status"`, for 8 s (held while hovered or focused): "**Ana** mentioned you on Card <title>." **Open** ×.

@@ -7,6 +7,7 @@ import { workspace, workspaceStore } from './workspace'
 
 let server: FakeServer
 const now = () => workspaceStore.getState()
+const TEAM = { kind: 'team', preset: null, empty: false, readOnly: false, movedTo: null }
 const asked = () => server.requests.filter((r) => r.path === '/api/workspace').length
 
 beforeEach(() => {
@@ -24,30 +25,30 @@ afterEach(() => {
 
 describe('the kind of Workspace', () => {
   it('reads as a Team Workspace until the server has answered', async () => {
-    expect(now()).toEqual({ status: 'idle', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'idle', ...TEAM })
     server.workspace = { kind: 'local', preset: 'tutorial' }
     const loading = workspace.load()
-    expect(now()).toEqual({ status: 'loading', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'loading', ...TEAM })
     await loading
-    expect(now()).toEqual({ status: 'ready', kind: 'local', preset: 'tutorial' })
+    expect(now()).toEqual({ status: 'ready', ...TEAM, kind: 'local', preset: 'tutorial' })
   })
 
   it('a server from before M12 (404) is a Team Workspace', async () => {
     server.workspace = null
     await workspace.load()
-    expect(now()).toEqual({ status: 'ready', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'ready', ...TEAM })
   })
 
   it('so is a server that cannot be reached, or one that answers something odd', async () => {
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')))
     await workspace.load()
-    expect(now()).toEqual({ status: 'ready', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'ready', ...TEAM })
 
     sessionStore.setState({ status: 'signed_out' }, true)
     sessionStore.setState({ status: 'signed_in', member: ME }, true)
     vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, text: async () => '{"kind":"moon","preset":7}' }) as Response)
     await workspace.load()
-    expect(now()).toEqual({ status: 'ready', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'ready', ...TEAM })
   })
 
   it('is asked once per session, and forgotten when the session ends', async () => {
@@ -69,7 +70,7 @@ describe('the kind of Workspace', () => {
     const loading = workspace.load()
     sessionStore.setState({ status: 'signed_out' }, true)
     await loading
-    expect(now()).toEqual({ status: 'idle', kind: 'team', preset: null })
+    expect(now()).toEqual({ status: 'idle', ...TEAM })
   })
 
   it('a Preset is only read for a Local Workspace', async () => {

@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
-import { useBoard, useWorkspace } from '../../lib'
+import { useBoard, useForYou, useWorkspace } from '../../lib'
 import type { Member } from '../../lib'
 import { boardBridge } from '../bridge'
 import { TutorialProgress } from '../tutorial'
 import { frameCounts } from './frameCounts'
 import { Icon } from './Icon'
 import { Link } from './Link'
-import { branchPath, TODOS_PATH } from './router'
+import { branchPath, FOR_YOU_PATH, TODOS_PATH } from './router'
 import type { ShellView } from './Shell'
 import { SuggestionsItem } from './SuggestionsItem'
 import { SyncStatus } from './SyncStatus'
@@ -20,7 +20,10 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
   const counts = frameCounts(frames, cards)
   const onBoard = useOnBoard()
   const canAdd = member.role !== 'guest' && !readOnly
-  const local = useWorkspace().kind === 'local' // one Member, nobody to invite: no Members
+  const ws = useWorkspace()
+  const local = ws.kind === 'local' // one Member, nobody to invite: no Members
+  const moved = ws.readOnly === true // a moved copy: nothing to accept or reject
+  const unseen = useForYou().unseen
 
   // In a narrow room (shell.css) the rail is folded to its icons; this opens it over the work area until a choice is
   // made in it, Esc, or a press outside. Elsewhere the button is not shown and `open` changes nothing.
@@ -66,7 +69,22 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
             <span>To-dos</span>
           </Link>
         )}
-        {member.role !== 'guest' && <SuggestionsItem onBoard={route === 'board'} />}
+        {member.role !== 'guest' && (
+          <Link
+            href={FOR_YOU_PATH}
+            className="q-rail__item"
+            title="For you: Comments that mention you"
+            aria-label={`For you, ${unseen} unseen`}
+            aria-current={route === 'for-you' ? 'page' : undefined}
+          >
+            <Icon name="mention" />
+            <span className="q-rail__label">For you</span>
+            <span className={`q-rail__badge${unseen > 0 ? ' q-rail__badge--hot' : ''}`} aria-hidden="true">
+              {unseen}
+            </span>
+          </Link>
+        )}
+        {member.role !== 'guest' && !moved && <SuggestionsItem onBoard={route === 'board'} />}
         {member.role !== 'guest' && (
           <Link href="/branches" className="q-rail__item" title="Branches" data-tour="branches" aria-current={route === 'branches' ? 'page' : undefined}>
             <Icon name="branch" />
@@ -121,7 +139,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
       </section>
       <TutorialProgress />
       <footer className="q-rail__foot">
-        <SyncStatus status={status} readOnly={member.role === 'guest'} />
+        <SyncStatus status={status} readOnly={member.role === 'guest' || moved} />
         <div className="q-rail__host">{window.location.host}</div>
       </footer>
     </aside>

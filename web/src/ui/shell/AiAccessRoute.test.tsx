@@ -18,6 +18,8 @@ const noAi = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib', () => ({
+  useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
+  forYou: { reload: async () => {}, seen: async () => {}, onMention: () => () => {} },
   useWorkspace: () => ({ status: 'ready', kind: 'team', preset: null }),
   workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: 'team', preset: null }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
   useAi: () => noAi.snapshot,
@@ -227,7 +229,7 @@ describe('Rail: Suggestions', () => {
     expect(badge()).toHaveClass('q-rail__badge--hot')
     expect(item()).toHaveAccessibleName('Suggestions, 2 pending')
     const order = Array.from(screen.getByRole('navigation', { name: 'Main' }).children).map((el) => el.querySelector('span')?.textContent)
-    expect(order).toEqual(['Board', 'To-dos', 'Suggestions', 'Branches'])
+    expect(order).toEqual(['Board', 'To-dos', 'For you', 'Suggestions', 'Branches'])
   })
 
   it('shows a quiet 0 when nothing is pending', () => {

@@ -13,12 +13,16 @@ import type {
   Change,
   Checkpoint,
   ClientFrame,
+  Comment,
   Conflict,
   ConflictKey,
   Decision,
+  ForYouItem,
   GraphActivity,
   GraphBranch,
   GraphResponse,
+  ImportResult,
+  Invite,
   Member,
   MergePlan,
   Moment,
@@ -361,6 +365,7 @@ function fail(status: number, code: string, message = 'nope', detail: unknown = 
 }
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
+const MOVED_WORDS = 'This Workspace was moved to a Team server; open it there to make changes.'
 
 // What a Guest's Board holds (api.md §13): live entities whose every reference is live too. No tombstones.
 export function visibleEntities(entities: Entities): Entities {
@@ -477,8 +482,35 @@ export class FakeServer {
   aiDrop = false
   /** How many chat requests the client aborted. */
   aiAborted = 0
-  /** M12: what `GET /api/workspace` answers; null plays a server from before M12 (404). */
-  workspace: { kind: 'team' | 'local'; preset: string | null } | null = { kind: 'team', preset: null }
+  /**
+   * M12: what `GET /api/workspace` answers; null plays a server from before M12 (404). M18: `empty` (a Team server
+   * with nothing in it: `POST /api/workspace/import` is allowed), `read_only` (a moved copy: every write is 403
+   * `moved`), `moved_to` (not in Contract B; the UI reads it when present).
+   */
+  workspace: { kind: 'team' | 'local'; preset: string | null; empty?: boolean; read_only?: boolean; moved_to?: string } | null = { kind: 'team', preset: null }
+  /** M18: the bodies `POST /api/workspace/import` received, in order. */
+  imported: unknown[] = []
+  /** M18: what the next successful import answers; by default the actor's own name, claimed. */
+  importAnswer: ImportResult | null = null
+  /** M18: one scripted failure for the next import, e.g. `{ status: 400, code: 'not_a_workspace_file', message: '…' }`. */
+  importFail: { status: number; code: string; message: string } | null = null
+  /** M18: the file `GET /api/workspace/export` answers, and the name in its Content-Disposition. */
+  exportBytes = new Uint8Array([0x51, 0x4f, 0x4f, 0x50, 1, 2, 3])
+  exportName = 'Physics group.infall'
+  /** M18: invites (`/api/invites`), oldest first. */
+  invitesList: Invite[] = []
+  /** M18: every Comment, any Card, in the order written. */
+  comments: (Comment & { card: string })[] = []
+  /** M18: Cards whose thread is resolved. */
+  resolved: Record<string, boolean> = {}
+  /** M18: per Member id, the Comments they have seen in For you. */
+  seenBy: Record<string, string[]> = {}
+  /** M18: one scripted failure for the next Comment or For you request that writes. */
+  commentFail: { status: number; code: string; message?: string } | null = null
+  /** M18: when set, Comment requests that write wait for it. */
+  commentGate: Promise<void> | null = null
+  /** M18: when set, an upload through `xhr()` waits for it after its first progress event. */
+  uploadGate: Promise<void> | null = null
   /** M12: the Tutorial's progress as last stored by `PUT /api/local/tutorial` (a Local Workspace only). */
   tutorialState: unknown = null
   /** One scripted failure for the next `/api/local/*` request. */
@@ -1027,6 +1059,213 @@ export class FakeServer {
     return fail(404, 'not_found')
   }
 
+  // ---- M18 (docs/specs/team-move.md, Contract B) ----
+
+  /** `POST /api/workspace/import` and `GET /api/workspace/export`. */
+  private async moveRoute(path: string, method: string, body: unknown): Promise<{ status: number; body: unknown } | Response> {
+    const team = this.workspace?.kind !== 'local'
+    if (path === '/api/workspace/import' && method === 'POST') {
+      if (this.actor.role !== 'admin' || !team) return fail(403, 'forbidden', 'Only an Admin can bring in a Workspace file.')
+      if (this.importFail) {
+        const f = this.importFail
+        this.importFail = null
+        return fail(f.status, f.code, f.message)
+      }
+      if (!this.workspace?.empty) return fail(409, 'not_empty', 'This server already holds work. A Workspace file can only go onto an empty one.')
+      this.imported.push(body)
+      const answer = this.importAnswer ?? { members: [{ id: this.actor.id, name: this.actor.name, claimed: true }], you_were: 'Me on my laptop' }
+      for (const m of answer.members) {
+        if (this.members.some((x) => x.id === m.id)) continue
+        this.members.push({ id: m.id, name: m.name, role: 'member', color: '#777', claimed: m.claimed })
+      }
+      this.workspace = { ...this.workspace, empty: false }
+      return { status: 200, body: answer }
+    }
+    if (path === '/api/workspace/export' && method === 'GET') {
+      if (this.actor.role !== 'admin' || !team) return fail(403, 'forbidden', 'Only an Admin can export the Workspace.')
+      const bytes = this.exportBytes
+      const headers = new Headers({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${this.exportName}"` })
+      return { ok: true, status: 200, headers, text: async () => '', arrayBuffer: async () => bytes.slice().buffer } as unknown as Response
+    }
+    return fail(404, 'not_found', 'no route')
+  }
+
+  /** `/api/invites` (M18: `claims`). */
+  private inviteRoute(path: string, method: string, body: unknown): { status: number; body: unknown } {
+    if (this.actor.role !== 'admin') return fail(403, 'forbidden')
+    if (method === 'GET' && path === '/api/invites') return { status: 200, body: { invites: this.invitesList } }
+    if (method === 'POST' && path === '/api/invites') {
+      const b = (body ?? {}) as { email?: unknown; role?: unknown; access_until?: unknown; claims?: unknown }
+      if (typeof b.email !== 'string' || !/^\S+@\S+$/.test(b.email) || (b.role !== 'member' && b.role !== 'guest')) return fail(400, 'bad_request')
+      if (b.claims !== undefined) {
+        const who = this.members.find((m) => m.id === b.claims)
+        if (!who || who.claimed !== false) return fail(400, 'bad_request', 'That Member can already sign in.')
+      }
+      const invite: Invite = { id: `i${this.n++}`, email: b.email, role: b.role, expires_at: this.now + WEEK, created_by: this.actor.id }
+      if (typeof b.access_until === 'number') invite.access_until = b.access_until
+      if (typeof b.claims === 'string') invite.claims = b.claims
+      this.invitesList.push(invite)
+      return { status: 200, body: { invite, url: `http://fake/invite/${invite.id}` } }
+    }
+    const id = decodeURIComponent(path.slice('/api/invites/'.length))
+    const at = this.invitesList.findIndex((i) => i.id === id)
+    if (method !== 'DELETE' || at < 0) return fail(404, 'not_found')
+    this.invitesList.splice(at, 1)
+    return { status: 200, body: {} }
+  }
+
+  /** Writes a Comment as the server would on someone's behalf; returns it. */
+  addComment(card: string, text: string, mentions: string[] = [], author = this.actor.id): Comment {
+    const c = { id: `cm${this.n++}`, card, author, text, mentions: [...mentions], created_at: this.now, edited_at: null }
+    this.comments.push(c)
+    const { card: _card, ...comment } = c
+    return comment
+  }
+
+  /** The thread of a Card as `GET /api/cards/{card}/comments` answers it. */
+  threadOf(card: string): { resolved: boolean; comments: Comment[] } {
+    return {
+      resolved: this.resolved[card] === true,
+      comments: this.comments.filter((c) => c.card === card).map(({ card: _card, ...c }) => ({ ...c, mentions: [...c.mentions] })),
+    }
+  }
+
+  /** `GET /api/comments/counts`. The fake's reading of `open`: the number of Comments in the thread. */
+  commentCounts(): Record<string, { open: number; resolved: boolean }> {
+    const out: Record<string, { open: number; resolved: boolean }> = {}
+    for (const c of this.comments) out[c.card] = { open: (out[c.card]?.open ?? 0) + 1, resolved: this.resolved[c.card] === true }
+    return out
+  }
+
+  /** `GET /api/for-you` for a Member: the Comments mentioning them, newest first, at most 200. */
+  forYouOf(member = this.actor.id): ForYouItem[] {
+    const seen = new Set(this.seenBy[member] ?? [])
+    return this.comments
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => c.mentions.includes(member))
+      .sort((a, b) => b.c.created_at - a.c.created_at || b.i - a.i)
+      .slice(0, 200)
+      .map(({ c }) => ({ comment: c.id, card: c.card, author: c.author, at: c.created_at, seen: seen.has(c.id) }))
+  }
+
+  commentsFrame(card: string): ServerFrame {
+    return { type: 'comments', card }
+  }
+
+  forYouFrame(member = this.actor.id): ServerFrame {
+    return { type: 'for_you', count: this.forYouOf(member).filter((i) => !i.seen).length }
+  }
+
+  private async commentRoute(path: string, method: string, body: unknown): Promise<{ status: number; body: unknown }> {
+    if (this.actor.role === 'guest') return fail(403, 'forbidden')
+    const me = this.actor.id
+    if (method === 'GET' && path === '/api/comments/counts') return { status: 200, body: this.commentCounts() }
+    if (method === 'GET' && path === '/api/for-you') return { status: 200, body: { items: this.forYouOf(me) } }
+    const thread = /^\/api\/cards\/([^/?]+)\/comments(\/resolved)?$/.exec(path)
+    if (method === 'GET' && thread && !thread[2]) return { status: 200, body: this.threadOf(decodeURIComponent(thread[1]!)) }
+    if (this.commentGate) await this.commentGate
+    if (this.commentFail) {
+      const f = this.commentFail
+      this.commentFail = null
+      return fail(f.status, f.code, f.message)
+    }
+    const b = (body ?? {}) as { text?: unknown; mentions?: unknown; resolved?: unknown; up_to?: unknown }
+    const goodText = typeof b.text === 'string' && b.text.trim() !== '' && [...b.text].length <= 10_000
+    const mentions = Array.isArray(b.mentions) ? b.mentions : []
+    const goodMentions = mentions.every((id) => this.members.some((m) => m.id === id))
+    if (method === 'POST' && path === '/api/for-you/seen') {
+      const upTo = this.comments.find((c) => c.id === b.up_to)
+      if (!upTo) return fail(404, 'not_found')
+      const items = this.forYouOf(me)
+      const at = items.findIndex((i) => i.comment === upTo.id)
+      this.seenBy[me] = [...new Set([...(this.seenBy[me] ?? []), ...items.slice(at < 0 ? items.length : at).map((i) => i.comment)])]
+      return { status: 200, body: {} }
+    }
+    if (thread) {
+      const card = decodeURIComponent(thread[1]!)
+      if (thread[2] && method === 'PUT') {
+        if (typeof b.resolved !== 'boolean') return fail(400, 'bad_request')
+        this.resolved[card] = b.resolved
+        return { status: 200, body: { resolved: b.resolved } }
+      }
+      if (!thread[2] && method === 'POST') {
+        if (!goodText || !goodMentions) return fail(400, 'bad_request', 'Each mention must be a Member.')
+        return { status: 201, body: this.addComment(card, (b.text as string).trim(), mentions as string[], me) }
+      }
+      return fail(404, 'not_found', 'no route')
+    }
+    const one = /^\/api\/comments\/([^/?]+)$/.exec(path)
+    const at = one ? this.comments.findIndex((c) => c.id === decodeURIComponent(one[1]!)) : -1
+    const c = this.comments[at]
+    if (!c) return fail(404, 'not_found')
+    if (method === 'DELETE') {
+      if (c.author !== me && this.actor.role !== 'admin') return fail(403, 'forbidden', 'Only its author or an Admin can delete a Comment.')
+      this.comments.splice(at, 1)
+      return { status: 200, body: {} }
+    }
+    if (method === 'PATCH') {
+      if (c.author !== me) return fail(403, 'forbidden', 'Only its author can edit a Comment.')
+      if (!goodText || !goodMentions) return fail(400, 'bad_request')
+      const next = { ...c, text: (b.text as string).trim(), mentions: [...(mentions as string[])], edited_at: this.now }
+      this.comments[at] = next
+      const { card: _card, ...comment } = next
+      return { status: 200, body: comment }
+    }
+    return fail(404, 'not_found', 'no route')
+  }
+
+  /**
+   * A fake `XMLHttpRequest` that sends to this server, for uploads with progress: `vi.stubGlobal('XMLHttpRequest',
+   * server.xhr())`. It reports progress in four steps and, when `uploadGate` is set, waits for it after the first.
+   */
+  xhr(): typeof XMLHttpRequest {
+    const serverFetch = (path: string, init: RequestInit) => this.fetch(path, init)
+    const uploadGate = () => this.uploadGate
+    class FakeXhr {
+      status = 0
+      responseText = ''
+      withCredentials = false
+      upload: { onprogress: ((e: ProgressEvent) => void) | null } = { onprogress: null }
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      onabort: (() => void) | null = null
+      headers: Record<string, string> = {}
+      private method = 'GET'
+      private path = ''
+      private aborted = false
+      open(method: string, path: string) {
+        this.method = method
+        this.path = path
+      }
+      setRequestHeader(name: string, value: string) {
+        this.headers[name] = value
+      }
+      abort() {
+        this.aborted = true
+        this.onabort?.()
+      }
+      send(body: Blob) {
+        const total = body.size
+        void (async () => {
+          for (let step = 1; step <= 4; step++) {
+            await Promise.resolve()
+            if (this.aborted) return
+            this.upload.onprogress?.({ loaded: Math.round((total * step) / 4), total, lengthComputable: true } as ProgressEvent)
+            const gate = uploadGate()
+            if (step === 1 && gate) await gate
+          }
+          if (this.aborted) return
+          const res = await serverFetch(this.path, { method: this.method, body })
+          if (this.aborted) return
+          this.status = res.status
+          this.responseText = await res.text()
+          this.onload?.()
+        })()
+      }
+    }
+    return FakeXhr as unknown as typeof XMLHttpRequest
+  }
+
   checkpointFrame(checkpoint: Checkpoint): ServerFrame {
     return { type: 'checkpoint', branch: checkpoint.moment.branch, checkpoint }
   }
@@ -1082,10 +1321,20 @@ export class FakeServer {
 
   fetch = async (path: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET'
-    const body = init?.body ? JSON.parse(init.body as string) : undefined
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : (init?.body ?? undefined)
     this.requests.push({ method, path, body })
     const guest = this.actor.role === 'guest'
     const forbidden = fail(403, 'forbidden')
+    // M18: a moved Local Workspace refuses every write (Contract A).
+    if (this.workspace?.read_only && method !== 'GET' && method !== 'HEAD') return this.respond(fail(403, 'moved', MOVED_WORDS))
+    if (path.startsWith('/api/workspace/')) {
+      const answer = await this.moveRoute(path, method, body)
+      return 'ok' in answer ? answer : this.respond(answer)
+    }
+    if (path === '/api/invites' || path.startsWith('/api/invites/')) return this.respond(this.inviteRoute(path, method, body))
+    if (path.startsWith('/api/cards/') || path.startsWith('/api/comments') || path.startsWith('/api/for-you')) {
+      return this.respond(await this.commentRoute(path, method, body))
+    }
     if (path === '/api/workspace' || path.startsWith('/api/local/')) return this.respond(this.localRoute(path, method, body))
     if (path === '/api/sources/lookup' && method === 'POST') {
       if (guest) return this.respond(forbidden)

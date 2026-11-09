@@ -1,6 +1,6 @@
 import { useCallback, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { branches, useBranches, useMembers } from '../../lib'
+import { branches, useBranches, useMembers, useWorkspace } from '../../lib'
 import { branchMeta, orderBranches } from './branchMeta'
 import { Icon } from './Icon'
 import { Link } from './Link'
@@ -12,6 +12,7 @@ const ignore = () => {}
 
 /** The Branch pill in the top bar: shows the open Branch and opens the menu that switches to another. */
 export function BranchSwitcher({ branch }: { branch: string }) {
+  const moved = useWorkspace().readOnly === true // a moved copy starts no Branch
   const list = orderBranches(useBranches())
   const people = useMembers()
   const [open, setOpen] = useState(false)
@@ -116,17 +117,19 @@ export function BranchSwitcher({ branch }: { branch: string }) {
             )
           })}
           <div className="q-switch__rule" role="separator" />
-          <Link
-            href="/branches"
-            role="menuitem"
-            className="q-menu__item"
-            onClick={() => {
-              newBranchIntent.request()
-              chosen()
-            }}
-          >
-            New Branch…
-          </Link>
+          {!moved && (
+            <Link
+              href="/branches"
+              role="menuitem"
+              className="q-menu__item"
+              onClick={() => {
+                newBranchIntent.request()
+                chosen()
+              }}
+            >
+              New Branch…
+            </Link>
+          )}
           <Link href="/branches" role="menuitem" className="q-menu__item" onClick={chosen}>
             All Branches…
           </Link>
