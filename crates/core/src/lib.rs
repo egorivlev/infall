@@ -19,4 +19,6 @@ pub use merge::{
 pub use schema::{
     EntityKind, FieldClass, Fields, SchemaError, Value, field_class, ref_fields, validate_field,
 };
-pub use workspace::{Branch, Change, Checkpoint, Moment, Origin, SyncPoint, Workspace, WsError};
+pub use workspace::{
+    Branch, BranchParts, Change, Checkpoint, Moment, Origin, SyncPoint, Workspace, WsError,
+};

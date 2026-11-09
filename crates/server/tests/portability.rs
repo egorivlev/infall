@@ -228,6 +228,49 @@ async fn used(db: &Path, web: &Path, preset: Preset) -> (LocalServer, Client, Se
     (server, c, secrets)
 }
 
+/// The Research Content tables of a Workspace file (schema version 6 on).
+const CONTENT_TABLES: [&str; 4] = ["branches", "changes", "checkpoints", "sync_points"];
+
+/// Every value of every table of the database at `db`, table by table: the same secrets
+/// searched for in what SQLite reads, not only in the bytes of the file (a value could be
+/// stored compressed or split over pages in a layout to come). The Research Content
+/// tables must be there and hold the Workspace.
+fn assert_no_secrets_in_any_table(db: &Path, s: &Secrets) {
+    let conn = rusqlite::Connection::open(db).unwrap();
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    for table in CONTENT_TABLES {
+        assert!(
+            tables.iter().any(|t| t == table),
+            "no {table} in {tables:?}"
+        );
+    }
+    assert!(count(db, "branches") > 0 && count(db, "changes") > 0);
+    for table in &tables {
+        let mut stmt = conn.prepare(&format!("SELECT * FROM {table}")).unwrap();
+        let n = stmt.column_count();
+        let mut cells: Vec<u8> = Vec::new();
+        let mut rows = stmt.query([]).unwrap();
+        while let Some(r) = rows.next().unwrap() {
+            for i in 0..n {
+                match r.get_ref(i).unwrap() {
+                    rusqlite::types::ValueRef::Text(t) | rusqlite::types::ValueRef::Blob(t) => {
+                        cells.extend_from_slice(t);
+                        cells.push(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert_no_secrets(&cells, s);
+    }
+}
+
 fn assert_no_secrets(bytes: &[u8], s: &Secrets) {
     let checks: Vec<(&str, Vec<u8>)> = vec![
         ("the OpenRouter key", KEY.as_bytes().to_vec()),
@@ -266,6 +309,7 @@ async fn every_preset_survives_a_round_trip_without_its_secrets() {
         let bytes = std::fs::read(&file).unwrap();
         assert!(bytes.starts_with(b"SQLite format 3\0"));
         assert_no_secrets(&bytes, &secrets);
+        assert_no_secrets_in_any_table(&file, &secrets);
         // The needles are real: the Workspace's own database holds them.
         let mut original = std::fs::read(&db).unwrap();
         original.extend(std::fs::read(db.with_extension("db-wal")).unwrap_or_default());
@@ -688,6 +732,7 @@ fn assert_clean_import(imported: &Path, secrets: &Secrets) {
     assert!(!wal_of(imported).exists());
     bytes.extend(std::fs::read(wal_of(imported)).unwrap_or_default());
     assert_no_secrets(&bytes, secrets);
+    assert_no_secrets_in_any_table(imported, secrets);
     let conn = rusqlite::Connection::open(imported).unwrap();
     let app_id: i32 = conn
         .query_row("PRAGMA application_id", [], |r| r.get(0))

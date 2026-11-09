@@ -93,6 +93,27 @@ impl Branch {
     pub fn sync_points(&self) -> &[SyncPoint] {
         &self.sync_points
     }
+
+    /// The Checkpoints in the order they were made (`Workspace::checkpoints` sorts them).
+    pub fn recorded_checkpoints(&self) -> &[Checkpoint] {
+        &self.checkpoints
+    }
+}
+
+/// Everything a Branch is made of, for a store that keeps the parts apart: a Branch is
+/// put back together from these with `Workspace::from_parts`, and taken apart again with
+/// the `Branch` getters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BranchParts {
+    pub id: BranchId,
+    pub name: String,
+    pub parent: Option<Moment>,
+    pub created_by: Option<MemberId>,
+    pub created_at: Option<i64>,
+    pub changes: Vec<Change>,
+    pub sync_points: Vec<SyncPoint>,
+    /// In the order they were made.
+    pub checkpoints: Vec<Checkpoint>,
 }
 
 /// Why a Workspace call was rejected.
@@ -194,6 +215,31 @@ impl Workspace {
             },
             id,
         )
+    }
+
+    /// The Workspace made of these Branches, exactly as stored: nothing is checked or
+    /// worked out (the same as reading one back from its JSON). A later Branch with the
+    /// same id replaces an earlier one.
+    pub fn from_parts(branches: impl IntoIterator<Item = BranchParts>) -> Workspace {
+        Workspace {
+            branches: branches
+                .into_iter()
+                .map(|p| {
+                    let branch = Branch {
+                        id: p.id,
+                        name: p.name,
+                        parent: p.parent,
+                        created_by: p.created_by,
+                        created_at: p.created_at,
+                        changes: p.changes,
+                        sync_points: p.sync_points,
+                        checkpoints: p.checkpoints,
+                    };
+                    (p.id, branch)
+                })
+                .collect(),
+            heads: Heads::default(),
+        }
     }
 
     pub fn branch(&self, id: BranchId) -> Option<&Branch> {
@@ -534,6 +580,61 @@ mod tests {
         ));
         assert_eq!(ws, before);
         assert_eq!(ws.board_at(ws.head(main).unwrap()).unwrap(), board_before);
+    }
+
+    #[test]
+    fn a_workspace_taken_apart_and_put_back_together_is_the_same() {
+        let (mut ws, main) = Workspace::new();
+        let me = MemberId::new();
+        let a = crate::ids::EntityId::new();
+        ws.record(main, me, 1, create(a)).unwrap();
+        ws.checkpoint("zz later name", ws.head(main).unwrap(), me, 2)
+            .unwrap();
+        ws.checkpoint(
+            "aa",
+            Moment {
+                branch: main,
+                seq: 0,
+            },
+            me,
+            3,
+        )
+        .unwrap();
+        let side = ws.fork("side", ws.head(main).unwrap(), me, 4).unwrap();
+        ws.record(side, me, 5, Op::Delete { entity: a }).unwrap();
+        let parts: Vec<BranchParts> = ws
+            .branches()
+            .map(|b| BranchParts {
+                id: b.id(),
+                name: b.name().to_string(),
+                parent: b.parent(),
+                created_by: b.created_by(),
+                created_at: b.created_at(),
+                changes: b.changes().to_vec(),
+                sync_points: b.sync_points().to_vec(),
+                checkpoints: b.recorded_checkpoints().to_vec(),
+            })
+            .collect();
+        // In the order made, not sorted.
+        let names: Vec<&str> = parts
+            .iter()
+            .find(|p| p.id == main)
+            .unwrap()
+            .checkpoints
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(names, ["zz later name", "aa"]);
+        let back = Workspace::from_parts(parts);
+        assert_eq!(back, ws);
+        assert_eq!(
+            serde_json::to_string(&back).unwrap(),
+            serde_json::to_string(&ws).unwrap()
+        );
+        assert_eq!(
+            *back.head_board(side).unwrap(),
+            *ws.head_board(side).unwrap()
+        );
     }
 
     #[test]

@@ -132,8 +132,15 @@ async fn main() -> Result<(), String> {
             let scratch = scratch
                 .or_else(|| db.parent().map(PathBuf::from))
                 .unwrap_or_else(|| PathBuf::from("."));
+            // A database of an older schema is migrated here, in place, and timed.
+            let t = std::time::Instant::now();
+            drop(SqliteStore::open(&db).map_err(|e| e.to_string())?);
+            println!(
+                "opened the database (migrating it if older) in {:?}",
+                t.elapsed()
+            );
             let open = largest_open_branch(&db)?;
-            profile_persist(&db)?;
+            profile(&db)?;
             let m = measure(&db, &web, &scratch, open, edits).await?;
             println!("{m:#?}");
         }
@@ -156,15 +163,18 @@ fn largest_open_branch(db: &std::path::Path) -> Result<Option<BranchId>, String>
         .map(|b| b.id()))
 }
 
-/// Where the time of one saved edit goes, in this process: the server clones the Workspace,
-/// records on the clone, serialises all of it and writes it in one row.
-fn profile_persist(db: &std::path::Path) -> Result<(), String> {
+/// Where the time goes, in this process: reading the Workspace from the database (what a
+/// start does), replaying `main`, and the copies the server makes of the Workspace for each
+/// edit and of a Board.
+fn profile(db: &std::path::Path) -> Result<(), String> {
     use std::time::Instant;
+    let t = Instant::now();
     let store = SqliteStore::open(db).map_err(|e| e.to_string())?;
     let ws = store
         .load_workspace()
         .map_err(|e| e.to_string())?
         .ok_or("the database holds no Workspace")?;
+    let load = t.elapsed();
     let main = ws.branch_by_name("main").ok_or("no main")?.id();
     let t = Instant::now();
     let board = ws
@@ -172,17 +182,13 @@ fn profile_persist(db: &std::path::Path) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let replay = t.elapsed();
     let t = Instant::now();
-    let copy = ws.clone();
+    let _copy = ws.clone();
     let clone = t.elapsed();
-    let t = Instant::now();
-    let json = serde_json::to_string(&copy).map_err(|e| e.to_string())?;
-    let ser = t.elapsed();
     let t = Instant::now();
     let _ = board.clone();
     let board_clone = t.elapsed();
     println!(
-        "replay main {replay:?}, clone Workspace {clone:?}, clone Board {board_clone:?}, serialise {ser:?} ({} bytes)",
-        json.len()
+        "open and read the Workspace {load:?}, replay main {replay:?}, clone Workspace {clone:?}, clone Board {board_clone:?}"
     );
     Ok(())
 }

@@ -439,7 +439,7 @@ The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale on
 
 ### 10. Updating to a new version
 
-The database format only moves forward: the server records a schema version in the file and a newer version migrates an older file in place when it starts, but an older version cannot be relied on to open a migrated file. So the backup is your way back. `systemctl stop qoop` sends SIGTERM, and the server shuts down gracefully: it finishes in-flight requests (a database write is never cut off) and exits within a few seconds.
+The database format only moves forward: the server records a schema version in the file and a newer version migrates an older file in place when it starts, but an older version cannot be relied on to open a migrated file (it refuses one). While it migrates, the server keeps a copy of the file as it was beside it (`qoop.db.v<old version>-backup`) and removes it once the migration has succeeded; if the migration fails, the file is left as it was and the copy stays. So the backup is your way back. `systemctl stop qoop` sends SIGTERM, and the server shuts down gracefully: it finishes in-flight requests (a database write is never cut off) and exits within a few seconds.
 
 ```sh
 sudo systemctl start qoop-backup.service            # 1. fresh backup (check it succeeded)

@@ -1349,6 +1349,8 @@ pub struct Measured {
     pub merge_plan: Option<Timed>,
     /// `POST …/ops` moving one Card, median of several.
     pub edit: Timed,
+    /// The 95th percentile of the same edits (the slowest but one in twenty).
+    pub edit_p95_ms: f64,
     pub edit_max_ms: f64,
     /// `export_workspace` (also what a backup does) and the file it wrote.
     pub export: Timed,
@@ -1494,6 +1496,8 @@ pub async fn measure(
     }
     times.sort_by(f64::total_cmp);
     out.edit.ms = times.get(times.len() / 2).copied().unwrap_or_default();
+    let p95 = (times.len() * 95).div_ceil(100).saturating_sub(1);
+    out.edit_p95_ms = times.get(p95).copied().unwrap_or_default();
     out.edit_max_ms = times.last().copied().unwrap_or_default();
     server.stop().await;
 
