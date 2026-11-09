@@ -109,6 +109,7 @@ async fn start(db: &Path, web: &Path, preset: Preset, name: &str) -> LocalServer
         preset,
         member_name: name.to_string(),
         port: None,
+        read_only: false,
     })
     .await
     .unwrap()
@@ -368,7 +369,7 @@ async fn every_preset_survives_a_round_trip_without_its_secrets() {
         assert_eq!(me["member"]["id"], before["members"][0]["id"]);
         assert_eq!(
             c.get("/api/workspace").await,
-            json!({ "kind": "local", "preset": preset.id() })
+            json!({ "kind": "local", "preset": preset.id(), "empty": false, "read_only": false })
         );
         assert_eq!(
             c.get("/api/local/tutorial").await,
@@ -591,9 +592,26 @@ async fn what_is_not_a_workspace_file_is_refused() {
         )
         .unwrap();
     }
+    // Since M18 its Workspace file is a Team file, which opens as a Local Workspace
+    // (docs/specs/team-move.md, decision 6; tests/team_move.rs).
     let team_file = dir.path().join("team.infall");
     export_workspace(&team_db, &team_file).unwrap();
-    assert_eq!(refuse(&team_file), Err(PortError::NotAWorkspaceFile));
+    let from_team = dir.path().join("from-team").join("workspace.db");
+    assert_eq!(
+        import_workspace(&team_file, &from_team),
+        Ok(qoop_server::local::Imported {
+            preset: Some(Preset::Blank),
+            from_team: true
+        })
+    );
+    // A Team file whose mark is gone is refused, like the database it came from.
+    let unmarked = dir.path().join("unmarked.infall");
+    std::fs::copy(&team_file, &unmarked).unwrap();
+    rusqlite::Connection::open(&unmarked)
+        .unwrap()
+        .execute_batch("PRAGMA application_id = 0")
+        .unwrap();
+    assert_eq!(refuse(&unmarked), Err(PortError::NotAWorkspaceFile));
 
     // A file that is not there.
     let missing = dir.path().join("missing.infall");
@@ -773,7 +791,7 @@ async fn opens_as_the_original(
     assert_eq!(me["member"]["id"], original["members"][0]["id"]);
     assert_eq!(
         c.get("/api/workspace").await,
-        json!({ "kind": "local", "preset": "tutorial" })
+        json!({ "kind": "local", "preset": "tutorial", "empty": false, "read_only": false })
     );
     assert_eq!(c.get("/api/tokens").await, json!({ "tokens": [] }));
     let name = c.cookie.split('=').next().unwrap();
@@ -806,7 +824,8 @@ async fn a_database_copied_by_hand_after_the_app_quit_imports_without_its_secret
     assert_eq!(
         import_workspace(&copy, &imported),
         Ok(qoop_server::local::Imported {
-            preset: Some(Preset::Tutorial)
+            preset: Some(Preset::Tutorial),
+            from_team: false,
         })
     );
     // The person's files are as they were, and nothing was put beside them.

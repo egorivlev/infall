@@ -41,7 +41,13 @@ pub struct Config {
     /// How long a Source lookup may take in all. Not read from the environment: always
     /// `LOOKUP_TIMEOUT`, except in tests.
     pub lookup_timeout: Duration,
+    /// The largest Workspace file `POST /api/workspace/import` takes, in bytes
+    /// (`QOOP_MAX_IMPORT_MB`, default 512 MiB).
+    pub max_import_bytes: u64,
 }
+
+/// `QOOP_MAX_IMPORT_MB` unless set.
+pub const DEFAULT_MAX_IMPORT_MB: u64 = 512;
 
 impl Config {
     /// Reads `QOOP_*` variables, falling back to the contract's defaults.
@@ -86,6 +92,15 @@ impl Config {
         .ok_or(
             "QOOP_ARXIV_URL must be an http:// or https:// URL without a query, fragment or credentials",
         )?;
+        let max_import_mb = match var("QOOP_MAX_IMPORT_MB") {
+            Some(raw) => raw
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .filter(|n| (1..=1024 * 1024).contains(n))
+                .ok_or("QOOP_MAX_IMPORT_MB must be a whole number of megabytes, at least 1")?,
+            None => DEFAULT_MAX_IMPORT_MB,
+        };
         Ok(Config {
             addr,
             db: PathBuf::from(var("QOOP_DB").unwrap_or_else(|| "./qoop.db".to_string())),
@@ -98,6 +113,7 @@ impl Config {
             crossref_url,
             arxiv_url,
             lookup_timeout: LOOKUP_TIMEOUT,
+            max_import_bytes: max_import_mb * 1024 * 1024,
         })
     }
 
@@ -116,6 +132,7 @@ impl Config {
             crossref_url: DEFAULT_CROSSREF_URL.to_string(),
             arxiv_url: DEFAULT_ARXIV_URL.to_string(),
             lookup_timeout: LOOKUP_TIMEOUT,
+            max_import_bytes: DEFAULT_MAX_IMPORT_MB * 1024 * 1024,
         }
     }
 

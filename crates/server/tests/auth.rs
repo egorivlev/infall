@@ -313,7 +313,7 @@ fn create_admin_enforces_password_length_and_unique_email() {
         Err(AccountError::Invalid(_))
     ));
     let m = create_admin(&store, " A@Example.org ", "A", PASSWORD, START).unwrap();
-    assert_eq!(m.email, "a@example.org");
+    assert_eq!(m.email.as_deref(), Some("a@example.org"));
     assert!(m.password_hash.starts_with("$argon2id$"));
     assert!(!m.password_hash.contains(PASSWORD));
     assert!(matches!(

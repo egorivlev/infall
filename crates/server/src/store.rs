@@ -45,8 +45,10 @@ impl Role {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberRecord {
     pub id: MemberId,
-    /// Trimmed and lowercased.
-    pub email: String,
+    /// Trimmed and lowercased. `None` for a Member who arrived as a name only, with a
+    /// Workspace file (docs/specs/team-move.md, decisions 6 and 7): they cannot sign in until
+    /// someone accepts an invite that claims them.
+    pub email: Option<String>,
     pub name: String,
     pub role: Role,
     pub color: String,
@@ -55,6 +57,14 @@ pub struct MemberRecord {
     /// Unix ms; guests only.
     pub access_until: Option<i64>,
     pub created_at: i64,
+}
+
+impl MemberRecord {
+    /// Whether someone signs in as this Member: false for a name that came with a Workspace
+    /// file and has not been claimed through an invite.
+    pub fn claimed(&self) -> bool {
+        self.email.is_some()
+    }
 }
 
 /// A stored invite. Only the SHA-256 of its token is kept.
@@ -69,6 +79,42 @@ pub struct InviteRecord {
     pub created_by: MemberId,
     pub created_at: i64,
     pub used_at: Option<i64>,
+    /// The unclaimed Member whom accepting this invite gives an email and a password,
+    /// instead of making a new one (schema version 7).
+    pub claims: Option<MemberId>,
+}
+
+/// A stored Comment (docs/specs/team-move.md, decision 9): outside versioning, one thread
+/// per Card id, kept when the Card is removed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommentRecord {
+    pub id: Uuid,
+    pub card: Uuid,
+    pub author: MemberId,
+    pub text: String,
+    /// The Members it mentions, each once, in the order given.
+    pub mentions: Vec<MemberId>,
+    pub created_at: i64,
+    pub edited_at: Option<i64>,
+}
+
+/// One entry of a Member's For you list: a Comment that mentions them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForYouRecord {
+    pub comment: Uuid,
+    pub card: Uuid,
+    pub author: MemberId,
+    /// When they were mentioned: the Comment's creation, or the edit that added them.
+    pub at: i64,
+    pub seen: bool,
+}
+
+/// What `Store::import_prepared` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportOutcome {
+    Done,
+    /// The Workspace is not empty (docs/specs/team-move.md, decision 1); nothing changed.
+    NotEmpty,
 }
 
 impl InviteRecord {
@@ -374,12 +420,92 @@ pub trait Store: Send + Sync + 'static {
     fn setting(&self, name: &str) -> StoreResult<Option<String>>;
     /// Stores or replaces such a value.
     fn set_setting(&self, name: &str, value: &str) -> StoreResult<()>;
+    /// Forgets such a value; nothing happens if it was never set.
+    fn remove_setting(&self, _name: &str) -> StoreResult<()> {
+        Err(unsupported())
+    }
+
+    // ------------------------------------------------------------ Comments (schema 7)
+
+    /// The thread of `card`: whether it is resolved, and its Comments, oldest first.
+    fn comments(&self, _card: Uuid) -> StoreResult<(bool, Vec<CommentRecord>)> {
+        Err(unsupported())
+    }
+    fn comment(&self, _id: Uuid) -> StoreResult<Option<CommentRecord>> {
+        Err(unsupported())
+    }
+    /// Stores a new Comment, and an unseen For you entry (at its creation time) for each of
+    /// `notify`; each of their lists is then cut to its newest `keep`.
+    fn insert_comment(
+        &self,
+        _comment: &CommentRecord,
+        _notify: &[MemberId],
+        _keep: usize,
+    ) -> StoreResult<()> {
+        Err(unsupported())
+    }
+    /// Replaces a Comment's text, mentions and `edited_at`, and gives each of `notify` an
+    /// unseen For you entry at `edited_at`; false, and nothing stored, if there is none.
+    fn update_comment(
+        &self,
+        _comment: &CommentRecord,
+        _notify: &[MemberId],
+        _keep: usize,
+    ) -> StoreResult<bool> {
+        Err(unsupported())
+    }
+    /// Deletes a Comment and the For you entries that point at it; returns the Members who
+    /// had one, or `None` if there was no such Comment.
+    fn delete_comment(&self, _id: Uuid) -> StoreResult<Option<Vec<MemberId>>> {
+        Err(unsupported())
+    }
+    fn set_thread_resolved(
+        &self,
+        _card: Uuid,
+        _resolved: bool,
+        _by: MemberId,
+        _at: i64,
+    ) -> StoreResult<()> {
+        Err(unsupported())
+    }
+    /// Every Card with at least one Comment: how many, and whether its thread is resolved.
+    fn comment_counts(&self) -> StoreResult<Vec<(Uuid, usize, bool)>> {
+        Err(unsupported())
+    }
+    /// How many Comments there are in all.
+    fn comment_total(&self) -> StoreResult<usize> {
+        Err(unsupported())
+    }
+    /// The Member's For you list, newest first.
+    fn for_you(&self, _member: MemberId) -> StoreResult<Vec<ForYouRecord>> {
+        Err(unsupported())
+    }
+    /// Marks seen the Member's entry for `up_to` and every older one; false if they have no
+    /// entry for that Comment.
+    fn mark_for_you_seen(&self, _member: MemberId, _up_to: Uuid) -> StoreResult<bool> {
+        Err(unsupported())
+    }
+
+    // ------------------------------------------------------------ Workspace files (M18)
+
+    /// Brings in a Workspace file prepared for this Workspace (`local::port::prepare_for_team`)
+    /// in one transaction, if the Workspace is empty (docs/specs/team-move.md, decision 1):
+    /// its Research Content, To-dos, Suggestions, Comments and For you lists replace what is
+    /// here, and its Members are added beside the ones that are here. On any failure nothing
+    /// changes.
+    fn import_prepared(&self, _file: &Path) -> StoreResult<ImportOutcome> {
+        Err(unsupported())
+    }
+}
+
+fn unsupported() -> StoreError {
+    StoreError::Backend("this store does not support that".to_string())
 }
 
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -492,6 +618,59 @@ CREATE TABLE settings (
 );
 ";
 
+/// M18 (docs/specs/team-move.md): Members who are names only (no email: `members` is made
+/// again with `email` allowed to be null, the documented way, which `migrate` runs with
+/// foreign keys off), invites that claim one, and Comments with their threads and the For
+/// you lists, beside the content tables and outside versioning like To-dos.
+const SCHEMA_V7: &str = "
+CREATE TABLE members_v7 (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    color TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    access_until INTEGER,
+    created_at INTEGER NOT NULL
+);
+INSERT INTO members_v7 (id, email, name, role, color, password_hash, access_until, created_at)
+    SELECT id, email, name, role, color, password_hash, access_until, created_at FROM members;
+DROP TABLE members;
+ALTER TABLE members_v7 RENAME TO members;
+ALTER TABLE invites ADD COLUMN claims TEXT;
+CREATE TABLE comments (
+    id TEXT PRIMARY KEY,
+    card TEXT NOT NULL,
+    author TEXT NOT NULL,
+    text TEXT NOT NULL,
+    mentions TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER
+);
+CREATE INDEX comments_card ON comments(card, created_at);
+CREATE TABLE comment_threads (
+    card TEXT PRIMARY KEY,
+    resolved INTEGER NOT NULL,
+    resolved_by TEXT,
+    resolved_at INTEGER
+);
+CREATE TABLE for_you (
+    member TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    comment TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+    card TEXT NOT NULL,
+    author TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    seen INTEGER NOT NULL,
+    PRIMARY KEY (member, comment)
+);
+CREATE INDEX for_you_member ON for_you(member, at);
+";
+
+/// The setting that changes whenever a Workspace file replaces the Research Content
+/// (`import_prepared`). A server that read the Workspace before such a change refuses to
+/// write it over the new one (see `SqliteStore::check_epoch`).
+pub const CONTENT_EPOCH_SETTING: &str = "content_epoch";
+
 /// One step of `MIGRATIONS`.
 enum Step {
     Sql(&'static str),
@@ -511,11 +690,15 @@ const MIGRATIONS: &[Step] = &[
     // Version 6: Research Content in tables (`store/content.rs`); the `workspace` row of
     // versions 1–5 is read into them and dropped.
     Step::Code(content::from_json_row),
+    // Version 7: M18.
+    Step::Sql(SCHEMA_V7),
 ];
 
 /// The SQLite store: one connection behind a mutex.
 pub struct SqliteStore {
     conn: Mutex<Connection>,
+    /// `CONTENT_EPOCH_SETTING` as it was when the Workspace was last read.
+    epoch: Mutex<Option<String>>,
 }
 
 impl SqliteStore {
@@ -550,6 +733,7 @@ impl SqliteStore {
         migrate(&mut conn, file)?;
         Ok(SqliteStore {
             conn: Mutex::new(conn),
+            epoch: Mutex::new(None),
         })
     }
 
@@ -558,6 +742,41 @@ impl SqliteStore {
             .lock()
             .map_err(|_| StoreError::Backend("database lock poisoned".to_string()))
     }
+
+    fn epoch(&self) -> StoreResult<MutexGuard<'_, Option<String>>> {
+        self.epoch
+            .lock()
+            .map_err(|_| StoreError::Backend("epoch lock poisoned".to_string()))
+    }
+
+    /// Refuses to write the Workspace when the Research Content was replaced since it was
+    /// read: by `qoop-server import-workspace` run while this server was running. Writing
+    /// then would put the old Workspace over the one brought in.
+    fn check_epoch(&self, conn: &Connection) -> StoreResult<()> {
+        let now = setting_on(conn, CONTENT_EPOCH_SETTING)?;
+        if *self.epoch()? != now {
+            return Err(StoreError::Backend(
+                "the Workspace was replaced from the command line (import-workspace) while this server was running; restart the server to see it".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn setting_on(conn: &Connection, name: &str) -> StoreResult<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM settings WHERE name = ?1",
+            params![name],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// Brings an open database file (a private scratch copy: no safety copy is made) up to
+/// `SCHEMA_VERSION`; for Workspace files of older versions (`local::port`).
+pub(crate) fn upgrade(conn: &mut Connection) -> StoreResult<()> {
+    migrate(conn, None)
 }
 
 /// Keeping the database file to its owner (unix).
@@ -660,17 +879,39 @@ fn migrate(conn: &mut Connection, file: Option<&Path>) -> StoreResult<()> {
         )),
         None => e,
     };
-    let tx = conn.transaction()?;
-    for step in MIGRATIONS.iter().skip(current.max(0) as usize) {
-        match step {
-            Step::Sql(sql) => tx.execute_batch(sql).map_err(|e| kept(e.into()))?,
-            Step::Code(run) => run(&tx).map_err(kept)?,
+    // Foreign keys are off while the steps run (a pragma that does nothing inside a
+    // transaction, so it is set around it), so that a step may make a table again — create
+    // the new one, copy, drop the old, rename — without the drop deleting the rows that refer
+    // to it; they are checked before the commit, and switched back on whatever happens.
+    let fk_on: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+    let steps = (|| -> StoreResult<()> {
+        let tx = conn.transaction()?;
+        for step in MIGRATIONS.iter().skip(current.max(0) as usize) {
+            match step {
+                Step::Sql(sql) => tx.execute_batch(sql).map_err(|e| kept(e.into()))?,
+                Step::Code(run) => run(&tx).map_err(kept)?,
+            }
         }
+        let broken: Option<String> = tx
+            .query_row("PRAGMA foreign_key_check", [], |r| r.get(0))
+            .optional()
+            .map_err(|e| kept(e.into()))?;
+        if let Some(table) = broken {
+            return Err(kept(StoreError::Backend(format!(
+                "rows of {table} refer to rows that are not there"
+            ))));
+        }
+        // PRAGMA cannot take bound parameters; the value is our own integer.
+        tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+            .map_err(|e| kept(e.into()))?;
+        tx.commit().map_err(|e| kept(e.into()))?;
+        Ok(())
+    })();
+    if fk_on != 0 {
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     }
-    // PRAGMA cannot take bound parameters; the value is our own integer.
-    tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
-        .map_err(|e| kept(e.into()))?;
-    tx.commit().map_err(|e| kept(e.into()))?;
+    steps?;
     if let Some(copy) = copy {
         // The pages the old layout used are given back (from before version 6: the whole
         // Workspace as one row). Only space: the file is complete without it.
@@ -773,8 +1014,8 @@ fn member_row(r: &Row<'_>) -> rusqlite::Result<MemberRecord> {
     })
 }
 
-const INVITE_COLS: &str =
-    "id, token_hash, email, role, access_until, expires_at, created_by, created_at, used_at";
+const INVITE_COLS: &str = "id, token_hash, email, role, access_until, expires_at, created_by, \
+     created_at, used_at, claims";
 
 fn invite_row(r: &Row<'_>) -> rusqlite::Result<InviteRecord> {
     Ok(InviteRecord {
@@ -787,7 +1028,68 @@ fn invite_row(r: &Row<'_>) -> rusqlite::Result<InviteRecord> {
         created_by: MemberId(parse_uuid(&r.get::<_, String>(6)?)?),
         created_at: r.get(7)?,
         used_at: r.get(8)?,
+        claims: opt_uuid(r.get(9)?)?.map(MemberId),
     })
+}
+
+const COMMENT_COLS: &str = "id, card, author, text, mentions, created_at, edited_at";
+
+fn comment_row(r: &Row<'_>) -> rusqlite::Result<CommentRecord> {
+    let mentions: String = r.get(4)?;
+    let mentions: Vec<MemberId> = serde_json::from_str(&mentions).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    Ok(CommentRecord {
+        id: parse_uuid(&r.get::<_, String>(0)?)?,
+        card: parse_uuid(&r.get::<_, String>(1)?)?,
+        author: MemberId(parse_uuid(&r.get::<_, String>(2)?)?),
+        text: r.get(3)?,
+        mentions,
+        created_at: r.get(5)?,
+        edited_at: r.get(6)?,
+    })
+}
+
+fn for_you_row(r: &Row<'_>) -> rusqlite::Result<ForYouRecord> {
+    Ok(ForYouRecord {
+        comment: parse_uuid(&r.get::<_, String>(0)?)?,
+        card: parse_uuid(&r.get::<_, String>(1)?)?,
+        author: MemberId(parse_uuid(&r.get::<_, String>(2)?)?),
+        at: r.get(3)?,
+        seen: r.get(4)?,
+    })
+}
+
+/// Unseen For you entries for `notify` about `comment`, at `at`; each list then cut to `keep`.
+fn notify_on(
+    conn: &Connection,
+    comment: &CommentRecord,
+    notify: &[MemberId],
+    at: i64,
+    keep: usize,
+) -> StoreResult<()> {
+    for m in notify {
+        let member = m.0.to_string();
+        conn.execute(
+            "INSERT INTO for_you (member, comment, card, author, at, seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0)
+             ON CONFLICT(member, comment) DO UPDATE SET at = excluded.at, seen = 0",
+            params![
+                member,
+                comment.id.to_string(),
+                comment.card.to_string(),
+                comment.author.0.to_string(),
+                at
+            ],
+        )?;
+        conn.execute(
+            "DELETE FROM for_you WHERE member = ?1 AND rowid NOT IN (
+                 SELECT rowid FROM for_you WHERE member = ?1
+                 ORDER BY at DESC, comment DESC LIMIT ?2)",
+            params![member, keep as i64],
+        )?;
+    }
+    Ok(())
 }
 
 const TODO_COLS: &str =
@@ -916,6 +1218,169 @@ fn save_workspace_on(conn: &Connection, ws: &Workspace) -> StoreResult<()> {
     content::save(conn, ws)
 }
 
+/// For tables that refer to Members by id, the ones a Member may be found in once a
+/// Workspace file comes in (`local::port`): every column holding a Member id, and the text
+/// columns where one is written inside (a Change's op, as `ai_pinned_by` or a Run result's
+/// `by`; a Comment's mentions).
+pub(crate) const MEMBER_ID_COLUMNS: &[(&str, &str)] = &[
+    ("members", "id"),
+    ("branches", "created_by"),
+    ("changes", "author"),
+    ("checkpoints", "author"),
+    ("todos", "owner"),
+    ("todos", "created_by"),
+    ("suggestions", "created_by"),
+    ("suggestions", "decided_by"),
+    ("comments", "author"),
+    ("comment_threads", "resolved_by"),
+    ("for_you", "member"),
+    ("for_you", "author"),
+];
+pub(crate) const MEMBER_ID_IN_TEXT: &[(&str, &str)] =
+    &[("changes", "op"), ("comments", "mentions")];
+/// Every column holding a Branch id.
+pub(crate) const BRANCH_ID_COLUMNS: &[(&str, &str)] = &[
+    ("branches", "id"),
+    ("branches", "parent_branch"),
+    ("changes", "branch"),
+    ("changes", "source_branch"),
+    ("checkpoints", "branch"),
+    ("sync_points", "branch"),
+    ("sync_points", "base_branch"),
+    ("sync_points", "landed_branch"),
+    ("todos", "card_branch"),
+    ("suggestions", "branch"),
+];
+
+/// Replaces the id `from` by `to` in `columns` (and inside the text of `in_text`), in the
+/// database `conn` has open as `main`. Ids are uuids, so a plain replacement of the text
+/// finds exactly that id. Foreign keys must be off.
+pub(crate) fn rename_id(
+    conn: &Connection,
+    columns: &[(&str, &str)],
+    in_text: &[(&str, &str)],
+    from: &str,
+    to: &str,
+) -> StoreResult<()> {
+    for (table, col) in columns {
+        conn.execute(
+            &format!("UPDATE {table} SET {col} = ?2 WHERE {col} = ?1"),
+            params![from, to],
+        )?;
+    }
+    for (table, col) in in_text {
+        conn.execute(
+            &format!(
+                "UPDATE {table} SET {col} = replace({col}, ?1, ?2) WHERE instr({col}, ?1) > 0"
+            ),
+            params![from, to],
+        )?;
+    }
+    Ok(())
+}
+
+/// The columns `import_prepared` copies, table by table, in an order foreign keys accept.
+const IMPORTED_TABLES: &[(&str, &str)] = &[
+    (
+        "branches",
+        "id, name, parent_branch, parent_seq, created_by, created_at",
+    ),
+    (
+        "changes",
+        "branch, seq, id, author, at, op, origin, batch, to_seq, source_branch, source_seq",
+    ),
+    ("checkpoints", "branch, ord, name, seq, author, at"),
+    (
+        "sync_points",
+        "branch, ord, base_branch, base_seq, landed_branch, landed_seq",
+    ),
+    ("todos", TODO_COLS),
+    ("suggestions", SUGGESTION_COLS),
+    ("comments", COMMENT_COLS),
+    (
+        "comment_threads",
+        "card, resolved, resolved_by, resolved_at",
+    ),
+];
+
+/// See `Store::import_prepared`. `file` is at this schema version, and its Members, ids and
+/// Branch ids are already what they will be here.
+fn import_prepared_on(conn: &mut Connection, file: &Path) -> StoreResult<ImportOutcome> {
+    let path = file
+        .to_str()
+        .ok_or_else(|| StoreError::Backend("the file's path cannot be used".to_string()))?;
+    conn.execute("ATTACH DATABASE ?1 AS incoming", params![path])?;
+    let result = (|| -> StoreResult<ImportOutcome> {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let count = |sql: &str| -> StoreResult<i64> { Ok(tx.query_row(sql, [], |r| r.get(0))?) };
+        let branches: Vec<(String, String)> = {
+            let mut stmt = tx.prepare("SELECT id, name FROM main.branches")?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?
+        };
+        let incoming_main: Option<String> = tx
+            .query_row(
+                "SELECT id FROM incoming.branches WHERE parent_branch IS NULL AND name = 'main'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let empty = match branches.as_slice() {
+            [] => true,
+            [(id, name)] => name == "main" && incoming_main.as_deref() == Some(id.as_str()),
+            _ => false,
+        } && count("SELECT COUNT(*) FROM main.changes")? == 0
+            && count("SELECT COUNT(*) FROM main.checkpoints")? == 0
+            && count("SELECT COUNT(*) FROM main.todos")? == 0
+            && count("SELECT COUNT(*) FROM main.comments")? == 0;
+        if !empty {
+            return Ok(ImportOutcome::NotEmpty);
+        }
+        for table in [
+            "for_you",
+            "comment_threads",
+            "comments",
+            "suggestions",
+            "sync_points",
+            "checkpoints",
+            "changes",
+            "branches",
+        ] {
+            tx.execute(&format!("DELETE FROM main.{table}"), [])?;
+        }
+        tx.execute(
+            &format!(
+                "INSERT INTO main.members ({MEMBER_COLS}) SELECT {MEMBER_COLS} FROM incoming.members
+                 WHERE id NOT IN (SELECT id FROM main.members)"
+            ),
+            [],
+        )?;
+        for (table, cols) in IMPORTED_TABLES {
+            tx.execute(
+                &format!("INSERT INTO main.{table} ({cols}) SELECT {cols} FROM incoming.{table}"),
+                [],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO main.for_you (member, comment, card, author, at, seen)
+             SELECT member, comment, card, author, at, seen FROM incoming.for_you
+             WHERE member IN (SELECT id FROM main.members)",
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO main.settings (name, value) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+            params![CONTENT_EPOCH_SETTING, Uuid::new_v4().to_string()],
+        )?;
+        tx.commit()?;
+        Ok(ImportOutcome::Done)
+    })();
+    let detached = conn.execute("DETACH DATABASE incoming", []);
+    let outcome = result?;
+    detached?;
+    Ok(outcome)
+}
+
 fn member_exists_on(conn: &Connection, id: &str) -> StoreResult<bool> {
     let n: i64 = conn.query_row(
         "SELECT COUNT(*) FROM members WHERE id = ?1",
@@ -959,19 +1424,238 @@ fn insert_member_on(conn: &Connection, m: &MemberRecord) -> StoreResult<()> {
     Ok(())
 }
 
+/// Gives an unclaimed Member (no email) the email, name, role, password and access of
+/// `m`: `InviteGone` if they are claimed or gone, `EmailTaken` if the email is in use.
+fn claim_member_on(conn: &Connection, m: &MemberRecord) -> StoreResult<()> {
+    let n = conn
+        .execute(
+            "UPDATE members SET email = ?2, name = ?3, role = ?4, password_hash = ?5,
+                 access_until = ?6
+             WHERE id = ?1 AND email IS NULL",
+            params![
+                m.id.0.to_string(),
+                m.email,
+                m.name,
+                m.role.as_str(),
+                m.password_hash,
+                m.access_until
+            ],
+        )
+        .map_err(|e| {
+            if is_unique_violation(&e) {
+                StoreError::EmailTaken
+            } else {
+                e.into()
+            }
+        })?;
+    if n == 0 {
+        return Err(StoreError::InviteGone);
+    }
+    Ok(())
+}
+
 impl Store for SqliteStore {
+    fn remove_setting(&self, name: &str) -> StoreResult<()> {
+        self.conn()?
+            .execute("DELETE FROM settings WHERE name = ?1", params![name])?;
+        Ok(())
+    }
+
+    fn comments(&self, card: Uuid) -> StoreResult<(bool, Vec<CommentRecord>)> {
+        let conn = self.conn()?;
+        let card = card.to_string();
+        let resolved: Option<bool> = conn
+            .query_row(
+                "SELECT resolved FROM comment_threads WHERE card = ?1",
+                params![card],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let sql =
+            format!("SELECT {COMMENT_COLS} FROM comments WHERE card = ?1 ORDER BY created_at, id");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![card], comment_row)?;
+        Ok((
+            resolved.unwrap_or(false),
+            rows.collect::<rusqlite::Result<Vec<_>>>()?,
+        ))
+    }
+
+    fn comment(&self, id: Uuid) -> StoreResult<Option<CommentRecord>> {
+        let sql = format!("SELECT {COMMENT_COLS} FROM comments WHERE id = ?1");
+        Ok(self
+            .conn()?
+            .query_row(&sql, params![id.to_string()], comment_row)
+            .optional()?)
+    }
+
+    fn insert_comment(
+        &self,
+        c: &CommentRecord,
+        notify: &[MemberId],
+        keep: usize,
+    ) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let sql =
+            format!("INSERT INTO comments ({COMMENT_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)");
+        tx.execute(
+            &sql,
+            params![
+                c.id.to_string(),
+                c.card.to_string(),
+                c.author.0.to_string(),
+                c.text,
+                serde_json::to_string(&c.mentions)?,
+                c.created_at,
+                c.edited_at
+            ],
+        )?;
+        notify_on(&tx, c, notify, c.created_at, keep)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn update_comment(
+        &self,
+        c: &CommentRecord,
+        notify: &[MemberId],
+        keep: usize,
+    ) -> StoreResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let n = tx.execute(
+            "UPDATE comments SET text = ?2, mentions = ?3, edited_at = ?4 WHERE id = ?1",
+            params![
+                c.id.to_string(),
+                c.text,
+                serde_json::to_string(&c.mentions)?,
+                c.edited_at
+            ],
+        )?;
+        if n == 0 {
+            return Ok(false);
+        }
+        notify_on(&tx, c, notify, c.edited_at.unwrap_or(c.created_at), keep)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    fn delete_comment(&self, id: Uuid) -> StoreResult<Option<Vec<MemberId>>> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let id = id.to_string();
+        let had: Vec<String> = {
+            let mut stmt = tx.prepare("SELECT member FROM for_you WHERE comment = ?1")?;
+            stmt.query_map(params![id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?
+        };
+        tx.execute("DELETE FROM for_you WHERE comment = ?1", params![id])?;
+        let n = tx.execute("DELETE FROM comments WHERE id = ?1", params![id])?;
+        if n == 0 {
+            return Ok(None);
+        }
+        tx.commit()?;
+        let had = had
+            .iter()
+            .map(|m| parse_uuid(m).map(MemberId))
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(Some(had))
+    }
+
+    fn set_thread_resolved(
+        &self,
+        card: Uuid,
+        resolved: bool,
+        by: MemberId,
+        at: i64,
+    ) -> StoreResult<()> {
+        self.conn()?.execute(
+            "INSERT INTO comment_threads (card, resolved, resolved_by, resolved_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(card) DO UPDATE SET resolved = excluded.resolved,
+                 resolved_by = excluded.resolved_by, resolved_at = excluded.resolved_at",
+            params![card.to_string(), resolved, by.0.to_string(), at],
+        )?;
+        Ok(())
+    }
+
+    fn comment_counts(&self) -> StoreResult<Vec<(Uuid, usize, bool)>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT c.card, COUNT(*), COALESCE(t.resolved, 0) FROM comments c
+             LEFT JOIN comment_threads t ON t.card = c.card
+             GROUP BY c.card ORDER BY c.card",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                parse_uuid(&r.get::<_, String>(0)?)?,
+                usize::try_from(r.get::<_, i64>(1)?).unwrap_or(0),
+                r.get::<_, bool>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn comment_total(&self) -> StoreResult<usize> {
+        let n: i64 = self
+            .conn()?
+            .query_row("SELECT COUNT(*) FROM comments", [], |r| r.get(0))?;
+        Ok(usize::try_from(n).unwrap_or(0))
+    }
+
+    fn for_you(&self, member: MemberId) -> StoreResult<Vec<ForYouRecord>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT comment, card, author, at, seen FROM for_you WHERE member = ?1
+             ORDER BY at DESC, comment DESC",
+        )?;
+        let rows = stmt.query_map(params![member.0.to_string()], for_you_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn mark_for_you_seen(&self, member: MemberId, up_to: Uuid) -> StoreResult<bool> {
+        let conn = self.conn()?;
+        let member = member.0.to_string();
+        let up_to = up_to.to_string();
+        let at: Option<i64> = conn
+            .query_row(
+                "SELECT at FROM for_you WHERE member = ?1 AND comment = ?2",
+                params![member, up_to],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(at) = at else {
+            return Ok(false);
+        };
+        conn.execute(
+            "UPDATE for_you SET seen = 1
+             WHERE member = ?1 AND (at < ?2 OR (at = ?2 AND comment <= ?3))",
+            params![member, at, up_to],
+        )?;
+        Ok(true)
+    }
+
+    fn import_prepared(&self, file: &Path) -> StoreResult<ImportOutcome> {
+        let mut conn = self.conn()?;
+        import_prepared_on(&mut conn, file)
+    }
+
     fn load_workspace(&self) -> StoreResult<Option<Workspace>> {
         let conn = self.conn()?;
         // One read transaction, so the tables are read as of one moment.
         conn.execute_batch("BEGIN")?;
         let ws = content::load(&conn);
+        let epoch = setting_on(&conn, CONTENT_EPOCH_SETTING);
         conn.execute_batch("COMMIT")?;
+        *self.epoch()? = epoch?;
         ws
     }
 
     fn save_workspace(&self, ws: &Workspace) -> StoreResult<()> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
+        self.check_epoch(&tx)?;
         save_workspace_on(&tx, ws)?;
         tx.commit()?;
         Ok(())
@@ -1023,6 +1707,7 @@ impl Store for SqliteStore {
         )?;
         tx.execute("DELETE FROM todos WHERE owner = ?1", params![id])?;
         tx.execute("DELETE FROM ai_settings WHERE member_id = ?1", params![id])?;
+        tx.execute("DELETE FROM for_you WHERE member = ?1", params![id])?;
         let n = tx.execute("DELETE FROM members WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(n > 0)
@@ -1098,7 +1783,7 @@ impl Store for SqliteStore {
 
     fn insert_invite(&self, i: &InviteRecord) -> StoreResult<()> {
         let sql = format!(
-            "INSERT INTO invites ({INVITE_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+            "INSERT INTO invites ({INVITE_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         );
         self.conn()?.execute(
             &sql,
@@ -1111,7 +1796,8 @@ impl Store for SqliteStore {
                 i.expires_at,
                 i.created_by.0.to_string(),
                 i.created_at,
-                i.used_at
+                i.used_at,
+                i.claims.map(|m| m.0.to_string()),
             ],
         )?;
         Ok(())
@@ -1155,7 +1841,16 @@ impl Store for SqliteStore {
         if used == 0 {
             return Err(StoreError::InviteGone);
         }
-        insert_member_on(&tx, member)?;
+        let claims: Option<String> = tx.query_row(
+            "SELECT claims FROM invites WHERE id = ?1",
+            params![invite.to_string()],
+            |r| r.get(0),
+        )?;
+        if claims.is_some_and(|c| c == member.id.0.to_string()) {
+            claim_member_on(&tx, member)?;
+        } else {
+            insert_member_on(&tx, member)?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -1417,6 +2112,7 @@ impl Store for SqliteStore {
         if !accepted {
             return Ok(false);
         }
+        self.check_epoch(&tx)?;
         save_workspace_on(&tx, ws)?;
         tx.commit()?;
         Ok(true)
@@ -1543,6 +2239,9 @@ struct Memory {
     suggestions: Vec<SuggestionRecord>,
     ai: HashMap<MemberId, AiSettingsRecord>,
     settings: HashMap<String, String>,
+    comments: Vec<CommentRecord>,
+    resolved: HashMap<Uuid, bool>,
+    for_you: HashMap<MemberId, Vec<ForYouRecord>>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -1565,11 +2264,27 @@ impl MemoryStore {
 
 impl Memory {
     fn insert_member(&mut self, m: &MemberRecord) -> StoreResult<()> {
-        if self.members.iter().any(|x| x.email == m.email) {
+        if m.email.is_some() && self.members.iter().any(|x| x.email == m.email) {
             return Err(StoreError::EmailTaken);
         }
         self.members.push(m.clone());
         Ok(())
+    }
+
+    fn notify(&mut self, c: &CommentRecord, notify: &[MemberId], at: i64, keep: usize) {
+        for m in notify {
+            let list = self.for_you.entry(*m).or_default();
+            list.retain(|e| e.comment != c.id);
+            list.push(ForYouRecord {
+                comment: c.id,
+                card: c.card,
+                author: c.author,
+                at,
+                seen: false,
+            });
+            list.sort_by_key(|e| std::cmp::Reverse((e.at, e.comment.to_string())));
+            list.truncate(keep);
+        }
     }
 
     fn decide_suggestion(
@@ -1618,7 +2333,7 @@ impl Store for MemoryStore {
             .lock()?
             .members
             .iter()
-            .find(|m| m.email == email)
+            .find(|m| m.email.as_deref() == Some(email))
             .cloned())
     }
 
@@ -1636,6 +2351,7 @@ impl Store for MemoryStore {
         m.tokens.retain(|t| t.member != id);
         m.todos.retain(|t| t.owner != id);
         m.ai.remove(&id);
+        m.for_you.remove(&id);
         let before = m.members.len();
         m.members.retain(|x| x.id != id);
         Ok(m.members.len() < before)
@@ -1734,7 +2450,26 @@ impl Store for MemoryStore {
             .iter()
             .position(|i| i.id == invite && i.is_pending(now))
             .ok_or(StoreError::InviteGone)?;
-        m.insert_member(member)?;
+        if m.invites[pos].claims == Some(member.id) {
+            if m.members
+                .iter()
+                .any(|x| x.id != member.id && x.email == member.email)
+            {
+                return Err(StoreError::EmailTaken);
+            }
+            let slot = m
+                .members
+                .iter_mut()
+                .find(|x| x.id == member.id && x.email.is_none())
+                .ok_or(StoreError::InviteGone)?;
+            *slot = MemberRecord {
+                color: slot.color.clone(),
+                created_at: slot.created_at,
+                ..member.clone()
+            };
+        } else {
+            m.insert_member(member)?;
+        }
         if let Some(i) = m.invites.get_mut(pos) {
             i.used_at = Some(now);
         }
@@ -1934,5 +2669,125 @@ impl Store for MemoryStore {
             .settings
             .insert(name.to_string(), value.to_string());
         Ok(())
+    }
+
+    fn remove_setting(&self, name: &str) -> StoreResult<()> {
+        self.lock()?.settings.remove(name);
+        Ok(())
+    }
+
+    fn comments(&self, card: Uuid) -> StoreResult<(bool, Vec<CommentRecord>)> {
+        let m = self.lock()?;
+        let mut list: Vec<CommentRecord> = m
+            .comments
+            .iter()
+            .filter(|c| c.card == card)
+            .cloned()
+            .collect();
+        list.sort_by_key(|c| (c.created_at, c.id.to_string()));
+        Ok((m.resolved.get(&card).copied().unwrap_or(false), list))
+    }
+
+    fn comment(&self, id: Uuid) -> StoreResult<Option<CommentRecord>> {
+        Ok(self.lock()?.comments.iter().find(|c| c.id == id).cloned())
+    }
+
+    fn insert_comment(
+        &self,
+        comment: &CommentRecord,
+        notify: &[MemberId],
+        keep: usize,
+    ) -> StoreResult<()> {
+        let mut m = self.lock()?;
+        m.comments.push(comment.clone());
+        m.notify(comment, notify, comment.created_at, keep);
+        Ok(())
+    }
+
+    fn update_comment(
+        &self,
+        comment: &CommentRecord,
+        notify: &[MemberId],
+        keep: usize,
+    ) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let Some(c) = m.comments.iter_mut().find(|c| c.id == comment.id) else {
+            return Ok(false);
+        };
+        c.text = comment.text.clone();
+        c.mentions = comment.mentions.clone();
+        c.edited_at = comment.edited_at;
+        let at = comment.edited_at.unwrap_or(comment.created_at);
+        m.notify(comment, notify, at, keep);
+        Ok(true)
+    }
+
+    fn delete_comment(&self, id: Uuid) -> StoreResult<Option<Vec<MemberId>>> {
+        let mut m = self.lock()?;
+        let before = m.comments.len();
+        m.comments.retain(|c| c.id != id);
+        if m.comments.len() == before {
+            return Ok(None);
+        }
+        let mut had = Vec::new();
+        for (member, list) in m.for_you.iter_mut() {
+            let n = list.len();
+            list.retain(|e| e.comment != id);
+            if list.len() < n {
+                had.push(*member);
+            }
+        }
+        Ok(Some(had))
+    }
+
+    fn set_thread_resolved(
+        &self,
+        card: Uuid,
+        resolved: bool,
+        _by: MemberId,
+        _at: i64,
+    ) -> StoreResult<()> {
+        self.lock()?.resolved.insert(card, resolved);
+        Ok(())
+    }
+
+    fn comment_counts(&self) -> StoreResult<Vec<(Uuid, usize, bool)>> {
+        let m = self.lock()?;
+        let mut counts: std::collections::BTreeMap<Uuid, usize> = Default::default();
+        for c in &m.comments {
+            *counts.entry(c.card).or_default() += 1;
+        }
+        Ok(counts
+            .into_iter()
+            .map(|(card, n)| (card, n, m.resolved.get(&card).copied().unwrap_or(false)))
+            .collect())
+    }
+
+    fn comment_total(&self) -> StoreResult<usize> {
+        Ok(self.lock()?.comments.len())
+    }
+
+    fn for_you(&self, member: MemberId) -> StoreResult<Vec<ForYouRecord>> {
+        Ok(self
+            .lock()?
+            .for_you
+            .get(&member)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn mark_for_you_seen(&self, member: MemberId, up_to: Uuid) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        let Some(list) = m.for_you.get_mut(&member) else {
+            return Ok(false);
+        };
+        let Some(pos) = list.iter().position(|e| e.comment == up_to) else {
+            return Ok(false);
+        };
+        // Newest first: the entry and everything after it are as old or older.
+        for e in &mut list[pos..] {
+            e.seen = true;
+        }
+        Ok(true)
     }
 }

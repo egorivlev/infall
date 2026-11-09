@@ -8,6 +8,7 @@ pub mod app;
 pub mod auth;
 pub mod boards;
 pub mod chat;
+pub mod comments;
 pub mod config;
 pub mod error;
 pub mod graph;
@@ -26,6 +27,7 @@ pub mod suggestions;
 pub mod todos;
 pub mod tokens;
 pub mod tools;
+pub mod transfer;
 
 use std::future::{Future, IntoFuture};
 use std::sync::Arc;
@@ -212,7 +214,15 @@ pub fn create_admin(
         return Err(AccountError::EmailTaken(email));
     }
     let phc = hash_password(password).map_err(AccountError::Store)?;
-    let m = new_member(store, email.clone(), name, Role::Admin, None, phc, now)?;
+    let m = new_member(
+        store,
+        Some(email.clone()),
+        name,
+        Role::Admin,
+        None,
+        phc,
+        now,
+    )?;
     match store.insert_member(&m) {
         Ok(()) => Ok(m),
         Err(StoreError::EmailTaken) => Err(AccountError::EmailTaken(email)),

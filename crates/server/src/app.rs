@@ -25,8 +25,8 @@ use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
 use crate::tokens::RateLimit;
 use crate::{
-    Clock, boards, chat, graph, history, local, mcp, merges, people, sources, suggestions, todos,
-    tokens,
+    Clock, boards, chat, comments, graph, history, local, mcp, merges, people, sources,
+    suggestions, todos, tokens, transfer,
 };
 
 /// Request bodies over this are refused.
@@ -159,7 +159,28 @@ pub fn router(st: Shared) -> Router {
         .route("/ai/chat", post(chat::chat))
         .route("/sources/lookup", post(sources::lookup))
         .route("/ws", get(live::ws_handler))
-        .route("/workspace", get(local::get_workspace));
+        .route("/workspace", get(local::get_workspace))
+        // A Workspace file streams in under its own limit (`QOOP_MAX_IMPORT_MB`).
+        .route(
+            "/workspace/import",
+            post(transfer::import).layer(DefaultBodyLimit::disable()),
+        )
+        .route("/workspace/export", get(transfer::export))
+        .route(
+            "/cards/{card}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route(
+            "/cards/{card}/comments/resolved",
+            put(comments::set_resolved),
+        )
+        .route("/comments/counts", get(comments::counts))
+        .route(
+            "/comments/{id}",
+            patch(comments::edit).delete(comments::delete),
+        )
+        .route("/for-you", get(comments::for_you))
+        .route("/for-you/seen", post(comments::seen));
     // Only a Local Workspace has these; on a Team Workspace they are `404` like any unknown
     // path.
     let api = if st.local.is_some() {
@@ -180,6 +201,11 @@ pub fn router(st: Shared) -> Router {
         .layer(middleware::from_fn_with_state(
             st.clone(),
             auth::resolve_session,
+        ))
+        // A moved Local Workspace changes nothing (docs/specs/team-move.md, Contract A).
+        .layer(middleware::from_fn_with_state(
+            st.clone(),
+            local::refuse_when_moved,
         ));
 
     let web_dir = st.config.web_dir.clone();
