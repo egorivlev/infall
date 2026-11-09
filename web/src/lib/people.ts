@@ -39,12 +39,17 @@ export const invites = {
     const { invites: list } = await request<{ invites: Invite[] }>('GET', '/api/invites')
     return list
   },
+  /** M18: `claims` names an unclaimed Member (`claimed: false`); whoever accepts takes over that name and its work. */
   create(input: {
     email: string
     role: 'member' | 'guest'
     access_until?: number
+    claims?: string
   }): Promise<{ invite: Invite; url: string }> {
-    return request('POST', '/api/invites', input)
+    const body: typeof input = { email: input.email, role: input.role }
+    if (input.access_until !== undefined) body.access_until = input.access_until
+    if (input.claims !== undefined && input.claims !== '') body.claims = input.claims
+    return request('POST', '/api/invites', body)
   },
   async remove(id: string): Promise<void> {
     await request('DELETE', `/api/invites/${encodeURIComponent(id)}`)

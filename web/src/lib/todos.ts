@@ -3,9 +3,10 @@
 // answer, a `todos` frame and a refetch can arrive in any order without an optimistic edit flickering.
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
-import { ApiError, request } from './http'
+import { ApiError, MOVED_SENTENCE, request } from './http'
 import { newId } from './ops'
 import { sessionStore } from './session-store'
+import { workspaceStore } from './workspace'
 import type { Member, Todo } from './types'
 
 type CardPointer = { id: string; title: string; branch: string }
@@ -61,6 +62,8 @@ function upsert(todo: Todo) {
 function member(action: string): Member {
   const me = self()
   if (!me || me.role === 'guest') throw new ApiError(403, 'forbidden', `Guests cannot ${action} To-dos.`)
+  // M18: a moved Workspace refuses every write; say so without asking.
+  if (workspaceStore.getState().readOnly) throw new ApiError(403, 'moved', MOVED_SENTENCE)
   return me
 }
 
