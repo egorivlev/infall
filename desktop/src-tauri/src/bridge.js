@@ -142,6 +142,32 @@
   // Events reach `onEvent` as the app sent them, the M9 one included:
   // `{ type: 'stats', cpu_percent, cores, memory_bytes, memory_total_bytes, processes, gpu?,
   // step?, progress? }`, about once a second while the process runs.
+  //
+  // Since M19/M19b a Run names its language (`lang`, absent: Python) and, for Python and Q#,
+  // the environment it wants (`env`). Only names travel: which program they start is this
+  // computer's setting. Such a Run is asked for with `start`, which an app from before it
+  // does not have, so an older app refuses it instead of running it as Python; `run` stays
+  // Python in the default environment, exactly as in M8, and refuses any other language.
+  function runFailure(unreachable) {
+    return {
+      type: 'error',
+      reason: 'failed',
+      message: unreachable ? 'The desktop app is not reachable.' : 'The desktop app could not start the Run.'
+    };
+  }
+
+  function runRequest(request) {
+    return {
+      id: String(request && request.id),
+      code: String(request && request.code),
+      title: String(request && request.title != null ? request.title : '')
+    };
+  }
+
+  function namesLanguage(request) {
+    return !!request && request.lang != null && request.lang !== 'python';
+  }
+
   var runner = Object.freeze({
     status: function () {
       return call('runner_status', {}).then(function (status) {
@@ -151,25 +177,50 @@
           result.python = { path: python.path, version: python.version };
         }
         if (status && typeof status.folder === 'string') result.folder = status.folder;
+        // Names and versions only: which program a language starts is not the page's.
+        var languages = {};
+        var listed = status && status.languages;
+        if (listed && typeof listed === 'object') {
+          Object.keys(listed).forEach(function (id) {
+            var entry = listed[id];
+            if (!entry || typeof entry.name !== 'string') return;
+            var language = { name: entry.name };
+            if (typeof entry.version === 'string') language.version = entry.version;
+            languages[id] = language;
+          });
+        }
+        result.languages = languages;
+        result.environments = Array.isArray(status && status.environments)
+          ? status.environments.filter(function (name) {
+              return typeof name === 'string';
+            })
+          : [];
         return result;
       });
     },
-    configure: function () {
-      return call('runner_configure', {}).then(function () {});
+    configure: function (lang) {
+      var args = {};
+      if (typeof lang === 'string') args.lang = lang;
+      return call('runner_configure', args).then(function () {});
     },
     run: function (request, onEvent) {
-      var sent = {
-        id: String(request && request.id),
-        code: String(request && request.code),
-        title: String(request && request.title != null ? request.title : '')
-      };
-      return stream('runner_run', { request: sent }, onEvent, function (unreachable) {
-        return {
-          type: 'error',
-          reason: 'failed',
-          message: unreachable ? 'The desktop app is not reachable.' : 'The desktop app could not start the Run.'
-        };
-      });
+      if (namesLanguage(request)) {
+        // Never as Python: a Run in another language is asked for with `start`.
+        return Promise.resolve().then(function () {
+          onEvent({
+            type: 'error',
+            reason: 'failed',
+            message: 'This Run is not in Python, and was not asked for as such.'
+          });
+        });
+      }
+      return stream('runner_run', { request: runRequest(request) }, onEvent, runFailure);
+    },
+    start: function (request, onEvent) {
+      var sent = runRequest(request);
+      if (request && request.lang != null) sent.lang = String(request.lang);
+      if (request && request.env != null && request.env !== '') sent.env = String(request.env);
+      return stream('runner_start', { request: sent }, onEvent, runFailure);
     },
     cancel: function (id) {
       return call('runner_cancel', { id: String(id) }).then(function () {});

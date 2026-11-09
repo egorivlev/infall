@@ -609,10 +609,23 @@ mod tests {
             "runner_status",
             "runner_configure",
             "runner_run",
+            "runner_start",
             "runner_cancel",
         ] {
             assert!(js.contains(&format!("'{command}'")), "{command}");
         }
+        // A Run in another language goes only through `start`, a method an app from before
+        // M19b lacks; `run` refuses one rather than run it as Python, and sends no names.
+        assert!(js.contains("start: function (request, onEvent)"));
+        assert!(js.contains("stream('runner_start', { request: sent }"));
+        assert!(js.contains("if (namesLanguage(request)) {"));
+        assert!(js.contains("stream('runner_run', { request: runRequest(request) }"));
+        let run_request = js
+            .split("function runRequest(request) {")
+            .nth(1)
+            .and_then(|rest| rest.split("\n    };").next())
+            .unwrap();
+        assert!(!run_request.contains("lang") && !run_request.contains("env"));
         // The commands of the app's own windows are not even named in what a page gets.
         for local in [
             "approval_",

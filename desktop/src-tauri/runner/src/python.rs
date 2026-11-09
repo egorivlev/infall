@@ -32,7 +32,7 @@ const ENV_MARKER: &[u8] = b"\n__QOOP_ENV_BEGIN__\n";
 /// Runs `command` to its end and returns whether it succeeded and what it printed (at most
 /// `limit` bytes). `None` if it could not be started or did not end within `timeout`; it
 /// and everything it started are killed either way.
-fn capture(
+pub(crate) fn capture(
     mut command: Command,
     timeout: Duration,
     limit: usize,
@@ -289,6 +289,57 @@ fn probe(path: &Path, env: &EnvVars) -> Option<(Interpreter, String)> {
         // not its prefix.
         format!("{real}\n{prefix}"),
     ))
+}
+
+// (One line per `concat!` part: a `\` line continuation would eat the indentation.)
+const QSHARP_PROBE: &str = concat!(
+    "import importlib.metadata as m, sys\n",
+    "print('QOOP %d.%d' % sys.version_info[:2])\n",
+    "for d in ('qdk', 'qsharp'):\n",
+    "    try:\n",
+    "        print('QOOP', d, m.version(d))\n",
+    "        break\n",
+    "    except Exception:\n",
+    "        pass\n",
+);
+
+/// Asks an interpreter (`-I`, five seconds) which distribution would run Q# there: the
+/// version of its `qdk`, and only when there is none, of its `qsharp` (one of 1.28 or
+/// earlier is the package itself; a later one is a shim over `qdk`, whose version says
+/// nothing). The error is a plain sentence saying what to install.
+pub fn qsharp_probe(path: &Path, env: &EnvVars) -> Result<crate::settings::Qsharp, String> {
+    let mut command = python_command(path, env);
+    command.args(["-I", "-c", QSHARP_PROBE]);
+    let answer = capture(command, VERSION_TIMEOUT, 4096, false, false)
+        .filter(|(ok, _)| *ok)
+        .and_then(|(_, out)| String::from_utf8(out).ok())
+        .ok_or_else(|| {
+            "The chosen Python did not answer. Check it in the list above.".to_owned()
+        })?;
+    let mut lines = answer.lines().filter_map(|l| l.strip_prefix("QOOP "));
+    let old = lines
+        .next()
+        .and_then(|v| v.split_once('.'))
+        .and_then(|(major, minor)| Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?)))
+        .is_some_and(|v| v < (3, 10));
+    if let Some((package, version)) = lines.next().and_then(|l| l.split_once(' '))
+        && matches!(package, "qdk" | "qsharp")
+        && crate::toolchains::short_plain(version, 40)
+    {
+        return Ok(crate::settings::Qsharp {
+            package: package.to_owned(),
+            version: version.to_owned(),
+            off: false,
+        });
+    }
+    Err(if old {
+        "Q# needs Python 3.10 or newer, and the chosen Python is older. Choose a newer one, then \
+         install Q# into it with: pip install qdk"
+    } else {
+        "Q# is not installed for the chosen Python. Install it into that Python with: \
+         pip install qdk (it needs Python 3.10 or newer)."
+    }
+    .to_owned())
 }
 
 /// The names an interpreter goes by in a directory. Windows: `py.exe` is the launcher

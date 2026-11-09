@@ -43,11 +43,13 @@ fn main() {
             "save_binary_begin",
             "save_binary_chunk",
             "save_binary_finish",
-            // The Runner, for the server's pages: status, open the settings, ask for a Run,
+            // The Runner, for the server's pages: status, open the settings, ask for a Run
+            // (`runner_start`: one that names its language and environment, M19 and M19b),
             // cancel it. Nothing that chooses an interpreter or approves.
             "runner_status",
             "runner_configure",
             "runner_run",
+            "runner_start",
             "runner_cancel",
             // The approval window (capabilities/runner-approval.json).
             "approval_view",
@@ -55,6 +57,7 @@ fn main() {
             // The Runner settings window (capabilities/runner-settings.json).
             "runner_settings_view",
             "runner_settings_save",
+            "runner_settings_change",
             "runner_settings_forget",
             "runner_settings_close",
         ]));

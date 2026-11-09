@@ -35,7 +35,23 @@
     if (!loaded) hint.textContent = '';
     else if (!reachedEnd) hint.textContent = 'Scroll to the end of the code to be able to run it.';
     else if (!waited) hint.textContent = 'One moment…';
-    else hint.textContent = 'Infall will remember this exact code for this Workspace and not ask again until it changes.';
+    else
+      hint.textContent =
+        'Infall will remember this exact code, in this language and run by this program, for this Workspace, and not ask again until one of them changes.';
+  }
+
+  // A command as it will be started: the program, then each argument as it is passed (no
+  // shell reads them). An argument with a space or a quote is shown in quotes so that where
+  // one ends is visible; {file} stands for the Run's file.
+  function commandText(program, args) {
+    return [program]
+      .concat(
+        (args || []).map(function (arg) {
+          arg = String(arg);
+          return /[\s"']/.test(arg) || arg === '' ? '"' + arg.replace(/"/g, '\\"') + '"' : arg;
+        })
+      )
+      .join(' ');
   }
 
   function checkEnd() {
@@ -68,8 +84,23 @@
 
   function render(view) {
     setText('title', String(view.title));
+    setText('language', String(view.language || 'Python'));
     setText('origin', String(view.origin));
-    setText('python', String(view.python));
+    if (typeof view.environment === 'string') {
+      setText('environment', view.environment);
+      document.getElementById('environment').hidden = false;
+      document.getElementById('environment-label').hidden = false;
+    }
+    if (view.lang === 'qsharp') {
+      setText('program-label', 'Runs through');
+      setText('program', 'Q#, through Python at ' + String(view.program));
+    } else if (Array.isArray(view.args)) {
+      setText('program-label', 'Command');
+      setText('program', commandText(String(view.program), view.args));
+      document.getElementById('program').title = '{file} stands for the file the code is written to.';
+    } else {
+      setText('program', String(view.program));
+    }
     setText('folder', view.folder ? String(view.folder) : 'A new, empty temporary folder');
     setText(
       'size',

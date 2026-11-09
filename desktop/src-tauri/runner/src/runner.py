@@ -18,7 +18,7 @@ import sys
 
 MAX_FIGURES = 3
 MAX_FIGURE_BYTES = 120000  # 160 000 base64 characters
-MAX_PACKAGES = 8
+MAX_PACKAGES = 32
 MIN_DPI = 12.0
 ENV_FILE = "qoop-env.json"
 SAID_FILE = "qoop-progress.json"
@@ -126,6 +126,9 @@ def _run(main_path):
         except BaseException:
             pass
         _report(error)
+        missing = _missing_package(error)
+        if missing is not None:
+            _note("This environment has no package %s." % missing)
         return source, 1
     return source, 0
 
@@ -343,9 +346,36 @@ def _is_standard(name, module):
     return path.startswith(stdlib + os.sep) and "site-packages" not in path and "dist-packages" not in path
 
 
+def _plain(text, limit):
+    """text, stripped, if it is a short single line; else None."""
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if not 0 < len(text) <= limit or any(ord(c) < 32 or ord(c) == 127 for c in text):
+        return None
+    return text
+
+
+def _requirement_name(line):
+    """The distribution a requirement line names ("numpy>=1.23; python_version < '3.13'"
+    gives "numpy"), or None for one that belongs to an extra, which nothing installed for
+    the code asked for."""
+    import re
+
+    if not isinstance(line, str):
+        return None
+    requirement, _, marker = line.partition(";")
+    if "extra" in marker:
+        return None
+    match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", requirement)
+    return match.group(1) if match else None
+
+
 def _packages(source):
-    """[name, version] of the top-level packages the code imports, in the order it names
-    them, for those that were really imported and say which version they are."""
+    """[name, version] of the distributions the code's top-level imports come from, in the
+    order it names them, then of what each of those requires directly (not the whole
+    environment), at most MAX_PACKAGES. Read through importlib.metadata as installed now;
+    a module that no distribution provides counts by its own name if it says its version."""
     import ast
     import warnings
 
@@ -365,11 +395,38 @@ def _packages(source):
         from importlib import metadata
     except ImportError:
         metadata = None
+    providers = {}
+    if metadata is not None:
+        try:
+            providers = metadata.packages_distributions()  # Python 3.10 and newer
+        except Exception:
+            providers = {}
+
     packages = []
+    named = set()  # lower-cased, '_' and '.' as '-': how distributions compare
+
+    def key(name):
+        return name.lower().replace("_", "-").replace(".", "-")
+
+    def add(name, version):
+        name, version = _plain(name, 60), _plain(version, 40)
+        if name is None or version is None or key(name) in named or len(packages) >= MAX_PACKAGES:
+            return False
+        named.add(key(name))
+        packages.append([name, version])
+        return True
+
+    def distribution(name):
+        """(distribution name, version) for a distribution name, or None."""
+        try:
+            dist = metadata.distribution(name)
+            return dist.metadata["Name"] or name, dist.version
+        except Exception:
+            return None
+
+    imported = []
     seen = set()
     for _, _, name in found:
-        if len(packages) >= MAX_PACKAGES:
-            break
         if name in seen:
             continue
         seen.add(name)
@@ -379,21 +436,55 @@ def _packages(source):
         try:
             if _is_standard(name, module):
                 continue
-            version = None
+            dist = None
             if metadata is not None:
-                try:
-                    version = metadata.version(name)
-                except Exception:
-                    version = None
-            if not isinstance(version, str):
-                version = getattr(module, "__version__", None)
-            if isinstance(version, str):
-                version = version.strip()
-                if 0 < len(version) <= 40:
-                    packages.append([name, version])
+                for candidate in list(providers.get(name) or [])[:1] or [name]:
+                    dist = distribution(candidate)
+            if dist is not None:
+                if add(*dist):
+                    imported.append(dist[0])
+                continue
+            add(name, getattr(module, "__version__", None))
         except Exception:
             continue
+
+    # What each of them requires directly, for those requirements that are installed.
+    for name in imported:
+        if len(packages) >= MAX_PACKAGES:
+            break
+        try:
+            required = metadata.requires(name) or []
+        except Exception:
+            continue
+        for line in required:
+            try:
+                wanted = _requirement_name(line)
+                if wanted is None or key(wanted) in named:
+                    continue
+                dist = distribution(wanted)
+                if dist is not None:
+                    add(*dist)
+            except Exception:
+                continue
     return packages
+
+
+def _missing_package(error):
+    """The name of the package a ModuleNotFoundError says is missing, when it really is not
+    there (not a missing part of a package that is)."""
+    try:
+        if not isinstance(error, ModuleNotFoundError) or not isinstance(error.name, str):
+            return None
+        top = error.name.split(".")[0]
+        if not top or len(top) > 60:
+            return None
+        import importlib.util
+
+        if importlib.util.find_spec(top) is not None:
+            return None
+        return top
+    except BaseException:
+        return None
 
 
 def _write_env(run_dir, source, figures):

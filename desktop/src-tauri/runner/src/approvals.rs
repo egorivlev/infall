@@ -165,14 +165,19 @@ fn is_sha256(s: &str) -> bool {
 
 // ---- the question ------------------------------------------------------------------------
 
-/// What an approval is remembered under: the code alone when it runs in a temporary folder,
-/// the code together with the folder when one is set. Code approved for an empty temporary
-/// folder is so not approved for a folder holding the Member's files, nor for another one.
-fn remembered_key(code_sha256: &str, folder: Option<&str>) -> String {
-    match folder {
-        None => code_sha256.to_owned(),
-        Some(folder) => inspect::sha256_hex(&format!("{code_sha256}\n{folder}")),
-    }
+/// What an approval is remembered under: the code together with the language it is run as,
+/// the interpreter or program that runs it, and the folder it runs in (none: a new temporary
+/// one). The same characters sent as another language are another program; the same code
+/// run by another interpreter, or in a folder holding the Member's files, is another thing
+/// to agree to. So each asks again.
+///
+/// Approvals remembered before languages and environments (M8 to M19) were keyed by the code
+/// and folder alone; they name no interpreter, so they no longer match and ask once more.
+fn remembered_key(code_sha256: &str, lang: &str, program: &str, folder: Option<&str>) -> String {
+    inspect::sha256_hex(&format!(
+        "v2\n{lang}\n{program}\n{code_sha256}\n{}",
+        folder.unwrap_or("")
+    ))
 }
 
 /// What the Member is asked about, besides the code. Chosen by the app, never by the page.
@@ -183,8 +188,16 @@ pub struct Details {
     /// The Workspace it comes from, as the window names it: a Team Workspace's server, a
     /// Local Workspace's name.
     pub from: String,
-    /// The interpreter that will execute the code.
-    pub python: String,
+    /// The language the code will be executed as (its id) and how it is named.
+    pub lang: String,
+    pub language: String,
+    /// The environment the Run asked for by name, if it did (Python and Q#).
+    pub environment: Option<String>,
+    /// The interpreter (Python, Q#) or the program (any other language) that will execute it.
+    pub program: String,
+    /// A command Toolchain's arguments as they will be passed, `{file}` standing for the
+    /// Run's file; `None` for Python and Q#.
+    pub args: Option<Vec<String>>,
     /// The folder it will run in; `None` for a new temporary folder.
     pub folder: Option<String>,
 }
@@ -194,9 +207,13 @@ pub struct Details {
 pub struct ApprovalView {
     pub title: String,
     /// Where the code comes from ([`Details::from`]). Named `origin` for the approval
-    /// window, which shows it under "From server".
+    /// window, which shows it under "From".
     pub origin: String,
-    pub python: String,
+    pub lang: String,
+    pub language: String,
+    pub environment: Option<String>,
+    pub program: String,
+    pub args: Option<Vec<String>>,
     pub folder: Option<String>,
     pub lines: Vec<Vec<Part>>,
     pub line_count: usize,
@@ -309,7 +326,12 @@ impl Gate {
         inspect::check(&code).map_err(RequestError::Code)?;
         let sha256 = inspect::sha256_hex(&code);
         let code: Arc<str> = Arc::from(code);
-        let key = remembered_key(&sha256, details.folder.as_deref());
+        let key = remembered_key(
+            &sha256,
+            &details.lang,
+            &details.program,
+            details.folder.as_deref(),
+        );
         if self.store.contains(workspace, &key) {
             return Ok(Request::Approved(Approved { code, sha256 }));
         }
@@ -323,7 +345,13 @@ impl Gate {
         let view = ApprovalView {
             title: inspect::display_title(&details.title),
             origin: details.from,
-            python: details.python,
+            // The id and the Toolchain's name are text from elsewhere too: shown as text,
+            // on one bounded line.
+            lang: inspect::display_title(&details.lang),
+            language: inspect::display_title(&details.language),
+            environment: details.environment.as_deref().map(inspect::display_title),
+            program: details.program,
+            args: details.args,
             folder: details.folder,
             lines: shown.lines,
             line_count: shown.line_count,
@@ -432,7 +460,11 @@ mod tests {
         Details {
             title: "Bell state".into(),
             from: ORIGIN.into(),
-            python: "/usr/bin/python3".into(),
+            lang: "python".into(),
+            language: "Python".into(),
+            environment: None,
+            program: "/usr/bin/python3".into(),
+            args: None,
             folder: None,
         }
     }
@@ -478,7 +510,13 @@ mod tests {
         let view = gate.view(ticket).unwrap();
         assert_eq!(view.title, "Bell state");
         assert_eq!(view.origin, ORIGIN);
-        assert_eq!(view.python, "/usr/bin/python3");
+        assert_eq!(view.program, "/usr/bin/python3");
+        assert_eq!(
+            (view.lang.as_str(), view.language.as_str()),
+            ("python", "Python")
+        );
+        assert_eq!(view.environment, None);
+        assert_eq!(view.args, None);
         assert_eq!(view.folder, None);
         assert_eq!(view.line_count, 1);
         assert_eq!(view.sha256, inspect::sha256_hex("print(1)\n"));
@@ -839,7 +877,7 @@ mod tests {
     }
 
     #[test]
-    fn what_an_earlier_version_remembered_for_a_server_still_holds() {
+    fn the_file_of_an_earlier_version_is_still_read() {
         let dir = tempfile::tempdir().unwrap();
         let sha = inspect::sha256_hex("print(1)");
         fs::write(
@@ -855,5 +893,76 @@ mod tests {
             text.contains(r#""origin":"https://qoop.example.org""#),
             "{text}"
         );
+        // But what it remembered names no interpreter: the Gate asks once more.
+        let gate = gate(dir.path());
+        assert!(!remembered(&gate, ORIGIN, "print(1)"));
+    }
+
+    #[test]
+    fn another_language_or_another_interpreter_asks_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = gate(dir.path());
+        let code = "echo hello\n";
+        let as_lang = |lang: &str, program: &str| Details {
+            lang: lang.into(),
+            language: lang.into(),
+            program: program.into(),
+            args: (lang != "python").then(|| vec!["{file}".to_owned()]),
+            ..details()
+        };
+        let approve = |details: Details| {
+            let Ok(Request::Ask(ticket)) = gate.request(ORIGIN, details, code.to_owned()) else {
+                panic!("expected a question");
+            };
+            assert!(matches!(answer(&gate, ticket, true), Decision::Approved(_)));
+        };
+        let asks = |details: Details| match gate.request(ORIGIN, details, code.to_owned()) {
+            Ok(Request::Ask(ticket)) => {
+                gate.closed(ticket);
+                gate.wait(ticket, &Cancel::new());
+                true
+            }
+            Ok(Request::Approved(_)) => false,
+            Err(e) => panic!("{e:?}"),
+        };
+        approve(as_lang("python", "/usr/bin/python3"));
+        assert!(!asks(as_lang("python", "/usr/bin/python3")));
+        // The same characters sent as Shell are another program.
+        assert!(asks(as_lang("shell", "/bin/bash")));
+        // The same language with another interpreter (another environment) asks too.
+        assert!(asks(as_lang(
+            "python",
+            "/opt/conda/envs/analysis/bin/python"
+        )));
+        // Q# through the same Python is another language.
+        assert!(asks(as_lang("qsharp", "/usr/bin/python3")));
+        approve(as_lang("shell", "/bin/bash"));
+        assert!(!asks(as_lang("shell", "/bin/bash")));
+        // Changing only a Toolchain's arguments does not ask again (they are the Member's
+        // own setting, shown at the time it asks); changing its program does.
+        assert!(!asks(Details {
+            args: Some(vec!["-e".into(), "{file}".into()]),
+            ..as_lang("shell", "/bin/bash")
+        }));
+        assert!(asks(as_lang("shell", "/usr/local/bin/bash")));
+        // And none of this touched the Python approval.
+        assert!(!asks(as_lang("python", "/usr/bin/python3")));
+        // The window says what will run.
+        let Ok(Request::Ask(ticket)) = gate.request(
+            ORIGIN,
+            Details {
+                environment: Some("analysis\u{202e}".into()),
+                ..as_lang("julia", "/opt/homebrew/bin/julia")
+            },
+            "println(1)".to_owned(),
+        ) else {
+            panic!("expected a question");
+        };
+        let view = gate.view(ticket).unwrap();
+        assert_eq!(view.lang, "julia");
+        assert_eq!(view.program, "/opt/homebrew/bin/julia");
+        assert_eq!(view.args.as_deref(), Some(&["{file}".to_owned()][..]));
+        assert_eq!(view.environment.as_deref(), Some("analysis[U+202E]"));
+        gate.closed(ticket);
     }
 }

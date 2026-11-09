@@ -1,5 +1,6 @@
-//! Executes approved code: `main.py` in a new owner-only temporary directory, started
-//! through the bundled `runner.py` as a process group of its own, its output read from one
+//! Executes approved code: `main.py` (`main.qs`, `main.<ext>`) in a new owner-only temporary
+//! directory, started through the bundled `runner.py` (Q#: `qsharp_runner.py`; any other
+//! language: the Toolchain's program) as a process group of its own, its output read from one
 //! pipe, its figures and environment collected afterwards, and the directory removed.
 //!
 //! [`Exec::execute`] takes an [`Approved`] and nothing else: there is no way to hand this
@@ -26,13 +27,16 @@ use crate::python::{self, EnvVars};
 
 /// The program that runs the code and saves its figures. Standard library only.
 pub const RUNNER_PY: &str = include_str!("runner.py");
+/// The program that runs Q# code through the chosen Python's `qdk`.
+pub const QSHARP_RUNNER_PY: &str = include_str!("qsharp_runner.py");
 
 /// A result keeps at most this many figures (api.md §15).
 pub const MAX_FIGURES: usize = 3;
 /// A figure is at most this many bytes: 160 000 base64 characters.
 pub const MAX_FIGURE_BYTES: usize = 120_000;
-/// At most this many packages are reported.
-pub const MAX_PACKAGES: usize = 8;
+/// At most this many packages are reported: those the code imports, then what they require
+/// directly (runner.py's `MAX_PACKAGES`).
+pub const MAX_PACKAGES: usize = 32;
 
 /// Usage reports that packages often imported in a Run send by default, turned off for every
 /// Run, over whatever the login shell says: each is the package's own documented switch
@@ -70,6 +74,9 @@ pub struct Env {
     pub os: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
+    /// What a command Toolchain said its version is (≤ 40 characters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
 }
 
 /// What happens while the code is executed.
@@ -98,13 +105,35 @@ pub struct Finished {
     pub env: Env,
 }
 
+/// What is started for the Run: chosen by the Member in the app's settings, never by a page.
+#[derive(Debug, Clone)]
+pub enum Launch {
+    /// `<python> -u -X utf8 runner.py main.py`.
+    Python {
+        python: PathBuf,
+        /// Its version as the settings know it; reported when the program itself could not
+        /// say.
+        version: Option<String>,
+    },
+    /// `<python> -u -X utf8 qsharp_runner.py main.qs`, with the environment of a Python Run.
+    Qsharp {
+        python: PathBuf,
+        version: Option<String>,
+    },
+    /// `<program> <args>`, `{file}` replaced by the full path of `main.<ext>`.
+    Command {
+        program: PathBuf,
+        args: Vec<String>,
+        ext: String,
+        /// The version saved with the Toolchain.
+        runtime: Option<String>,
+    },
+}
+
 /// How to execute: chosen by the Member in the app's settings, never by a page.
 #[derive(Debug, Clone)]
 pub struct Exec {
-    /// The interpreter.
-    pub python: PathBuf,
-    /// Its version as the settings know it; reported when the program itself could not say.
-    pub python_version: Option<String>,
+    pub launch: Launch,
     /// The folder to run in; `None` for the Run's own temporary directory.
     pub folder: Option<PathBuf>,
     /// The environment of the process (the login shell's).
@@ -212,6 +241,20 @@ fn short_plain(text: &str, max_chars: usize) -> bool {
     !text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control)
 }
 
+/// The figures a Run in another language left in its directory: `qoop-figure-1.png` to
+/// `-3.png`, real PNG files of at most 120 000 bytes, read without following links.
+fn collect_figures(dir: &Path) -> Vec<Figure> {
+    (1..=MAX_FIGURES)
+        .filter_map(|n| {
+            read_small_file(&dir.join(format!("qoop-figure-{n}.png")), MAX_FIGURE_BYTES)
+        })
+        .filter(|data| data.starts_with(PNG_SIGNATURE))
+        .map(|data| Figure {
+            png: base64::engine::general_purpose::STANDARD.encode(data),
+        })
+        .collect()
+}
+
 /// What `runner.py` left behind: the Python version, the packages, and the figures. All of
 /// it is checked as if a stranger had written it; the program could have.
 fn collect(
@@ -292,38 +335,68 @@ impl Exec {
         const NO_FOLDER: &str = "Infall could not prepare a temporary folder for the Run.";
         // Dropped last, at every exit: the directory goes after the process group.
         let dir = RunDir::create(&self.temp_root).map_err(|_| NO_FOLDER)?;
-        let main_py = dir
-            .write("main.py", approved.code().as_bytes())
-            .map_err(|_| NO_FOLDER)?;
-        let runner_py = dir
-            .write("runner.py", RUNNER_PY.as_bytes())
-            .map_err(|_| NO_FOLDER)?;
         let cwd = self.folder.as_deref().unwrap_or(&dir.path);
+
+        // The code is handed over as a file: never on the command line.
+        let mut command = match &self.launch {
+            Launch::Python { python, .. } | Launch::Qsharp { python, .. } => {
+                let (main, runner, program) = match &self.launch {
+                    Launch::Qsharp { .. } => ("main.qs", "qsharp_runner.py", QSHARP_RUNNER_PY),
+                    _ => ("main.py", "runner.py", RUNNER_PY),
+                };
+                let main = dir
+                    .write(main, approved.code().as_bytes())
+                    .map_err(|_| NO_FOLDER)?;
+                let runner = dir
+                    .write(runner, program.as_bytes())
+                    .map_err(|_| NO_FOLDER)?;
+                let mut command = Command::new(python);
+                command
+                    .args(["-u", "-X", "utf8"])
+                    .arg(&runner)
+                    .arg(&main)
+                    .env_clear()
+                    .envs(self.env.iter().map(|(k, v)| (k, v)))
+                    .env("MPLBACKEND", "Agg")
+                    .env("PYTHONUNBUFFERED", "1")
+                    .env("PYTHONIOENCODING", "utf-8");
+                command
+            }
+            Launch::Command {
+                program, args, ext, ..
+            } => {
+                let main = dir
+                    .write(&format!("main.{ext}"), approved.code().as_bytes())
+                    .map_err(|_| NO_FOLDER)?;
+                let mut command = Command::new(program);
+                // Each argument as it is, one by one: no shell reads them.
+                command
+                    .args(crate::toolchains::arguments(args, &main))
+                    .env_clear()
+                    .envs(self.env.iter().map(|(k, v)| (k, v)));
+                command
+            }
+        };
 
         // One pipe for standard output and standard error, so their order is kept.
         let (mut reader, writer) = io::pipe().map_err(|_| NO_FOLDER)?;
-        let mut command = Command::new(&self.python);
         command
-            // The code is handed over as a file: never on the command line.
-            .args(["-u", "-X", "utf8"])
-            .arg(&runner_py)
-            .arg(&main_py)
             .current_dir(cwd)
-            .env_clear()
-            .envs(self.env.iter().map(|(k, v)| (k, v)))
+            // Over whatever the login shell says, for every language: a script may start a
+            // Python that imports those packages.
             .envs(NO_USAGE_REPORTS.iter().copied())
-            .env("MPLBACKEND", "Agg")
-            .env("PYTHONUNBUFFERED", "1")
-            .env("PYTHONIOENCODING", "utf-8")
             .env("QOOP_RUN_DIR", &dir.path)
             .stdin(Stdio::null())
             .stdout(writer.try_clone().map_err(|_| NO_FOLDER)?)
             .stderr(writer);
         own_process_group(&mut command);
         let started = Instant::now();
-        let child = command
-            .spawn()
-            .map_err(|_| "Python could not be started. Check Runner settings.")?;
+        let child = command.spawn().map_err(|_| match &self.launch {
+            Launch::Command { .. } => {
+                "The language's program could not be started. Check Runner settings."
+            }
+            _ => "Python could not be started. Check Runner settings.",
+        })?;
         // The command holds the writing ends of the pipe; without this the reader never ends.
         drop(command);
         let mut group = Group::new(child);
@@ -447,10 +520,30 @@ impl Exec {
             on_progress(Progress::Output(event));
         }
 
-        let (python, packages, figures) = if stopped {
-            (None, None, Vec::new())
-        } else {
-            collect(&dir.path)
+        let mut env = Env {
+            os: Some(std::env::consts::OS.to_owned()),
+            arch: Some(arch().to_owned()),
+            ..Env::default()
+        };
+        let figures = match &self.launch {
+            Launch::Python { version, .. } | Launch::Qsharp { version, .. } => {
+                let (python, packages, figures) = if stopped {
+                    (None, None, Vec::new())
+                } else {
+                    collect(&dir.path)
+                };
+                env.python = python.or_else(|| version.clone());
+                env.packages = packages;
+                figures
+            }
+            Launch::Command { runtime, .. } => {
+                env.runtime = runtime.clone();
+                if stopped {
+                    Vec::new()
+                } else {
+                    collect_figures(&dir.path)
+                }
+            }
         };
         let (output, output_truncated) = kept.finish();
         Ok(Finished {
@@ -460,12 +553,7 @@ impl Exec {
             output,
             output_truncated,
             figures,
-            env: Env {
-                python: python.or_else(|| self.python_version.clone()),
-                packages,
-                os: Some(std::env::consts::OS.to_owned()),
-                arch: Some(arch().to_owned()),
-            },
+            env,
         })
     }
 }
@@ -531,13 +619,40 @@ mod tests {
     }
 
     #[test]
-    fn at_most_eight_packages_and_three_figures() {
+    fn a_command_toolchains_figures_are_the_files_it_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        assert!(collect_figures(d).is_empty());
+        fs::write(d.join("qoop-figure-1.png"), png(10)).unwrap();
+        fs::write(d.join("qoop-figure-2.png"), b"not a png").unwrap();
+        fs::write(d.join("qoop-figure-3.png"), png(MAX_FIGURE_BYTES)).unwrap(); // too large
+        fs::write(d.join("qoop-figure-4.png"), png(10)).unwrap(); // a fourth is never read
+        let figures = collect_figures(d);
+        assert_eq!(figures.len(), 1);
+        fs::write(d.join("qoop-figure-3.png"), png(20)).unwrap();
+        assert_eq!(collect_figures(d).len(), 2);
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            fs::write(outside.path().join("secret.png"), png(5)).unwrap();
+            fs::remove_file(d.join("qoop-figure-1.png")).unwrap();
+            std::os::unix::fs::symlink(
+                outside.path().join("secret.png"),
+                d.join("qoop-figure-1.png"),
+            )
+            .unwrap();
+            assert_eq!(collect_figures(d).len(), 1);
+        }
+    }
+
+    #[test]
+    fn at_most_thirty_two_packages_and_three_figures() {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
         for n in 1..=3 {
             fs::write(d.join(format!("qoop-figure-{n}.png")), png(n)).unwrap();
         }
-        let packages: Vec<_> = (0..20)
+        let packages: Vec<_> = (0..40)
             .map(|n| vec![format!("p{n:02}"), "1".into()])
             .collect();
         fs::write(
