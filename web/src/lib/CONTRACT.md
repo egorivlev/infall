@@ -623,3 +623,57 @@ window.__infallUndo = {
 - `undo()` / `redo()` do what the keys do (the note included, "Nothing to undo…" too), and nothing where `state()` is all null.
 - `subscribe(fn)` calls `fn` whenever a name changes, when Undo becomes possible here or stops being so, and when focus moves (`focusin` / `focusout` on the document). It returns the unsubscribe.
 - **Keys**: the page owns Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z and Ctrl+Y (not on a Mac) on every platform, in the desktop app as in a browser, and calls `preventDefault()` whenever it acts on one — "Nothing to undo" included — so one press is one Undo (WebKit gives the menu a ⌘ key only when the page did not prevent it). In a field being edited, in a modal dialog and where Undo does not work it leaves the event alone (no `preventDefault`). Never with Alt, never with Cmd and Ctrl together. The page does not ask whether it runs in the desktop app.
+
+## M18 — From alone to a team (docs/specs/team-move.md, Contract B and the bridge of Contract C)
+
+Code: `workspace.ts` (empty / read-only, import, export), `http.ts` (`uploadBytes`, `requestBytes`, `dispositionName`, the `moved` refusals), `comments.ts` (threads, badge counts, For you), `mentions.ts` (pure), two frames in `board-sync.ts`, `people.ts` (`claims`), `todos.ts` (refuses in a moved copy), `testing.ts`. Types in `types.ts`: `WorkspaceInfo` gains `empty`, `readOnly`, `movedTo`; `Member.claimed?`, `Invite.claims?`; `BoardSnapshot.moved?`; `ServerFrame` gains `comments` / `for_you`; `QoopDesktop` gains `saveBinaryFile?`, `moveHandover?`, `moveFile?`, `moveDone?`; new `ImportResult`, `ExportedFile`, `Comment`, `ThreadSnapshot`, `CommentCount`, `ForYouItem`, `ForYouSnapshot`.
+
+```ts
+// ---- the Workspace ----
+useWorkspace(): WorkspaceSnapshot                 // + empty (Team only), readOnly, movedTo (string | null)
+useMovedRefusal(): { sentence: string | null; refusals: number }   // the server's words for the last 403 `moved`
+workspace.startEmpty(): void                      // "Start empty": nothing is sent; `empty` reads false for this session
+workspace.importFile(file: Blob | Uint8Array, { onProgress?(sent, total), signal? }): Promise<ImportResult>
+workspace.exportFile(): Promise<ExportedFile>     // { name: from Content-Disposition, else "Workspace.infall"; bytes }
+MOVED_SENTENCE                                    // the sentence of Contract A, used when a refusal is made locally
+invites.create({ email, role, access_until?, claims? })
+
+// ---- Comments (Members and Admins; Local and Team) ----
+comments.watch(card): () => void                  // load the thread now; again on its `comments` frame and after a reconnect; returns stop
+comments.reload(card), comments.reloadCounts()
+comments.post(card, text, mentions): Promise<Comment>
+comments.edit(id, text, mentions), comments.remove(id), comments.setResolved(card, resolved)
+useThread(card | null): ThreadSnapshot            // { card, status, error?, resolved, comments (oldest first) }
+useCommentCount(card): CommentCount | null        // the badge; re-renders only that Card
+MAX_COMMENT                                       // 10 000 characters
+
+// ---- For you ----
+forYou.reload(), forYou.seen(commentId), forYou.onMention(fn): () => void
+useForYou(): ForYouSnapshot                       // { status, items (newest first, ≤ 200), unseen }
+
+// ---- mentions (pure) ----
+findMentions(text, members): string[]             // ids of whole names after an "@" that starts a word; longest name wins; each once
+mentionRanges(text, members): { start, end, member }[]
+mentionAt(text, caret): { start, query } | null   // the mention being typed (no line break, ≤ 2 spaces, ≤ 40 characters)
+mentionCandidates(query, members, limit = 6)      // name starts with it, then a later word; then by name
+insertMention(text, start, caret, name): { text, caret }   // "@Name " in place of what was typed
+```
+
+Behaviour:
+
+- **`GET /api/workspace`**: `empty` is true only for `kind: "team"` and `empty: true`; `readOnly` for `read_only: true`; anything missing reads false. `movedTo` is read from `moved_to` **— not in Contract B** (the server has no way to know the address: Contract A gives `LocalOptions` only `read_only`); null when absent, and the UI then says "a Team server".
+- **A moved copy**: `useBoard().readOnly` is true (as for a Guest) and `useBoard().moved` is true (so a Member there still reads History, which a Guest may not). `board.submit`, the soft lock, `todos.*` writes and `comments.*` writes refuse locally with `ApiError(403, 'moved', MOVED_SENTENCE)` — no request. Any `403 moved` from the server (any call through `request` or `uploadBytes`) counts once in `useMovedRefusal()` and flips `readOnly` to true at once (a copy moved while open). Undo has nothing to do: the Board turns read-only, so `useUndoPlace` is false and `__infallUndo.state()` is all null. The refusals are forgotten with the session.
+- **Import**: `POST /api/workspace/import`, body the bytes as `application/octet-stream` with `X-Qoop-Request: 1`, sent with XMLHttpRequest (upload progress; `onProgress(total, total)` once more when the answer is in) or, without it, with fetch (progress only at the end). Locally 403 for anyone but an Admin and 400 for an empty file. The answer is read leniently: `members` items without a string `id` / `name` are dropped, `claimed` is true unless `false`, `you_were` `''` when absent. Afterwards `empty` reads false and `GET /api/members` refreshes the Member list (the file brought names). The server's refusals come through as they are (`409 not_empty`, `400 not_a_workspace_file`, `413`, `422 newer_version`; the UI shows `message`). Abort → `ApiError(0, 'aborted')`.
+- **Export**: `GET /api/workspace/export` read as bytes (`arrayBuffer`); the name from `Content-Disposition` (`filename*=UTF-8''…` first, then `filename="…"`). Admin only, locally.
+- **Comments**, as assumed from Contract B where it is loose — the server agent should match or say:
+  - `GET /api/cards/{card}/comments` → `{ resolved, comments: [{ id, author, text, mentions, created_at, edited_at | null }] }`; the layer sorts by `created_at`, then id.
+  - `POST …/comments {text, mentions}` → `201` **the Comment object itself** (not wrapped). An unreadable answer makes the layer fetch the thread.
+  - `PATCH /api/comments/{id} {text, mentions}` → `200` **the Comment** (with `edited_at`); otherwise the thread is fetched again. `DELETE` → anything 2xx.
+  - `PUT /api/cards/{card}/comments/resolved {resolved}` → anything 2xx; the layer sets `resolved` itself.
+  - `GET /api/comments/counts` → `{ "<card>": { open, resolved } }`. The badge shows `open` as a number and a tick when `resolved` (the fake reads `open` as the number of Comments in the thread; if the server means something else by it, the badge simply shows that number). It is fetched once when the Board first opens for a Member, again on every `comments` frame (one request at a time, at most one more after), after a reconnect, and after your own post / delete / resolve. **Never per Card.**
+  - `{type:"comments", card}` refetches the counts, and the thread when someone is watching it. Comments are the same on every Branch, so the frame is taken whatever Branch is open.
+  - Texts are sent trimmed; locally 400 for empty or over 10 000 characters (counted in characters), 403 for a Guest. `mentions` are sent as given, de-duplicated; the UI derives them with `findMentions` from the names it offers (in a Local Workspace only the one Member). Not optimistic: a Comment shows once the server answered (`post` resolves with it).
+- **For you**: `GET /api/for-you` → `{ items: [{ comment, card, author, at, seen }] }` (sorted newest first by the layer, cut to 200); `unseen` = items not seen. `POST /api/for-you/seen {up_to}` marks that item **and every older one** at once (optimistic, taken back on failure). `{type:"for_you", count}` sets `unseen` to `count`; when it went up, the list is fetched and `onMention` listeners get the newest unseen item that was not there before (one call, for the short notice); when the list was never loaded nothing is announced. Loaded with the counts on first open, again after a reconnect.
+- Everything outside versioning is forgotten when the session ends, becomes a Guest's or changes hands; a Guest asks for nothing.
+- **Desktop bridge** (Contract C): the UI reads `moveHandover` / `moveFile` / `moveDone` through `desktopMove()` (only when all three are there) and `saveBinaryFile` through `desktopSaveBinaryFile()` in `ui/bridge.ts`; the lib does not call them.
+- `testing.ts` (the fake server): `workspace.empty / read_only / moved_to` (a `read_only` server answers every write with 403 `moved` and the sentence); `/api/workspace/import` (`imported`, `importAnswer`, `importFail`; Admin, Team, only while empty; adds the answer's names to `members` as unclaimed) and `/api/workspace/export` (`exportBytes`, `exportName`); `/api/invites` (`invitesList`; `claims` must name an unclaimed Member, else 400); the Comment routes (`comments`, `resolved`, `seenBy`, `commentFail`, `commentGate`, `addComment(card, text, mentions, author)`, `threadOf`, `commentCounts`, `forYouOf(member)`, `commentsFrame(card)`, `forYouFrame(member)`); `xhr()` — a fake `XMLHttpRequest` class for `vi.stubGlobal` that sends to the fake server and reports upload progress in four steps (`uploadGate` holds it after the first). Its `fetch` passes a body that is not a string through as it is.
