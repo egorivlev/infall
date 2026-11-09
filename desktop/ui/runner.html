@@ -11,22 +11,44 @@
       <h1>Runner settings</h1>
       <p class="muted">
         The Runner executes Runs on this computer, with your own rights, after you have approved
-        their code. These settings are kept on this computer only.
+        their code. A Run only names its language and, for Python, the environment it wants; what
+        those names start is set here, on this computer only.
       </p>
-      <form id="form" novalidate>
-        <h2 id="python-heading">Python</h2>
+
+      <!-- What the window was opened to ask: a Run named something this computer does not know. -->
+      <section id="ask" class="ask" role="status" hidden>
+        <p id="ask-text"></p>
+        <form id="ask-env" class="inline" hidden>
+          <label class="field-label" for="ask-env-choice">Environment</label>
+          <div class="row">
+            <select id="ask-env-choice"></select>
+            <button type="submit" class="primary" id="ask-env-use">Use it</button>
+          </div>
+          <p id="ask-env-error" class="error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <section aria-labelledby="python-heading">
+        <div class="row heading-row">
+          <h2 id="python-heading">Python</h2>
+          <button id="look-again" type="button" class="quiet">Check again</button>
+        </div>
+        <p class="hint">
+          The default environment: Runs that name no environment use it, and so does Q#.
+        </p>
         <p id="override" class="hint" hidden></p>
         <p id="looking" class="muted" role="status">Looking for Python on this computer…</p>
         <ul id="found" class="choices" role="radiogroup" aria-labelledby="python-heading"></ul>
         <ul class="choices">
           <li>
-            <input type="radio" name="python" id="other" value="" />
+            <input type="radio" name="python" id="other" value="" form="main" />
             <label for="other">Another interpreter</label>
           </li>
         </ul>
         <input
           id="other-path"
           type="text"
+          form="main"
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
@@ -38,10 +60,43 @@
           The full path of a Python 3 program. Infall runs it once with --version to check.
         </p>
 
-        <h2><label for="folder">Folder (optional)</label></h2>
+        <h3>Add an environment</h3>
+        <form id="add-env" class="grid" novalidate>
+          <label for="add-env-name">Name</label>
+          <input id="add-env-name" type="text" autocomplete="off" spellcheck="false" maxlength="60" placeholder="lab" />
+          <label for="add-env-path">Python</label>
+          <input
+            id="add-env-path"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="The full path of its Python program"
+          />
+          <span></span>
+          <div class="row end"><button type="submit" class="quiet">Add</button></div>
+        </form>
+        <p id="add-env-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section aria-labelledby="names-heading">
+        <h2 id="names-heading">Names Runs ask for</h2>
+        <p class="hint">
+          A Run may name the environment it wants. A name is looked up here first, then among the
+          environments above by their own name. Each person chooses what a name means on their own
+          computer.
+        </p>
+        <ul id="names" class="rows"></ul>
+        <p id="names-empty" class="muted">No names are set yet. When a Run asks for one this computer does not have, Infall asks you once.</p>
+        <p id="names-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section aria-labelledby="folder-label">
+        <h2><label for="folder" id="folder-label">Folder (optional)</label></h2>
         <input
           id="folder"
           type="text"
+          form="main"
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
@@ -50,21 +105,72 @@
         />
         <p id="folder-hint" class="hint">
           Runs execute in this folder, so their code can import your own modules and read your
-          data. Left empty, every Run gets a new, empty temporary folder.
+          data, and a venv or .venv in it is offered as an environment. Left empty, every Run gets
+          a new, empty temporary folder.
+        </p>
+      </section>
+
+      <form id="main" novalidate>
+        <p id="error" class="error" role="alert" hidden></p>
+        <div class="buttons">
+          <button id="cancel" type="button">Close</button>
+          <button id="save" type="submit" class="primary">Save Python and folder</button>
+        </div>
+        <p class="hint end">Environments, names and languages are saved as you change them.</p>
+      </form>
+
+      <section aria-labelledby="languages-heading">
+        <h2 id="languages-heading">Languages</h2>
+        <p class="hint">
+          What the Runner starts for a Run in each language: a Toolchain. Nothing is set up until
+          you choose it. A program is always started with the Run's file as an argument, never
+          through a shell.
         </p>
 
-        <h2>Approvals</h2>
+        <div class="toolchain" id="qsharp-row">
+          <div class="row">
+            <label class="switch-label" for="qsharp-on">
+              <input type="checkbox" id="qsharp-on" role="switch" aria-describedby="qsharp-state" />
+              Q#
+            </label>
+            <span id="qsharp-state" class="muted"></span>
+          </div>
+          <p class="hint">Runs through the qdk package of the default Python (3.10 or newer).</p>
+          <p id="qsharp-error" class="error" role="alert" hidden></p>
+        </div>
+
+        <div id="presets"></div>
+        <div id="languages"></div>
+
+        <h3>Add a language</h3>
+        <form id="add-lang" class="grid" novalidate>
+          <label for="lang-id">Id</label>
+          <input id="lang-id" type="text" autocomplete="off" spellcheck="false" maxlength="24" placeholder="haskell" aria-describedby="lang-id-hint" />
+          <span></span>
+          <p id="lang-id-hint" class="hint">What a Run names: lowercase letters, digits, - or _.</p>
+          <label for="lang-name">Name</label>
+          <input id="lang-name" type="text" autocomplete="off" maxlength="40" placeholder="Haskell" />
+          <label for="lang-program">Program</label>
+          <input id="lang-program" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="The full path of the program" />
+          <label for="lang-args">Arguments</label>
+          <textarea id="lang-args" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="lang-args-hint">{file}</textarea>
+          <span></span>
+          <p id="lang-args-hint" class="hint">One per line, as they are passed. {file} stands for the Run's file and appears once.</p>
+          <label for="lang-ext">File extension</label>
+          <input id="lang-ext" type="text" autocomplete="off" spellcheck="false" maxlength="8" placeholder="hs" />
+          <span></span>
+          <div class="row end"><button type="submit" class="quiet">Add</button></div>
+        </form>
+        <p id="add-lang-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section aria-labelledby="approvals-heading">
+        <h2 id="approvals-heading">Approvals</h2>
         <div class="row">
           <p id="remembered" class="muted">…</p>
           <button id="forget" type="button" class="quiet" disabled>Forget them</button>
         </div>
-
-        <p id="error" class="error" role="alert" hidden></p>
-        <div class="buttons">
-          <button id="cancel" type="button">Cancel</button>
-          <button id="save" type="submit" class="primary">Save</button>
-        </div>
-      </form>
+      </section>
     </main>
     <script src="runner.js"></script>
   </body>

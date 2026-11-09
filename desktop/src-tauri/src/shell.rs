@@ -249,11 +249,13 @@ pub fn run() {
             runner_status,
             runner_configure,
             runner_run,
+            runner_start,
             runner_cancel,
             approval_view,
             approval_decide,
             runner_settings_view,
             runner_settings_save,
+            runner_settings_change,
             runner_settings_forget,
             runner_settings_close
         ])
@@ -465,6 +467,11 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     .permission("allow-runner-status")
                     .permission("allow-runner-configure")
                     .permission("allow-runner-run")
+                    // A Run that names its language and environment (M19, M19b). A new
+                    // command, so that an app from before it has none: a page that needs it
+                    // finds `runner.start` missing there and refuses, instead of an old app
+                    // running Julia code as Python.
+                    .permission("allow-runner-start")
                     .permission("allow-runner-cancel")
                     .permission("allow-switch-workspace")
                     // Saving an export where the Member chooses, in the system's dialog, and
@@ -599,7 +606,7 @@ fn local_window<'a>(
         .on_new_window(|_, _| NewWindowResponse::Deny)
 }
 
-/// The Runner settings window: which Python, which folder.
+/// The Runner settings window: which Python, which folder, environments and languages.
 fn open_runner_settings(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
         return window.set_focus();
@@ -608,8 +615,8 @@ fn open_runner_settings(app: &AppHandle) -> tauri::Result<()> {
     open.set(true);
     let built = local_window(app, SETTINGS_WINDOW, "runner.html")
         .title("Runner settings")
-        .inner_size(620.0, 700.0)
-        .min_inner_size(480.0, 420.0)
+        .inner_size(680.0, 760.0)
+        .min_inner_size(520.0, 460.0)
         .build();
     match built {
         Ok(window) => {
@@ -1829,36 +1836,47 @@ async fn runner_status(
         .map_err(|_| "The Runner could not be asked.".to_owned())
 }
 
-/// Opens the app's own Runner settings window; returns when it has been closed.
+/// Opens the app's own Runner settings window; returns when it has been closed. `lang`: a
+/// language a Run is in, to be shown set up (or ready to be set up) there. A name, nothing
+/// more: the window shows it as text.
 #[tauri::command]
 async fn runner_configure(
     webview: Webview,
     app: AppHandle,
     state: State<'_, AppState>,
     key: String,
+    lang: Option<String>,
 ) -> Result<(), String> {
     check_bridge_caller(&webview, &state, &key)?;
-    open_runner_settings(&app).map_err(|_| "The window could not be opened.".to_owned())?;
-    let open = state.runner_settings.clone();
-    let _ = tauri::async_runtime::spawn_blocking(move || open.wait_closed(None)).await;
-    Ok(())
+    let runner = runner(&app);
+    // Only when nothing else (a Run) is asking already.
+    let asks = lang
+        .filter(|l| qoop_runner::toolchains::valid_id(l))
+        .filter(|_| runner.asking().is_none());
+    if let Some(lang) = &asks {
+        runner.set_asking(Some(qoop_runner::Ask::Lang(lang.clone())));
+    }
+    let opened = open_runner_settings(&app);
+    if opened.is_ok() {
+        let open = state.runner_settings.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || open.wait_closed(None)).await;
+    }
+    if asks.is_some() && matches!(runner.asking(), Some(qoop_runner::Ask::Lang(_))) {
+        runner.set_asking(None);
+    }
+    opened.map_err(|_| "The window could not be opened.".to_owned())
 }
 
-/// One Run. Every outcome is reported as an event; the command itself only fails when the
-/// caller is not allowed. The code is executed only if the Member approves it in the app's
-/// own window (or approved the same code in this Workspace before): see `qoop_runner`.
-#[tauri::command]
-async fn runner_run(
-    webview: Webview,
+/// One Run, as the Workspace the main window shows asked for it. Every outcome is reported
+/// as an event.
+async fn start_run(
     app: AppHandle,
     state: State<'_, AppState>,
-    key: String,
     request: qoop_runner::RunRequest,
     on_event: Channel<qoop_runner::RunEvent>,
 ) -> Result<(), String> {
     // The Workspace approvals are remembered for is the one the app opened, not anything
     // the page says about itself.
-    check_bridge_caller(&webview, &state, &key)?;
     let workspace = state
         .open
         .lock()
@@ -1888,6 +1906,52 @@ async fn runner_run(
         });
     }
     Ok(())
+}
+
+/// A Run of Python code in the default environment: `runner.run`, exactly as in M8. The
+/// code is executed only if the Member approves it in the app's own window (or approved the
+/// same code in this Workspace before): see `qoop_runner`. A request naming another language
+/// is refused here, never run as Python: such a Run is asked for with `runner_start`.
+#[tauri::command]
+async fn runner_run(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    mut request: qoop_runner::RunRequest,
+    on_event: Channel<qoop_runner::RunEvent>,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    if request
+        .lang
+        .as_deref()
+        .is_some_and(|lang| lang != qoop_runner::toolchains::PYTHON)
+    {
+        let _ = on_event.send(qoop_runner::RunEvent::Error {
+            reason: qoop_runner::Reason::Failed,
+            message: "This Run is not in Python, and was not asked for as such.".to_owned(),
+        });
+        return Ok(());
+    }
+    request.lang = None;
+    request.env = None;
+    start_run(app, state, request, on_event).await
+}
+
+/// A Run that names its language and, for Python and Q#, its environment (`runner.start`,
+/// M19 and M19b). Names only: what they start is decided by this device's settings, and the
+/// code is executed only after the Member's approval, as for `runner_run`.
+#[tauri::command]
+async fn runner_start(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    request: qoop_runner::RunRequest,
+    on_event: Channel<qoop_runner::RunEvent>,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    start_run(app, state, request, on_event).await
 }
 
 /// Stops the Run with this id, if it is the one in progress.
@@ -1949,15 +2013,35 @@ fn close_runner_settings(app: &AppHandle) {
     }
 }
 
-/// The current choice and the interpreters found on this computer (slow: it asks the
-/// Member's shell and each interpreter).
+/// The current choices, and the interpreters, environments and programs found on this
+/// computer. `refresh` ("Check again"): look for them again (slow: it asks the Member's shell
+/// and each candidate); otherwise what was found when the window last looked.
 #[tauri::command]
-async fn runner_settings_view(webview: Webview, app: AppHandle) -> Result<SettingsView, String> {
+async fn runner_settings_view(
+    webview: Webview,
+    app: AppHandle,
+    refresh: Option<bool>,
+) -> Result<SettingsView, String> {
     check_settings_caller(&webview)?;
     let runner = runner(&app);
-    tauri::async_runtime::spawn_blocking(move || runner.settings_view())
+    tauri::async_runtime::spawn_blocking(move || runner.settings_view(refresh.unwrap_or(false)))
         .await
         .map_err(|_| "Infall could not look for Python on this computer.".to_owned())
+}
+
+/// One change made in the window (an environment, a name, Q#, a language); the window stays
+/// open and reads the view again.
+#[tauri::command]
+async fn runner_settings_change(
+    webview: Webview,
+    app: AppHandle,
+    change: qoop_runner::Change,
+) -> Result<(), String> {
+    check_settings_caller(&webview)?;
+    let runner = runner(&app);
+    tauri::async_runtime::spawn_blocking(move || runner.settings_change(change))
+        .await
+        .map_err(|_| "The settings could not be checked. Try again.".to_owned())?
 }
 
 /// Checks and saves the Member's choice, then closes the window.

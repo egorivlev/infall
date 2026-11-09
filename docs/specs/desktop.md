@@ -101,7 +101,7 @@ Also local UI; reached from the app menu ("Runner settings…") and through `run
 ## How a Run is executed
 - The code is written to `main.py` in a fresh owner-only temporary directory and started as `<python> -u -X utf8 <the app's bundled runner.py> <that main.py>`, working directory the configured folder or else that temporary directory, as a new process group. The environment is the login shell's, plus `MPLBACKEND=Agg`, `PYTHONUNBUFFERED=1`, `PYTHONIOENCODING=utf-8`, `QOOP_RUN_DIR=<temporary directory>`.
 - **Usage reports off.** Every Run is also started with the documented switch that turns off the usage report of a package researchers often import, over whatever the login shell sets: `QDK_PYTHON_TELEMETRY=none` (`qdk`, and `qsharp` from 1.28: both READMEs on PyPI; see [qsharp-check.md](qsharp-check.md) §8 for what is sent otherwise), `QSHARP_PYTHON_TELEMETRY=none` (older `qsharp` releases: their README on PyPI, e.g. 1.20.0), `HF_HUB_DISABLE_TELEMETRY=1` (`huggingface_hub`, which reports for `transformers`, `datasets`, `diffusers` and the rest: its documentation, "Environment variables"), `MLFLOW_DISABLE_TELEMETRY=true` (`mlflow` 3.2 and later: its documentation, "Usage Tracking"). Only switches a package documents are set (`exec.rs`, `NO_USAGE_REPORTS`); what a Run's code itself sends is up to the code.
-- `runner.py` (bundled, standard library only, works on Python ≥ 3.8) runs the code as `__main__` (tracebacks name `main.py` with the right line numbers; `SystemExit` and its code are honoured; the working directory is on `sys.path`). When it ends — normally or with an exception — it saves every matplotlib figure still open (only if the code imported `matplotlib.pyplot`) as PNG into `QOOP_RUN_DIR`, first three, smaller dpi if a file would exceed the limit, a one-line note in the output for any it had to leave out; and writes `env.json`: the Python version and the versions of the top-level packages the code imports (at most 8).
+- `runner.py` (bundled, standard library only, works on Python ≥ 3.8) runs the code as `__main__` (tracebacks name `main.py` with the right line numbers; `SystemExit` and its code are honoured; the working directory is on `sys.path`). When it ends — normally or with an exception — it saves every matplotlib figure still open (only if the code imported `matplotlib.pyplot`) as PNG into `QOOP_RUN_DIR`, first three, smaller dpi if a file would exceed the limit, a one-line note in the output for any it had to leave out; and writes `qoop-env.json`: the Python version and the versions of the packages the code imports (since M19: the distributions its top-level imports come from, then what those require directly, at most 32; see "Environments" below).
 - Standard output and standard error go through one pipe, so their order is kept. `output` events are sent at most about ten times a second. Kept output is at most 64 000 characters: beyond that the beginning and the end are kept and one marker line says how much was dropped (`output_truncated`).
 - **No time limit** — experiments run for hours. `cancel` kills the whole process group (`done` with `stopped: true`, `exit: null`, whatever was captured so far, no figures). Quitting the app, closing the window or reloading the page kills it too. One Run at a time per app (`busy`).
 - The temporary directory is deleted afterwards. The app sends nothing anywhere: the page receives the events and records the result through the server.
@@ -250,7 +250,7 @@ Moving a Local Workspace onto a server; backups of a Team Workspace by the app (
 
 # Languages — Runs in more than Python
 
-**Not built yet.** Scheduled as M19b in [the plan to 1.0](../plans/2026-11-24-road-to-1.0.md). Everything in M8 and M9 stays as written for Python; this says what is added. The Run's side of it (the `lang` field, the result) is api.md §15, "Languages".
+**Built on 2026-11-25** together with M19 Part 2 (environments; see "Environments and Toolchains — as built" at the end of this section, which is binding where it differs from the text before it). Everything in M8 and M9 stays as written for Python; this says what is added. The Run's side of it (the `lang` field, the result) is api.md §15, "Languages".
 
 A Run names its language; the Member's own computer decides what that name starts. **The page chooses a name and nothing else.** Which program runs, with which arguments, is set by the Member in the Runner settings window on this device, never by the request — the M8 rule for the interpreter, kept for every language.
 
@@ -357,6 +357,69 @@ There is no `qoop` module outside Python.
 
 ## Not here
 Sandboxing or containers; compiling as a step of its own; installing a language or its packages; state kept between Runs (kernels, notebooks); syntax colouring per language; package versions for languages other than Python; a `qoop` library for other languages; Toolchains shared across a Workspace — each Member sets up their own device.
+
+## Environments and Toolchains — as built (M19 Part 2 and M19b, 2026-11-25)
+
+One mechanism for both: a Run **names** what it wants — its language (`lang`) and, for Python and Q#, an environment (`env`) — and this device decides what the names start. A name this device does not know is asked once, in the Runner settings window opened at that question, and the answer is remembered. Nothing is ever installed.
+
+### Bridge — exact shapes
+```ts
+type QoopRunner = {
+  status(): Promise<{
+    python?: { path: string; version: string };            // the default environment (M8)
+    folder?: string;
+    languages: Record<string, { name: string; version?: string }>;  // runnable now, python included
+    environments: string[];                                 // env names that run here without a question
+  }>;
+  configure(lang?: string): Promise<void>;                  // opens Runner settings, at that language
+  run(request: { id: string; code: string; title: string }, onEvent): Promise<void>;
+      // M8, Python in the default environment. A request with `lang` other than "python" gets
+      // one `error`/`failed` event and nothing runs (never as Python).
+  start(request: { id: string; code: string; title: string; lang?: string; env?: string },
+        onEvent): Promise<void>;                            // NEW: names a language and environment
+  cancel(id: string): Promise<void>;
+};
+// RunEvent `done` gains `lang: string` (always present) and `env.runtime?: string`.
+// RunEvent `error.reason` gains "no_toolchain" and "no_environment".
+```
+- `languages` versions: `python` → the Python version; `qsharp` → `"qdk 1.34.0"` (package and version); a command Toolchain → what `--version` said when it was saved, or absent. Only ids, names and versions reach the page; `status()` starts nothing (it reads the settings and the file system).
+- `environments`: the names the Member mapped, the environments added by hand, and the found environments whose name is unambiguous. No paths.
+- `env` is ignored for languages other than Python and Q#. An empty `env` is the default environment. An `env` that is not 1–60 characters of one line, without control or invisible characters, is `error`/`failed` before anything is shown.
+
+**The old-app fail-safe.** An app from before this milestone has no `runner.start` (and no bridge command `runner_start`); its `run` silently drops `lang`. So the page must ask for every Run whose language is not Python **only** through `runner.start`, and when `typeof qoopDesktop.runner.start !== "function"` refuse with "Update Infall on this computer to run Julia code." A Python Run naming an environment should also use `start` (on an old app, fall back to `run`: the name is only a wish). `status().languages` missing means the same thing. In the new app, `run` refuses another language in the bridge script and again in the command.
+
+### Environments (Python, and Q#'s host)
+- Found from the file system only, nothing started: conda (`CONDA_EXE`, `MAMBA_ROOT_PREFIX`, `~/miniconda3`, `~/anaconda3`, `~/miniforge3`, `~/mambaforge`, `~/micromamba`, Homebrew's Caskroom, `/opt/…`, and every prefix in `~/.conda/environments.txt`; a root is `base`, others by folder name), pyenv (`PYENV_ROOT` or `~/.pyenv`, each version and pyenv-virtualenv env by folder name; `~\.pyenv\pyenv-win` on Windows), a `.venv` or `venv` with `pyvenv.cfg` in the working folder; plus the interpreters on `PATH` (M8) and environments added by hand (name + path, checked with `--version`). Interpreter inside a prefix: `bin/python3`/`bin/python`; Windows `python.exe` or `Scripts\python.exe`.
+- A Run's `env` is resolved: the Member's answer for that name (`runner.json` `names`), an environment added by hand under it, then the one found environment of exactly that name (two of the same name are ambiguous and ask). Otherwise the settings window opens asking "which environment does this name mean here"; the answer is saved; closed without one: `no_environment`, "No environment on this computer is chosen for “<name>”.". The interpreter is checked (`--version`) at every Run. With `QOOP_PYTHON_BIN` set, every Python Run uses it.
+- An environment is started as its Python directly, not activated.
+- `env.packages` (Python Runs): the distributions the code's top-level imports come from (`importlib.metadata.packages_distributions`, Python 3.10+; before that the module's own name), in the order the code names them, then what each of them requires directly (requirements that belong to an extra are left out; only installed ones), at most **32**, names as the distributions' metadata writes them. A local module no distribution provides counts by its name when it has `__version__`. Read in the Run's process when it ends; any failure leaves the list shorter, never breaks the Run.
+- A Run that ends with an uncaught `ModuleNotFoundError` for a package that is really not there gets one more line: `[qoop] This environment has no package <name>.` (The page need not add its own.)
+
+`runner.json` gains, beside `python` (the default environment), `folder`, `qsharp`, `languages`:
+```jsonc
+"environments": [ { "name": "lab", "path": "/opt/lab/bin/python", "version": "3.13.1" } ],
+"names": { "analysis": "/Users/me/miniconda3/envs/analysis/bin/python" },
+"languages": { "haskell": { …, "off": true } }      // the switch; "qsharp": { …, "off": true } likewise
+```
+Saving another default Python forgets what Q# found (it is asked again).
+
+### Toolchains
+- Presets: `julia` (Julia, `julia`, `.jl`), `r` (R, `Rscript`, `.R`), `javascript` (JavaScript, `node`, `.mjs`), `shell` (Shell, `bash`, `.sh`), arguments `{file}`. Programs looked for on the login shell's `PATH`, then `~/.juliaup/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, R.framework, `/Applications/Julia-*.app`; on Windows `julia.exe`, `Rscript.exe`, `node.exe`, `bash.exe` there and in `Program Files\nodejs`, `Program Files\R\R-*\bin`, `Program Files\Git\bin`, `%LOCALAPPDATA%\Programs\Julia*\bin`. At most four per preset, each asked `--version`.
+- **Shell on Windows** is bash too, where Git for Windows provides it — never `System32\bash.exe` or a WindowsApps one (WSL: a Linux that cannot open the Run's Windows path). cmd.exe and PowerShell are other languages: PowerShell can be added by hand (`pwsh.exe`, `-NoProfile -File {file}`, `ps1`); `.bat`/`.cmd` programs are refused. (The spec above said "not on Windows".)
+- `{file}` may sit inside an argument (`--file={file}`); it appears exactly once in all arguments.
+- Not set up, switched off, or its program gone: the settings window opens at that language; `no_toolchain`, "<Name> is not set up in Runner settings on this computer." (`Q# is not set up …` for Q#).
+- Q# switch on: asks the default Python (`-I`, five seconds) for `qdk`, else `qsharp`; when neither: "Q# is not installed for the chosen Python. Install it into that Python with: pip install qdk (it needs Python 3.10 or newer)." — or, for a Python older than 3.10, "Q# needs Python 3.10 or newer, …". A Q# Run naming an environment runs in that environment's Python; `qsharp_runner.py` prints the install sentence when `qdk` is missing there. The recorded package is `qdk` whenever `import qdk` works (an early `qdk` 1.28 wraps `qsharp.code`), else `qsharp`.
+
+### Approval
+- The window shows the language next to the title; **Environment** (the name the Run asked for) when there is one; for Python the interpreter; for Q# "Q#, through Python at <path>"; for another language **Command**: the program and each argument as passed (quoted when it holds a space), `{file}` standing for the Run's file.
+- Remembered per Workspace, `code_sha256`, language, **interpreter or program path**, and folder (pdf-sources.md Part 2, decision 4, which overrides "changing the Toolchain does not ask again" above): the same code sent as another language, or resolving to another environment's interpreter, or to another program, asks again. Changing only a Toolchain's arguments does not. Approvals remembered before this name no interpreter and ask once more after the update.
+
+### Runner settings window
+Python (the default, chosen among everything found and added; **Check again**), **Add an environment**, **Names Runs ask for** (each name → an interpreter, Remove), Folder, then **Save Python and folder** (the only part saved by a button; everything else is saved as it is changed), **Languages** (Q# switch with what was found; each preset either set up — switch, command, version, Remove — or a choice of found programs or a path and **Set up <Name>**; languages added by hand; **Add a language**: id, name, program, arguments one per line, extension), Approvals. When opened to ask, a notice at the top says what a Run asked for; answering it (choosing the environment, setting up the language) closes the window and the Run goes on; Escape or Close leaves the Run.
+Settings window commands: `runner_settings_view({ refresh?: boolean })`, `runner_settings_save({ python, folder })`, `runner_settings_change({ change })` with `change` one of `{do:"add_environment",name,path}`, `{do:"remove_environment",name}`, `{do:"map",name,path|null}`, `{do:"qsharp",on}`, `{do:"set_language",id,name,program,args,ext}`, `{do:"remove_language",id}`, `{do:"enable_language",id,on}`, `runner_settings_forget`, `runner_settings_close`.
+
+### Not done here
+Activation of conda environments (`PATH`, `CONDA_PREFIX`); versions of a found environment are asked only when the settings window looks; package versions for languages other than Python; Windows and Linux not run (only macOS).
 
 ## Checked on 2026-11-24 with qsharp 1.31.0 (qdk 1.34.0) on macOS arm64
 The section was first written from the package's documentation as remembered; the Q# part above is now what running it showed. Scripts, samples and their captured output, to repeat the check: [qsharp-check.md](qsharp-check.md).
@@ -477,7 +540,7 @@ The server's pages may connect only to their own origin (`connect-src 'self'`), 
 - `moveFile`: `move_file_chunk({ offset })` answers `{ size, data }`, at most 4 MB of the file a call; the script fills one `Uint8Array` of `size` and rejects if the size changes between calls. Limit 512 MB.
 - `saveBinaryFile`: `save_binary_begin({ size })` gives a ticket, `save_binary_chunk({ ticket, offset, data })` sends 3 MB of bytes a call (in order; at most 8 MB of text a call), `save_binary_finish({ ticket, suggestedName })` shows the dialog and writes. The bytes are held in the app's memory until then; one file at a time, dropped when the page starts loading another page or the window closes. Limit 512 MB.
 
-The main window's bridge grants seventeen commands: those of M15, the three of the move and the three of the binary save.
+The main window's bridge grants seventeen commands: those of M15, the three of the move and the three of the binary save. (Since M19/M19b eighteen: `runner_start`, below.)
 
 ## Not in M18
 Moving a Workspace that was already moved; moving onto a server that is not empty (the server refuses); a progress figure for the copy before the server opens; the bridge opening the Team server from a read-only copy's page.
