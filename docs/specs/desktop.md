@@ -425,3 +425,58 @@ A menu item that tells "nothing to undo" apart from "a field is being edited" (t
 That build treated the main window as focused, because a window of an app in the background is never the focused one. In the real build, run the same way, the items stayed the system's own, as the rule says.
 
 **Not seen:** the focus rule switching to the app's own items in a frontmost window; a real ⌘Z (WebKit giving the key to the page first, and `preventDefault()` keeping it from the menu); the fallback to text undo in a field; Windows; Linux.
+
+# M18 — Moving a Local Workspace onto a Team server
+
+The contract is [team-move.md](team-move.md) (decision 3, Contract A for the server crate, Contract C for the start screen and the bridge). This section says what the shell does with it.
+
+## The start screen's new command
+Added to the `setup` window's commands, under the M12 rules (that window only; a failure rejects with one plain sentence):
+
+```ts
+workspace_move({ id: string, address: string }): void
+```
+
+- Local only, and not one already moved. The address is checked exactly as for `workspace_connect` (the M7 rules and the health check), before anything is written.
+- A Workspace file is written with Contract A's `export_for_move` (until the server crate has it, a local wrapper around `export_workspace`: `shell::export_for_move`) into `moves/` in the app's data directory, a folder only the owner can open, under a random name. A file larger than 512 MB is refused (what a Team server takes by default).
+- The Team Workspace is remembered as `workspace_connect` remembers it, the pending move `{ id, origin, file, at }` is kept in `workspaces.json` (`pendingMoves`; `file` is a name in `moves/`, never a path), and the Team Workspace is opened. One pending move per Team server and per Local Workspace: a new one replaces the one before, and its file.
+- A pending move is dropped with its file when it is 7 days old, when its Team Workspace is forgotten, when its Local Workspace is removed, or once the server has the Workspace. Files in `moves/` that no pending move names (a move cut short) are deleted when the app starts.
+
+`WorkspaceEntry` gains `movedTo: string | null`: the Team origin a Local Workspace was moved to. Such a Workspace's server is started with `read_only: true` (in one place, `shell::local_options`).
+
+The start screen: a Local row's ⋯ menu has **Move to a Team server…**, which asks for the address in the row. A moved row says **Moved to <host>**, its main action is **Open on the server** (`workspace_connect` with that origin), and its menu keeps Rename, Export…, Show in folder and Remove…, with **Open this copy (read-only)** for the copy on this computer.
+
+## Bridge — handing the file over
+Added to `window.qoopDesktop` under the same rules as the rest of the bridge (the open Workspace's origin, the top frame, the main window, the bridge key). Each answers only about a move pending to the origin the main window shows: on any other server `moveHandover()` is `null` and the other two reject.
+
+```ts
+moveHandover(): Promise<{ name: string; size: number } | null>
+  // The Local Workspace's name and its file's size in bytes.
+moveFile(): Promise<Uint8Array>
+  // The file's bytes. Rejects with a sentence when there is nothing to hand over.
+moveDone(result: { ok: boolean }): Promise<void>
+  // ok: the Local Workspace is marked movedTo = this origin, its file deleted, the move
+  // forgotten. Not ok: nothing changes; the page can ask again.
+```
+
+## Bridge — saving a file the page made
+
+```ts
+saveBinaryFile(file: { suggestedName: string; bytes: Uint8Array }): Promise<boolean>
+  // As saveFile, for bytes: the system's save dialog, the name made safe as saveFile makes it,
+  // written whole or not at all. false when cancelled. At most 512 MB. An ArrayBuffer or any
+  // typed array is taken too.
+```
+
+For a PNG of the Board and a Team Workspace's Workspace file. The web UI checks that it exists; without it (a browser, an older app) it downloads the file the browser's way.
+
+## How the bytes travel
+The server's pages may connect only to their own origin (`connect-src 'self'`), so the web view cannot reach Tauri's `ipc:` protocol from them and every call goes through the web view's message channel. There a binary answer arrives as a JSON array of numbers (about four characters a byte), and a `Uint8Array` argument goes the same way. So both directions are **chunked base64**, in calls the bridge script makes by itself:
+
+- `moveFile`: `move_file_chunk({ offset })` answers `{ size, data }`, at most 4 MB of the file a call; the script fills one `Uint8Array` of `size` and rejects if the size changes between calls. Limit 512 MB.
+- `saveBinaryFile`: `save_binary_begin({ size })` gives a ticket, `save_binary_chunk({ ticket, offset, data })` sends 3 MB of bytes a call (in order; at most 8 MB of text a call), `save_binary_finish({ ticket, suggestedName })` shows the dialog and writes. The bytes are held in the app's memory until then; one file at a time, dropped when the page starts loading another page or the window closes. Limit 512 MB.
+
+The main window's bridge grants seventeen commands: those of M15, the three of the move and the three of the binary save.
+
+## Not in M18
+Moving a Workspace that was already moved; moving onto a server that is not empty (the server refuses); a progress figure for the copy before the server opens; the bridge opening the Team server from a read-only copy's page.
