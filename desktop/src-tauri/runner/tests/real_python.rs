@@ -206,6 +206,8 @@ impl Bench {
                 id: "run-1".into(),
                 code: code.to_owned(),
                 title: "Test Run".into(),
+                lang: None,
+                env: None,
             },
             &Workspace {
                 key: origin.to_owned(),
@@ -291,6 +293,7 @@ fn done(events: Vec<RunEvent>) -> Done {
         })
         .collect();
     let Some(RunEvent::Done {
+        lang: _,
         exit,
         stopped,
         duration_ms,
@@ -393,7 +396,8 @@ fn hello_runs_after_the_member_approved_it() {
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].title, "Test Run");
     assert_eq!(shown[0].origin, ORIGIN);
-    assert_eq!(shown[0].python, python.path);
+    assert_eq!(shown[0].program, python.path);
+    assert_eq!(shown[0].lang, "python");
     assert_eq!(shown[0].folder, None);
     assert_eq!(shown[0].line_count, 1);
     assert_eq!(shown[0].sha256, run.code_sha256);
@@ -486,6 +490,8 @@ fn approved_code_runs_again_without_asking_and_changed_code_asks_again() {
             id: "r".into(),
             code: code.into(),
             title: String::new(),
+            lang: None,
+            env: None,
         },
         &workspace(),
         &nobody,
@@ -546,6 +552,8 @@ fn a_yes_that_comes_at_once_does_not_count() {
             id: "r".into(),
             code: "print('ok')".into(),
             title: String::new(),
+            lang: None,
+            env: None,
         },
         &workspace(),
         &member,
@@ -586,6 +594,8 @@ fn code_that_cannot_be_shown_is_refused_before_any_window() {
                 id: id.into(),
                 code: "print(1)".into(),
                 title: String::new(),
+                lang: None,
+                env: None,
             },
             &workspace(),
             &member,
@@ -700,7 +710,7 @@ fn settings_accept_only_python_3_and_existing_folders() {
 
     // The real lookup finds the interpreter the tests use (unless it was named by hand).
     if std::env::var_os("QOOP_TEST_PYTHON").is_none() {
-        let view = runner.settings_view();
+        let view = runner.settings_view(true);
         assert!(
             view.found.iter().any(|i| i.path == python.path),
             "{:?}",
@@ -1137,6 +1147,8 @@ fn output_arrives_while_the_code_runs_about_ten_times_a_second() {
             id: "r".into(),
             code: "import time\nfor n in range(100):\n    print(n)\n    time.sleep(0.015)\n".into(),
             title: String::new(),
+            lang: None,
+            env: None,
         },
         &workspace(),
         &member,
@@ -1231,6 +1243,8 @@ fn run_and_interrupt(
                 id: "long-run".into(),
                 code,
                 title: "Long".into(),
+                lang: None,
+                env: None,
             },
             &workspace(),
             &member,
@@ -1363,6 +1377,8 @@ fn one_run_at_a_time() {
                 id: "second".into(),
                 code: "print('second')".into(),
                 title: String::new(),
+                lang: None,
+                env: None,
             },
             &workspace(),
             &member,
@@ -1400,6 +1416,8 @@ fn a_run_asked_for_right_after_a_cancel_waits_for_the_old_one_to_go() {
                 id: "next".into(),
                 code: "print('next')".into(),
                 title: String::new(),
+                lang: None,
+                env: None,
             },
             &workspace(),
             &member,
@@ -1424,6 +1442,8 @@ fn a_run_is_busy_from_the_moment_it_waits_for_approval() {
                 id: "waiting".into(),
                 code: "print('a')".into(),
                 title: String::new(),
+                lang: None,
+                env: None,
             },
             &workspace(),
             &member,
@@ -1444,6 +1464,8 @@ fn a_run_is_busy_from_the_moment_it_waits_for_approval() {
             id: "other".into(),
             code: "print('b')".into(),
             title: String::new(),
+            lang: None,
+            env: None,
         },
         &workspace(),
         &member,
@@ -1504,6 +1526,8 @@ fn a_run_is_measured_about_once_a_second_while_it_executes() {
             id: "r".into(),
             code: code.into(),
             title: String::new(),
+            lang: None,
+            env: None,
         },
         &workspace(),
         &member,
@@ -1774,10 +1798,11 @@ fn an_open_figure_is_captured_as_a_png() {
         run.figures[0].ends_with(b"IEND\xaeB`\x82"),
         "the PNG is cut off"
     );
-    // The package the code imports is reported with its version; `json` is not a package.
+    // The package the code imports is reported with its version, and what it requires;
+    // `json` is not a package.
     let packages = run.packages.expect("packages");
-    assert_eq!(packages.keys().collect::<Vec<_>>(), ["matplotlib"]);
     assert!(packages["matplotlib"].starts_with(|c: char| c.is_ascii_digit()));
+    assert!(packages.contains_key("numpy") && !packages.contains_key("json"));
 }
 
 #[test]
@@ -1806,7 +1831,7 @@ fn figures_are_kept_when_the_code_fails_and_not_when_they_were_closed() {
     let run = bench.run("import matplotlib, sys\nprint('matplotlib.pyplot' in sys.modules)\n");
     assert_eq!(run.output, "False\n");
     assert!(run.figures.is_empty());
-    assert_eq!(run.packages.unwrap().len(), 1);
+    assert!(run.packages.unwrap().contains_key("matplotlib"));
 }
 
 #[test]
@@ -1878,25 +1903,56 @@ fn a_figure_too_large_is_saved_smaller_or_left_out() {
 }
 
 #[test]
-fn the_packages_the_code_imports_are_reported() {
+fn the_packages_the_code_imports_are_reported_with_what_they_require() {
     let python = matplotlib_or_skip!();
     let bench = bench(python);
     // matplotlib brings numpy with it, so both are there to import.
-    let code = "import os, sys\nimport json as j\nfrom collections import OrderedDict\nimport numpy as np\nfrom matplotlib import cm\nimport numpy.linalg\ntry:\n    import a_package_that_does_not_exist\nexcept ImportError:\n    pass\nprint(np.__version__)\n";
+    let code = "import os, sys\nimport json as j\nfrom collections import OrderedDict\nimport numpy as np\nfrom matplotlib import cm\nimport numpy.linalg\ntry:\n    import a_package_that_does_not_exist\nexcept ImportError:\n    pass\nprint(np.__version__)\nimport importlib.metadata as m\nprint(sorted(m.requires('matplotlib') or []))\n";
     let run = bench.run(code);
     assert_eq!(run.exit, Some(0), "{}", run.output);
     let packages = run.packages.expect("packages");
-    assert_eq!(packages.keys().collect::<Vec<_>>(), ["matplotlib", "numpy"]);
-    assert_eq!(packages["numpy"], run.output.trim());
+    let numpy = run.output.lines().next().unwrap();
+    assert_eq!(packages["numpy"], numpy);
+    assert!(packages.contains_key("matplotlib"), "{packages:?}");
+    // The distribution a module comes from, by its own name (`dateutil` is python-dateutil),
+    // where the Python can tell (3.10 and newer).
+    let modern = run
+        .python
+        .as_deref()
+        .is_some_and(|v| v.split('.').nth(1).and_then(|m| m.parse::<u32>().ok()) >= Some(10));
+    // What matplotlib requires directly is there (cycler, always) …
+    assert!(packages.contains_key("cycler"), "{packages:?}");
+    // … and nothing further down: six is what python-dateutil requires, not matplotlib.
+    if !run.output.contains("'six") {
+        assert!(!packages.contains_key("six"), "{packages:?}");
+    }
+    // Imported itself, python-dateutil brings what it requires.
+    if modern {
+        let run = bench.run("import dateutil\n");
+        let packages = run.packages.expect("packages");
+        assert!(packages.contains_key("python-dateutil"), "{packages:?}");
+        assert!(packages.contains_key("six"), "{packages:?}");
+    }
+    // The standard library is never listed, nor anything not installed.
+    for absent in [
+        "os",
+        "sys",
+        "json",
+        "collections",
+        "a_package_that_does_not_exist",
+    ] {
+        assert!(!packages.contains_key(absent), "{absent}");
+    }
+    assert!(packages.len() <= qoop_runner::exec::MAX_PACKAGES);
     assert_eq!(
         run.python.as_deref().map(|v| v.starts_with("3.")),
         Some(true)
     );
 
-    // More than eight: the first eight the code names. (Made-up packages with a version.)
+    // More than 32: the first 32 the code names. (Made-up modules that say their version.)
     let folder = tempfile::tempdir().unwrap();
     let mut code = String::new();
-    for n in 0..12 {
+    for n in 0..40 {
         fs::write(
             folder.path().join(format!("pkg{n:02}.py")),
             format!("__version__ = '1.{n}'\n"),
@@ -1913,9 +1969,9 @@ fn the_packages_the_code_imports_are_reported() {
     let run = bench.run(&code);
     assert_eq!(run.exit, Some(0), "{}", run.output);
     let packages = run.packages.expect("packages");
-    assert_eq!(packages.len(), 8);
+    assert_eq!(packages.len(), 32);
     assert_eq!(packages.keys().next().map(String::as_str), Some("pkg00"));
-    assert_eq!(packages.keys().last().map(String::as_str), Some("pkg07"));
+    assert_eq!(packages.keys().last().map(String::as_str), Some("pkg31"));
     assert_eq!(packages["pkg03"], "1.3");
 
     // A syntax error: no packages, but the Python version is still known.
@@ -1923,4 +1979,28 @@ fn the_packages_the_code_imports_are_reported() {
     assert_eq!(run.exit, Some(1));
     assert_eq!(run.packages, None);
     assert!(run.python.is_some());
+}
+
+#[test]
+fn a_missing_package_is_named_in_one_line() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    let run = bench.run("print('start')\nimport a_package_that_does_not_exist.sub\n");
+    assert_eq!(run.exit, Some(1));
+    assert!(run.output.contains("ModuleNotFoundError"), "{}", run.output);
+    assert!(
+        run.output
+            .ends_with("\n[qoop] This environment has no package a_package_that_does_not_exist.\n"),
+        "{}",
+        run.output
+    );
+    // A missing part of a package that is there is not a missing package.
+    let run = bench.run("import json.no_such_part\n");
+    assert_eq!(run.exit, Some(1));
+    assert!(run.output.contains("ModuleNotFoundError"), "{}", run.output);
+    assert!(!run.output.contains("has no package"), "{}", run.output);
+    // Caught by the code: nothing is said.
+    let run =
+        bench.run("try:\n    import nothing_here_either\nexcept ImportError:\n    print('fine')\n");
+    assert_eq!((run.exit, run.output.as_str()), (Some(0), "fine\n"));
 }
