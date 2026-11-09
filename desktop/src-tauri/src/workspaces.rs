@@ -70,7 +70,40 @@ pub struct Entry {
     /// Local: when the newest backup in its folder was made (unix ms), as last seen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_backup: Option<i64>,
+    /// Local: the Team server's origin it was moved to (docs/specs/team-move.md, decision 3).
+    /// Such a Workspace stays on this computer and opens read-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved_to: Option<String>,
 }
+
+/// A move of a Local Workspace onto a Team server that the server's page has not taken yet
+/// (docs/specs/team-move.md, Contract C): the Workspace file written for it waits in the
+/// app's data directory until the page of `origin` takes it (`moveFile`, `moveDone`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingMove {
+    /// The Local Workspace's id.
+    pub id: String,
+    /// The Team server's origin, as `parse_server_address` returns it.
+    pub origin: String,
+    /// The file's name in [`Registry::moves_dir`]; never a path, so nothing written into
+    /// the list by hand can point the bridge at another file.
+    pub file: String,
+    /// When it was written (unix ms).
+    pub at: i64,
+}
+
+/// What `moveHandover` tells the page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Handover {
+    pub name: String,
+    pub size: u64,
+}
+
+/// A pending move is dropped, with its file, a week after it was made.
+pub const MOVE_KEEPS_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// In the data directory: the Workspace files of pending moves (owner-only).
+const MOVES_DIR: &str = "moves";
 
 /// One Workspace, as the start screen gets it (Contract C's `WorkspaceEntry`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -84,6 +117,8 @@ pub struct Listed {
     pub last_opened: Option<i64>,
     /// Local only (docs/specs/portability.md, Contract C).
     pub last_backup: Option<i64>,
+    /// Local only (docs/specs/team-move.md, Contract C).
+    pub moved_to: Option<String>,
 }
 
 impl Entry {
@@ -96,7 +131,13 @@ impl Entry {
             address: self.address.clone(),
             last_opened: self.last_opened,
             last_backup: self.last_backup,
+            moved_to: self.moved_to.clone(),
         }
+    }
+
+    /// Whether its server is started read-only: a Local Workspace moved to a Team server.
+    pub fn read_only(&self) -> bool {
+        self.kind == Kind::Local && self.moved_to.is_some()
     }
 
     /// What Run approvals are remembered under: a Team Workspace's origin (as before
@@ -125,6 +166,43 @@ struct Stored {
     /// The Workspace to open as soon as the app starts, once: set just before the app
     /// restarts itself to open it.
     open_next: Option<String>,
+    /// At most one per Team origin and one per Local Workspace.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pending_moves: Vec<PendingMove>,
+}
+
+impl Stored {
+    /// Drops the pending moves that no longer make sense: whose Local Workspace is gone or
+    /// already moved, whose Team Workspace was forgotten, and (with `now`) those older than
+    /// [`MOVE_KEEPS_MS`]. Returns the files of those dropped, to delete once saved.
+    fn drop_stale_moves(&mut self, now: Option<i64>) -> Vec<String> {
+        let workspaces = &self.workspaces;
+        let mut dropped = Vec::new();
+        self.pending_moves.retain(|m| {
+            let (local, team) = (move_from(workspaces, m), move_to(workspaces, m));
+            let fresh = now.is_none_or(|now| now.saturating_sub(m.at) < MOVE_KEEPS_MS);
+            let keep = local && team && fresh;
+            if !keep {
+                dropped.push(m.file.clone());
+            }
+            keep
+        });
+        dropped
+    }
+}
+
+/// The Local Workspace a pending move is of is in the list, and not moved yet.
+fn move_from(workspaces: &[Entry], m: &PendingMove) -> bool {
+    workspaces
+        .iter()
+        .any(|e| e.id == m.id && e.kind == Kind::Local && e.moved_to.is_none())
+}
+
+/// The Team Workspace a pending move goes to is in the list.
+fn move_to(workspaces: &[Entry], m: &PendingMove) -> bool {
+    workspaces
+        .iter()
+        .any(|e| e.kind == Kind::Team && e.address.as_deref() == Some(m.origin.as_str()))
 }
 
 pub struct Registry {
@@ -165,6 +243,7 @@ impl Registry {
                 last_opened: None,
                 port: choose_port(&ports_in_use(&stored.workspaces, ""), candidates()),
                 last_backup: None,
+                moved_to: None,
             };
             create_private_dir(&self.local_dir(&entry.id))
                 .map_err(|_| "The workspace could not be made on this computer.".to_owned())?;
@@ -194,6 +273,7 @@ impl Registry {
                 last_opened: None,
                 port: None,
                 last_backup: None,
+                moved_to: None,
             };
             stored.workspaces.insert(0, entry.clone());
             Ok(entry)
@@ -221,6 +301,7 @@ impl Registry {
                 last_opened: None,
                 port: choose_port(&ports_in_use(&stored.workspaces, ""), candidates()),
                 last_backup: None,
+                moved_to: None,
             };
             let dir = self.local_dir(&entry.id);
             create_private_dir(&dir)
@@ -274,8 +355,187 @@ impl Registry {
             if stored.open_next.as_deref() == Some(id) {
                 stored.open_next = None;
             }
-            Ok(())
+            // A move from or to it goes with it.
+            Ok(stored.drop_stale_moves(None))
         })
+        .map(|dropped| self.delete_move_files(&dropped))
+    }
+
+    // ---- moving a Local Workspace onto a Team server (docs/specs/team-move.md) ----------
+
+    /// Where the Workspace files of pending moves wait: a private directory of the app's
+    /// data directory.
+    pub fn moves_dir(&self) -> PathBuf {
+        self.data.join(MOVES_DIR)
+    }
+
+    /// A new name for a move's Workspace file, in [`Registry::moves_dir`] (made, owner-only,
+    /// if it is not there), and its path. Nothing is written to it.
+    pub fn new_move_file(&self) -> Result<(String, PathBuf), String> {
+        create_private_dir(&self.moves_dir())
+            .map_err(|_| "The workspace could not be copied on this computer.".to_owned())?;
+        let name = format!("{}.{}", new_id(), crate::portable::WORKSPACE_EXTENSION);
+        let path = self.moves_dir().join(&name);
+        Ok((name, path))
+    }
+
+    /// Remembers that the Local Workspace `id` is being moved to the Team Workspace at
+    /// `origin` (which must already be remembered), its file `file` (from
+    /// [`Registry::new_move_file`]) written at `at`. An earlier pending move to that origin,
+    /// or of that Workspace, is replaced and its file deleted.
+    pub fn add_pending_move(
+        &self,
+        id: &str,
+        origin: &str,
+        file: &str,
+        at: i64,
+    ) -> Result<(), String> {
+        const NOT_KEPT: &str = "The move could not be prepared on this computer.";
+        if !valid_move_file(file) {
+            return Err(NOT_KEPT.to_owned());
+        }
+        let dropped = self.update(|stored| {
+            let entry = find(stored, id)?;
+            if entry.kind != Kind::Local {
+                return Err("Only a workspace on this computer can be moved.".to_owned());
+            }
+            let mut dropped = Vec::new();
+            stored.pending_moves.retain(|m| {
+                let replaced = m.origin == origin || m.id == id;
+                if replaced && m.file != file {
+                    dropped.push(m.file.clone());
+                }
+                !replaced
+            });
+            stored.pending_moves.push(PendingMove {
+                id: id.to_owned(),
+                origin: origin.to_owned(),
+                file: file.to_owned(),
+                at,
+            });
+            // Kept only when both Workspaces are in the list.
+            dropped.extend(stored.drop_stale_moves(None));
+            if !stored.pending_moves.iter().any(|m| m.file == file) {
+                return Err(NOT_KEPT.to_owned());
+            }
+            Ok(dropped)
+        })?;
+        self.delete_move_files(&dropped);
+        Ok(())
+    }
+
+    /// Drops the pending moves that are a week old or whose Workspaces are gone, with their
+    /// files.
+    pub fn prune_moves(&self, now: i64) {
+        // Not even read when there is nothing to drop: no write of the list either.
+        let stale = {
+            let mut stored = self.load();
+            !stored.drop_stale_moves(Some(now)).is_empty()
+        };
+        if stale && let Ok(dropped) = self.update(|stored| Ok(stored.drop_stale_moves(Some(now)))) {
+            self.delete_move_files(&dropped);
+        }
+    }
+
+    /// Deletes every file in [`Registry::moves_dir`] that no pending move names: what a move
+    /// cut short left behind (the app quit while the file was written). Run when the app
+    /// starts, before anything can be writing there.
+    pub fn sweep_moves(&self) {
+        let named: Vec<String> = self
+            .load()
+            .pending_moves
+            .into_iter()
+            .map(|m| m.file)
+            .collect();
+        for entry in fs::read_dir(self.moves_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_file = entry.file_type().is_ok_and(|t| t.is_file());
+            if is_file && !named.contains(&name) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    /// The pending move to `origin`, if there is one (stale ones are dropped first).
+    pub fn pending_move(&self, origin: &str, now: i64) -> Option<PendingMove> {
+        self.prune_moves(now);
+        self.load()
+            .pending_moves
+            .into_iter()
+            .find(|m| m.origin == origin)
+    }
+
+    /// The path of a pending move's file.
+    pub fn move_file_path(&self, pending: &PendingMove) -> PathBuf {
+        // Checked by `valid_move_file`: a plain name, so this stays in the directory.
+        self.moves_dir().join(&pending.file)
+    }
+
+    /// What `moveHandover` answers for the page of `origin`: the name of the Workspace being
+    /// moved there and the size of its file. `None` when nothing is being moved there, or
+    /// its file is gone (the move is then dropped).
+    pub fn handover(&self, origin: &str, now: i64) -> Option<Handover> {
+        let pending = self.pending_move(origin, now)?;
+        let name = self.get(&pending.id)?.name;
+        match fs::metadata(self.move_file_path(&pending)) {
+            Ok(meta) if meta.is_file() => Some(Handover {
+                name,
+                size: meta.len(),
+            }),
+            _ => {
+                self.forget_move(origin);
+                None
+            }
+        }
+    }
+
+    /// The server of `origin` has the Workspace (`moveDone({ ok: true })`): the Local
+    /// Workspace is marked as moved there, and the pending move is forgotten with its file.
+    /// Nothing happens when nothing is being moved there.
+    pub fn finish_move(&self, origin: &str) -> Result<(), String> {
+        let dropped = self.update(|stored| {
+            let Some(at) = stored.pending_moves.iter().position(|m| m.origin == origin) else {
+                return Ok(Vec::new());
+            };
+            let pending = stored.pending_moves.remove(at);
+            if let Some(entry) = stored
+                .workspaces
+                .iter_mut()
+                .find(|e| e.id == pending.id && e.kind == Kind::Local)
+            {
+                entry.moved_to = Some(pending.origin.clone());
+            }
+            Ok(vec![pending.file])
+        })?;
+        self.delete_move_files(&dropped);
+        Ok(())
+    }
+
+    /// Forgets the pending move to `origin` and deletes its file.
+    fn forget_move(&self, origin: &str) {
+        let dropped = self.update(|stored| {
+            let mut dropped = Vec::new();
+            stored.pending_moves.retain(|m| {
+                if m.origin == origin {
+                    dropped.push(m.file.clone());
+                }
+                m.origin != origin
+            });
+            Ok(dropped)
+        });
+        if let Ok(dropped) = dropped {
+            self.delete_move_files(&dropped);
+        }
+    }
+
+    fn delete_move_files(&self, files: &[String]) {
+        for file in files.iter().filter(|f| valid_move_file(f)) {
+            let _ = fs::remove_file(self.moves_dir().join(file));
+        }
     }
 
     /// Notes that the Workspace was opened at `now` (unix ms).
@@ -377,6 +637,7 @@ impl Registry {
                 last_opened: None,
                 port: None,
                 last_backup: None,
+                moved_to: None,
             });
             let _ = self.save(&stored);
         }
@@ -450,7 +711,40 @@ fn parse(text: &str) -> Read {
         .and_then(Value::as_str)
         .filter(|id| stored.workspaces.iter().any(|e| e.id == *id))
         .map(str::to_owned);
+    let moves = object.get("pendingMoves").and_then(Value::as_array);
+    for item in moves.into_iter().flatten() {
+        let Ok(mut pending) = serde_json::from_value::<PendingMove>(item.clone()) else {
+            continue;
+        };
+        let Ok(origin) = parse_server_address(&pending.origin) else {
+            continue;
+        };
+        pending.origin = origin;
+        let plausible = valid_id(&pending.id)
+            && valid_move_file(&pending.file)
+            && pending.at >= 0
+            && move_from(&stored.workspaces, &pending)
+            && move_to(&stored.workspaces, &pending);
+        let taken = stored
+            .pending_moves
+            .iter()
+            .any(|m| m.origin == pending.origin || m.id == pending.id || m.file == pending.file);
+        if plausible && !taken {
+            stored.pending_moves.push(pending);
+        }
+    }
+    // Those dropped here leave their files, which are cleared away at the next start.
     Read::Parsed(stored)
+}
+
+/// The name of a move's file: what [`Registry::new_move_file`] makes, and nothing else.
+fn valid_move_file(name: &str) -> bool {
+    name.strip_suffix(".infall").is_some_and(|stem| {
+        stem.len() == 32
+            && stem
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    })
 }
 
 fn valid(mut entry: Entry) -> Option<Entry> {
@@ -470,10 +764,16 @@ fn valid(mut entry: Entry) -> Option<Entry> {
             // Its files are still there whatever the Preset says: keep it, without one.
             entry.preset = entry.preset.filter(|p| preset_name(p).is_some());
             entry.address = None;
+            // Moved somewhere this app would not go: it stays moved, read-only, but cannot
+            // offer to open the server. Kept as moved rather than turned writable.
+            entry.moved_to = entry
+                .moved_to
+                .map(|to| parse_server_address(&to).unwrap_or(to));
         }
         Kind::Team => {
             entry.address = Some(parse_server_address(entry.address.as_deref()?).ok()?);
             entry.preset = None;
+            entry.moved_to = None;
         }
     }
     Some(entry)
@@ -687,11 +987,12 @@ mod tests {
             last_opened: Some(5),
             port: Some(24680),
             last_backup: Some(7),
+            moved_to: None,
         };
         // The start screen does not see the port.
         assert_eq!(
             serde_json::to_value(entry.listed()).unwrap(),
-            serde_json::json!({"id":"x","kind":"local","name":"Tutorial","preset":"tutorial","address":null,"lastOpened":5,"lastBackup":7})
+            serde_json::json!({"id":"x","kind":"local","name":"Tutorial","preset":"tutorial","address":null,"lastOpened":5,"lastBackup":7,"movedTo":null})
         );
         let never = Entry {
             last_backup: None,
@@ -1091,6 +1392,253 @@ mod tests {
         // Valid JSON without a list is an empty list, not damage.
         fs::write(d.config.join("workspaces.json"), "{}").unwrap();
         assert!(registry(&d).list().is_empty());
+    }
+
+    // ---- moves (docs/specs/team-move.md) ----------------------------------------------
+
+    const T0: i64 = 1_795_600_000_000;
+    const SERVER: &str = "https://team.example.org";
+
+    /// A Local Workspace, a remembered Team Workspace, and a pending move between them with
+    /// a file of `bytes`.
+    fn moving(r: &Registry, bytes: &[u8]) -> (Entry, PendingMove) {
+        let local = r.create_local("tutorial", Some("Thesis")).unwrap();
+        r.remember_team(SERVER).unwrap();
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, bytes).unwrap();
+        r.add_pending_move(&local.id, SERVER, &file, T0).unwrap();
+        let pending = r.pending_move(SERVER, T0).unwrap();
+        (local, pending)
+    }
+
+    #[test]
+    fn a_pending_move_is_kept_and_told_to_its_server_only() {
+        let d = dirs();
+        let r = registry(&d);
+        let (local, pending) = moving(&r, b"0123456789");
+        assert_eq!(pending.id, local.id);
+        assert_eq!(pending.origin, SERVER);
+        assert_eq!(pending.at, T0);
+        let path = r.move_file_path(&pending);
+        assert!(path.starts_with(r.moves_dir()) && path.starts_with(&d.data));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(r.moves_dir()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+        // Its name and size, for the page of that server; for any other, nothing.
+        assert_eq!(
+            r.handover(SERVER, T0 + 1),
+            Some(Handover {
+                name: "Thesis".to_owned(),
+                size: 10
+            })
+        );
+        r.rename(&local.id, "Thesis, final").unwrap();
+        assert_eq!(r.handover(SERVER, T0).unwrap().name, "Thesis, final");
+        for other in [
+            "https://evil.example",
+            "https://team.example.org:8443",
+            "http://team.example.org",
+            "https://team.example.org.evil.example",
+            "",
+        ] {
+            assert_eq!(r.handover(other, T0), None, "{other}");
+            assert!(r.pending_move(other, T0).is_none(), "{other}");
+        }
+        // Read back by another run of the app.
+        assert_eq!(registry(&d).pending_move(SERVER, T0), Some(pending));
+        // The start screen is not told about it, and the Workspace is not moved yet.
+        assert_eq!(r.get(&local.id).unwrap().moved_to, None);
+        assert!(!r.get(&local.id).unwrap().read_only());
+    }
+
+    #[test]
+    fn a_finished_move_marks_the_workspace_and_deletes_its_file() {
+        let d = dirs();
+        let r = registry(&d);
+        let (local, pending) = moving(&r, b"data");
+        let path = r.move_file_path(&pending);
+        r.finish_move(SERVER).unwrap();
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert_eq!(r.handover(SERVER, T0), None);
+        let moved = registry(&d).get(&local.id).unwrap();
+        assert_eq!(moved.moved_to.as_deref(), Some(SERVER));
+        assert!(moved.read_only());
+        let listed = serde_json::to_value(moved.listed()).unwrap();
+        assert_eq!(listed["movedTo"], SERVER);
+        // Every other field as it was.
+        assert_eq!(
+            Entry {
+                moved_to: None,
+                ..moved.clone()
+            },
+            local
+        );
+        // Finishing again, or for a server nothing was moved to, does nothing.
+        r.finish_move(SERVER).unwrap();
+        r.finish_move("https://evil.example").unwrap();
+        assert_eq!(
+            registry(&d).get(&local.id).unwrap().moved_to.as_deref(),
+            Some(SERVER)
+        );
+        // A moved Workspace cannot have a move pending.
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, "x").unwrap();
+        assert!(r.add_pending_move(&local.id, SERVER, &file, T0).is_err());
+        // A Team Workspace is not opened read-only, whatever the file says.
+        let team = r.list().into_iter().find(|e| e.kind == Kind::Team).unwrap();
+        assert!(!team.read_only());
+    }
+
+    #[test]
+    fn a_failed_handover_keeps_the_move_for_another_try() {
+        // `moveDone({ ok: false })` changes nothing: the next page asks again.
+        let d = dirs();
+        let r = registry(&d);
+        let (_, pending) = moving(&r, b"data");
+        assert!(r.handover(SERVER, T0).is_some());
+        assert!(r.handover(SERVER, T0).is_some());
+        assert!(r.move_file_path(&pending).exists());
+    }
+
+    #[test]
+    fn a_pending_move_is_dropped_with_its_file_after_a_week() {
+        let d = dirs();
+        let r = registry(&d);
+        let (_, pending) = moving(&r, b"data");
+        let path = r.move_file_path(&pending);
+        r.prune_moves(T0 + MOVE_KEEPS_MS - 1);
+        assert!(path.exists());
+        assert!(r.pending_move(SERVER, T0 + MOVE_KEEPS_MS - 1).is_some());
+        // A clock set back keeps it.
+        assert!(r.pending_move(SERVER, T0 - 5 * MOVE_KEEPS_MS).is_some());
+        assert_eq!(r.handover(SERVER, T0 + MOVE_KEEPS_MS), None);
+        assert!(!path.exists());
+        assert!(registry(&d).pending_move(SERVER, T0).is_none());
+    }
+
+    #[test]
+    fn a_pending_move_goes_when_either_workspace_is_removed() {
+        let d = dirs();
+        let r = registry(&d);
+        // Forgetting the Team Workspace.
+        let (local, pending) = moving(&r, b"data");
+        let team = r.list().into_iter().find(|e| e.kind == Kind::Team).unwrap();
+        r.remove(&team.id).unwrap();
+        assert!(!r.move_file_path(&pending).exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert!(r.get(&local.id).is_some());
+        // Removing the Local Workspace.
+        r.remember_team(SERVER).unwrap();
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, "x").unwrap();
+        r.add_pending_move(&local.id, SERVER, &file, T0).unwrap();
+        r.remove(&local.id).unwrap();
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+    }
+
+    #[test]
+    fn a_new_move_replaces_the_one_before() {
+        let d = dirs();
+        let r = registry(&d);
+        let (local, first) = moving(&r, b"one");
+        // The same Workspace again: one file, the new one.
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, "two").unwrap();
+        r.add_pending_move(&local.id, SERVER, &file, T0 + 5)
+            .unwrap();
+        assert!(!r.move_file_path(&first).exists());
+        assert_eq!(r.pending_move(SERVER, T0).unwrap().file, file);
+        assert_eq!(r.handover(SERVER, T0).unwrap().size, 3);
+        // Another Workspace to the same server takes its place.
+        let other = r.create_local("blank", Some("Other")).unwrap();
+        let (file2, path2) = r.new_move_file().unwrap();
+        fs::write(&path2, "three").unwrap();
+        r.add_pending_move(&other.id, SERVER, &file2, T0).unwrap();
+        assert!(!path.exists());
+        assert_eq!(r.handover(SERVER, T0).unwrap().name, "Other");
+        // Not to a server that is not remembered, not of a Team Workspace, not a path.
+        let (file3, path3) = r.new_move_file().unwrap();
+        fs::write(&path3, "x").unwrap();
+        assert!(
+            r.add_pending_move(&other.id, "https://unknown.example", &file3, T0)
+                .is_err()
+        );
+        let team = r.remember_team(SERVER).unwrap();
+        assert!(r.add_pending_move(&team.id, SERVER, &file3, T0).is_err());
+        assert!(r.add_pending_move("missing", SERVER, &file3, T0).is_err());
+        for bad in [
+            "../workspaces.json",
+            "/etc/passwd",
+            "x.infall",
+            "",
+            "a/b.infall",
+        ] {
+            assert!(
+                r.add_pending_move(&other.id, SERVER, bad, T0).is_err(),
+                "{bad}"
+            );
+        }
+        // The move that was there is still there.
+        assert_eq!(r.pending_move(SERVER, T0).unwrap().file, file2);
+    }
+
+    #[test]
+    fn a_file_left_by_a_move_cut_short_is_swept_at_the_start() {
+        let d = dirs();
+        let r = registry(&d);
+        let (_, pending) = moving(&r, b"data");
+        let kept = r.move_file_path(&pending);
+        let left = r.moves_dir().join(".abc.infall.0123.partial");
+        fs::write(&left, "half").unwrap();
+        let (_, orphan) = r.new_move_file().unwrap();
+        fs::write(&orphan, "orphan").unwrap();
+        r.sweep_moves();
+        assert!(kept.exists());
+        assert!(!left.exists());
+        assert!(!orphan.exists());
+        // No directory yet: nothing to do.
+        let e = dirs();
+        registry(&e).sweep_moves();
+    }
+
+    #[test]
+    fn a_hand_written_move_cannot_point_anywhere_else() {
+        let d = dirs();
+        fs::create_dir_all(&d.config).unwrap();
+        let file = "0123456789abcdef0123456789abcdef.infall";
+        let text = format!(
+            r#"{{"workspaces":[
+                {{"id":"l","kind":"local","name":"L","preset":"blank","address":null,"lastOpened":null}},
+                {{"id":"m","kind":"local","name":"M","preset":"blank","address":null,"lastOpened":null,"movedTo":"HTTPS://Team.example.org/"}},
+                {{"id":"t","kind":"team","name":"T","preset":null,"address":"https://team.example.org","lastOpened":null,"movedTo":"https://x.example"}}
+            ],
+            "pendingMoves":[
+                {{"id":"l","origin":"https://team.example.org/","file":"../../secret.infall","at":1}},
+                {{"id":"l","origin":"https://team.example.org","file":"/etc/passwd","at":1}},
+                {{"id":"l","origin":"http://evil.example","file":"{file}","at":1}},
+                {{"id":"t","origin":"https://team.example.org","file":"{file}","at":1}},
+                {{"id":"l","origin":"https://team.example.org","file":"{file}","at":-1}},
+                {{"id":"l","origin":"https://team.example.org","file":"{file}","at":5}},
+                {{"id":"l","origin":"https://team.example.org","file":"fedcba9876543210fedcba9876543210.infall","at":5}},
+                42
+            ]}}"#
+        );
+        fs::write(d.config.join("workspaces.json"), text).unwrap();
+        let r = registry(&d);
+        let pending = r.pending_move(SERVER, 6).unwrap();
+        assert_eq!(pending.file, file);
+        assert_eq!(pending.at, 5);
+        assert_eq!(r.move_file_path(&pending), r.moves_dir().join(file));
+        // Kept moved, written the usual way; a Team Workspace is never moved.
+        assert_eq!(r.get("m").unwrap().moved_to.as_deref(), Some(SERVER));
+        assert!(r.get("m").unwrap().read_only());
+        assert_eq!(r.get("t").unwrap().moved_to, None);
+        assert!(!r.get("l").unwrap().read_only());
     }
 
     #[test]

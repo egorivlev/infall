@@ -52,6 +52,19 @@
     }
   }
 
+  // An app older than this screen has no such command: Tauri's own words name the command.
+  function missingCommand(reason, command) {
+    var text = typeof reason === 'string' ? reason : reason && reason.message;
+    return typeof text === 'string' && text.indexOf(command) >= 0 && /not (found|allowed)/i.test(text);
+  }
+
+  // The host of an origin, with its port when it has one ("team.example.org:8443").
+  function hostOf(origin) {
+    var text = String(origin || '');
+    var at = text.indexOf('://');
+    return at >= 0 ? text.slice(at + 3) : text;
+  }
+
   function sentence(reason, fallback) {
     if (typeof reason === 'string' && reason.trim()) return reason;
     if (reason && typeof reason.message === 'string' && reason.message.trim()) return reason.message;
@@ -83,7 +96,7 @@
   function actionButtons() {
     return Array.prototype.slice.call(
       document.querySelectorAll(
-        '.tile, #signin, #import-btn, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button'
+        '.tile, #signin, #import-btn, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button, .move button'
       )
     );
   }
@@ -278,6 +291,7 @@
       if (rows[id] !== except) {
         rows[id].stopRename(false);
         rows[id].closeConfirm(false);
+        rows[id].closeMove(false);
       }
     });
   }
@@ -332,6 +346,19 @@
     var miExport = li.querySelector('.mi-export');
     var miReveal = li.querySelector('.mi-reveal');
     var miRemove = li.querySelector('.mi-remove');
+    var miMove = li.querySelector('.mi-move');
+    var miCopy = li.querySelector('.mi-copy');
+    var movedEl = li.querySelector('.entry-moved');
+    var cta = li.querySelector('.entry-cta');
+    var moveForm = li.querySelector('.move');
+    var moveTitle = moveForm.querySelector('.move-title');
+    var moveBody = moveForm.querySelector('.move-body');
+    var moveLabel = moveForm.querySelector('.move-label');
+    var moveInput = moveForm.querySelector('.move-input');
+    var moveHint = moveForm.querySelector('.move-hint');
+    var moveError = moveForm.querySelector('.move-error');
+    var moveGo = moveForm.querySelector('.move-go');
+    var moveCancel = moveForm.querySelector('.move-cancel');
     var form = li.querySelector('.entry-rename');
     var formLabel = form.querySelector('label');
     var input = form.querySelector('input');
@@ -347,6 +374,10 @@
     var go = li.querySelector('.go');
 
     var local = entry.kind === 'local';
+    // A Local Workspace moved to a Team server (docs/specs/team-move.md, decision 3): its
+    // main action opens the server; the copy here opens read-only from its menu.
+    var movedTo = local && typeof entry.movedTo === 'string' && entry.movedTo ? entry.movedTo : '';
+    var movedText = movedTo ? 'Moved to ' + hostOf(movedTo) : '';
     var uid = 'entry-' + index;
     var now = Date.now();
     var whenText = whenOpened(entry.lastOpened, now);
@@ -363,6 +394,15 @@
       whereEl.classList.add('address');
       whereEl.title = entry.address || '';
     }
+    if (movedTo) {
+      // Where it is now says more than the Preset it began from.
+      whereEl.textContent = '';
+      movedEl.textContent = movedText;
+      movedEl.title = movedTo;
+      movedEl.hidden = false;
+      cta.hidden = false;
+      li.classList.add('moved');
+    }
     if (!whereEl.textContent) whereEl.hidden = true;
     whenEl.textContent = whenText;
     if (known(entry.lastOpened)) whenEl.title = fullDate(entry.lastOpened);
@@ -375,8 +415,9 @@
     var kindWords = local
       ? 'Local Workspace' + (entry.preset ? ', ' + (PRESET_NAMES[entry.preset] || entry.preset) : '')
       : 'Team Workspace at ' + (entry.address || '');
+    if (movedTo) kindWords = 'Local Workspace, ' + movedText + ', read-only here';
     var meta = li.querySelector('.entry-meta');
-    open.setAttribute('aria-label', 'Open ' + entry.name);
+    open.setAttribute('aria-label', movedTo ? 'Open ' + entry.name + ' on the server' : 'Open ' + entry.name);
     open.setAttribute('aria-describedby', uid + '-meta');
     meta.id = uid + '-meta';
     meta.setAttribute('aria-label', kindWords + ', ' + whenText + (backupText ? ', ' + backupText : ''));
@@ -387,10 +428,33 @@
         b.parentNode.removeChild(b);
       });
     }
+    if (movedTo) {
+      // Moved once is moved: no second move. The copy here can still be opened.
+      if (miMove) miMove.parentNode.removeChild(miMove);
+      miMove = null;
+      miCopy.hidden = false;
+    } else {
+      miCopy.parentNode.removeChild(miCopy);
+      miCopy = null;
+    }
+    if (!local) miMove = null;
     var items = Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]'));
 
     moreBtn.setAttribute('aria-label', 'More for ' + entry.name);
-    moreBtn.title = 'Rename, ' + (local ? 'export, show in folder, ' : '') + 'remove';
+    moreBtn.title = movedTo
+      ? 'Open this copy, rename, export, show in folder, remove'
+      : 'Rename, ' + (local ? 'export, show in folder, move to a Team server, ' : '') + 'remove';
+
+    moveForm.id = uid + '-move';
+    moveForm.setAttribute('aria-labelledby', uid + '-move-title');
+    moveTitle.id = uid + '-move-title';
+    moveTitle.textContent = 'Move “' + entry.name + '” to a Team server';
+    moveInput.id = uid + '-move-input';
+    moveLabel.setAttribute('for', moveInput.id);
+    moveBody.id = uid + '-move-body';
+    moveHint.id = uid + '-move-hint';
+    moveError.id = uid + '-move-error';
+    moveInput.setAttribute('aria-describedby', moveBody.id + ' ' + moveHint.id + ' ' + moveError.id);
     moreBtn.setAttribute('aria-controls', uid + '-menu');
     menu.id = uid + '-menu';
     menu.setAttribute('aria-label', entry.name);
@@ -434,6 +498,7 @@
       menu: menu,
       renaming: false,
       confirming: false,
+      moving: false,
       showError: function (text) {
         error.textContent = text || '';
         error.hidden = !text;
@@ -505,6 +570,35 @@
         confirm.hidden = true;
         row.showError('');
         if (refocus) moreBtn.focus();
+      },
+      showMoveError: function (text) {
+        moveError.textContent = text || '';
+        moveError.hidden = !text;
+        if (text) moveInput.setAttribute('aria-invalid', 'true');
+        else moveInput.removeAttribute('aria-invalid');
+        // The sentence makes the panel taller: keep all of it in view in the list.
+        if (text && row.moving && moveForm.scrollIntoView) moveForm.scrollIntoView({ block: 'nearest' });
+      },
+      openMove: function () {
+        closeAllPanels(row);
+        row.stopRename(false);
+        row.closeConfirm(false);
+        row.showError('');
+        row.showStatus('');
+        row.showMoveError('');
+        row.moving = true;
+        moveForm.hidden = false;
+        recent.classList.add('panel-open');
+        moveInput.focus();
+        if (moveForm.scrollIntoView) moveForm.scrollIntoView({ block: 'nearest' });
+      },
+      closeMove: function (refocus) {
+        if (!row.moving) return;
+        row.moving = false;
+        moveForm.hidden = true;
+        recent.classList.remove('panel-open');
+        row.showMoveError('');
+        if (refocus) moreBtn.focus();
       }
     };
 
@@ -519,8 +613,16 @@
       li.setAttribute('aria-busy', 'true');
       spinnerText(whenEl, 'Opening…');
       whenEl.classList.add('is-busy');
-      announce('Opening ' + entry.name + '…');
-      invoke('workspace_open', { id: entry.id }).then(
+      if (movedTo) {
+        spinnerText(whenEl, 'Checking the server…');
+        announce('Opening ' + entry.name + ' on ' + hostOf(movedTo) + '…');
+      } else {
+        announce('Opening ' + entry.name + '…');
+      }
+      var opening = movedTo
+        ? invoke('workspace_connect', { address: movedTo })
+        : invoke('workspace_open', { id: entry.id });
+      opening.then(
         function () {
           // The shell shows the Workspace and closes this window.
         },
@@ -534,6 +636,29 @@
         }
       );
     });
+
+    // The copy on this computer, read-only, of a moved Workspace.
+    function openCopy() {
+      clearMessages();
+      closeAllPanels(null);
+      setBusy(true);
+      li.setAttribute('aria-busy', 'true');
+      moreBtn.setAttribute('aria-busy', 'true');
+      spinnerText(whenEl, 'Opening…');
+      whenEl.classList.add('is-busy');
+      announce('Opening the copy of ' + entry.name + ' on this computer…');
+      invoke('workspace_open', { id: entry.id }).then(
+        function () {},
+        function (reason) {
+          li.removeAttribute('aria-busy');
+          moreBtn.removeAttribute('aria-busy');
+          whenEl.textContent = whenText;
+          setBusy(false);
+          row.showError(sentence(reason, 'This workspace could not be opened. Try again.'));
+          moreBtn.focus();
+        }
+      );
+    }
 
     open.addEventListener('keydown', function (event) {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -616,6 +741,70 @@
         reveal();
       }));
     }
+    if (miMove) {
+      miMove.addEventListener('click', fromMenu(function () {
+        row.openMove();
+      }));
+    }
+    if (miCopy) {
+      miCopy.addEventListener('click', fromMenu(function () {
+        openCopy();
+      }));
+    }
+
+    // ---- move to a Team server ----
+
+    moveInput.addEventListener('input', function () {
+      row.showMoveError('');
+    });
+
+    moveCancel.addEventListener('click', function () {
+      if (busy) return;
+      row.closeMove(true);
+    });
+
+    moveForm.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !busy) {
+        event.preventDefault();
+        row.closeMove(true);
+      }
+    });
+
+    moveForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (busy) return;
+      if (!moveInput.value.trim()) {
+        row.showMoveError('Enter the address of the Team server.');
+        moveInput.focus();
+        return;
+      }
+      row.showMoveError('');
+      setBusy(true);
+      li.setAttribute('aria-busy', 'true');
+      moveGo.setAttribute('aria-busy', 'true');
+      spinnerText(moveGo, 'Moving…');
+      announce('Checking the server and copying ' + entry.name + '…');
+      invoke('workspace_move', { id: entry.id, address: moveInput.value }).then(
+        function () {
+          // The shell opens the server and closes this window; its page takes the file in.
+          moveGo.textContent = 'Opening the server…';
+          announce('Opening the server…');
+        },
+        function (reason) {
+          li.removeAttribute('aria-busy');
+          moveGo.removeAttribute('aria-busy');
+          moveGo.textContent = 'Move to server';
+          setBusy(false);
+          announce('');
+          row.showMoveError(
+            missingCommand(reason, 'workspace_move')
+              ? 'This version of Infall cannot move a workspace. Update the app and try again.'
+              : sentence(reason, 'The workspace could not be moved. Try again.')
+          );
+          moveInput.focus();
+        }
+      );
+    });
 
     // ---- export, show in folder ----
 
@@ -798,6 +987,7 @@
   function render() {
     if (openMenu) openMenu.closeMenu(false);
     recentList.textContent = '';
+    recent.classList.remove('panel-open');
     rows = {};
     entries.forEach(function (entry, i) {
       var row = makeRow(entry, i);

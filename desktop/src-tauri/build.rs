@@ -23,6 +23,8 @@ fn main() {
             "workspace_export",
             "workspace_import",
             "workspace_reveal",
+            // Moving a Local Workspace onto a Team server (docs/specs/team-move.md, Contract C).
+            "workspace_move",
             // The bridge.
             "claude_status",
             "claude_send",
@@ -33,6 +35,14 @@ fn main() {
             "print_page",
             // What the page's Undo and Redo would do, for the Edit menu (docs/specs/undo.md).
             "undo_state",
+            // Handing a moved Workspace's file to its Team server's page, and saving a file
+            // the page made (docs/specs/team-move.md, Contract C; desktop.md, M18).
+            "move_handover",
+            "move_file_chunk",
+            "move_done",
+            "save_binary_begin",
+            "save_binary_chunk",
+            "save_binary_finish",
             // The Runner, for the server's pages: status, open the settings, ask for a Run,
             // cancel it. Nothing that chooses an interpreter or approves.
             "runner_status",

@@ -7,6 +7,7 @@ mod address;
 mod bridge;
 mod portable;
 mod shell;
+mod transfer;
 mod webui;
 mod workspaces;
 

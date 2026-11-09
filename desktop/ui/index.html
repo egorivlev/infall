@@ -156,13 +156,17 @@
       <li class="entry">
         <div class="entry-row">
           <button type="button" class="entry-open">
-            <span class="entry-name"></span>
-            <span class="entry-meta">
-              <span class="kind"></span>
-              <span class="entry-where"></span>
-              <span class="entry-when"></span>
-              <span class="entry-backup" hidden></span>
+            <span class="entry-text">
+              <span class="entry-name"></span>
+              <span class="entry-meta">
+                <span class="kind"></span>
+                <span class="entry-where"></span>
+                <span class="entry-moved" hidden></span>
+                <span class="entry-when"></span>
+                <span class="entry-backup" hidden></span>
+              </span>
             </span>
+            <span class="entry-cta" aria-hidden="true" hidden>Open on the server</span>
           </button>
           <form class="entry-rename" novalidate hidden>
             <label class="visually-hidden"></label>
@@ -181,14 +185,29 @@
           </div>
         </div>
         <div class="menu" role="menu" hidden>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-copy" hidden>Open this copy (read-only)</button>
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-rename">Rename</button>
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-export" data-local>Export…</button>
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-reveal" data-local>Show in folder</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-move" data-local>Move to a Team server…</button>
           <div role="separator" class="menu-sep"></div>
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-remove">Remove…</button>
         </div>
         <p class="entry-status" hidden></p>
         <p class="error entry-error" role="alert" hidden></p>
+        <form class="move" novalidate hidden>
+          <p class="move-title"></p>
+          <p class="move-body">It is copied to the server, and this copy becomes read-only once the server has it.</p>
+          <label class="move-label">Team server address</label>
+          <div class="move-line">
+            <input type="url" class="move-input" inputmode="url" autocomplete="off" autocapitalize="off"
+              spellcheck="false" placeholder="https://infall.example.org" />
+            <button type="submit" class="accent move-go">Move to server</button>
+            <button type="button" class="quiet move-cancel">Cancel</button>
+          </div>
+          <p class="hint move-hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
+          <p class="error move-error" role="alert" hidden></p>
+        </form>
         <div class="confirm" role="alertdialog" hidden>
           <p class="confirm-title"></p>
           <p class="confirm-body"></p>

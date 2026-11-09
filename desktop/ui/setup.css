@@ -570,9 +570,8 @@ input[aria-invalid="true"] {
 }
 .entry-open {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  align-items: center;
+  gap: var(--s3);
   flex: 1 1 auto;
   min-width: 0;
   min-height: 56px;
@@ -583,6 +582,39 @@ input[aria-invalid="true"] {
 }
 .entry-open:hover:not([aria-disabled="true"]) .entry-name {
   color: var(--accent);
+}
+.entry-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* A moved Workspace's main action, said in words: it opens the server, not this copy. */
+.entry-cta {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-control);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.entry-open:hover:not([aria-disabled="true"]) .entry-cta {
+  background: var(--accent-soft);
+}
+.entry-open[aria-disabled="true"]:not([aria-busy="true"]) .entry-cta {
+  opacity: 0.55;
+}
+.entry-moved {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
 }
 .entry-open:focus-visible {
   outline-offset: -2px;
@@ -812,6 +844,64 @@ input[aria-invalid="true"] {
 }
 .confirm.team {
   border-left-color: var(--ink-3);
+}
+
+/* ---- move to a Team server ------------------------------------------------------- */
+.move {
+  margin: 0 var(--s3) var(--s3);
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--raised);
+}
+.move-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.move-body {
+  margin: 2px 0 10px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.move-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.move-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  height: 30px;
+  font-size: 13.5px;
+}
+/* While a row asks for an address, the list keeps room for it instead of squeezing it
+   into the two and a half rows it may otherwise shrink to; the window scrolls if it must. */
+.recent.panel-open,
+.recent.panel-open .recent-list {
+  flex-shrink: 0;
+}
+.recent.panel-open .recent-list {
+  max-height: 300px;
+}
+button.accent {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+button.accent[aria-disabled="true"]:not([aria-busy="true"]) {
+  opacity: 0.55;
+}
+button.accent[aria-busy="true"] {
+  cursor: progress;
 }
 .confirm-title {
   font-weight: 600;
