@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   runner: { available: false, reason: 'browser' } as RunnerSetup,
   configure: vi.fn(async () => {}),
   logout: vi.fn(async () => {}),
+  exportFile: vi.fn(async () => ({ name: 'Physics group.infall', bytes: new Uint8Array([1, 2, 3]) })),
 }))
 const noAi = vi.hoisted(() => ({
   snapshot: { setup: { provider: 'none', reason: 'loading', desktop: false, openrouter: { enabled: false } }, conversations: [], current: null, busy: false },
@@ -20,7 +21,7 @@ vi.mock('../../lib', () => ({
   useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
   forYou: { reload: async () => {}, seen: async () => {}, onMention: () => () => {} },
   useWorkspace: () => ({ status: 'ready', kind: h.kind, preset: h.preset }),
-  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: h.kind, preset: h.preset }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {} },
+  workspace: { load: async () => {}, current: () => ({ status: 'ready', kind: h.kind, preset: h.preset }), rename: async (n: string) => n, loadTutorial: async () => null, saveTutorial: async () => {}, exportFile: () => h.exportFile() },
   useAi: () => noAi.snapshot,
   ai: { refresh: async () => {}, models: async () => [] },
   useSession: () => h.session,
@@ -248,6 +249,42 @@ describe('Workspace and About', () => {
     expect(within(screen.getByRole('main')).getByRole('link', { name: 'Members' })).toHaveAttribute('href', '/members')
     await userEvent.click(within(screen.getByRole('main')).getByRole('button', { name: 'Sign out' }))
     expect(h.logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('M18: an Admin exports the Workspace file through the app’s binary save when it has one', async () => {
+    const saveBinaryFile = vi.fn(async () => true)
+    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '0.13.0', saveBinaryFile }
+    signedIn(ADMIN)
+    go('/settings/workspace')
+    render(<App />)
+    const card = screen.getByRole('group', { name: 'Workspace file' })
+    expect(card).toHaveTextContent(/Members come as names only/)
+    await userEvent.click(within(card).getByRole('button', { name: 'Export Workspace file…' }))
+    await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Exported “Physics group.infall”.'))
+    expect(saveBinaryFile).toHaveBeenCalledWith({ suggestedName: 'Physics group.infall', bytes: new Uint8Array([1, 2, 3]) })
+    delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  })
+
+  it('M18: in a browser the Workspace file is downloaded; a failure says so in plain words', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
+    signedIn(ADMIN)
+    go('/settings/workspace')
+    render(<App />)
+    const card = screen.getByRole('group', { name: 'Workspace file' })
+    await userEvent.click(within(card).getByRole('button', { name: 'Export Workspace file…' }))
+    await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Downloaded “Physics group.infall”.'))
+    expect(click).toHaveBeenCalledOnce()
+    h.exportFile.mockRejectedValueOnce(Object.assign(new Error('Cannot reach the server.'), { status: 0, code: 'network' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Export Workspace file…' }))
+    await waitFor(() => expect(within(card).getByRole('alert')).toHaveTextContent("The Workspace file could not be exported. Can't reach the server. Check your connection and try again."))
+  })
+
+  it('M18: a Member, and a Local Workspace, have no Export', () => {
+    go('/settings/workspace')
+    render(<App />)
+    expect(screen.queryByRole('button', { name: 'Export Workspace file…' })).toBeNull()
   })
 
   it('a Member has no Members link there', () => {
