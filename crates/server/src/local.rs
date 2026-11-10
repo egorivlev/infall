@@ -114,6 +114,9 @@ pub struct LocalOptions {
     /// every request that would change anything is refused (`403 moved`); reading, search,
     /// History and exports keep working. `false` for every other Workspace.
     pub read_only: bool,
+    /// The Team server's origin a moved Workspace went to, for the page to name
+    /// (`GET /api/workspace` `moved_to`); `None` for every other Workspace.
+    pub moved_to: Option<String>,
 }
 
 /// The sentence of `403 moved`.
@@ -130,6 +133,8 @@ pub struct LocalMode {
     cookie: String,
     /// Moved to a Team server: nothing may be changed (`LocalOptions::read_only`).
     pub(crate) read_only: bool,
+    /// Where it was moved to (`LocalOptions::moved_to`).
+    moved_to: Option<String>,
 }
 
 impl LocalMode {
@@ -210,6 +215,7 @@ pub async fn start_local(options: LocalOptions) -> Result<LocalServer, StartErro
         member_name,
         port,
         read_only,
+        moved_to,
     } = options;
     let opened = tokio::task::spawn_blocking({
         let db = db.clone();
@@ -256,6 +262,7 @@ pub async fn start_local(options: LocalOptions) -> Result<LocalServer, StartErro
             preset,
             &member_name,
             read_only,
+            moved_to,
         )
     })
     .await
@@ -319,7 +326,7 @@ pub fn build_local_app(
     preset: Preset,
     member_name: &str,
 ) -> Result<LocalApp, StartError> {
-    build_local_app_with(config, store, clock, preset, member_name, false)
+    build_local_app_with(config, store, clock, preset, member_name, false, None)
 }
 
 /// `build_local_app`, for a Workspace that is read-only (`LocalOptions::read_only`) or not.
@@ -330,6 +337,7 @@ pub fn build_local_app_with(
     preset: Preset,
     member_name: &str,
     read_only: bool,
+    moved_to: Option<String>,
 ) -> Result<LocalApp, StartError> {
     let member = prepare(&*store, preset, member_name, clock.now(), read_only)?;
     let cookie = format!("{LOCAL_COOKIE_PREFIX}{}", cookie_id(&*store)?);
@@ -339,6 +347,7 @@ pub fn build_local_app_with(
         member,
         cookie,
         read_only,
+        moved_to,
     };
     let (router, shutdown) = assemble(config, store, clock, Some(local))?;
     Ok(LocalApp {
@@ -544,10 +553,13 @@ pub async fn get_workspace(State(st): State<Shared>, _: SignedIn) -> Result<Resp
         .into_response());
     }
     let preset = blocking(&st, |s| s.setting(PRESET_SETTING)).await?;
-    Ok(Json(json!({
+    let mut body = json!({
         "kind": "local", "preset": preset, "empty": false, "read_only": is_read_only(&st),
-    }))
-    .into_response())
+    });
+    if let Some(to) = st.local.as_ref().and_then(|l| l.moved_to.as_ref()) {
+        body["moved_to"] = json!(to);
+    }
+    Ok(Json(body).into_response())
 }
 
 /// `GET /api/local/enter?key=…`: with the key of this start, a session for the one Member

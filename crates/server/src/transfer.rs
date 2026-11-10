@@ -208,7 +208,7 @@ async fn import_from(
         let fresh = store
             .load_workspace()
             .map_err(BringError::Store)?
-            .ok_or_else(|| BringError::Port(PortError::NotAWorkspaceFile))?;
+            .ok_or(BringError::Port(PortError::NotAWorkspaceFile))?;
         Ok::<_, BringError>((facts, fresh))
     })
     .await

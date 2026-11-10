@@ -117,6 +117,7 @@ async fn main() -> Result<(), String> {
                 member_name: "Scale Test".to_string(),
                 port,
                 read_only: false,
+                moved_to: None,
             })
             .await
             .map_err(|e| e.to_string())?;

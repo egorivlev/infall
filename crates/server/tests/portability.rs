@@ -110,6 +110,7 @@ async fn start(db: &Path, web: &Path, preset: Preset, name: &str) -> LocalServer
         member_name: name.to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap()

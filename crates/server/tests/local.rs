@@ -1080,6 +1080,7 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         member_name: "Ada".to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     };
     let server = start_local(options.clone()).await.unwrap();
     let origin = server.origin().to_string();
@@ -1307,6 +1308,7 @@ async fn start_named(
         member_name: name.to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap()
@@ -1420,6 +1422,7 @@ async fn a_broken_secret_key_file_stops_the_start() {
         member_name: "Ada".to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap_err();
@@ -1439,6 +1442,7 @@ async fn start_local_can_be_spawned_and_its_server_shared() {
         member_name: "Ada".to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     };
     let server = tokio::spawn(start_local(options)).await.unwrap().unwrap();
     shareable(&server);
@@ -1461,6 +1465,7 @@ async fn start_local_listens_on_the_port_asked_for_when_it_is_free() {
         member_name: "Ada".to_string(),
         port: Some(port),
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap();
@@ -1485,6 +1490,7 @@ async fn start_local_takes_another_port_when_the_one_asked_for_is_taken() {
         member_name: "Ada".to_string(),
         port: Some(port),
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap();

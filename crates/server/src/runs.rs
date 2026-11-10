@@ -27,7 +27,7 @@ pub const MAX_FIGURES: usize = 3;
 /// The most base64 characters of one figure.
 pub const MAX_FIGURE_CHARS: usize = 160_000;
 /// The most packages the environment may list.
-pub const MAX_PACKAGES: usize = 8;
+pub const MAX_PACKAGES: usize = 32;
 /// The most characters of a package name.
 pub const MAX_ENV_NAME_CHARS: usize = 60;
 /// The most characters of a version or of any other environment value.
@@ -36,7 +36,19 @@ pub const MAX_ENV_VALUE_CHARS: usize = 40;
 /// What every PNG file starts with.
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 
-const KEYS: [&str; 11] = [
+/// The most characters of a Run Block's `env` field (one line).
+pub const MAX_BLOCK_ENV_CHARS: usize = 60;
+
+/// Whether `s` is a language id: `^[a-z][a-z0-9_-]{0,23}$` (api.md §15, "Languages").
+pub fn is_lang(s: &str) -> bool {
+    let mut chars = s.chars();
+    s.len() <= 24
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+const KEYS: [&str; 12] = [
+    "lang",
     "v",
     "by",
     "at",
@@ -155,10 +167,10 @@ fn check_env(env: &Value) -> Result<(), String> {
         .ok_or("The environment of a Run must be an object.")?;
     only_keys(
         map,
-        &["python", "packages", "os", "arch"],
+        &["python", "packages", "os", "arch", "runtime"],
         "The environment of a Run",
     )?;
-    for key in ["python", "os", "arch"] {
+    for key in ["python", "os", "arch", "runtime"] {
         check_env_value(map, key)?;
     }
     let Some(packages) = map.get("packages") else {
@@ -240,6 +252,16 @@ pub fn parse(raw: &str) -> Result<RunResult, String> {
     if let Some(env) = map.get("env") {
         check_env(env)?;
     }
+    match map.get("lang") {
+        None => {}
+        Some(Value::String(l)) if is_lang(l) => {}
+        Some(_) => {
+            return Err(
+                "In the result of a Run `lang` must be a language id such as \"julia\"."
+                    .to_string(),
+            );
+        }
+    }
     Ok(RunResult {
         by: by.to_string(),
         at,
@@ -278,6 +300,7 @@ fn result_of(op: &Op) -> Option<(EntityId, &FieldValue)> {
 /// to refuse. Says whether any result text is carried, so that the caller knows to run
 /// `check_set_on_runs` under the write lock.
 pub fn check_results(ops: &[Op], actor: MemberId) -> Result<bool, ApiError> {
+    check_block_fields(ops)?;
     let mut any = false;
     for (_, value) in ops.iter().filter_map(result_of) {
         let FieldValue::Text(raw) = value else {
@@ -292,6 +315,48 @@ pub fn check_results(ops: &[Op], actor: MemberId) -> Result<bool, ApiError> {
         }
     }
     Ok(any)
+}
+
+/// Every `(field, value)` that `op` writes into `lang` or `env` (Run Blocks, M19b).
+fn lang_or_env(op: &Op) -> Vec<(&str, &FieldValue)> {
+    match op {
+        Op::Create {
+            kind: EntityKind::Block,
+            fields,
+            ..
+        } => ["lang", "env"]
+            .into_iter()
+            .filter_map(|f| fields.get(f).map(|v| (f, v)))
+            .collect(),
+        Op::Set { field, value, .. } if field == "lang" || field == "env" => {
+            vec![(field.as_str(), value)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The shape of a Run Block's `lang` (a language id) and `env` (1–60 characters, one line).
+/// Null clears either; another type is left for the core to refuse.
+fn check_block_fields(ops: &[Op]) -> Result<(), ApiError> {
+    for (field, value) in ops.iter().flat_map(lang_or_env) {
+        let FieldValue::Text(t) = value else {
+            continue;
+        };
+        let ok = match field {
+            "lang" => is_lang(t),
+            _ => !t.is_empty() && fits(t, MAX_BLOCK_ENV_CHARS) && !t.chars().any(char::is_control),
+        };
+        if !ok {
+            return Err(ApiError::BadRequest(if field == "lang" {
+                "The `lang` of a Run must be a language id such as \"julia\".".to_string()
+            } else {
+                format!(
+                    "The `env` of a Run must be 1 to {MAX_BLOCK_ENV_CHARS} characters on one line."
+                )
+            }));
+        }
+    }
+    Ok(())
 }
 
 /// Checks that every Block that `ops` give a result text is a Run: its `type` is `run` when
@@ -389,6 +454,47 @@ mod tests {
         let mut r = valid();
         r["exit"] = json!(-9);
         assert_eq!(parse(&r.to_string()).unwrap().exit, Some(-9));
+    }
+
+    #[test]
+    fn a_result_may_say_its_language_and_runtime() {
+        let mut r = valid();
+        r["lang"] = json!("julia");
+        r["env"] = json!({ "runtime": "julia version 1.11.2" });
+        assert!(parse(&r.to_string()).is_ok());
+        for bad in [json!("Julia"), json!(""), json!("j".repeat(25)), json!(1)] {
+            r["lang"] = bad.clone();
+            assert!(parse(&r.to_string()).is_err(), "{bad}");
+        }
+        r["lang"] = json!("qsharp");
+        r["env"] = json!({ "runtime": "r".repeat(41) });
+        assert!(parse(&r.to_string()).is_err());
+        assert!(is_lang("a_b-9") && !is_lang("9a") && !is_lang("a b"));
+    }
+
+    #[test]
+    fn a_run_blocks_lang_and_env_are_checked() {
+        use qoop_core::{Fields, Op, Value as V};
+        let set = |field: &str, v: V| Op::Set {
+            entity: EntityId::new(),
+            field: field.to_string(),
+            value: v,
+        };
+        assert!(check_block_fields(&[set("lang", V::Text("julia".into()))]).is_ok());
+        assert!(check_block_fields(&[set("lang", V::Null)]).is_ok());
+        assert!(check_block_fields(&[set("env", V::Text("py312".into()))]).is_ok());
+        assert!(check_block_fields(&[set("lang", V::Text("Julia".into()))]).is_err());
+        assert!(check_block_fields(&[set("env", V::Text(String::new()))]).is_err());
+        assert!(check_block_fields(&[set("env", V::Text("a\nb".into()))]).is_err());
+        assert!(check_block_fields(&[set("env", V::Text("e".repeat(61)))]).is_err());
+        let mut fields = Fields::new();
+        fields.insert("lang".into(), V::Text("NOPE".into()));
+        let create = Op::Create {
+            entity: EntityId::new(),
+            kind: EntityKind::Block,
+            fields,
+        };
+        assert!(check_block_fields(&[create]).is_err());
     }
 
     #[test]

@@ -633,6 +633,9 @@ pub(crate) fn prepare_for_team(
     let _mode: String = conn
         .query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0))
         .map_err(failed)?;
+    // Ids are renamed column by column: the rows refer to each other only once all are done.
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")
+        .map_err(failed)?;
     upgrade(&mut conn).map_err(|_| PortError::NotAWorkspaceFile)?;
     let tx = conn.transaction().map_err(failed)?;
     delete_secrets(&tx).map_err(failed)?;

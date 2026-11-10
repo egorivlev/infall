@@ -377,6 +377,7 @@ async fn start(db: &Path, web: &Path) -> qoop_server::local::LocalServer {
         member_name: "Somebody Else".to_string(),
         port: None,
         read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap()

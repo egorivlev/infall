@@ -292,8 +292,8 @@ pub async fn set_resolved(
     Ok(Json(json!({ "resolved": body.resolved })))
 }
 
-/// `GET /api/comments/counts`: for every Card with a thread, how many of its Comments are
-/// open (all of them while it is not resolved, none once it is) and whether it is resolved.
+/// `GET /api/comments/counts`: for every Card with a thread, how many Comments it has
+/// (`open`, whether or not it is resolved) and whether it is resolved.
 pub async fn counts(
     State(st): State<Shared>,
     MemberOrAdmin(_): MemberOrAdmin,
@@ -301,13 +301,7 @@ pub async fn counts(
     let counts = blocking(&st, |s| s.comment_counts()).await?;
     let map: BTreeMap<String, Value> = counts
         .into_iter()
-        .map(|(card, n, resolved)| {
-            let open = if resolved { 0 } else { n };
-            (
-                card.to_string(),
-                json!({ "open": open, "resolved": resolved }),
-            )
-        })
+        .map(|(card, n, resolved)| (card.to_string(), json!({ "open": n, "resolved": resolved })))
         .collect();
     Ok(Json(json!(map)))
 }
