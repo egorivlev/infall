@@ -1,4 +1,4 @@
-# Infall — server API contract (M1–M15b)
+# Infall — server API contract (M1–M18)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -11,6 +11,7 @@ Binary `qoop-server` (crate `crates/server`). Subcommands:
 - `serve` (default) — run the HTTP server.
 - `create-admin --email <e> --name <n>` — create the first Admin. Password is read from the env var `QOOP_ADMIN_PASSWORD` if set, otherwise prompted on the terminal without echo. Refuses if that email exists.
 - `reset-password --email <e>` — set a new password for an existing account (same password input as above) and delete all of that account's sessions. The only way back in if an Admin forgets theirs; it needs shell access to the machine, which is the point.
+- `import-workspace <file> --admin-email <e>` and `export-workspace <dest>` — a Workspace file into an empty Workspace, and out of this one (M18, §19).
 
 `serve` shuts down gracefully on SIGTERM and SIGINT: it stops accepting connections, lets in-flight requests finish (so a database write is never cut off), and exits within a few seconds.
 
@@ -23,6 +24,7 @@ Environment:
 | `QOOP_PUBLIC_ORIGIN` | `http://localhost:8787` | the origin people use; drives the cookie `Secure` flag (set when it starts with `https://`), the Origin check, and invite URLs |
 | `QOOP_DEV_ORIGIN` | unset | one extra allowed Origin (e.g. `http://localhost:5173`) for local UI development |
 | `QOOP_WEB_DIR` | `./web/dist` | built UI to serve; any non-`/api` path that is not a file serves `index.html` |
+| `QOOP_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
 
 ## 2. Storage
 
@@ -37,7 +39,7 @@ SQLite (`rusqlite`, bundled). Tables: `members`, `sessions`, `invites` (and the 
 
 Ids are uuid strings, times unix ms, as everywhere in the schema. Every successful mutation is written inside one transaction before the response is sent, and writes only what it adds: an edit inserts its Changes as rows; a fork, a Checkpoint or a Merge adds its rows; a Restore that forgets Merges rewrites the few `sync_points` rows of the Branches concerned. Nothing written grows with the length of the history. The `Workspace` lives in memory behind one lock; the database is read once at start, from these tables. Until schema version 5 the Research Content was one `workspace` row holding the whole `Workspace` as JSON, rewritten on every mutation.
 
-The database runs in WAL mode with `synchronous=FULL`. The schema is created on first start and its version kept in `PRAGMA user_version` (6 now); a newer binary migrates an older file in place when it opens it, every step in one transaction. Before migrating, it copies the file as it is to `<db>.v<old version>-backup` beside it (owner-only on unix, synced to disk) and removes that copy only once the migration has verifiably succeeded: the step to 6 reads the Workspace back from the new tables and compares it with the old row before dropping the row, the transaction has committed, and `PRAGMA quick_check` passes (the step to 6 also compacts the file with `VACUUM` after the commit, giving back the pages of the old row). On any failure the file is left as it was, the copy stays, and the error names it. A copy left behind by a run that stopped between the commit and the removal is removed by the next open that finds the file at the current version. An older binary refuses a newer file (`newer than this binary`; for Workspace files `NewerVersion`, §17). The store sits behind a small storage trait, with an in-memory implementation for tests.
+The database runs in WAL mode with `synchronous=FULL`. The schema is created on first start and its version kept in `PRAGMA user_version` (7 now; §19 for what 7 added); a newer binary migrates an older file in place when it opens it, every step in one transaction. Before migrating, it copies the file as it is to `<db>.v<old version>-backup` beside it (owner-only on unix, synced to disk) and removes that copy only once the migration has verifiably succeeded: the step to 6 reads the Workspace back from the new tables and compares it with the old row before dropping the row, the transaction has committed, and `PRAGMA quick_check` passes (the step to 6 also compacts the file with `VACUUM` after the commit, giving back the pages of the old row). On any failure the file is left as it was, the copy stays, and the error names it. A copy left behind by a run that stopped between the commit and the removal is removed by the next open that finds the file at the current version. An older binary refuses a newer file (`newer than this binary`; for Workspace files `NewerVersion`, §17). The store sits behind a small storage trait, with an in-memory implementation for tests.
 
 ## 3. People and sessions
 
@@ -48,8 +50,9 @@ type Member = {
   name: string;
   role: Role;
   color: string;         // CSS colour assigned at creation from a fixed palette
-  email?: string;        // present only for yourself, or when the caller is an Admin
+  email?: string;        // present only for yourself, or when the caller is an Admin; never for an unclaimed Member
   access_until?: number; // unix ms; guests only
+  claimed: boolean;      // M18: false for a Member who is a name only (§19) — no email, cannot sign in
 };
 ```
 
@@ -444,7 +447,7 @@ A Text value holding one JSON object, at most **600 000 characters**, or Null (n
   "output": "…",                  // standard output and standard error, in arrival order; ≤ 64 000 characters
   "output_truncated": true,       // optional; the middle of the output was dropped
   "figures": [ { "png": "<base64>" } ],   // ≤ 3; each ≤ 160 000 base64 characters and a real PNG (signature checked)
-  "env": { "python": "3.12.3", "packages": { "pennylane": "0.38.0" }, "os": "macos", "arch": "arm64" }  // optional, every part optional; ≤ 8 packages; names ≤ 60, values ≤ 40 characters
+  "env": { "python": "3.12.3", "packages": { "pennylane": "0.38.0" }, "os": "macos", "arch": "arm64" }  // optional, every part optional; ≤ 32 packages (8 before M18); names ≤ 60, values ≤ 40 characters
 }
 ```
 
@@ -456,14 +459,16 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
 - History, Restore, Checkpoints, forks: nothing new — `result` is a field like any other.
 
 ### Languages
-**Not built yet; M19b** (see [desktop.md](desktop.md), "Languages — Runs in more than Python", for the Runner's side).
+**The server side is built (with M18): `lang` and `env` on a Run Block, `lang` and `env.runtime` in a result. The rest is M19b** (see [desktop.md](desktop.md), "Languages — Runs in more than Python", for the Runner's side).
 
 - A Run has one more field, **`lang`** (Text): the id of the language its code is written in, `^[a-z][a-z0-9_-]{0,23}$`. Unset means `python`, so every Run that exists stays what it was. The server checks the shape when it is set on a Run (`400 bad_request` otherwise) and nothing else: it keeps no list of languages, because it executes none.
 - `lang` is a field like `title`: two Branches changing it meet in a field Conflict, decided by taking one side; History and Restore need nothing new.
+- A Run also has **`env`** (Text): the Toolchain environment it asks for, 1–60 characters on one line (no control characters; `400 bad_request` otherwise; Null clears it). Research Content like `lang`; the server reads nothing more into it.
 - The `result` object gains two optional parts, and stays `"v": 1`:
   ```jsonc
   "lang": "julia",                              // the language it was executed as; absent means python
   "env": { "runtime": "julia version 1.11.2" }  // what the Toolchain said it is; ≤ 40 characters. Beside python, packages, os, arch
+  // a result's `lang` has the Block's shape (^[a-z][a-z0-9_-]{0,23}$), else 400
   ```
   A result of a Python Run is written without either, exactly as before. A server from before this section refuses a result that carries them (`400`), so Runs in other languages need the server updated; the page says so in a sentence when that happens.
 - A result of a Q# Run has `"lang": "qsharp"` and no `runtime`: its `env` is a Python Run's, `python` and one package, the one that executed it — `{ "qdk": "1.34.0" }`, or `{ "qsharp": "1.28.0" }` from a Python with only a `qsharp` of 1.28 or earlier. Since 1.29 `qsharp` is a shim whose version does not follow the compiler's, so it is never the one recorded beside a `qdk`. Nothing new for the server to check: these are the `packages` it already accepts.
@@ -482,7 +487,7 @@ Storage: a `settings` table (schema version 5), one text value per name: `preset
 
 | Method, path | Who | Response |
 |---|---|---|
-| `GET /api/workspace` | any signed-in Member or Guest, any Workspace | `{ kind: "team", preset: null }` or `{ kind: "local", preset: string }` (the Preset id: `blank`, `tutorial`, `literature-review`, `research-project`) |
+| `GET /api/workspace` | any signed-in Member or Guest, any Workspace | `{ kind: "team", preset: null, empty: boolean, read_only: false }` or `{ kind: "local", preset: string, empty: false, read_only: boolean, moved_to?: string }` (the Preset id: `blank`, `tutorial`, `literature-review`, `research-project`; `empty`, `read_only` and `moved_to` since M18, §19) |
 | `GET /api/local/enter?key=…` *public* | local only | with the key of this start: a new session for the one Member (cookie as in §3), `303` with `Location: /` and `Cache-Control: no-store`. Any other key, or none: `404 not_found` |
 | `PATCH /api/local/member` | local only | body `{ name: string }`; `200 { name: string }` — the name trimmed, with the rules of accepting an invite (1–100 characters, no control characters; `400 bad_request` otherwise) |
 | `GET /api/local/tutorial` | local only | `200 { state: <JSON> \| null }` — exactly what was last stored, byte for byte; `null` before anything was |
@@ -537,7 +542,7 @@ It refuses, before writing anything, a file that does not start with the SQLite 
 
 Only then is the clean copy written to `db` (owner-only on unix, never over a file that appeared meanwhile: `DestinationExists`), and the scratch files are removed. If any check fails, nothing is written to `db` and no scratch file is left. The new database is migrated to the current schema by `start_local` like any database; since it has a Preset and a Member, nothing is seeded and the `preset` and `member_name` of `LocalOptions` are ignored. The secret key file is made afresh at that first start, and so is the id in the session cookie's name (§16).
 
-A Team Workspace's database is refused as `NotAWorkspaceFile` (it has no Preset and usually more than one person), whether exported with `export_workspace`, copied by hand, or given as it is.
+A Team Workspace's database, copied by hand or given as it is, is refused as `NotAWorkspaceFile` (it has no Preset and no mark). Since M18 a Team Workspace's **file** (marked, `file_kind` `team`) imports as a Local Workspace, and `export_workspace` of a Team database makes such a file (§19).
 
 ### Source lookup
 
@@ -616,3 +621,106 @@ type GraphActivity = {
 - Nothing pushes the graph: the `branches` frame (§9) is the signal that a Branch or a Merge was added, `changes` and `checkpoint` frames cover the open Branch.
 
 `GET /api/branches/{id}/changes` takes `before` (§6) so that the text of a few Activities can be read without the whole log: `?after={from_seq}&before={to_seq}` gives exactly the Changes of the Activities in between.
+
+## 19. M18 — from alone to a team: Workspace files onto and off a Team server, Members as names, Comments, For you
+
+See [team-move.md](team-move.md) (decisions 1–9, Contracts A and B). All refusals use the usual error body (§4).
+
+New error codes:
+
+| Status | Code | When |
+|---|---|---|
+| 403 | `moved` | any changing request in a moved Local Workspace; message "This Workspace was moved to a Team server; open it there to make changes." |
+| 409 | `not_empty` | a Workspace file into a Workspace that is not empty |
+| 400 | `not_a_workspace_file` | what was sent is not a Workspace file this server can read |
+| 413 | `too_large` | a Workspace file over `QOOP_MAX_IMPORT_MB` |
+| 422 | `newer_version` | a Workspace file made by a newer schema version |
+
+### Storage (schema version 7)
+
+Migrated in place from every earlier version as in §2. `members` is made again with `email` allowed to be null (the documented create–copy–drop–rename, which the migration runs with foreign keys off and checks with `PRAGMA foreign_key_check` before it commits). `invites` gains `claims` (a Member id or null). New tables, beside the content tables and outside versioning like `todos`:
+
+| Table | One row per | Columns |
+|---|---|---|
+| `comments` | Comment | `id`, `card` (entity id; not checked against any Board), `author`, `text`, `mentions` (JSON array of Member ids), `created_at`, `edited_at` (null until edited) |
+| `comment_threads` | Card whose thread was ever resolved or reopened | `card`, `resolved`, `resolved_by`, `resolved_at` |
+| `for_you` | mention of one Member in one Comment, key (`member`, `comment`) | `member`, `comment`, `card`, `author`, `at`, `seen` |
+
+`settings` may hold `content_epoch`, changed whenever a Workspace file replaces the content. A server that read the Workspace before that change refuses to write it (`500 internal`, logged "restart the server"). That is the case of `import-workspace` run while a server runs on the same database: without it the server would write its empty Workspace over the one brought in.
+
+### Workspace files of schema version 7
+
+Since version 7 a Workspace file's `settings` say which kind of Workspace it came from and who exported it:
+
+| Setting | Value |
+|---|---|
+| `file_kind` | `local` or `team` |
+| `exported_by` | the Member id of whoever exported it: a Local Workspace's one Member; the Admin who exported over HTTP; for `export-workspace`, and `export_workspace` of a Team database, the oldest Admin (by `created_at`, then id) |
+
+- **Local file** (`export_workspace` and `export_for_move` of a Local database): §17's table, plus `file_kind` and `exported_by`. Comments, threads and For you lists are kept. A Member who is a name only has an empty password hash.
+- **Team file** (`GET /api/workspace/export`, `export-workspace`, `export_workspace` of a Team database): taken out are sessions, invites, access tokens, AI settings (keys, nonces, last four characters, models), **every** setting, Guests (with their For you entries), and from every Member the email (null), the password hash (empty) and `access_until`. Kept: the id, name, role, colour and `created_at` of each Member and Admin; every Branch, Change, Checkpoint and sync point; To-dos; Suggestions; Comments, threads and For you lists. `secure_delete` and a `VACUUM` as in §17. The file is made from a consistent snapshot (`VACUUM INTO` on its own connection), so it is safe while a server writes, in the same process or another.
+
+A Workspace file of an older version imports as before (§17) and, onto a Team server, is first brought up to version 7.
+
+### Contract A — `qoop_server::local`
+
+```rust
+pub struct LocalOptions { /* §16 */ pub read_only: bool, pub moved_to: Option<String> }
+pub struct Imported { pub preset: Option<Preset>, pub from_team: bool }
+pub fn export_for_move(db: &Path, dest: &Path) -> Result<(), PortError>; // = export_workspace
+pub fn build_local_app_with(config, store, clock, preset, member_name, read_only: bool, moved_to: Option<String>) -> Result<LocalApp, StartError>;
+```
+
+- **Read-only** (`read_only: true`): every request under `/api` whose method is not `GET`/`HEAD` is `403 moved` before any handler runs, except `POST /api/sources/lookup`, which only reads. Reading, search, History, the Branch Graph and the exports to Markdown, BibTeX and image (all reads) keep working, and so do `GET /api/local/enter` and the WebSocket's `subscribe`. There are no ops over the WebSocket; the one thing a client sends there that changes anything, an `editing` claim, is answered with `{ type: "error", code: "moved", message }`. The tool layer (`/mcp` and the AI sidebar's tools) refuses `suggest_*` with the same sentence. A moved Workspace's start does not rename its Member.
+- `GET /api/workspace` in a Local Workspace gives `read_only` as passed, and `moved_to` (the Team origin) when `LocalOptions::moved_to` is set; otherwise the key is absent.
+- **`import_workspace` of a Team file** (decision 6): the Member in `exported_by` becomes the one Member who can sign in (role `admin`, email `me@local.invalid`, a fresh random password). Every other Member stays a name only (email null, role `member`); Guests are dropped; the settings become `preset` = `blank` and `name_member_on_start`. The first `start_local` names that Member `LocalOptions::member_name` (the computer's user, as for a new Workspace) and forgets the setting. Returns `Imported { preset: Some(Blank), from_team: true }`. A Local Workspace's check (§17) now asks for exactly one Member who can sign in, an Admin, and allows other Members who are names only.
+
+### Workspace (Contract B)
+
+| Method, path | Who | Body | Response |
+|---|---|---|---|
+| `GET /api/workspace` | any signed-in | — | §16's shape with `empty` and `read_only` (and `moved_to` when set) |
+| `POST /api/workspace/import` | Admin, Team (`403` in a Local Workspace and for Members and Guests, `401` without a session) | the Workspace file as the raw body (any `Content-Type`; the UI sends `application/octet-stream`), at most `QOOP_MAX_IMPORT_MB` MiB. The usual write rules of §3 apply (`Origin`, `X-Qoop-Request: 1`) | `200 { members: { id, name, claimed }[], you_were: string }` |
+| `GET /api/workspace/export` | Admin, Team (`403` otherwise) | — | `200`, `Content-Type: application/octet-stream`, `Content-Disposition: attachment; filename="<host of the public origin, ':' as '-'>.infall"`, `Cache-Control: no-store`, the Team file |
+
+**Empty** (decision 1): `main` is the only Branch, with no Changes and no Checkpoints, and there are no To-dos and no Comments; Members and invites may exist. Always `false` in a Local Workspace. "Start empty" needs nothing from the server: `empty` stays `true` until the first Change, Checkpoint, Branch, To-do or Comment.
+
+**Import.** Refused before the body is read when the Workspace is not empty (`409 not_empty`). The body is streamed to a private scratch file beside the database (`413 too_large` as soon as it passes the limit, or at once from `Content-Length`). Then, under the Workspace write lock, the file is checked as §17 checks (`400 not_a_workspace_file`, `422 newer_version`), brought to version 7 and stripped as a Team file is. Its owner (a Local file's one Member, decision 2; a Team file's `exported_by`, decision 7) becomes the importing Admin **everywhere**: Changes, Checkpoints, Branches made, To-dos (owner and creator), Suggestions, Comments and their mentions, thread resolutions, For you entries, and inside Change ops (a Pin's `ai_pinned_by` and `ai_reviewed_by`, a Run result's `by`). Every other Member of the file is added as a name only (email null, role `member`, no password), unless a Member with that id is already on the server, who keeps their account. The file's `main` takes the server's `main` id, so connected clients stay on it; other Branch ids are kept. In one transaction, with the emptiness checked again, the server's empty content, Suggestions, Comments and For you lists are replaced by the file's and the Members are added. On any failure nothing changes. Afterwards everyone connected gets §7's catch-up after missed frames: the full `branches` frame, all of `main` as one `changes` frame, `presence`, `editing`, `todos`, `suggestions`; a Guest gets one `refresh`. In the answer, `members` lists every Member and Admin on the server after the import (Guests left out) in the Members list's order, and `you_were` is the owner's name in the file, whose work is now the Admin's.
+
+### Command line
+
+- `qoop-server import-workspace <file> --admin-email <e>`: the same rules and work as the import above, with the existing Admin of that email (case and surrounding spaces ignored) as the importing Admin. Exits non-zero and changes nothing when there is no such Admin, when the Workspace is not empty, or when the file cannot be read as a Workspace file. Prints whose work came in and the names not signed in yet. A server running on the same database refuses to write afterwards until it is restarted (`content_epoch` above): run it with the server stopped, or restart the server.
+- `qoop-server export-workspace <dest>`: a Team file of `QOOP_DB` at `dest` (which must not exist), recording the oldest Admin as who exported it. Safe while the server runs on that database in another process: the file is a consistent snapshot.
+
+### Members (Contract B)
+
+- `Member` gains `claimed: boolean` (§3). An unclaimed Member has no email (none is shown to anyone) and cannot sign in. They can be mentioned, can own To-dos, and are removed with `DELETE /api/members/{id}` like any other.
+- `POST /api/invites` takes an optional `claims: "<member id>"`, which must be an unclaimed Member who is not a Guest (`400 bad_request` otherwise, also for an id that is not a uuid). `Invite` gains `claims?: string`. `GET /api/invites/lookup` adds `claims: { id, name }` for such an invite.
+- Accepting a claiming invite (`POST /api/auth/accept-invite`, same body) gives that Member the invite's email and role, the typed password and the typed name, and signs them in as that Member (same id, colour and `created_at`), so everything under the name is theirs. If the Member was claimed or removed meanwhile: `410 invite_expired`. `409 email_taken` as usual.
+
+### Comments (Contract B)
+
+Members and Admins, Team and Local; Guests get `403 forbidden` on every one; `401` without a session. A Card id in a path that is not a uuid is `404`.
+
+```ts
+type Comment = { id: string; author: string; text: string; mentions: string[]; created_at: number; edited_at: number | null };
+type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean };
+```
+
+| Method, path | Body | Response |
+|---|---|---|
+| `GET /api/cards/{card}/comments` | — | `200 { resolved: boolean, comments: Comment[] }`, oldest first; a Card without a thread gives `{ resolved: false, comments: [] }` |
+| `POST /api/cards/{card}/comments` | `{ text, mentions?: string[] }` (`mentions` defaults to `[]`) | `201` the bare Comment. The Card need not exist on any Branch |
+| `PATCH /api/comments/{id}` | `{ text, mentions?: string[] }` (without `mentions` they are kept) | `200` the bare Comment, `edited_at` set. Author only (`403`); `404` unknown |
+| `DELETE /api/comments/{id}` | — | `200 {}`. Author or an Admin (`403`); `404` unknown. Its For you entries go with it |
+| `PUT /api/cards/{card}/comments/resolved` | `{ resolved: boolean }` | `200 { resolved }`. Any Member. `404` when the Card has no Comments |
+| `GET /api/comments/counts` | — | `200 { "<card id>": { open: number, resolved: boolean } }` for every Card with at least one Comment; `open` is the number of Comments in the thread, resolved or not |
+| `GET /api/for-you` | — | `200 { items: ForYouItem[] }`, the caller's, newest first (by `at`, then comment id), at most 200 |
+| `POST /api/for-you/seen` | `{ up_to: "<comment id>" }` | `200 { count }`: that entry and every older one are marked seen; `count` is how many of the caller's entries are still unseen. `404` when the caller's list has no entry for that Comment |
+
+- `text` is trimmed and must be 1–10 000 characters, with no control characters other than line breaks and tabs (`400 bad_request`). It is plain text with a Page text block's inline Markdown and math; the server does not read it.
+- Each of `mentions` must be the id of a Member or Admin (unclaimed ones included), never a Guest's or an unknown id (`400 bad_request`). An id given twice is kept once. The server does not look for `@Name` in the text.
+- **For you**: a new Comment gives each Member it mentions an unseen entry (`at` = its `created_at`). An edit gives one (`at` = `edited_at`) only to Members it mentions now and did not before. Nobody gets an entry for mentioning themself. Each Member's list keeps its newest 200 entries. Removing a Member removes their list.
+- Outside versioning: the same on every Branch, not in History, never merged, and kept when the Card is removed. Workspace files carry them both ways (above).
+- Live, to every connected Member and Admin, never to Guests: `{ type: "comments", card }` after a Comment is written, edited or deleted and after a thread is resolved or reopened; `{ type: "for_you", count }` to a Member's own connections when their unseen count may have changed (a mention, an edit that adds them, a deletion that took one of their entries, their own `seen`). The client fetches the thread or the list again.
+- In a moved Local Workspace every write above is `403 moved`.
