@@ -236,6 +236,10 @@ pub async fn propose(
     who: MemberId,
     draft: impl FnOnce(&Board) -> Result<Draft, String>,
 ) -> Result<Result<SuggestionRecord, String>, ApiError> {
+    // A moved Workspace takes no Suggestion either (docs/specs/team-move.md, decision 3).
+    if crate::local::is_read_only(st) {
+        return Ok(Err(crate::local::MOVED_SENTENCE.to_string()));
+    }
     let head = ws.head(branch).map_err(ApiError::internal)?;
     let board = ws.board_at(head).map_err(ApiError::internal)?;
     let draft = match draft(&board) {

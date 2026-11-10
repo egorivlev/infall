@@ -122,7 +122,7 @@ pub fn generate(size: &Size, db: &Path) -> Result<Generated, String> {
     let password = new_token()?;
     let mut me = new_member(
         &store,
-        LOCAL_EMAIL.to_string(),
+        Some(LOCAL_EMAIL.to_string()),
         "Scale Test".to_string(),
         Role::Admin,
         None,
@@ -1379,6 +1379,8 @@ pub async fn measure(
         preset: Preset::Blank,
         member_name: "Scale Test".to_string(),
         port: None,
+        read_only: false,
+        moved_to: None,
     })
     .await
     .map_err(|e| e.to_string())?;

@@ -83,6 +83,21 @@ pub enum ApiError {
     /// A Member who asked for more Source lookups than a minute allows.
     #[error("too many lookups")]
     TooManyLookups,
+    /// A Local Workspace moved to a Team server: nothing may be changed (M18).
+    #[error("moved")]
+    Moved,
+    /// A Workspace file may come only into an empty Team Workspace (M18).
+    #[error("not empty")]
+    NotEmpty,
+    /// What was sent is not a Workspace file (M18).
+    #[error("not a workspace file")]
+    NotAWorkspaceFile,
+    /// A Workspace file made by a newer version (M18).
+    #[error("newer version")]
+    NewerVersion,
+    /// A request body over its limit; the value is the sentence.
+    #[error("{0}")]
+    TooLarge(String),
     /// Logged, never shown.
     #[error("internal: {0}")]
     Internal(String),
@@ -206,6 +221,27 @@ impl ApiError {
                 "too_many_requests",
                 "Too many lookups in a minute. Try again in a moment.".into(),
             ),
+            Moved => (
+                StatusCode::FORBIDDEN,
+                "moved",
+                crate::local::MOVED_SENTENCE.into(),
+            ),
+            NotEmpty => (
+                StatusCode::CONFLICT,
+                "not_empty",
+                "A Workspace file can be brought only into an empty Workspace, and this one already has work in it.".into(),
+            ),
+            NotAWorkspaceFile => (
+                StatusCode::BAD_REQUEST,
+                "not_a_workspace_file",
+                crate::local::PortError::NotAWorkspaceFile.to_string(),
+            ),
+            NewerVersion => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "newer_version",
+                crate::local::PortError::NewerVersion.to_string(),
+            ),
+            TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "too_large", m.clone()),
             Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",

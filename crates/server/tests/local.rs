@@ -199,7 +199,10 @@ async fn the_workspace_says_local_and_its_preset() {
         let cookie = w.enter().await;
         let res = w.app.get("/api/workspace", Some(&cookie)).await;
         assert_eq!(res.status, StatusCode::OK);
-        assert_eq!(res.body, json!({ "kind": "local", "preset": preset.id() }));
+        assert_eq!(
+            res.body,
+            json!({ "kind": "local", "preset": preset.id(), "empty": false, "read_only": false })
+        );
     }
     let w = local(Preset::Blank);
     assert_eq!(
@@ -218,7 +221,10 @@ async fn a_team_workspace_says_team_to_members_and_guests() {
     for cookie in [&admin, &guest] {
         let res = app.get("/api/workspace", Some(cookie)).await;
         assert_eq!(res.status, StatusCode::OK);
-        assert_eq!(res.body, json!({ "kind": "team", "preset": null }));
+        assert_eq!(
+            res.body,
+            json!({ "kind": "team", "preset": null, "empty": true, "read_only": false })
+        );
     }
     assert_eq!(
         app.get("/api/workspace", None).await.status,
@@ -445,7 +451,7 @@ async fn the_tutorial_state_is_kept_in_the_database() {
     );
     assert_eq!(
         w.app.get("/api/workspace", Some(&cookie)).await.body,
-        json!({ "kind": "local", "preset": "tutorial" })
+        json!({ "kind": "local", "preset": "tutorial", "empty": false, "read_only": false })
     );
 }
 
@@ -1039,7 +1045,7 @@ async fn a_prepared_database_is_never_seeded_again() {
     assert_eq!(store.todos().unwrap().len(), 1);
     assert_eq!(
         second.app.get("/api/workspace", Some(&cookie)).await.body,
-        json!({ "kind": "local", "preset": "tutorial" })
+        json!({ "kind": "local", "preset": "tutorial", "empty": false, "read_only": false })
     );
 }
 
@@ -1073,6 +1079,8 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         preset: Preset::Tutorial,
         member_name: "Ada".to_string(),
         port: None,
+        read_only: false,
+        moved_to: None,
     };
     let server = start_local(options.clone()).await.unwrap();
     let origin = server.origin().to_string();
@@ -1137,7 +1145,10 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         .json()
         .await
         .unwrap();
-    assert_eq!(ws, json!({ "kind": "local", "preset": "tutorial" }));
+    assert_eq!(
+        ws,
+        json!({ "kind": "local", "preset": "tutorial", "empty": false, "read_only": false })
+    );
 
     // A write from the server's own origin passes the Origin check; from another it does not.
     let rename = |from: &str| {
@@ -1296,6 +1307,8 @@ async fn start_named(
         preset: Preset::Blank,
         member_name: name.to_string(),
         port: None,
+        read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap()
@@ -1408,6 +1421,8 @@ async fn a_broken_secret_key_file_stops_the_start() {
         preset: Preset::Blank,
         member_name: "Ada".to_string(),
         port: None,
+        read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap_err();
@@ -1426,6 +1441,8 @@ async fn start_local_can_be_spawned_and_its_server_shared() {
         preset: Preset::Blank,
         member_name: "Ada".to_string(),
         port: None,
+        read_only: false,
+        moved_to: None,
     };
     let server = tokio::spawn(start_local(options)).await.unwrap().unwrap();
     shareable(&server);
@@ -1447,6 +1464,8 @@ async fn start_local_listens_on_the_port_asked_for_when_it_is_free() {
         preset: Preset::Blank,
         member_name: "Ada".to_string(),
         port: Some(port),
+        read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap();
@@ -1470,6 +1489,8 @@ async fn start_local_takes_another_port_when_the_one_asked_for_is_taken() {
         preset: Preset::Blank,
         member_name: "Ada".to_string(),
         port: Some(port),
+        read_only: false,
+        moved_to: None,
     })
     .await
     .unwrap();

@@ -50,8 +50,8 @@ fn result(by: &str) -> Value {
 
 /// The largest result every limit allows, short of the limit on the whole.
 fn maximal(by: &str) -> Value {
-    let packages: serde_json::Map<String, Value> = (0..8)
-        .map(|i| (format!("{i}{}", "n".repeat(59)), json!("v".repeat(40))))
+    let packages: serde_json::Map<String, Value> = (0..32)
+        .map(|i| (format!("{i:02}{}", "n".repeat(58)), json!("v".repeat(40))))
         .collect();
     json!({
         "v": 1, "by": by, "at": START, "code_sha256": sha256(CODE), "exit": null,
@@ -373,10 +373,10 @@ async fn a_result_of_any_other_shape_is_refused() {
             put(&["env", "packages"], json!(["numpy"])),
         ),
         (
-            "nine packages",
+            "thirty-three packages",
             put(
                 &["env", "packages"],
-                Value::Object((0..9).map(|i| (format!("p{i}"), json!("1"))).collect()),
+                Value::Object((0..33).map(|i| (format!("p{i}"), json!("1"))).collect()),
             ),
         ),
         (

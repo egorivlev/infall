@@ -7,8 +7,8 @@ pub mod port;
 pub mod seed;
 
 pub use port::{
-    APPLICATION_ID, Imported, PortError, WORKSPACE_FILE_EXTENSION, export_workspace,
-    import_workspace,
+    APPLICATION_ID, EXPORTER_SETTING, Imported, KIND_SETTING, PortError, WORKSPACE_FILE_EXTENSION,
+    export_for_move, export_workspace, import_workspace,
 };
 
 use std::fs::OpenOptions;
@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::app::{Shared, blocking};
+use crate::app::{AppState, Shared, blocking};
 use crate::auth::{MemberOrAdmin, SignedIn, hash_password, new_token, start_session};
 use crate::config::{
     AI_IDLE_TIMEOUT, Config, DEFAULT_ARXIV_URL, DEFAULT_CROSSREF_URL, DEFAULT_OPENROUTER_URL,
@@ -110,7 +110,18 @@ pub struct LocalOptions {
     /// The port to listen on if it is free, so the Workspace's origin stays the same
     /// between starts. When it is taken or not allowed, and for `None`, the OS chooses one.
     pub port: Option<u16>,
+    /// A Workspace that was moved to a Team server (docs/specs/team-move.md, decision 3):
+    /// every request that would change anything is refused (`403 moved`); reading, search,
+    /// History and exports keep working. `false` for every other Workspace.
+    pub read_only: bool,
+    /// The Team server's origin a moved Workspace went to, for the page to name
+    /// (`GET /api/workspace` `moved_to`); `None` for every other Workspace.
+    pub moved_to: Option<String>,
 }
+
+/// The sentence of `403 moved`.
+pub const MOVED_SENTENCE: &str =
+    "This Workspace was moved to a Team server; open it there to make changes.";
 
 /// What a Local Workspace's server knows that a Team Workspace's does not.
 pub struct LocalMode {
@@ -120,6 +131,10 @@ pub struct LocalMode {
     member: MemberId,
     /// The name of this Workspace's session cookie.
     cookie: String,
+    /// Moved to a Team server: nothing may be changed (`LocalOptions::read_only`).
+    pub(crate) read_only: bool,
+    /// Where it was moved to (`LocalOptions::moved_to`).
+    moved_to: Option<String>,
 }
 
 impl LocalMode {
@@ -199,6 +214,8 @@ pub async fn start_local(options: LocalOptions) -> Result<LocalServer, StartErro
         preset,
         member_name,
         port,
+        read_only,
+        moved_to,
     } = options;
     let opened = tokio::task::spawn_blocking({
         let db = db.clone();
@@ -238,7 +255,15 @@ pub async fn start_local(options: LocalOptions) -> Result<LocalServer, StartErro
     let origin = config.public_origin.clone();
 
     let app = tokio::task::spawn_blocking(move || {
-        build_local_app(config, Arc::new(store), Clock::System, preset, &member_name)
+        build_local_app_with(
+            config,
+            Arc::new(store),
+            Clock::System,
+            preset,
+            &member_name,
+            read_only,
+            moved_to,
+        )
     })
     .await
     .map_err(|e| StartError::Other(format!("preparing the Workspace failed: {e}")))??;
@@ -279,6 +304,7 @@ pub fn local_config(addr: SocketAddr, web_dir: PathBuf) -> Config {
         crossref_url: DEFAULT_CROSSREF_URL.to_string(),
         arxiv_url: DEFAULT_ARXIV_URL.to_string(),
         lookup_timeout: LOOKUP_TIMEOUT,
+        max_import_bytes: crate::config::DEFAULT_MAX_IMPORT_MB * 1024 * 1024,
     }
 }
 
@@ -300,13 +326,28 @@ pub fn build_local_app(
     preset: Preset,
     member_name: &str,
 ) -> Result<LocalApp, StartError> {
-    let member = prepare(&*store, preset, member_name, clock.now())?;
+    build_local_app_with(config, store, clock, preset, member_name, false, None)
+}
+
+/// `build_local_app`, for a Workspace that is read-only (`LocalOptions::read_only`) or not.
+pub fn build_local_app_with(
+    config: Config,
+    store: Arc<dyn Store>,
+    clock: Clock,
+    preset: Preset,
+    member_name: &str,
+    read_only: bool,
+    moved_to: Option<String>,
+) -> Result<LocalApp, StartError> {
+    let member = prepare(&*store, preset, member_name, clock.now(), read_only)?;
     let cookie = format!("{LOCAL_COOKIE_PREFIX}{}", cookie_id(&*store)?);
     let entry_key = new_token().map_err(StartError::Other)?;
     let local = LocalMode {
         key: entry_key.clone(),
         member,
         cookie,
+        read_only,
+        moved_to,
     };
     let (router, shutdown) = assemble(config, store, clock, Some(local))?;
     Ok(LocalApp {
@@ -319,15 +360,31 @@ pub fn build_local_app(
 /// The one Member of the store (made if there is none) and, the first time, the Preset's
 /// Research Content. The Preset id is written last, so a start that failed half way seeds
 /// again next time, unless Changes were already saved.
+///
+/// The one Member is the Admin who can sign in; a Workspace made from a Team file may also
+/// hold Members who are names only. Such a Workspace's first start names its one Member
+/// `member_name` (docs/specs/team-move.md, decision 6) — unless it is read-only.
 fn prepare(
     store: &dyn Store,
     preset: Preset,
     member_name: &str,
     now: i64,
+    read_only: bool,
 ) -> Result<MemberId, StartError> {
-    let existing = store.members()?.into_iter().find(|m| m.role == Role::Admin);
+    let existing = store
+        .members()?
+        .into_iter()
+        .find(|m| m.role == Role::Admin && m.claimed());
     let member = match existing {
-        Some(m) => m.id,
+        Some(m) => {
+            if !read_only && store.setting(port::RENAME_SETTING)?.is_some() {
+                if let Ok(name) = clean_name(member_name) {
+                    store.set_member_name(m.id, &name)?;
+                }
+                store.remove_setting(port::RENAME_SETTING)?;
+            }
+            m.id
+        }
         None => {
             let name = clean_name(member_name).unwrap_or_else(|_| FALLBACK_NAME.to_string());
             // A password no one knows: signing in with a password is refused here anyway.
@@ -335,7 +392,7 @@ fn prepare(
             let phc = hash_password(&password).map_err(StartError::Other)?;
             let m = new_member(
                 store,
-                LOCAL_EMAIL.to_string(),
+                Some(LOCAL_EMAIL.to_string()),
                 name,
                 Role::Admin,
                 None,
@@ -452,6 +509,29 @@ pub(crate) fn refuse(st: &Shared, why: &'static str) -> Result<(), ApiError> {
     }
 }
 
+/// Whether this is a Local Workspace that was moved to a Team server.
+pub(crate) fn is_read_only(st: &AppState) -> bool {
+    st.local.as_ref().is_some_and(|l| l.read_only)
+}
+
+/// Middleware for `/api`: in a moved Workspace, every request that could change anything —
+/// whatever is not `GET` or `HEAD`, but for a Source lookup, which only reads — is
+/// `403 moved` before any handler runs.
+pub(crate) async fn refuse_when_moved(
+    State(st): State<Shared>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let reads = matches!(
+        *req.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD
+    ) || matches!(req.uri().path(), "/sources/lookup" | "/api/sources/lookup");
+    if is_read_only(&st) && !reads {
+        return ApiError::Moved.into_response();
+    }
+    next.run(req).await
+}
+
 /// Whether two keys are the same, in time that does not depend on where they differ.
 fn same_key(a: &str, b: &str) -> bool {
     let (a, b) = (Sha256::digest(a.as_bytes()), Sha256::digest(b.as_bytes()));
@@ -461,13 +541,25 @@ fn same_key(a: &str, b: &str) -> bool {
         == 0
 }
 
-/// `GET /api/workspace`: which kind of Workspace this is, and its Preset.
+/// `GET /api/workspace`: which kind of Workspace this is, its Preset, whether it is empty
+/// (a Team Workspace that a Workspace file may be brought into, docs/specs/team-move.md,
+/// decision 1) and whether it is read-only (a moved Local Workspace).
 pub async fn get_workspace(State(st): State<Shared>, _: SignedIn) -> Result<Response, ApiError> {
     if st.local.is_none() {
-        return Ok(Json(json!({ "kind": "team", "preset": null })).into_response());
+        let empty = crate::transfer::is_empty(&st).await?;
+        return Ok(Json(json!({
+            "kind": "team", "preset": null, "empty": empty, "read_only": false,
+        }))
+        .into_response());
     }
     let preset = blocking(&st, |s| s.setting(PRESET_SETTING)).await?;
-    Ok(Json(json!({ "kind": "local", "preset": preset })).into_response())
+    let mut body = json!({
+        "kind": "local", "preset": preset, "empty": false, "read_only": is_read_only(&st),
+    });
+    if let Some(to) = st.local.as_ref().and_then(|l| l.moved_to.as_ref()) {
+        body["moved_to"] = json!(to);
+    }
+    Ok(Json(body).into_response())
 }
 
 /// `GET /api/local/enter?key=…`: with the key of this start, a session for the one Member

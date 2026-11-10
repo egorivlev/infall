@@ -74,6 +74,13 @@ enum Event {
     },
     /// The Member's account is gone: close their connections.
     Kick { member: MemberId },
+    /// A `comments` frame (a thread changed), for every connected Member and Admin.
+    Comments { frame: Utf8Bytes },
+    /// A `for_you` frame, for the connections of that one Member.
+    ForYou { member: MemberId, frame: Utf8Bytes },
+    /// The whole Workspace was replaced (a Workspace file was brought in): every connection
+    /// catches up as after missed frames.
+    Resync,
 }
 
 #[derive(Default)]
@@ -117,6 +124,9 @@ pub struct Hub {
     /// How many `suggestions` frames have been broadcast; changed only under
     /// `suggestion_order`.
     suggestions_version: AtomicU64,
+    /// Held across a Comment change and its frames, so they go out in the order of the
+    /// changes.
+    pub comment_order: tokio::sync::Mutex<()>,
 }
 
 impl Default for Hub {
@@ -130,6 +140,7 @@ impl Default for Hub {
             todos_version: AtomicU64::new(0),
             suggestion_order: tokio::sync::Mutex::new(()),
             suggestions_version: AtomicU64::new(0),
+            comment_order: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -320,6 +331,27 @@ impl Hub {
         }
     }
 
+    /// Tells every connected Member and Admin that the thread of `card` changed.
+    pub fn broadcast_comments(st: &Shared, card: Uuid) {
+        let frame = json!({ "type": "comments", "card": card })
+            .to_string()
+            .into();
+        let _ = st.hub.tx.send(Event::Comments { frame });
+    }
+
+    /// Tells `member`'s connections how many unseen entries their For you list has.
+    pub fn send_for_you(st: &Shared, member: MemberId, count: usize) {
+        let frame = json!({ "type": "for_you", "count": count })
+            .to_string()
+            .into();
+        let _ = st.hub.tx.send(Event::ForYou { member, frame });
+    }
+
+    /// Makes every connection catch up with a Workspace that was replaced whole.
+    pub fn broadcast_resync(st: &Shared) {
+        let _ = st.hub.tx.send(Event::Resync);
+    }
+
     /// Closes every live connection of `member`.
     pub fn disconnect_member(st: &Shared, member: MemberId) {
         let _ = st.hub.tx.send(Event::Kick { member });
@@ -478,6 +510,7 @@ impl Connection {
                     Some(Ok(_)) => Ok(Vec::new()),
                 },
                 ev = events.recv() => match ev {
+                    Ok(Event::Resync) => Ok(self.resync().await),
                     Ok(ev) => self.on_event(ev),
                     Err(RecvError::Lagged(_)) => Ok(self.resync().await),
                     Err(RecvError::Closed) => Err(()),
@@ -599,7 +632,10 @@ impl Connection {
             | Event::Branches { .. }
             | Event::Todos { .. }
             | Event::Editing { .. }
-            | Event::Suggestions { .. } => Ok(Vec::new()),
+            | Event::Suggestions { .. }
+            | Event::Comments { .. }
+            | Event::ForYou { .. }
+            | Event::Resync => Ok(Vec::new()),
         }
     }
 
@@ -615,6 +651,11 @@ impl Connection {
                 _ => Ok(Vec::new()),
             },
             Event::Branches { frame } => Ok(vec![frame]),
+            Event::Comments { frame } => Ok(vec![frame]),
+            Event::ForYou { member, frame } if member == self.who.id() => Ok(vec![frame]),
+            Event::ForYou { .. } => Ok(Vec::new()),
+            // Handled where events arrive, since catching up reads the Workspace.
+            Event::Resync => Ok(Vec::new()),
             Event::Todos { version, frame } if version > self.todos_version => {
                 self.todos_version = version;
                 Ok(vec![frame])
@@ -683,6 +724,10 @@ impl Connection {
         };
         if self.is_guest() {
             return Vec::new();
+        }
+        // A moved Workspace takes no claim to edit, as it takes no change.
+        if card.is_some() && crate::local::is_read_only(&self.st) {
+            return vec![error_frame("moved", crate::local::MOVED_SENTENCE)];
         }
         let card = match card.map(Uuid::parse_str) {
             None => None,
@@ -878,7 +923,7 @@ mod tests {
     fn connection(st: &Shared, role: Role) -> Connection {
         let member = MemberRecord {
             id: MemberId::new(),
-            email: format!("{}@example.org", role.as_str()),
+            email: Some(format!("{}@example.org", role.as_str())),
             name: role.as_str().to_string(),
             role,
             color: String::new(),
@@ -957,6 +1002,12 @@ mod tests {
             Event::Kick {
                 member: MemberId::new(),
             },
+            Event::Comments { frame: frame() },
+            Event::ForYou {
+                member: MemberId::new(),
+                frame: frame(),
+            },
+            Event::Resync,
         ]
     }
 

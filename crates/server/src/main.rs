@@ -1,6 +1,7 @@
 //! The `qoop-server` command line: `serve` (default), `create-admin`, `reset-password`,
-//! `gen-secret-key`.
+//! `gen-secret-key`, `import-workspace`, `export-workspace`.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,6 +41,20 @@ enum Command {
     },
     /// Print a fresh value for QOOP_SECRET_KEY (32 random bytes, base64).
     GenSecretKey,
+    /// Bring a Workspace file into this server's empty Workspace; the Admin with that email
+    /// takes over the work of whoever it belonged to. Restart a running server afterwards.
+    ImportWorkspace {
+        /// The Workspace file (`.infall`).
+        file: PathBuf,
+        #[arg(long)]
+        admin_email: String,
+    },
+    /// Write a Workspace file of this server's Workspace (Members as names only, nothing
+    /// secret). Safe while the server runs.
+    ExportWorkspace {
+        /// Where to write it; must not exist.
+        dest: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -63,15 +78,47 @@ fn main() -> ExitCode {
                 let password = read_password()?;
                 let m = create_admin(&store, &email, &name, &password, Clock::System.now())
                     .map_err(|e| e.to_string())?;
-                println!("Created Admin {} <{}>.", m.name, m.email);
+                println!(
+                    "Created Admin {} <{}>.",
+                    m.name,
+                    m.email.as_deref().unwrap_or_default()
+                );
                 Ok(())
             }),
+            Command::ImportWorkspace { file, admin_email } => {
+                qoop_server::transfer::import_from_command_line(&config.db, &file, &admin_email)
+                    .map(|done| {
+                        let waiting: Vec<&str> = done
+                            .members
+                            .iter()
+                            .filter(|(_, claimed)| !claimed)
+                            .map(|(name, _)| name.as_str())
+                            .collect();
+                        println!(
+                            "Brought in {}. The work of {} is now {}'s.",
+                            file.display(),
+                            done.you_were,
+                            done.admin
+                        );
+                        if !waiting.is_empty() {
+                            println!(
+                                "Not signed in yet (invite them from Members): {}.",
+                                waiting.join(", ")
+                            );
+                        }
+                        println!("If the server is running, restart it.");
+                    })
+            }
+            Command::ExportWorkspace { dest } => {
+                qoop_server::transfer::export_from_command_line(&config.db, &dest)
+                    .map(|()| println!("Wrote {}.", dest.display()))
+            }
             Command::ResetPassword { email } => open(&config).and_then(|store| {
                 let password = read_password()?;
                 let m = reset_password(&store, &email, &password).map_err(|e| e.to_string())?;
                 println!(
                     "Password changed for <{}>; all their sessions were ended and their access tokens revoked.",
-                    m.email
+                    m.email.as_deref().unwrap_or_default()
                 );
                 Ok(())
             }),

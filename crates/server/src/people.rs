@@ -46,10 +46,13 @@ pub struct MemberView {
     email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     access_until: Option<i64>,
+    /// False for a name that came with a Workspace file: no email, cannot sign in.
+    claimed: bool,
 }
 
 impl MemberView {
-    /// The email is shown only to the Member themself or to an Admin.
+    /// The email is shown only to the Member themself or to an Admin; a Member who is a
+    /// name only has none.
     pub fn of(m: &MemberRecord, viewer: &MemberRecord) -> MemberView {
         let show_email = viewer.id == m.id || viewer.role == Role::Admin;
         MemberView {
@@ -57,7 +60,8 @@ impl MemberView {
             name: m.name.clone(),
             role: m.role,
             color: m.color.clone(),
-            email: show_email.then(|| m.email.clone()),
+            email: m.email.clone().filter(|_| show_email),
+            claimed: m.claimed(),
             access_until: if m.role == Role::Guest {
                 m.access_until
             } else {
@@ -76,6 +80,9 @@ struct InviteView {
     access_until: Option<i64>,
     expires_at: i64,
     created_by: MemberId,
+    /// The unclaimed Member accepting it takes over (M18).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claims: Option<MemberId>,
 }
 
 impl From<&InviteRecord> for InviteView {
@@ -87,6 +94,7 @@ impl From<&InviteRecord> for InviteView {
             access_until: i.access_until,
             expires_at: i.expires_at,
             created_by: i.created_by,
+            claims: i.claims,
         }
     }
 }
@@ -126,7 +134,7 @@ pub fn clean_email(email: &str) -> Result<String, ApiError> {
 /// accepting an invite.
 pub fn new_member(
     store: &dyn Store,
-    email: String,
+    email: Option<String>,
     name: String,
     role: Role,
     access_until: Option<i64>,
@@ -211,6 +219,8 @@ pub struct CreateInvite {
     email: String,
     role: Role,
     access_until: Option<i64>,
+    /// An unclaimed Member, whom accepting the invite gives this email (M18).
+    claims: Option<String>,
 }
 
 pub async fn create_invite(
@@ -240,6 +250,20 @@ pub async fn create_invite(
             ));
         }
     };
+    let claims = match &body.claims {
+        None => None,
+        Some(raw) => {
+            const NOT_UNCLAIMED: &str =
+                "`claims` must be the id of a Member who has not signed in yet.";
+            let id = Uuid::parse_str(raw)
+                .map(MemberId)
+                .map_err(|_| ApiError::BadRequest(NOT_UNCLAIMED.to_string()))?;
+            match blocking(&st, move |s| s.member(id)).await? {
+                Some(m) if !m.claimed() && m.role != Role::Guest => Some(id),
+                _ => return Err(ApiError::BadRequest(NOT_UNCLAIMED.to_string())),
+            }
+        }
+    };
     if blocking(&st, {
         let email = email.clone();
         move |s| s.member_by_email(&email)
@@ -260,6 +284,7 @@ pub async fn create_invite(
         created_by: who.id(),
         created_at: now,
         used_at: None,
+        claims,
     };
     blocking(&st, {
         let invite = invite.clone();
@@ -315,6 +340,13 @@ pub async fn lookup_invite(
     {
         body["access_until"] = json!(until);
     }
+    // The name the person takes over, so the invite screen can offer it.
+    if let Some(id) = invite.claims
+        && let Some(m) = blocking(&st, move |s| s.member(id)).await?
+        && !m.claimed()
+    {
+        body["claims"] = json!({ "id": m.id, "name": m.name });
+    }
     Ok(Json(body))
 }
 
@@ -338,15 +370,32 @@ pub async fn accept_invite(
         .map_err(ApiError::internal)?;
     let now = st.clock.now();
     let member = blocking(&st, move |s| {
-        let m = new_member(
-            s,
-            invite.email,
-            name,
-            invite.role,
-            invite.access_until,
-            phc,
-            now,
-        )?;
+        let m = match invite.claims {
+            // Taking over a name that came with a Workspace file: the same Member, with
+            // everything already under it, now with an email and a password.
+            Some(id) => {
+                let Some(was) = s.member(id)?.filter(|m| !m.claimed()) else {
+                    return Err(crate::store::StoreError::InviteGone);
+                };
+                MemberRecord {
+                    email: Some(invite.email),
+                    name,
+                    role: invite.role,
+                    access_until: invite.access_until,
+                    password_hash: phc,
+                    ..was
+                }
+            }
+            None => new_member(
+                s,
+                Some(invite.email),
+                name,
+                invite.role,
+                invite.access_until,
+                phc,
+                now,
+            )?,
+        };
         s.accept_invite(invite.id, &m, now)?;
         Ok(m)
     })
