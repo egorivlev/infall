@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "setup",
-  "description": "The start screen may list the Workspaces, make a Local Workspace, sign in to a Team Workspace, open, rename and remove Workspaces, export and import a Workspace file, show a Local Workspace's folder, and move a Local Workspace onto a Team server. Nothing else, and no other window may do any of it.",
+  "description": "The start screen may list the Workspaces, make a Local Workspace, sign in to a Team Workspace, open, rename and remove Workspaces, export and import a Workspace file, show a Local Workspace's folder, move a Local Workspace onto a Team server, and see and install an update that is ready (backing every Local Workspace up first). Nothing else, and no other window may do any of it.",
   "local": true,
   "windows": ["setup"],
   "permissions": [
@@ -14,6 +14,8 @@
     "allow-workspace-export",
     "allow-workspace-import",
     "allow-workspace-reveal",
-    "allow-workspace-move"
+    "allow-workspace-move",
+    "allow-update-view",
+    "allow-update-install"
   ]
 }

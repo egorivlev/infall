@@ -96,7 +96,7 @@
   function actionButtons() {
     return Array.prototype.slice.call(
       document.querySelectorAll(
-        '.tile, #signin, #import-btn, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button, .move button'
+        '.tile, #signin, #import-btn, #update-go, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button, .move button, .export button'
       )
     );
   }
@@ -148,6 +148,14 @@
 
   function whenOpened(ms, now) {
     return known(ms) ? when('opened', ms, now) : 'not opened yet';
+  }
+
+  // "3 files, 4.2 MB": what Export… may include.
+  function filesText(files) {
+    var count = files.count === 1 ? '1 file' : files.count + ' files';
+    var mb = (files.bytes || 0) / (1024 * 1024);
+    var size = mb >= 10 ? Math.round(mb) + ' MB' : mb >= 0.1 ? mb.toFixed(1) + ' MB' : 'under 0.1 MB';
+    return count + ', ' + size;
   }
 
   function fullDate(ms) {
@@ -292,6 +300,7 @@
         rows[id].stopRename(false);
         rows[id].closeConfirm(false);
         rows[id].closeMove(false);
+        rows[id].closeExport(false);
       }
     });
   }
@@ -372,8 +381,20 @@
     var keep = li.querySelector('.keep');
     var exportFirst = li.querySelector('.export-first');
     var go = li.querySelector('.go');
+    var exportForm = li.querySelector('.export');
+    var exportTitle = exportForm.querySelector('.export-title');
+    var exportFiles = exportForm.querySelector('.export-files');
+    var exportFilesLabel = exportForm.querySelector('.export-files-label');
+    var exportHint = exportForm.querySelector('.export-hint');
+    var exportGo = exportForm.querySelector('.export-go');
+    var exportCancel = exportForm.querySelector('.export-cancel');
 
     var local = entry.kind === 'local';
+    // A Local Workspace with PDFs (docs/specs/pdf-sources.md, decision 6): Export… asks
+    // whether they go in. Without a count (an app or server crate that cannot say), it asks
+    // nothing and exports as before.
+    var files =
+      local && entry.files && typeof entry.files.count === 'number' && entry.files.count > 0 ? entry.files : null;
     // A Local Workspace moved to a Team server (docs/specs/team-move.md, decision 3): its
     // main action opens the server; the copy here opens read-only from its menu.
     var movedTo = local && typeof entry.movedTo === 'string' && entry.movedTo ? entry.movedTo : '';
@@ -459,6 +480,15 @@
     menu.id = uid + '-menu';
     menu.setAttribute('aria-label', entry.name);
 
+    exportForm.id = uid + '-export';
+    exportTitle.id = uid + '-export-title';
+    exportForm.setAttribute('aria-labelledby', exportTitle.id);
+    exportTitle.textContent = 'Export “' + entry.name + '”';
+    exportFiles.id = uid + '-export-files';
+    exportHint.id = uid + '-export-hint';
+    exportFiles.setAttribute('aria-describedby', exportHint.id);
+    if (files) exportFilesLabel.textContent = 'Include PDFs (' + filesText(files) + ')';
+
     input.id = uid + '-input';
     formLabel.setAttribute('for', input.id);
     formLabel.textContent = 'New name for ' + entry.name;
@@ -499,6 +529,7 @@
       renaming: false,
       confirming: false,
       moving: false,
+      exporting: false,
       showError: function (text) {
         error.textContent = text || '';
         error.hidden = !text;
@@ -598,6 +629,26 @@
         moveForm.hidden = true;
         recent.classList.remove('panel-open');
         row.showMoveError('');
+        if (refocus) moreBtn.focus();
+      },
+      openExport: function () {
+        closeAllPanels(row);
+        row.stopRename(false);
+        row.closeConfirm(false);
+        row.showError('');
+        row.showStatus('');
+        row.exporting = true;
+        exportFiles.checked = true;
+        exportForm.hidden = false;
+        recent.classList.add('panel-open');
+        exportFiles.focus();
+        if (exportForm.scrollIntoView) exportForm.scrollIntoView({ block: 'nearest' });
+      },
+      closeExport: function (refocus) {
+        if (!row.exporting) return;
+        row.exporting = false;
+        exportForm.hidden = true;
+        recent.classList.remove('panel-open');
         if (refocus) moreBtn.focus();
       }
     };
@@ -735,7 +786,8 @@
 
     if (local) {
       miExport.addEventListener('click', fromMenu(function () {
-        exportFile(null);
+        if (files) row.openExport();
+        else exportFile(null);
       }));
       miReveal.addEventListener('click', fromMenu(function () {
         reveal();
@@ -808,9 +860,32 @@
 
     // ---- export, show in folder ----
 
+    // ---- export: with or without the PDFs ----
+
+    exportCancel.addEventListener('click', function () {
+      if (busy) return;
+      row.closeExport(true);
+    });
+
+    exportForm.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !busy) {
+        event.preventDefault();
+        row.closeExport(true);
+      }
+    });
+
+    exportForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (busy) return;
+      var include = exportFiles.checked;
+      row.closeExport(false);
+      exportFile(null, include);
+    });
+
     // `button` is the control that started it when it stays on screen (Export first…);
-    // from the menu the row itself says what is going on.
-    function exportFile(button) {
+    // from the menu the row itself says what is going on. `includeFiles`: whether the PDFs go
+    // in, when the person was asked (absent: they do).
+    function exportFile(button, includeFiles) {
       clearMessages();
       setBusy(true);
       li.setAttribute('aria-busy', 'true');
@@ -834,7 +909,9 @@
         row.showStatus('');
         setBusy(false);
       }
-      invoke('workspace_export', { id: entry.id }).then(
+      var args = { id: entry.id };
+      if (typeof includeFiles === 'boolean') args.includeFiles = includeFiles;
+      invoke('workspace_export', args).then(
         function (path) {
           done();
           if (typeof path === 'string' && path) {
@@ -1057,6 +1134,69 @@
       else tiles[0].focus();
     });
   });
+
+  // ---- an update that is ready (docs/specs/release.md, section 11) --------------------
+  //
+  // Only a build with the updater ever has one; it is downloaded and checked in the
+  // background, so the screen asks again now and then. Installing it backs up every Local
+  // Workspace first, then the app starts again as the new version.
+
+  var updateBox = $('update');
+  var updateText = $('update-text');
+  var updateGo = $('update-go');
+  var updateError = $('update-error');
+  var updateTimer = 0;
+
+  function showUpdateError(text) {
+    updateError.textContent = text || '';
+    updateError.hidden = !text;
+  }
+
+  function lookForUpdate() {
+    invoke('update_view').then(
+      function (ready) {
+        if (ready && typeof ready.notice === 'string' && ready.notice) {
+          updateText.textContent = ready.notice;
+          updateBox.hidden = false;
+        } else if (!busy) {
+          updateBox.hidden = true;
+        }
+      },
+      function () {
+        // An app without the command (or with it refused) has nothing to offer.
+        window.clearInterval(updateTimer);
+      }
+    );
+  }
+
+  updateGo.addEventListener('click', function () {
+    if (busy) return;
+    clearMessages();
+    showUpdateError('');
+    closeAllPanels(null);
+    setBusy(true);
+    updateGo.setAttribute('aria-busy', 'true');
+    spinnerText(updateGo, 'Backing up your workspaces…');
+    announce('Backing up your workspaces, then installing the update…');
+    invoke('update_install').then(
+      function () {
+        // The app starts again as the new version.
+        updateGo.textContent = 'Restarting…';
+      },
+      function (reason) {
+        updateGo.removeAttribute('aria-busy');
+        updateGo.textContent = 'Restart to update';
+        setBusy(false);
+        announce('');
+        showUpdateError(sentence(reason, 'The update could not be installed. Try again.'));
+        lookForUpdate();
+        updateGo.focus();
+      }
+    );
+  });
+
+  lookForUpdate();
+  updateTimer = window.setInterval(lookForUpdate, 20000);
 
   reload(function (view) {
     if (view && typeof view.notice === 'string' && view.notice) showNotice(view.notice);

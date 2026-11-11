@@ -27,6 +27,12 @@
         <button id="notice-dismiss" type="button" class="quiet">Dismiss</button>
       </div>
 
+      <div id="update" class="update" role="status" hidden>
+        <p id="update-text"></p>
+        <button id="update-go" type="button" class="accent">Restart to update</button>
+      </div>
+      <p id="update-error" class="error update-error" role="alert" hidden></p>
+
       <div class="columns">
         <div class="primary-column">
           <section id="recent" class="section recent" aria-labelledby="recent-heading" hidden>
@@ -207,6 +213,18 @@
           </div>
           <p class="hint move-hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
           <p class="error move-error" role="alert" hidden></p>
+        </form>
+        <form class="export" novalidate hidden>
+          <p class="export-title"></p>
+          <label class="export-choice">
+            <input type="checkbox" class="export-files" checked />
+            <span class="export-files-label"></span>
+          </label>
+          <p class="hint export-hint">Without them the file is smaller, and a copy made from it has its Sources without their PDFs.</p>
+          <div class="confirm-buttons">
+            <button type="button" class="quiet export-cancel">Cancel</button>
+            <button type="submit" class="accent export-go">Export…</button>
+          </div>
         </form>
         <div class="confirm" role="alertdialog" hidden>
           <p class="confirm-title"></p>

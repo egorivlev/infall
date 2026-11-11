@@ -238,6 +238,18 @@ pub fn keep_backed_up(
     if !backup_due(dir, now) {
         return Ok(newest_backup(dir));
     }
+    back_up_now(db, dir, now, export)
+}
+
+/// A backup made now, due or not, kept as [`keep_backed_up`] keeps them: what the app does
+/// for every Local Workspace before it installs a new version of itself (docs/specs/
+/// release.md, section 11). Returns when the newest backup was made.
+pub fn back_up_now(
+    db: &Path,
+    dir: &Path,
+    now: i64,
+    export: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> Result<Option<i64>, String> {
     if !db.is_file() {
         return Err(format!("there is no database at {}", db.display()));
     }
@@ -492,6 +504,28 @@ mod tests {
         assert_eq!(backups(&dir).len(), 2);
         // A clock set back does not make one every time.
         assert!(!backup_due(&dir, NOW - 5 * DAY));
+    }
+
+    #[test]
+    fn a_backup_before_an_update_is_made_even_when_none_is_due() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = db(tmp.path());
+        let dir = tmp.path().join(BACKUP_DIR);
+        assert_eq!(keep_backed_up(&db, &dir, NOW, copy), Ok(Some(NOW)));
+        // An hour later none is due, but one is made all the same, and kept as the others.
+        assert!(!backup_due(&dir, NOW + 3_600_000));
+        assert_eq!(
+            back_up_now(&db, &dir, NOW + 3_600_000, copy),
+            Ok(Some(NOW + 3_600_000))
+        );
+        assert_eq!(backups(&dir).len(), 2);
+        for k in 2..20 {
+            back_up_now(&db, &dir, NOW + k * 3_600_000, copy).unwrap();
+        }
+        assert_eq!(backups(&dir).len(), KEEP_BACKUPS);
+        // No database, no backup: an error, and nothing else changes.
+        assert!(back_up_now(&tmp.path().join("none"), &dir, NOW + DAY, copy).is_err());
+        assert_eq!(backups(&dir).len(), KEEP_BACKUPS);
     }
 
     #[test]

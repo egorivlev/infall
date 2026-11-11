@@ -29,15 +29,20 @@ use crate::address::{self, Navigation};
 use crate::bridge::{
     self, EditItem, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest, Step, UndoSteps,
 };
+use crate::datadir;
+use crate::files;
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
 use crate::transfer::{self, Upload};
+use crate::update;
 use crate::webui;
-use crate::workspaces::{self, Entry, Kind, Registry};
+use crate::workspaces::{self, Entry, FilesSummary, Kind, Registry};
 
 const SWITCH_WORKSPACE: &str = "switch-workspace";
 const RUNNER_SETTINGS: &str = "runner-settings";
 #[cfg(target_os = "linux")]
 const QUIT: &str = "quit";
+#[cfg(infall_updater)]
+const CHECK_UPDATES: &str = "check-updates";
 const UNDO: &str = "undo";
 const REDO: &str = "redo";
 
@@ -135,9 +140,16 @@ struct AppState {
     backups: Mutex<HashMap<String, JoinHandle<()>>>,
     /// Whether a save or open dialog is showing: one at a time.
     dialog: AtomicBool,
-    /// The file the main window's page is sending for `saveBinaryFile`, until it is saved.
-    /// One at a time; forgotten when the page goes away.
+    /// The file the main window's page is sending for `saveBinaryFile` or `openExternally`,
+    /// until it is saved or opened. One at a time; forgotten when the page goes away.
     upload: Mutex<Option<Upload>>,
+    /// The folders the main window's page picked (`pickFolder`); forgotten when it goes away.
+    folders: Mutex<files::Folders>,
+    /// When a PDF was last handed to the system's viewer (ms since the epoch).
+    last_viewer: AtomicU64,
+    /// The version of Infall downloaded and ready to install, if any (only a build with the
+    /// updater ever has one).
+    update_ready: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -184,6 +196,8 @@ fn runner(app: &AppHandle) -> RunnerState {
 struct Workspaces {
     registry: Mutex<Registry>,
     data_dir: PathBuf,
+    /// The app's cache folder: the PDFs handed to the system's viewer (`files`).
+    cache_dir: PathBuf,
     /// The unpacked web UI, once a Local Workspace has needed it.
     web_dir: OnceLock<PathBuf>,
 }
@@ -205,8 +219,21 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// The app's configuration (tauri.conf.json), with the updater's key and feed filled in when
+/// this build has an updater.
+fn context() -> tauri::Context<Wry> {
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    #[cfg(infall_updater)]
+    updating::configure(&mut context);
+    context
+}
+
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(infall_updater)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = builder
         .manage(AppState {
             granted: Mutex::new(None),
             bridge_key: random_key(),
@@ -221,6 +248,9 @@ pub fn run() {
             backups: Mutex::default(),
             dialog: AtomicBool::new(false),
             upload: Mutex::new(None),
+            folders: Mutex::default(),
+            last_viewer: AtomicU64::new(0),
+            update_ready: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             start_view,
@@ -233,6 +263,8 @@ pub fn run() {
             workspace_import,
             workspace_reveal,
             workspace_move,
+            update_view,
+            update_install,
             claude_status,
             claude_send,
             claude_cancel,
@@ -246,6 +278,9 @@ pub fn run() {
             save_binary_begin,
             save_binary_chunk,
             save_binary_finish,
+            pick_folder,
+            folder_file_chunk,
+            open_external_finish,
             runner_status,
             runner_configure,
             runner_run,
@@ -269,20 +304,47 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .map_err(|_| "the app has no config directory")?;
-            let data = handle
+            let roaming = handle
                 .path()
                 .app_data_dir()
                 .map_err(|_| "the app has no data directory")?;
+            // Windows: Local Workspaces live in the local (non-roaming) data folder since
+            // 0.9.0; those an earlier version kept in the roaming one are moved across now,
+            // and any that cannot be are used from where they are (see `datadir`).
+            let local = if cfg!(windows) {
+                handle
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|_| "the app has no local data directory")?
+            } else {
+                roaming.clone()
+            };
+            let (data, legacy) = datadir::choose(roaming, local);
+            if let Some(old) = &legacy {
+                let moved = datadir::move_workspaces(old, &data);
+                if let Some(notice) = moved.notice(old, &data) {
+                    *handle.state::<AppState>().notice.lock().unwrap() = Some(notice);
+                }
+            }
+            // PDFs handed to the system's viewer are temporary: none outlives a run of the app.
+            let cache = handle
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| data.join("cache"));
+            files::clear_viewer_files(&cache);
             app.manage::<RunnerState>(Arc::new(Runner::new(
                 qoop_runner::Options::from_process_env(config.clone()),
             )));
-            let registry = Registry::new(config, data.clone());
+            #[cfg(infall_updater)]
+            updating::at_start(&handle, config.clone());
+            let registry = Registry::with_legacy(config, data.clone(), legacy);
             // What a move cut short left behind, and moves no page took within a week.
             registry.sweep_moves();
             registry.prune_moves(now_ms() as i64);
             app.manage(Workspaces {
                 registry: Mutex::new(registry),
                 data_dir: data,
+                cache_dir: cache,
                 web_dir: OnceLock::new(),
             });
             build_menu(&handle)?;
@@ -310,13 +372,15 @@ pub fn run() {
             RUNNER_SETTINGS => {
                 let _ = open_runner_settings(app);
             }
+            #[cfg(infall_updater)]
+            CHECK_UPDATES => updating::check_from_menu(app),
             UNDO => page_step(app, Step::Undo),
             REDO => page_step(app, Step::Redo),
             #[cfg(target_os = "linux")]
             QUIT => app.exit(0),
             _ => {}
         })
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("the Infall desktop app could not start");
 
     app.run(|app, event| {
@@ -331,6 +395,9 @@ pub fn run() {
             let runner = app.try_state::<RunnerState>().map(|r| r.inner().clone());
             if let Some(runner) = &runner {
                 runner.cancel_all();
+            }
+            if let Some(ws) = app.try_state::<Workspaces>() {
+                files::clear_viewer_files(&ws.cache_dir);
             }
             let busy = || !run.is_idle() || runner.as_ref().is_some_and(|r| !r.is_idle());
             while busy() && Instant::now() < deadline {
@@ -367,10 +434,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Infall")
         .item(&switch)
-        .item(&runner_settings)
-        .separator()
-        .item(&quit)
-        .build()?;
+        .item(&runner_settings);
+    #[cfg(infall_updater)]
+    let app_menu =
+        app_menu.item(&MenuItemBuilder::with_id(CHECK_UPDATES, "Check for updates…").build(app)?);
+    let app_menu = app_menu.separator().item(&quit).build()?;
     let edit = EditMenu::build(app, |edit| edit)?;
     app.set_menu(MenuBuilder::new(app).item(&app_menu).item(&edit).build()?)?;
     Ok(())
@@ -381,8 +449,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let switch = MenuItemBuilder::with_id(SWITCH_WORKSPACE, "Switch Workspace…").build(app)?;
     let runner_settings =
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
-    let app_menu = SubmenuBuilder::new(app, "Infall")
-        .about(None)
+    let app_menu = SubmenuBuilder::new(app, "Infall").about(None);
+    #[cfg(infall_updater)]
+    let app_menu =
+        app_menu.item(&MenuItemBuilder::with_id(CHECK_UPDATES, "Check for updates…").build(app)?);
+    let app_menu = app_menu
         .separator()
         .item(&switch)
         .item(&runner_settings)
@@ -491,6 +562,13 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     .permission("allow-save-binary-begin")
                     .permission("allow-save-binary-chunk")
                     .permission("allow-save-binary-finish")
+                    // PDFs (M19): a folder the Member picks in the system's dialog and the PDFs
+                    // inside it, read through a token (never a path); a PDF the page hands over,
+                    // opened in the system's viewer. `openExternally` sends its bytes with the
+                    // two `save_binary_*` commands above.
+                    .permission("allow-pick-folder")
+                    .permission("allow-folder-file-chunk")
+                    .permission("allow-open-external-finish")
                     // The top bar's first row is the window's title bar (macOS has none of
                     // its own, see below): pressing on an empty part of it moves the window,
                     // a double click zooms it. Nothing else about the window is reachable.
@@ -531,8 +609,10 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
             // A page that is going away cannot receive the rest of its run, and a Run it
             // asked for must not go on (or wait for approval) behind its back.
             if payload.event() == PageLoadEvent::Started {
-                // And a file it was sending will never be finished.
+                // And a file it was sending will never be finished; the folders it picked are
+                // not the next page's.
                 *window.state::<AppState>().upload.lock().unwrap() = None;
+                window.state::<AppState>().folders.lock().unwrap().clear();
                 window.state::<AppState>().run.cancel();
                 window.state::<RunnerState>().cancel_all();
                 // Its steps went with it.
@@ -581,6 +661,12 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
         if matches!(event, WindowEvent::Destroyed) {
             EditMenu::page_said(&closed_app, UndoSteps::default());
             *closed_app.state::<AppState>().upload.lock().unwrap() = None;
+            closed_app
+                .state::<AppState>()
+                .folders
+                .lock()
+                .unwrap()
+                .clear();
             // The Workspace is left: its server stops.
             let state = closed_app.state::<AppState>();
             let mut open = state.open.lock().unwrap();
@@ -1012,10 +1098,40 @@ fn start_view(
     let registry = workspaces(&app);
     let registry = registry.registry.lock().unwrap();
     registry.prune_moves(now_ms() as i64);
+    let listed = registry
+        .list()
+        .iter()
+        .map(|entry| {
+            let mut listed = entry.listed();
+            if entry.kind == Kind::Local {
+                listed.files = stored_files(&registry.db_path(&entry.id));
+            }
+            listed
+        })
+        .collect();
     Ok(StartView {
-        workspaces: registry.list().iter().map(Entry::listed).collect(),
+        workspaces: listed,
         notice: state.notice.lock().unwrap().take(),
     })
+}
+
+/// How many PDFs a Local Workspace keeps with its database, and their size (`WorkspaceEntry
+/// .files`): when it has some, Export… asks whether to include them.
+fn stored_files(db: &Path) -> Option<FilesSummary> {
+    // TODO(M19 zone 1): once the server crate can count a Workspace's stored PDFs, answer
+    // `Some(FilesSummary { count, bytes })` from it here (`None` when it cannot be read).
+    let _ = db;
+    None
+}
+
+/// Writes a Workspace file of the database at `db` to `dest`, with the Workspace's PDFs or
+/// without them (docs/specs/pdf-sources.md, decision 6; Export… asks, backups always include
+/// them).
+fn export_with_files(db: &Path, dest: &Path, include_files: bool) -> Result<(), PortError> {
+    // TODO(M19 zone 1): replace the next two lines with
+    // `export_workspace_with(db, dest, ExportOptions { include_files })` (and import both).
+    let _ = include_files;
+    export_workspace(db, dest)
 }
 
 /// Makes a Local Workspace from a Preset and opens it.
@@ -1141,13 +1257,16 @@ fn local_entry(app: &AppHandle, id: &str) -> Result<Entry, String> {
 
 /// Writes a Workspace file of a Local Workspace where the Member chooses (open or not: the
 /// copy is consistent either way). The path written, or `None` when they cancelled.
+/// `include_files` (`includeFiles` on the page): whether its PDFs go in; absent, they do.
 #[tauri::command]
 async fn workspace_export(
     webview: Webview,
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
+    include_files: Option<bool>,
 ) -> Result<Option<String>, String> {
+    let include_files = include_files.unwrap_or(true);
     check_setup_caller(&webview)?;
     let entry = local_entry(&app, &id)?;
     let db = workspaces(&app).registry.lock().unwrap().db_path(&id);
@@ -1172,7 +1291,10 @@ async fn workspace_export(
     tauri::async_runtime::spawn_blocking(move || {
         portable::write_replacing(
             &written,
-            |tmp| export_workspace(&db, tmp).map_err(|e| port_sentence(e, NOT_WRITTEN)),
+            |tmp| {
+                export_with_files(&db, tmp, include_files)
+                    .map_err(|e| port_sentence(e, NOT_WRITTEN))
+            },
             NOT_WRITTEN,
         )
     })
@@ -1562,6 +1684,361 @@ async fn save_binary_finish(
     .await
     .map_err(|_| NOT_WRITTEN.to_owned())??;
     Ok(true)
+}
+
+// ---- PDFs (docs/specs/pdf-sources.md, decision 10 and "Desktop"; desktop.md, M19) --------
+//
+// `pickFolder`: the system's folder dialog; the page gets a token and the folder's name, never
+// its path. `readFileIn`: a PDF inside that folder, in pieces (see `files`, `transfer`).
+// `openExternally`: a PDF the page hands over (its bytes sent as for `saveBinaryFile`), written
+// to a private temporary file and opened in the system's viewer.
+
+/// The system's folder dialog. `None` when the Member cancelled.
+#[tauri::command]
+async fn pick_folder(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<Option<files::Picked>, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let chosen = {
+        let _dialog = DialogSlot::take(&state)?;
+        let parent = webview.window();
+        ask_path(&app, move || {
+            rfd::AsyncFileDialog::new()
+                .set_parent(&parent)
+                .set_title("Choose the folder with the PDFs")
+                .pick_folder()
+        })
+        .await?
+    };
+    let Some(chosen) = chosen else {
+        return Ok(None);
+    };
+    // Still the page that asked: one that came after it must not get its folder.
+    check_bridge_caller(&webview, &state, &key)?;
+    state.folders.lock().unwrap().pick(&chosen).map(Some)
+}
+
+/// A piece of the PDF `path` names inside the folder of `token` (see `files::resolve_in`).
+#[tauri::command]
+async fn folder_file_chunk(
+    webview: Webview,
+    state: State<'_, AppState>,
+    key: String,
+    token: String,
+    path: String,
+    offset: u64,
+) -> Result<transfer::Chunk, String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let folder = state
+        .folders
+        .lock()
+        .unwrap()
+        .get(&token)
+        .map(Path::to_path_buf)
+        .ok_or("Choose the folder again.")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = files::resolve_in(&folder, &path)?;
+        files::read_pdf_chunk(&file, offset)
+    })
+    .await
+    .map_err(|_| "The file could not be read. Try again.".to_owned())?
+}
+
+/// The PDF the page sent (`save_binary_begin` and `save_binary_chunk` first) is written to a
+/// private temporary file and opened in the system's viewer. At most one every second.
+#[tauri::command]
+async fn open_external_finish(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    ticket: String,
+    suggested_name: String,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let upload = state.upload.lock().unwrap().take();
+    let bytes = upload
+        .ok_or_else(|| "The PDF could not be opened. Try again.".to_owned())?
+        .finish(&ticket)?;
+    files::check_for_viewer(&bytes)?;
+    let now = now_ms();
+    let last = state.last_viewer.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 1000
+        || state
+            .last_viewer
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        return Err("A PDF is being opened already. Try again in a moment.".to_owned());
+    }
+    let cache = workspaces(&app).cache_dir.clone();
+    let path = tauri::async_runtime::spawn_blocking(move || {
+        files::write_for_viewer(&cache, &suggested_name, &bytes)
+    })
+    .await
+    .map_err(|_| "The PDF could not be opened on this computer.".to_owned())??;
+    // Handed to the operating system as one argument; no shell is involved. The file ends in
+    // `.pdf` and starts as a PDF does, so it opens in whatever views PDFs here.
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|_| "No program on this computer opened the PDF.".to_owned())
+}
+
+// ---- updates (docs/specs/release.md, section 11) -----------------------------------------
+
+/// What the start screen says about an update: the version downloaded and ready, if any.
+#[derive(serde::Serialize)]
+struct UpdateView {
+    version: String,
+    notice: String,
+}
+
+/// The update that is ready to install, if any. Always `None` in a build without the updater.
+#[tauri::command]
+fn update_view(webview: Webview, state: State<'_, AppState>) -> Result<Option<UpdateView>, String> {
+    check_setup_caller(&webview)?;
+    Ok(state
+        .update_ready
+        .lock()
+        .unwrap()
+        .clone()
+        .map(|version| UpdateView {
+            notice: update::ready_notice(&version),
+            version,
+        }))
+}
+
+/// "Restart to update": every Local Workspace is backed up, then the update is installed and
+/// the app starts again as the new version. Only from the start screen, never while a
+/// Workspace is open.
+#[tauri::command]
+async fn update_install(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    check_setup_caller(&webview)?;
+    #[cfg(infall_updater)]
+    {
+        updating::install(&app, &state).await
+    }
+    #[cfg(not(infall_updater))]
+    {
+        let _ = (app, state);
+        Err("This version of Infall does not update itself.".to_owned())
+    }
+}
+
+/// Makes a backup of every Local Workspace now, as the automatic backups are made (the same
+/// format, the same folder, the newest seven kept): what is done before an update is
+/// installed. The first that fails stops it, with a sentence that names that Workspace.
+#[cfg_attr(not(infall_updater), allow(dead_code))]
+async fn back_up_every_workspace(app: &AppHandle) -> Result<(), String> {
+    let locals: Vec<(Entry, PathBuf, PathBuf)> = {
+        let ws = workspaces(app);
+        let registry = ws.registry.lock().unwrap();
+        registry
+            .list()
+            .into_iter()
+            .filter(|e| e.kind == Kind::Local)
+            .map(|e| {
+                let (db, dir) = (registry.db_path(&e.id), registry.backups_dir(&e.id));
+                (e, db, dir)
+            })
+            .collect()
+    };
+    let state = app.state::<AppState>();
+    for (entry, db, dir) in locals {
+        // Never opened: nothing in it to lose.
+        if !db.is_file() {
+            continue;
+        }
+        backup_done(&state, &entry.id).await;
+        let made = tauri::async_runtime::spawn_blocking(move || {
+            portable::back_up_now(&db, &dir, now_ms() as i64, |db, dest| {
+                export_workspace(db, dest).map_err(|e| e.to_string())
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|made| made);
+        match made {
+            Ok(newest) => {
+                let _ = workspaces(app)
+                    .registry
+                    .lock()
+                    .unwrap()
+                    .set_last_backup(&entry.id, newest);
+            }
+            Err(error) => {
+                eprintln!("Infall: no backup of a workspace was made before the update: {error}");
+                return Err(format!(
+                    "“{}” could not be backed up, so the update was not installed. Nothing has \
+                     changed; try again, or export that workspace first.",
+                    entry.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The updater itself: only in a build with it (see build.rs and `update`).
+#[cfg(infall_updater)]
+mod updating {
+    use super::*;
+    use tauri_plugin_updater::{Update, UpdaterExt};
+
+    /// The update downloaded and checked, with its bytes, until it is installed.
+    #[derive(Default)]
+    pub struct Pending(Mutex<Option<(Update, Vec<u8>)>>);
+
+    /// One check at a time.
+    static CHECKING: AtomicBool = AtomicBool::new(false);
+
+    /// The key and the feed this build was given, into the plugin's configuration.
+    pub fn configure(context: &mut tauri::Context<Wry>) {
+        let plugins = &mut context.config_mut().plugins.0;
+        let base = plugins.get("updater").cloned();
+        let config = update::plugin_config(
+            base.as_ref(),
+            update::PUBKEY.unwrap_or_default().trim(),
+            update::URL.unwrap_or_default().trim(),
+        );
+        plugins.insert("updater".to_owned(), config);
+    }
+
+    /// When the app starts: a check, if the last one is a day old, in the background. Nothing
+    /// is said unless it finds a new version.
+    pub fn at_start(app: &AppHandle, config: PathBuf) {
+        app.manage(Pending::default());
+        if !update::check_due(&config, now_ms() as i64) {
+            return;
+        }
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            // A failed check (no network) is tried again at the next start.
+            if check(&app).await != update::Checked::Failed {
+                update::record_check(&config, now_ms() as i64);
+            }
+        });
+    }
+
+    /// Asks the feed; a newer version is downloaded and its signature checked, then the start
+    /// screen offers it.
+    pub async fn check(app: &AppHandle) -> update::Checked {
+        use update::Checked;
+        if CHECKING.swap(true, Ordering::AcqRel) {
+            return Checked::Failed;
+        }
+        struct Done;
+        impl Drop for Done {
+            fn drop(&mut self) {
+                CHECKING.store(false, Ordering::Release);
+            }
+        }
+        let _done = Done;
+        let Ok(updater) = app.updater() else {
+            return Checked::Failed;
+        };
+        let found = match updater.check().await {
+            Ok(Some(found)) => found,
+            Ok(None) => return Checked::UpToDate,
+            Err(error) => {
+                eprintln!("Infall: the update check failed: {error}");
+                return Checked::Failed;
+            }
+        };
+        let Some(version) = update::shown_version(&found.version) else {
+            return Checked::Failed;
+        };
+        let state = app.state::<AppState>();
+        if state.update_ready.lock().unwrap().as_deref() == Some(version.as_str()) {
+            return Checked::Ready(version);
+        }
+        // `download` checks the signature against the key built into the app.
+        match found.download(|_, _| {}, || {}).await {
+            Ok(bytes) => {
+                eprintln!("Infall: version {version} is downloaded, checked and ready to install");
+                *app.state::<Pending>().0.lock().unwrap() = Some((found, bytes));
+                *state.update_ready.lock().unwrap() = Some(version.clone());
+                Checked::Ready(version)
+            }
+            Err(error) => {
+                eprintln!("Infall: the update was not downloaded: {error}");
+                Checked::Failed
+            }
+        }
+    }
+
+    /// "Check for updates…": checks now, whenever the last check was, and says what it found
+    /// in a message of the system's (the Member asked).
+    pub fn check_from_menu(app: &AppHandle) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let checked = check(&app).await;
+            let current = app.package_info().version.to_string();
+            let (title, text) = checked.message(&current);
+            let parent = app
+                .get_webview_window(MAIN_WINDOW)
+                .or_else(|| app.get_webview_window(SETUP_WINDOW))
+                .map(|w| w.as_ref().window());
+            let _ = app.run_on_main_thread(move || {
+                let mut dialog = rfd::AsyncMessageDialog::new()
+                    .set_level(rfd::MessageLevel::Info)
+                    .set_title(title)
+                    .set_description(text)
+                    .set_buttons(rfd::MessageButtons::Ok);
+                if let Some(window) = &parent {
+                    dialog = dialog.set_parent(window);
+                }
+                let shown = dialog.show();
+                std::thread::spawn(move || {
+                    let _ = tauri::async_runtime::block_on(shown);
+                });
+            });
+        });
+    }
+
+    /// Backs every Local Workspace up, then installs the update and starts again.
+    pub async fn install(app: &AppHandle, state: &AppState) -> Result<(), String> {
+        if app.get_webview_window(MAIN_WINDOW).is_some() {
+            return Err("Close the open workspace first.".to_owned());
+        }
+        let _opening = state
+            .opening
+            .try_lock()
+            .map_err(|_| "A workspace is being opened; try again in a moment.".to_owned())?;
+        let pending = app.state::<Pending>().0.lock().unwrap().take();
+        let Some((found, bytes)) = pending else {
+            return Err("There is no update to install.".to_owned());
+        };
+        state.stopped().await;
+        if let Err(message) = back_up_every_workspace(app).await {
+            *app.state::<Pending>().0.lock().unwrap() = Some((found, bytes));
+            return Err(message);
+        }
+        let installed =
+            tauri::async_runtime::spawn_blocking(move || found.install(&bytes).map(|()| bytes))
+                .await
+                .map_err(|_| ());
+        match installed {
+            // On Windows the installer has taken over and the app has ended before this.
+            Ok(Ok(_)) => app.restart(),
+            Ok(Err(error)) => {
+                eprintln!("Infall: the update was not installed: {error}");
+                *state.update_ready.lock().unwrap() = None;
+                Err(
+                    "The update could not be installed. Infall is unchanged; download the new \
+                     version from the download page instead."
+                        .to_owned(),
+                )
+            }
+            Err(()) => Err("The update could not be installed. Try again.".to_owned()),
+        }
+    }
 }
 
 // ---- Undo and Redo in the Edit menu (docs/specs/undo.md, decision 11; desktop.md, M15) ---

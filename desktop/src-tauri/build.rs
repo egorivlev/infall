@@ -2,8 +2,12 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "src/update_endpoint.rs"]
+mod update_endpoint;
+
 fn main() {
     embed_web_ui();
+    updater();
 
     // Declaring the app's commands gives each one a permission (`allow-<command>`), so that
     // nothing can call them unless a capability grants it: the start screen gets the
@@ -25,6 +29,9 @@ fn main() {
             "workspace_reveal",
             // Moving a Local Workspace onto a Team server (docs/specs/team-move.md, Contract C).
             "workspace_move",
+            // Updates (docs/specs/release.md, section 11): what is ready, and installing it.
+            "update_view",
+            "update_install",
             // The bridge.
             "claude_status",
             "claude_send",
@@ -43,6 +50,11 @@ fn main() {
             "save_binary_begin",
             "save_binary_chunk",
             "save_binary_finish",
+            // PDFs: a folder the Member picks and the PDFs inside it, and a PDF opened in the
+            // system's viewer (docs/specs/pdf-sources.md, decision 10; desktop.md, M19).
+            "pick_folder",
+            "folder_file_chunk",
+            "open_external_finish",
             // The Runner, for the server's pages: status, open the settings, ask for a Run
             // (`runner_start`: one that names its language and environment, M19 and M19b),
             // cancel it. Nothing that chooses an interpreter or approves.
@@ -62,6 +74,49 @@ fn main() {
             "runner_settings_close",
         ]));
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
+}
+
+/// The updater (docs/specs/release.md, section 11) is in the app only when it is built with
+/// the `updater` feature and both `INFALL_UPDATE_PUBKEY` (the feed's public key, from `tauri
+/// signer generate`) and `INFALL_UPDATE_URL` (the address of its `latest.json`) are set; then
+/// `cfg(infall_updater)` is on. Otherwise the app has no updater and says nothing.
+fn updater() {
+    println!("cargo::rustc-check-cfg=cfg(infall_updater)");
+    println!("cargo:rerun-if-env-changed=INFALL_UPDATE_PUBKEY");
+    println!("cargo:rerun-if-env-changed=INFALL_UPDATE_URL");
+    let given = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty())
+    };
+    let feature = std::env::var_os("CARGO_FEATURE_UPDATER").is_some();
+    match (
+        feature,
+        given("INFALL_UPDATE_PUBKEY"),
+        given("INFALL_UPDATE_URL"),
+    ) {
+        (false, ..) => {}
+        (true, Some(_), Some(url)) => {
+            if !update_endpoint::endpoint_allowed(&url) {
+                panic!(
+                    "\n\nINFALL_UPDATE_URL must be an https:// address (or http:// to this \
+                     computer, for a test): {url}\n\n"
+                );
+            }
+            if update_endpoint::is_loopback_http(&url) {
+                println!(
+                    "cargo:warning=the updater reads its feed over plain http from this computer \
+                     ({url}): a build for testing only"
+                );
+            }
+            println!("cargo:rustc-cfg=infall_updater");
+        }
+        (true, ..) => println!(
+            "cargo:warning=the `updater` feature is on, but INFALL_UPDATE_PUBKEY or \
+             INFALL_UPDATE_URL is not set: built without an updater"
+        ),
+    }
 }
 
 /// The built web UI (`web/dist`) goes inside the binary: a Local Workspace's server serves

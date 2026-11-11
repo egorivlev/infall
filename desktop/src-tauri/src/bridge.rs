@@ -48,6 +48,10 @@ fn script_with(origin: &str, version: &str, key: &str, own_print: bool) -> Strin
             "__QOOP_MAX_MOVE_BYTES__;",
             &format!("{};", crate::transfer::MAX_MOVE_BYTES),
         )
+        .replace(
+            "__QOOP_MAX_PDF_BYTES__;",
+            &format!("{};", crate::files::MAX_PDF_BYTES),
+        )
 }
 
 /// Defence in depth behind Tauri's own access control: a bridge command runs only when it
@@ -699,8 +703,30 @@ mod tests {
             "version: VERSION,\n      claude: claude,\n      runner: runner,\n      \
              switchWorkspace: switchWorkspace,\n      saveFile: saveFile,\n      \
              saveBinaryFile: saveBinaryFile,\n      moveHandover: moveHandover,\n      \
-             moveFile: moveFile,\n      moveDone: moveDone\n    }"
+             moveFile: moveFile,\n      moveDone: moveDone,\n      pickFolder: pickFolder,\n      \
+             readFileIn: readFileIn,\n      openExternally: openExternally\n    }"
         ));
+    }
+
+    #[test]
+    fn the_script_offers_pdfs_from_a_picked_folder_and_the_system_viewer() {
+        let js = script("http://localhost:8787", "0.9.0", KEY);
+        for command in ["pick_folder", "folder_file_chunk", "open_external_finish"] {
+            assert!(js.contains(&format!("'{command}'")), "{command}");
+        }
+        // The page is told the app's own limit; no placeholder is left.
+        assert!(js.contains(&format!(
+            "var MAX_PDF_BYTES = {};",
+            crate::files::MAX_PDF_BYTES
+        )));
+        assert!(!js.contains("__QOOP_MAX_PDF_BYTES__;"));
+        // A picked folder reaches the page as a token and a name, nothing else.
+        assert!(js.contains("return { token: picked.token, name: picked.name };"));
+        // The bytes for the viewer go the way a binary save's do, and only a PDF is sent.
+        assert!(js.contains("sendBytes(bytes, 'open_external_finish', { suggestedName: name })"));
+        assert!(js.contains("var magic = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-"));
+        // Reading names the token and the path the page gave, and the offset; never a folder.
+        assert!(js.contains("{ token: String(token == null ? '' : token), path: String("));
     }
 
     #[test]

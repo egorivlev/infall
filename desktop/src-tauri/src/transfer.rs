@@ -53,21 +53,27 @@ pub fn read_chunk(path: &Path, offset: u64) -> Result<Chunk, String> {
     if size > MAX_MOVE_BYTES {
         return Err(too_large(MAX_MOVE_BYTES, "hand over"));
     }
+    read_part(&mut file, size, offset, NOT_READ)
+}
+
+/// The bytes of an open `file` of `size` bytes from `offset`, at most [`MOVE_CHUNK_BYTES`];
+/// `not_read` is the sentence for anything that goes wrong.
+pub fn read_part(file: &mut File, size: u64, offset: u64, not_read: &str) -> Result<Chunk, String> {
     if offset > size {
-        return Err(NOT_READ.to_owned());
+        return Err(not_read.to_owned());
     }
     let wanted = (size - offset).min(MOVE_CHUNK_BYTES as u64) as usize;
     let mut bytes = vec![0u8; wanted];
     file.seek(SeekFrom::Start(offset))
         .and_then(|_| file.read_exact(&mut bytes))
-        .map_err(|_| NOT_READ.to_owned())?;
+        .map_err(|_| not_read.to_owned())?;
     Ok(Chunk {
         size,
         data: STANDARD.encode(&bytes),
     })
 }
 
-fn too_large(max: u64, verb: &str) -> String {
+pub fn too_large(max: u64, verb: &str) -> String {
     format!("The file is too large to {verb} (at most {} MB).", max / MB)
 }
 
