@@ -841,9 +841,11 @@ fn local_options(entry: &Entry, db: PathBuf, web_dir: PathBuf, port: Option<u16>
         .and_then(Preset::from_id)
         .unwrap_or(Preset::Blank);
     let read_only = entry.read_only();
-    // TODO(M18 zone 1): `LocalOptions::read_only` is not in the server crate yet. Once it is,
-    // delete this line and uncomment `read_only,` below.
-    let _ = read_only;
+    let moved_to = if read_only {
+        entry.moved_to.clone()
+    } else {
+        None
+    };
     LocalOptions {
         db,
         web_dir,
@@ -852,17 +854,16 @@ fn local_options(entry: &Entry, db: PathBuf, web_dir: PathBuf, port: Option<u16>
         // When it is taken the server listens on another port for this once; the
         // remembered one is kept for the next start.
         port,
-        // read_only,
+        read_only,
+        moved_to,
     }
 }
 
 /// Contract A's `export_for_move` (docs/specs/team-move.md): a Workspace file to hand to a
 /// Team server. The same as `export_workspace` by the contract, under its own name so that a
-/// later difference has a place. TODO(M18 zone 1): once the server crate has
-/// `qoop_server::local::export_for_move`, make this body `export_for_move(db, dest)` (or
-/// import it in place of this function).
+/// later difference has a place.
 fn export_for_move(db: &Path, dest: &Path) -> Result<(), PortError> {
-    export_workspace(db, dest)
+    qoop_server::local::export_for_move(db, dest)
 }
 
 // ---- backups (docs/specs/portability.md, decision 2) --------------------------------------

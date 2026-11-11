@@ -577,6 +577,8 @@ mod tests {
             preset: Preset::Tutorial,
             member_name: "Ada".to_owned(),
             port: None,
+            read_only: false,
+            moved_to: None,
         };
         let export = |db: &Path, dest: &Path| export_workspace(db, dest).map_err(|e| e.to_string());
 
