@@ -38,6 +38,14 @@
 #   a Tutorial Workspace in its own check. `sandbox-exec` is deprecated by Apple but works on
 #   macOS 26; WebKit's own helper processes are started by launchd and are not under the profile.
 #   The window appears on this Mac's screen for those seconds.
+#
+# The updater (docs/specs/release.md, section 11): when INFALL_UPDATE_PUBKEY (the public key
+# from `tauri signer generate`) and INFALL_UPDATE_URL (the address of the feed's latest.json)
+# are both set, the app is built with the `updater` feature and checks that feed; otherwise it
+# has no updater at all, as before. Signing what is built for the feed is the release
+# workflow's step (.github/workflows/package.yml), not this script's.
+#   With the updater, the script also writes dist/Infall-<version>.app.tar.gz: the signed app,
+#   as the updater installs it.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -107,6 +115,14 @@ conf_version="$(conf_value version)"
 
 arch="$(uname -m)"
 dmg="$dist/$name-$version.dmg"
+update_bundle="$dist/$name-$version.app.tar.gz"
+# The updater only when both of its values are given (see the top of this script).
+features="custom-protocol"
+updater=0
+if [ -n "${INFALL_UPDATE_PUBKEY:-}" ] && [ -n "${INFALL_UPDATE_URL:-}" ]; then
+    features="$features,updater"
+    updater=1
+fi
 say "$name $version ($identifier), macOS $min_macos or newer, $arch"
 
 mkdir -p "$dist"
@@ -136,11 +152,11 @@ web_marker="$(sed -n 's/.*src="\/\(assets\/[^"]*\.js\)".*/\1/p' "$web/dist/index
 # --- Build ------------------------------------------------------------------------------------
 # custom-protocol: the app's own files (desktop/ui) are served from inside the binary.
 # No `devtools` feature anywhere, so there is no web inspector (see Cargo.toml).
-say "Building (release, custom-protocol)"
+say "Building (release, $features)"
 (
     cd "$app_src"
     CARGO_INCREMENTAL=0 MACOSX_DEPLOYMENT_TARGET="$min_macos" \
-        cargo build --release --locked -p "$binary" --features custom-protocol
+        cargo build --release --locked -p "$binary" --features "$features"
 )
 built="$app_src/target/release/$binary"
 [ -x "$built" ] || die "the build did not produce $built"
@@ -287,3 +303,13 @@ hdiutil verify -quiet "$dmg" || die "the disk image does not verify"
 
 say "Done: $dmg ($(du -h "$dmg" | cut -f1 | tr -d ' '))"
 printf 'SHA-256  %s\n' "$(shasum -a 256 "$dmg" | cut -d' ' -f1)"
+
+# --- What the updater installs (only with the updater) -----------------------------------------
+# The same signed Infall.app, as a gzipped tar with the app at its top: what Tauri's updater
+# downloads, checks against its .sig and puts in place of the running app.
+if [ "$updater" = 1 ]; then
+    rm -f "$update_bundle"
+    COPYFILE_DISABLE=1 tar -C "$stage/dmg" -czf "$update_bundle" "$name.app"
+    say "Update bundle: $update_bundle ($(du -h "$update_bundle" | cut -f1 | tr -d ' '))"
+    printf 'SHA-256  %s\n' "$(shasum -a 256 "$update_bundle" | cut -d' ' -f1)"
+fi

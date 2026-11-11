@@ -54,6 +54,13 @@
 # serve. That it starts with no server and no network, shows the start screen and opens a Local
 # Workspace has NOT been checked on Windows; scripts/package-macos.sh and
 # scripts/package-linux.sh check the same source on their platforms.
+#
+# The updater (docs/specs/release.md, section 11): when INFALL_UPDATE_PUBKEY (the public key
+# from `tauri signer generate`) and INFALL_UPDATE_URL (the address of the feed's latest.json)
+# are both set, the app is built with the `updater` feature and checks that feed; otherwise it
+# has no updater at all, as before. Signing what is built for the feed is the release
+# workflow's step (.github/workflows/package.yml), not this script's.
+#   With the updater, the installer itself is what the updater downloads and runs.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -148,6 +155,11 @@ esac
 publisher="$(printf '%s' "$identifier" | cut -d. -f2)"
 
 setup="$dist/$name-$version-x64-setup.exe"
+# The updater only when both of its values are given (see the top of this script).
+features="custom-protocol"
+if [ -n "${INFALL_UPDATE_PUBKEY:-}" ] && [ -n "${INFALL_UPDATE_URL:-}" ]; then
+    features="$features,updater"
+fi
 say "$name $version ($identifier), Windows 10 and 11, x64"
 
 # --- The web UI -------------------------------------------------------------------------------
@@ -171,12 +183,12 @@ web_marker="$(sed -n 's/.*src="\/\(assets\/[^"]*\.js\)".*/\1/p' "$web/dist/index
 # The C parts are compiled for Windows 10 and newer, whatever mingw-w64 assumes by itself: older
 # mingw-w64 (Ubuntu 22.04's, version 8) assumes Windows XP, and SQLite then does not compile
 # ("'GetTickCount64' undeclared", seen in M16); newer ones assume Windows 10 already.
-say "Building (release, custom-protocol, $target)"
+say "Building (release, $features, $target)"
 (
     cd "$app_src"
     CARGO_INCREMENTAL=0 \
     CFLAGS_x86_64_pc_windows_gnu="${CFLAGS_x86_64_pc_windows_gnu:-} -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00" \
-        cargo build --release --locked -p "$binary" --features custom-protocol --target "$target"
+        cargo build --release --locked -p "$binary" --features "$features" --target "$target"
 )
 out="$app_src/target/$target/release"
 built="$out/$binary.exe"
@@ -293,8 +305,26 @@ Var WebView2
     ${EndIf}
 !macroend
 
-; A running program cannot be replaced or removed: say so instead of failing halfway.
+; A running program cannot be replaced or removed: say so instead of failing halfway. It is
+; given ten seconds to end first: the app's updater starts this installer and then quits.
 !macro CloseAppFirst
+    StrCpy $1 0
+    ${Do}
+        ${IfNot} ${FileExists} "$INSTDIR\${NAME}.exe"
+            ${ExitDo}
+        ${EndIf}
+        ClearErrors
+        FileOpen $0 "$INSTDIR\${NAME}.exe" a
+        ${IfNot} ${Errors}
+            FileClose $0
+            ${ExitDo}
+        ${EndIf}
+        IntOp $1 $1 + 1
+        ${If} $1 > 10
+            ${ExitDo}
+        ${EndIf}
+        Sleep 1000
+    ${Loop}
     ${Do}
         ${IfNot} ${FileExists} "$INSTDIR\${NAME}.exe"
             ${ExitDo}
