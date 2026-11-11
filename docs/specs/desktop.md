@@ -174,6 +174,8 @@ The contract is [local.md](local.md) (Contract A for the server inside the app, 
 - Each Local Workspace: a directory `workspaces/<id>/` in the app's data directory, holding `workspace.sqlite` and, beside it, `workspace.sqlite.secret-key`, the key that seals OpenRouter keys at rest (owner-only on macOS and Linux; on Windows only what the folder inherits).
 - The web UI the app was built with (`web/dist`, inside the program since the build) is unpacked to `web/` in the data directory the first time a Local Workspace opens, and replaced whole when the program holds a different build.
 - Config and data directories: macOS `~/Library/Application Support/app.qoop.desktop/` (both); Linux `~/.config/app.qoop.desktop/` and `~/.local/share/app.qoop.desktop/`; Windows `%APPDATA%\app.qoop.desktop\` (both).
+- **Since 0.9.0, on Windows, Local Workspaces' files live in the local (non-roaming) data folder**, `%LOCALAPPDATA%\app.qoop.desktop\` (`workspaces\`, `moves\`, `web\`), beside WebView2's own `EBWebView\`; the config folder (`workspaces.json`, `runner.json`, `runner-approvals.json`, `updates.json`) stays in `%APPDATA%\app.qoop.desktop\`. A roaming profile copies `%APPDATA%` to a server at every sign-in and sign-out, which a database of hundreds of megabytes must not go through (the open decision of release.md §9.2, taken by the owner's default). macOS and Linux: unchanged.
+- **Moving them** (`src/datadir.rs`, at every start before anything opens): each `workspaces\<id>\` in the roaming folder that is not in the local one is copied beside its place (`.<id>.moving`), the copy compared with the original — the same files, the same sizes, the same bytes — then renamed into place, then the original removed. A link anywhere in it, or any failure, removes the copy and leaves the original; the list (`workspaces.json`, which names Workspaces by id, never by path) needs no change, because `Registry::local_dir` uses the roaming folder for an id whose folder is only there. The start screen then says, once: "One workspace could not be moved to <local> and is still kept in <roaming>, where Infall goes on using it. Nothing was lost. Infall tries again at its next start." A pending move's file in `moves\` goes the same way (if it cannot, that move has no file and the page is told there is nothing to hand over). The roaming `web\` is deleted when it holds the app's marker (it is unpacked again). Removing a Workspace removes both copies, should an old one have been left beside a moved one. The tests run on every platform with two temporary folders; **on Windows itself it has never run.**
 - Nothing copies a Local Workspace anywhere else. There is no backup of it but the files themselves. (Until M13; since then the app keeps backups in the Workspace's folder and exports Workspace files: [M13](#m13--workspace-files-backups-saving-and-printing) below.)
 
 ## Opening a Workspace
@@ -544,3 +546,55 @@ The main window's bridge grants seventeen commands: those of M15, the three of t
 
 ## Not in M18
 Moving a Workspace that was already moved; moving onto a server that is not empty (the server refuses); a progress figure for the copy before the server opens; the bridge opening the Team server from a read-only copy's page.
+
+
+# M19 — PDFs across the bridge
+
+[pdf-sources.md](pdf-sources.md), Part 1, decisions 6 and 10. Built 2026-11-25 (desktop zone). The shapes below are binding where they differ from that spec's "Desktop" line (`pickFolder` returns a token, not a path; `readFileIn` replaces `readFileAt`; `openExternally` is the name).
+
+## Bridge
+
+Added to `window.qoopDesktop` under the same rules as the rest of the bridge (the open Workspace's origin, the top frame, the main window, the bridge key):
+
+```ts
+pickFolder(): Promise<{ token: string; name: string } | null>
+  // The system's folder dialog ("Choose the folder with the PDFs"). The page gets an opaque
+  // token (32 hex characters) and the folder's display name, never its path. null when cancelled.
+  // At most 8 tokens are held; the oldest is forgotten first. Every token dies when the page
+  // starts loading another page or the main window closes.
+readFileIn(token: string, relativePath: string): Promise<Uint8Array>
+  // A PDF inside that folder. `relativePath` is relative to it, or an absolute path, or the
+  // whole `file` field of a BibTeX entry as Zotero, JabRef or Mendeley write it
+  // ("description:path:type", several separated by ";", "\:" and "\\" escaped): its paths are
+  // tried in order after the string itself. A candidate counts only when, after every link is
+  // followed (canonicalised), it is an existing file inside the folder (canonicalised when it
+  // was picked). "..", absolute paths elsewhere and links leading out are "There is no such file
+  // in the folder you chose." Only a PDF (the first bytes are "%PDF-"; the name says nothing),
+  // at most 100 MB (files::MAX_PDF_BYTES, the server's QOOP_MAX_PDF_MB default). Rejects with a
+  // sentence; an unknown or dead token is "Choose the folder again."
+openExternally(file: { suggestedName: string; bytes: Uint8Array }): Promise<void>
+  // A PDF the page has, opened in the system's default viewer. Checked in the page and again
+  // in the app: "%PDF-" first, at most 100 MB. Written owner-only to
+  // <app cache folder>/opened/<random>/<suggestedName made safe, ending in .pdf>; everything
+  // under opened/ is deleted when the app quits and again when it starts (a file a viewer still
+  // holds open on Windows stays until then). At most one a second. An ArrayBuffer or any typed
+  // array is taken too.
+```
+
+How the bytes travel is M18's way (chunked base64, `transfer.rs`): `readFileIn` calls `folder_file_chunk({ token, path, offset })`, which answers `{ size, data }` with at most 4 MB of the file a call, resolving and checking the path again and checking the PDF header at every piece; the script fills one `Uint8Array` and rejects if the size changes between calls. `openExternally` sends its bytes with `save_binary_begin` and `save_binary_chunk` (the binary save's one slot: a save and an open at the same time drop the first) and ends with `open_external_finish({ ticket, suggestedName })`.
+
+The main window's bridge grants twenty-one commands: M18's seventeen, `runner_start`, and `pick_folder`, `folder_file_chunk`, `open_external_finish`.
+
+What it does not guard against: a file inside the folder replaced by a link between the check and the read (the read opens the canonical path found a moment before); a PDF that exploits the system's viewer — the same file opened from the Finder or Explorer would.
+
+## Export… with or without the PDFs
+
+`workspace_export({ id, includeFiles?: boolean })`: `includeFiles` absent means true. `WorkspaceEntry` (local.md, Contract C) gains `files: { count: number, bytes: number } | null`. When a Local Workspace's `files.count` is above 0, **Export…** opens a panel in its row with a checkbox "Include PDFs (N files, X MB)", ticked, and **Export…**; otherwise it exports at once as before. **Export first…** in the remove confirmation and every automatic backup include them.
+
+Until the server crate has them, both ends are stubs in `src/shell.rs`, each one marked `TODO(M19 zone 1)`:
+- `stored_files(db)` answers `None`, so the checkbox is never shown. Replace its two body lines (`let _ = db;` and `None`) with the server crate's count, as `Some(FilesSummary { count, bytes })`.
+- `export_with_files(db, dest, include_files)` ignores the flag. Replace its two body lines (`let _ = include_files;` and `export_workspace(db, dest)`) with `export_workspace_with(db, dest, ExportOptions { include_files })`, and import both from `qoop_server::local`.
+
+# Updates
+
+[release.md, section 11](release.md#11-updates-m20-groundwork). The start screen gets two commands (capability `setup`): `update_view(): { version: string, notice: string } | null` and `update_install(): void` (refused while a Workspace is open; backs up every Local Workspace first; on success the app starts again as the new version). A build without the updater answers `null` and refuses `update_install` with "This version of Infall does not update itself."; the start screen then shows nothing.
