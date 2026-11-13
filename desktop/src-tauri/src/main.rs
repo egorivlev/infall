@@ -5,9 +5,12 @@
 
 mod address;
 mod bridge;
+mod datadir;
+mod files;
 mod portable;
 mod shell;
 mod transfer;
+mod update;
 mod webui;
 mod workspaces;
 

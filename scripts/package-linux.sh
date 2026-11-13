@@ -64,6 +64,15 @@
 # build output in, instead of the volume: what the continuous build caches between runs, and a
 # way to keep a few GB out of a Docker machine whose own disk is small. The build runs as root,
 # so what it writes there belongs to root on Linux).
+#
+# The updater (docs/specs/release.md, section 11): when INFALL_UPDATE_PUBKEY (the public key
+# from `tauri signer generate`) and INFALL_UPDATE_URL (the address of the feed's latest.json)
+# are both set, the app is built with the `updater` feature and checks that feed; otherwise it
+# has no updater at all, as before. Signing what is built for the feed is the release
+# workflow's step (.github/workflows/package.yml), not this script's.
+#   With the updater, the program is marked as installed from a .deb (as Tauri's own bundler
+#   marks it), so that the updater installs the next .deb with dpkg instead of treating the
+#   program as an AppImage.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -304,6 +313,7 @@ build_package() { # <arch>
         -v "$cache":/cargo -v "$root":/src:ro \
         -e ARCH="$arch" -e TRIPLE="$triple" -e CRATE="$crate" -e PACKAGE="$package" \
         -e NAME="$name" -e VERSION="$version" -e MAINTAINER="$maintainer" -e DEB="$deb" \
+        -e INFALL_UPDATE_PUBKEY -e INFALL_UPDATE_URL \
         "$prefix:$base_release-$arch" bash -s <<'BUILD'
 set -euo pipefail
 export CARGO_HOME=/cargo/home CARGO_TARGET_DIR=/cargo/target CARGO_INCREMENTAL=0
@@ -348,9 +358,24 @@ fi
 
 # custom-protocol: the app's own files (desktop/ui) are served from inside the binary.
 # No `devtools` feature anywhere, so there is no web inspector (see Cargo.toml).
-cargo build --release --locked -p "$CRATE" --features custom-protocol --target "$TRIPLE"
+features="custom-protocol"
+updater=0
+if [ -n "${INFALL_UPDATE_PUBKEY:-}" ] && [ -n "${INFALL_UPDATE_URL:-}" ]; then
+    features="$features,updater"
+    updater=1
+fi
+cargo build --release --locked -p "$CRATE" --features "$features" --target "$TRIPLE"
 built="/cargo/target/$TRIPLE/release/$CRATE"
 [ -x "$built" ] || { echo "the build did not produce $built" >&2; exit 1; }
+if [ "$updater" = 1 ]; then
+    # Tauri's bundler marks the program with how it was packaged; this script is that
+    # bundler for the .deb. The marker is a string of the same length, so nothing else moves.
+    markers="$(LC_ALL=C grep -a -o '__TAURI_BUNDLE_TYPE_VAR_UNK' "$built" | wc -l | tr -d ' ')"
+    [ "$markers" = 1 ] \
+        || { echo "the program has no single bundle-type marker; this script is out of date" >&2; exit 1; }
+    perl -pi -e 's/__TAURI_BUNDLE_TYPE_VAR_UNK/__TAURI_BUNDLE_TYPE_VAR_DEB/' "$built"
+    echo "the program is marked as installed from a .deb (for the updater)"
+fi
 LC_ALL=C grep -qaF "$web_marker" "$built" \
     || { echo "the program does not hold the web UI that was just built (no $web_marker inside it)" >&2; exit 1; }
 echo "the program holds the web UI ($web_marker)"

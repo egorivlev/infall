@@ -4,8 +4,8 @@
 // even if it ever ran somewhere else.
 //
 // __QOOP_ORIGIN__, __QOOP_VERSION__ and __QOOP_KEY__ are replaced by JSON string literals,
-// __QOOP_OWN_PRINT__ by `true` or `false`, __QOOP_MAX_BINARY_BYTES__ and
-// __QOOP_MAX_MOVE_BYTES__ by the app's limits (numbers).
+// __QOOP_OWN_PRINT__ by `true` or `false`, __QOOP_MAX_BINARY_BYTES__,
+// __QOOP_MAX_MOVE_BYTES__ and __QOOP_MAX_PDF_BYTES__ by the app's limits (numbers).
 (function () {
   'use strict';
   var ORIGIN = __QOOP_ORIGIN__;
@@ -263,12 +263,68 @@
     return btoa(parts.join(''));
   }
 
-  // Decodes `text` into `target` from `at`; returns how many bytes it held.
-  function fromBase64(text, target, at) {
+  // Decodes `text` into `target` from `at`; returns how many bytes it held. `changed` is the
+  // sentence when there is more than the size said.
+  function fromBase64(text, target, at, changed) {
     var raw = atob(text);
-    if (at + raw.length > target.length) throw new Error('The Workspace file changed while it was read. Try again.');
+    if (at + raw.length > target.length) throw new Error(changed);
     for (var i = 0; i < raw.length; i++) target[at + i] = raw.charCodeAt(i);
     return raw.length;
+  }
+
+  // The bytes of a Uint8Array, an ArrayBuffer or any typed array, as a Uint8Array; null else.
+  function asBytes(bytes) {
+    if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+    if (ArrayBuffer.isView(bytes)) return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return null;
+  }
+
+  // Sends `bytes` to the app in pieces (`save_binary_begin`, `save_binary_chunk`), then calls
+  // `finish` with the ticket that names them; resolves to what `finish` answered.
+  function sendBytes(bytes, finish, args) {
+    return call('save_binary_begin', { size: bytes.length }).then(function (ticket) {
+      var offset = 0;
+      function next() {
+        if (offset >= bytes.length) {
+          args.ticket = ticket;
+          return call(finish, args);
+        }
+        var end = Math.min(offset + SAVE_CHUNK_BYTES, bytes.length);
+        var at = offset;
+        var data = toBase64(bytes.subarray(at, end));
+        offset = end;
+        return call('save_binary_chunk', { ticket: ticket, offset: at, data: data }).then(next);
+      }
+      return next();
+    });
+  }
+
+  // Reads a file from the app in pieces of `{ size, data }` (`command` with `args` and the
+  // offset); resolves to one Uint8Array of the whole file.
+  function readBytes(command, args, max, unreadable, changed) {
+    function piece(offset) {
+      var sent = {};
+      Object.keys(args).forEach(function (k) {
+        sent[k] = args[k];
+      });
+      sent.offset = offset;
+      return call(command, sent);
+    }
+    return piece(0).then(function (first) {
+      var size = first && first.size;
+      if (typeof size !== 'number' || !(size >= 0) || size > max) throw new Error(unreadable);
+      var out = new Uint8Array(size);
+      var at = 0;
+      function take(chunk) {
+        if (!chunk || chunk.size !== size || typeof chunk.data !== 'string') throw new Error(changed);
+        var got = fromBase64(chunk.data, out, at, changed);
+        at += got;
+        if (at >= size) return out;
+        if (got === 0) throw new Error(unreadable);
+        return piece(at).then(take);
+      }
+      return take(first);
+    });
   }
 
   // Saves bytes the page made (an image, a Workspace file) where the person chooses, in the
@@ -276,29 +332,51 @@
   // rejects with a sentence.
   function saveBinaryFile(file) {
     var name = file && file.suggestedName != null ? String(file.suggestedName) : '';
-    var bytes = file ? file.bytes : null;
-    if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
-    else if (ArrayBuffer.isView(bytes)) bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    else return Promise.reject(new Error('There is no file to save.'));
+    var bytes = asBytes(file ? file.bytes : null);
+    if (!bytes) return Promise.reject(new Error('There is no file to save.'));
     if (bytes.length > MAX_BINARY_BYTES) return Promise.reject(new Error(TOO_LARGE));
-    return call('save_binary_begin', { size: bytes.length })
-      .then(function (ticket) {
-        var offset = 0;
-        function next() {
-          if (offset >= bytes.length) {
-            return call('save_binary_finish', { ticket: ticket, suggestedName: name });
-          }
-          var end = Math.min(offset + SAVE_CHUNK_BYTES, bytes.length);
-          var at = offset;
-          var data = toBase64(bytes.subarray(at, end));
-          offset = end;
-          return call('save_binary_chunk', { ticket: ticket, offset: at, data: data }).then(next);
-        }
-        return next();
-      })
-      .then(function (saved) {
-        return saved === true;
-      });
+    return sendBytes(bytes, 'save_binary_finish', { suggestedName: name }).then(function (saved) {
+      return saved === true;
+    });
+  }
+
+  // PDFs (M19; docs/specs/pdf-sources.md, decision 10). A folder the person picks in the
+  // system's dialog: the page gets a token and the folder's name, never its path; the token
+  // dies with this page.
+  var MAX_PDF_BYTES = __QOOP_MAX_PDF_BYTES__;
+  var PDF_TOO_LARGE = 'The file is too large to open (at most ' + Math.round(MAX_PDF_BYTES / 1048576) + ' MB).';
+
+  function pickFolder() {
+    return call('pick_folder', {}).then(function (picked) {
+      if (!picked || typeof picked.token !== 'string' || typeof picked.name !== 'string') return null;
+      return { token: picked.token, name: picked.name };
+    });
+  }
+
+  // A PDF inside the picked folder: `relativePath` relative to it, or an absolute path (what a
+  // BibTeX `file` field says, as it says it), which the app takes only when it is inside.
+  function readFileIn(token, relativePath) {
+    return readBytes(
+      'folder_file_chunk',
+      { token: String(token == null ? '' : token), path: String(relativePath == null ? '' : relativePath) },
+      MAX_PDF_BYTES,
+      'The file could not be read. Try again.',
+      'The file changed while it was read. Try again.'
+    );
+  }
+
+  // A PDF the page has, opened in the system's own viewer (written to a private temporary
+  // file first, deleted when the app quits).
+  function openExternally(file) {
+    var name = file && file.suggestedName != null ? String(file.suggestedName) : '';
+    var bytes = asBytes(file ? file.bytes : null);
+    if (!bytes) return Promise.reject(new Error('There is no PDF to open.'));
+    if (bytes.length > MAX_PDF_BYTES) return Promise.reject(new Error(PDF_TOO_LARGE));
+    var magic = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+    for (var i = 0; i < magic.length; i++) {
+      if (bytes[i] !== magic[i]) return Promise.reject(new Error('That file is not a PDF.'));
+    }
+    return sendBytes(bytes, 'open_external_finish', { suggestedName: name }).then(function () {});
   }
 
   // Moving a Local Workspace onto this server (docs/specs/team-move.md, Contract C). The app
@@ -311,25 +389,13 @@
   }
 
   function moveFile() {
-    return call('move_file_chunk', { offset: 0 }).then(function (first) {
-      var size = first && first.size;
-      if (typeof size !== 'number' || !(size >= 0) || size > MAX_MOVE_BYTES) {
-        throw new Error('The Workspace file could not be read. Try again.');
-      }
-      var out = new Uint8Array(size);
-      var at = 0;
-      function take(chunk) {
-        if (!chunk || chunk.size !== size || typeof chunk.data !== 'string') {
-          throw new Error('The Workspace file changed while it was read. Try again.');
-        }
-        var got = fromBase64(chunk.data, out, at);
-        at += got;
-        if (at >= size) return out;
-        if (got === 0) throw new Error('The Workspace file could not be read. Try again.');
-        return call('move_file_chunk', { offset: at }).then(take);
-      }
-      return take(first);
-    });
+    return readBytes(
+      'move_file_chunk',
+      {},
+      MAX_MOVE_BYTES,
+      'The Workspace file could not be read. Try again.',
+      'The Workspace file changed while it was read. Try again.'
+    );
   }
 
   function moveDone(result) {
@@ -446,7 +512,10 @@
       saveBinaryFile: saveBinaryFile,
       moveHandover: moveHandover,
       moveFile: moveFile,
-      moveDone: moveDone
+      moveDone: moveDone,
+      pickFolder: pickFolder,
+      readFileIn: readFileIn,
+      openExternally: openExternally
     }),
     writable: false,
     configurable: false,

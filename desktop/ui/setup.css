@@ -194,7 +194,9 @@ ul {
     width: 100%;
     min-height: 0;
   }
-  .notice {
+  .notice,
+  .update,
+  .update-error {
     flex: none;
   }
   .columns {
@@ -379,6 +381,27 @@ input[aria-invalid="true"] {
   min-width: 0;
   padding-top: 2px;
   overflow-wrap: anywhere;
+}
+
+/* ---- an update that is ready: quiet, never in the way ------------------------------ */
+.update {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-panel);
+  background: var(--surface);
+}
+.update p {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.update-error {
+  margin: -16px 0 var(--s5);
 }
 
 /* ---- create tiles ---------------------------------------------------------------- */
@@ -876,6 +899,34 @@ input[aria-invalid="true"] {
   height: 30px;
   font-size: 13.5px;
 }
+/* ---- export, with or without the PDFs ------------------------------------------- */
+.export {
+  margin: 0 var(--s3) var(--s3);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--raised);
+}
+.export-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.export-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.export-choice input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* While a row asks for an address, the list keeps room for it instead of squeezing it
    into the two and a half rows it may otherwise shrink to; the window scrolls if it must. */
 .recent.panel-open,

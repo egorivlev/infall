@@ -7,7 +7,7 @@ resolver = "3"
 
 [package]
 name = "qoop-desktop"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.90"
 publish = false
@@ -24,6 +24,11 @@ codegen-units = 1
 # Release builds made with plain cargo need this (`cargo tauri build` turns it on by itself):
 # the app's own files are then served from inside the binary, never from a dev server.
 custom-protocol = ["tauri/custom-protocol"]
+# In-app updates (docs/specs/release.md, section 11). Only a build that also has
+# INFALL_UPDATE_PUBKEY and INFALL_UPDATE_URL set at build time has an updater (see build.rs);
+# the packaging scripts turn this on when both are set. Off by default, so a plain build and
+# the tests do not even compile the plugin.
+updater = ["dep:tauri-plugin-updater"]
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
@@ -32,6 +37,8 @@ tauri-build = { version = "2.7", features = [] }
 # No `devtools` feature: release builds have no web inspector.
 tauri = { version = "2.12", features = [] }
 tauri-plugin-opener = "2.7"
+# Checks a signed feed, downloads and verifies an update, installs it (feature `updater`).
+tauri-plugin-updater = { version = "2.14", optional = true }
 qoop-claude-driver = { path = "driver" }
 qoop-runner = { path = "runner" }
 # The real server, run in-process for Local Workspaces (docs/specs/local.md, Contract A).

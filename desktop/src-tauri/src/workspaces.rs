@@ -119,6 +119,16 @@ pub struct Listed {
     pub last_backup: Option<i64>,
     /// Local only (docs/specs/team-move.md, Contract C).
     pub moved_to: Option<String>,
+    /// Local only: the PDFs kept with it (docs/specs/pdf-sources.md, decision 6), when the
+    /// server crate can say; `null` otherwise, and then Export… offers no choice about them.
+    pub files: Option<FilesSummary>,
+}
+
+/// How many files (PDFs) a Local Workspace keeps beside its database, and their size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FilesSummary {
+    pub count: u64,
+    pub bytes: u64,
 }
 
 impl Entry {
@@ -132,6 +142,7 @@ impl Entry {
             last_opened: self.last_opened,
             last_backup: self.last_backup,
             moved_to: self.moved_to.clone(),
+            files: None,
         }
     }
 
@@ -208,11 +219,26 @@ fn move_to(workspaces: &[Entry], m: &PendingMove) -> bool {
 pub struct Registry {
     config: PathBuf,
     data: PathBuf,
+    /// Where an earlier version kept Local Workspaces' folders, when that is another folder
+    /// (Windows: the roaming one, see `datadir`). A Workspace whose folder could not be moved
+    /// from there is used from there.
+    legacy: Option<PathBuf>,
 }
 
 impl Registry {
+    #[cfg(test)]
     pub fn new(config: PathBuf, data: PathBuf) -> Registry {
-        Registry { config, data }
+        Registry::with_legacy(config, data, None)
+    }
+
+    /// As [`Registry::new`], with the data folder of an earlier version: a Local Workspace's
+    /// folder that is there and not in `data` is used from there.
+    pub fn with_legacy(config: PathBuf, data: PathBuf, legacy: Option<PathBuf>) -> Registry {
+        Registry {
+            config,
+            data,
+            legacy,
+        }
     }
 
     /// Every Workspace, the one opened most recently first; those never opened last.
@@ -343,11 +369,15 @@ impl Registry {
         self.update(|stored| {
             let entry = find(stored, id)?;
             if entry.kind == Kind::Local {
-                match fs::remove_dir_all(self.local_dir(id)) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                    Err(_) => {
-                        return Err("The workspace's files could not be deleted.".to_owned());
+                // Both copies, when an earlier version's was left behind by the move to the
+                // local folder (`datadir`): removed is removed.
+                for dir in self.local_dirs(id) {
+                    match fs::remove_dir_all(dir) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                        Err(_) => {
+                            return Err("The workspace's files could not be deleted.".to_owned());
+                        }
                     }
                 }
             }
@@ -599,7 +629,24 @@ impl Registry {
     /// and its backups. What the start screen shows in the file manager.
     pub fn local_dir(&self, id: &str) -> PathBuf {
         // Ids are checked when read (`valid_id`), so this stays inside the data directory.
-        self.data.join(LOCAL_DIR).join(id)
+        let here = self.data.join(LOCAL_DIR).join(id);
+        match &self.legacy {
+            Some(old) if !here.exists() => {
+                let there = old.join(LOCAL_DIR).join(id);
+                if there.is_dir() { there } else { here }
+            }
+            _ => here,
+        }
+    }
+
+    /// Every folder a Local Workspace may have: in the data folder, and in an earlier
+    /// version's (see [`Registry::with_legacy`]).
+    fn local_dirs(&self, id: &str) -> Vec<PathBuf> {
+        let mut dirs = vec![self.data.join(LOCAL_DIR).join(id)];
+        if let Some(old) = &self.legacy {
+            dirs.push(old.join(LOCAL_DIR).join(id));
+        }
+        dirs
     }
 
     fn load(&self) -> Stored {
@@ -924,6 +971,46 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_left_in_the_old_data_folder_is_used_from_there_and_removed_whole() {
+        let d = dirs();
+        let old = d._tmp.path().join("roaming");
+        // Made by an earlier version, in the old folder, and listed.
+        let r = Registry::new(d.config.clone(), old.clone());
+        let stayed = r.create_local("blank", None).unwrap();
+        let moved = r.create_local("tutorial", None).unwrap();
+        fs::write(r.db_path(&stayed.id), "db").unwrap();
+        // `moved` went across (datadir::move_workspaces), `stayed` could not.
+        let new_dir = d.data.join(LOCAL_DIR).join(&moved.id);
+        fs::create_dir_all(new_dir.parent().unwrap()).unwrap();
+        fs::rename(old.join(LOCAL_DIR).join(&moved.id), &new_dir).unwrap();
+
+        let r = Registry::with_legacy(d.config.clone(), d.data.clone(), Some(old.clone()));
+        assert_eq!(r.list().len(), 2, "the list is the same list");
+        assert_eq!(
+            r.local_dir(&stayed.id),
+            old.join(LOCAL_DIR).join(&stayed.id)
+        );
+        assert_eq!(
+            fs::read_to_string(r.db_path(&stayed.id)).unwrap(),
+            "db",
+            "the database is found where it stayed"
+        );
+        assert_eq!(r.local_dir(&moved.id), new_dir);
+        // New Workspaces go to the new folder.
+        let new = r.create_local("blank", None).unwrap();
+        assert_eq!(r.local_dir(&new.id), d.data.join(LOCAL_DIR).join(&new.id));
+        assert!(r.local_dir(&new.id).is_dir());
+        // An old copy left beside a moved one (it could not be removed) is not used, and
+        // goes when the Workspace is removed.
+        fs::create_dir_all(old.join(LOCAL_DIR).join(&moved.id)).unwrap();
+        assert_eq!(r.local_dir(&moved.id), new_dir);
+        r.remove(&moved.id).unwrap();
+        assert!(!new_dir.exists() && !old.join(LOCAL_DIR).join(&moved.id).exists());
+        r.remove(&stayed.id).unwrap();
+        assert!(!old.join(LOCAL_DIR).join(&stayed.id).exists());
+    }
+
+    #[test]
     fn an_empty_start() {
         let d = dirs();
         assert!(registry(&d).list().is_empty());
@@ -992,7 +1079,17 @@ mod tests {
         // The start screen does not see the port.
         assert_eq!(
             serde_json::to_value(entry.listed()).unwrap(),
-            serde_json::json!({"id":"x","kind":"local","name":"Tutorial","preset":"tutorial","address":null,"lastOpened":5,"lastBackup":7,"movedTo":null})
+            serde_json::json!({"id":"x","kind":"local","name":"Tutorial","preset":"tutorial","address":null,"lastOpened":5,"lastBackup":7,"movedTo":null,"files":null})
+        );
+        // With the PDFs the server crate counted (start_view fills it in).
+        let mut listed = entry.listed();
+        listed.files = Some(FilesSummary {
+            count: 3,
+            bytes: 4_200_000,
+        });
+        assert_eq!(
+            serde_json::to_value(listed).unwrap()["files"],
+            serde_json::json!({"count":3,"bytes":4_200_000})
         );
         let never = Entry {
             last_backup: None,

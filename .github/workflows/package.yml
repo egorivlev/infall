@@ -10,8 +10,16 @@
 #                            containers, started with no network under a virtual display, a
 #                            Tutorial Workspace created and its server asked on 127.0.0.1
 #
-# Not signed (docs/plans/2026-11-24-road-to-1.0.md, M20). An artifact is a build for testing,
-# not a release: hand out only a file whose SHA-256 the job log prints.
+# Not signed by Apple or Microsoft (docs/plans/2026-11-24-road-to-1.0.md, M20). An artifact is a
+# build for testing, not a release: hand out only a file whose SHA-256 the job log prints.
+#
+# Updates (docs/specs/release.md, section 11), each part only when what it needs is set:
+#   - repository variables INFALL_UPDATE_PUBKEY and INFALL_UPDATE_URL: the apps are built with
+#     the updater, reading that feed (the scripts turn the `updater` feature on);
+#   - secret TAURI_SIGNING_PRIVATE_KEY (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD): each job signs
+#     its update bundle (`tauri signer sign`) and keeps the .sig with the artifact;
+#   - a tag v*: the `feed` job writes latest.json from the signed bundles and puts everything in
+#     a draft GitHub release. Publishing the draft is a person's step.
 name: Packages
 
 on:
@@ -30,6 +38,13 @@ env:
   RUST_TOOLCHAIN: "1.96.0"
   NODE_VERSION: "22"
   CARGO_TERM_COLOR: always
+  # The updater's public key and feed: public values, so repository variables. Unset: no updater.
+  INFALL_UPDATE_PUBKEY: ${{ vars.INFALL_UPDATE_PUBKEY }}
+  INFALL_UPDATE_URL: ${{ vars.INFALL_UPDATE_URL }}
+  # Whether the signing key is there; the key itself is given only to the steps that sign.
+  SIGNING_KEY_SET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+  # The Tauri command-line tool, used only to sign: its major version, from npm.
+  TAURI_CLI: "@tauri-apps/cli@2"
 
 defaults:
   run:
@@ -67,15 +82,28 @@ jobs:
       # not something to rely on. The check is run by hand before a release.
       - name: Package
         run: scripts/package-macos.sh --no-verify
-      - name: Name the disk image after its processor
+      - name: Name the disk image (and the update bundle) after its processor
         run: |
           cd dist
           for dmg in *.dmg; do mv "$dmg" "${dmg%.dmg}-${{ matrix.arch }}.dmg"; done
+          for bundle in *.app.tar.gz; do
+            [ -e "$bundle" ] || continue
+            mv "$bundle" "${bundle%.app.tar.gz}-${{ matrix.arch }}.app.tar.gz"
+          done
           shasum -a 256 ./*.dmg
+      - name: Sign the update bundle
+        if: env.SIGNING_KEY_SET == 'true' && env.INFALL_UPDATE_PUBKEY != '' && env.INFALL_UPDATE_URL != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: for f in dist/*.app.tar.gz; do npx --yes "$TAURI_CLI" signer sign "$f"; done
       - uses: actions/upload-artifact@v7
         with:
           name: infall-macos-${{ matrix.arch }}
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.app.tar.gz
+            dist/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 14
 
@@ -104,10 +132,19 @@ jobs:
           key: package-windows
       - name: Package
         run: scripts/package-windows.sh
+      # The installer is also what the updater downloads and runs.
+      - name: Sign the installer for the updater
+        if: env.SIGNING_KEY_SET == 'true' && env.INFALL_UPDATE_PUBKEY != '' && env.INFALL_UPDATE_URL != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: for f in dist/*-setup.exe; do npx --yes "$TAURI_CLI" signer sign "$f"; done
       - uses: actions/upload-artifact@v7
         with:
           name: infall-windows-x64
-          path: dist/*-setup.exe
+          path: |
+            dist/*-setup.exe
+            dist/*-setup.exe.sig
           if-no-files-found: error
           retention-days: 14
 
@@ -142,9 +179,56 @@ jobs:
       - name: Hand the cache back to the runner's user
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" "${{ runner.temp }}/package-linux-cache" || true
+      # The .deb is also what the updater downloads and installs (with dpkg, after asking for
+      # the administrator's password).
+      - name: Sign the package for the updater
+        if: env.SIGNING_KEY_SET == 'true' && env.INFALL_UPDATE_PUBKEY != '' && env.INFALL_UPDATE_URL != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: for f in dist/*.deb; do npx --yes "$TAURI_CLI" signer sign "$f"; done
       - uses: actions/upload-artifact@v7
         with:
           name: infall-ubuntu-${{ matrix.arch }}
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/*.deb.sig
           if-no-files-found: error
           retention-days: 14
+
+  # On a tag v*, with the signing key and the updater's values set: latest.json from the signed
+  # bundles, and everything in a draft release. The feed's address (INFALL_UPDATE_URL) must be
+  # where a published latest.json is served, e.g.
+  # https://github.com/<owner>/<repo>/releases/latest/download/latest.json for a public
+  # repository; for a private one, copy the release's files to the public download host.
+  feed:
+    name: Update feed and draft release
+    needs: [macos, windows, ubuntu]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          pattern: infall-*
+          merge-multiple: true
+      - name: Write latest.json
+        if: env.SIGNING_KEY_SET == 'true' && env.INFALL_UPDATE_PUBKEY != '' && env.INFALL_UPDATE_URL != ''
+        env:
+          BASE: ${{ vars.INFALL_DOWNLOAD_BASE || format('https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name) }}
+        run: |
+          python3 scripts/update-feed.py release "${GITHUB_REF_NAME#v}" "$BASE" > latest.json
+          mv latest.json release/latest.json
+          cat release/latest.json
+      - name: Draft the release
+        if: env.SIGNING_KEY_SET == 'true' && env.INFALL_UPDATE_PUBKEY != '' && env.INFALL_UPDATE_URL != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Infall ${GITHUB_REF_NAME#v}" --notes-file CHANGELOG.md release/*
+          (cd release && sha256sum ./*)
