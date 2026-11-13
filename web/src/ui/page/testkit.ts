@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import { vi } from 'vitest'
 import { create } from 'zustand'
 import type { BlockVM, CardVM, LookupQuery, LookupResult, Member, PageVM, RunResult, RunsSnapshot, SessionSnapshot, SourceVM, Todo } from '../../lib'
+import { namedStaleness } from '../../lib/code-hash'
 import { ANA, MEI, createFakeLib } from '../history/testkit'
 
 export { ANA, MEI }
@@ -118,8 +119,11 @@ export function createFakePageLib() {
   const todoStore = create<{ list: Todo[] }>(() => ({ list: [] }))
   const sessionStore = create<SessionSnapshot>(() => ({ status: 'signed_in', member: ANA }))
   const runsStore = create<RunsSnapshot>(() => NO_RUNS)
-  /** What `useRunStale` answers per Block id; without an entry: false when there is a result, else null. */
-  const staleStore = create<{ by: Record<string, boolean | null> }>(() => ({ by: {} }))
+  /**
+   * What `useRunStale` answers per Block id (`true` is a changed code; M19b: 'lang' / 'env' too); without an entry:
+   * what the Run names against its result (the real check), else false when there is a result, else null.
+   */
+  const staleStore = create<{ by: Record<string, boolean | null | 'code' | 'lang' | 'env'> }>(() => ({ by: {} }))
   let made = 0
 
   const fakeOps = {
@@ -129,6 +133,8 @@ export function createFakePageLib() {
     }),
     setBlockTitle: (id: string, title: string) => ({ fake: 'setBlockTitle', block: id, title }),
     setRunResult: (id: string, result: RunResult | null) => ({ fake: 'setRunResult', block: id, result }),
+    setRunLang: (id: string, lang: string | null) => ({ fake: 'setRunLang', block: id, lang }),
+    setRunEnv: (id: string, env: string | null) => ({ fake: 'setRunEnv', block: id, env }),
     setBlockText: (id: string, text: string) => ({ fake: 'setBlockText', block: id, text }),
     moveBlock: (id: string, order: string) => ({ fake: 'moveBlock', block: id, order }),
     markReviewed: (id: string, memberId: string) => ({ fake: 'markReviewed', block: id, member: memberId }),
@@ -169,6 +175,20 @@ export function createFakePageLib() {
         return pageStore.setState({
           blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, run: { result: (op.result as RunResult | null) ?? null, broken: false } } : b)),
         })
+      case 'setRunLang':
+      case 'setRunEnv': {
+        const field = op.fake === 'setRunLang' ? 'lang' : 'env'
+        const value = op.fake === 'setRunLang' ? (op.lang === 'python' ? null : op.lang) : op.env
+        return pageStore.setState({
+          blocks: s.blocks.map((b) => {
+            if (b.id !== op.block || !b.run) return b
+            const next = { ...b.run }
+            if (value === null || value === '' || value === undefined) delete next[field]
+            else next[field] = String(value)
+            return { ...b, run: next }
+          }),
+        })
+      }
       case 'setBlockText':
         return pageStore.setState({ blocks: s.blocks.map((b) => (b.id === op.block ? { ...b, text: String(op.text) } : b)) })
       case 'markReviewed':
@@ -240,7 +260,7 @@ export function createFakePageLib() {
 
   const runs = {
     refresh: vi.fn(async (): Promise<void> => {}),
-    configure: vi.fn(async (): Promise<void> => {}),
+    configure: vi.fn(async (_lang?: string): Promise<void> => {}),
     run: vi.fn(async (_block: string): Promise<void> => {}),
     stop: vi.fn((): void => {}),
     saveAgain: vi.fn(async (): Promise<void> => {}),
@@ -248,9 +268,17 @@ export function createFakePageLib() {
       runsStore.setState({ last: null })
     }),
   }
-  const useRunStale = (b: BlockVM): boolean | null => {
+  const useRunStaleness = (b: BlockVM): 'code' | 'lang' | 'env' | false | null => {
     const by = staleStore((s) => s.by)
-    return b.id in by ? by[b.id]! : b.run?.result ? false : null
+    if (b.id in by) {
+      const v = by[b.id]!
+      return v === true ? 'code' : v
+    }
+    return b.run?.result ? (namedStaleness(b) ?? false) : null
+  }
+  const useRunStale = (b: BlockVM): boolean | null => {
+    const why = useRunStaleness(b)
+    return why === null || why === false ? why : true
   }
 
   const todos = {
@@ -357,6 +385,7 @@ export function createFakePageLib() {
         useRuns: () => runsStore(),
         runs,
         useRunStale,
+        useRunStaleness,
         members: people,
         orderBetween,
         normalizeDoi,

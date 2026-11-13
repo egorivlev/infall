@@ -187,7 +187,7 @@ function RunsSection({ headingRef }: HeadingProps) {
   return (
     <section className="q-settings__inner q-set-section">
       <SectionHead title="Runs" headingRef={headingRef} intro="Runs execute on your own computer, in the Infall desktop app, through its Runner." />
-      <div className="q-settings__card q-set-card">
+      <div className="q-settings__card q-set-card q-set-runs">
         {!runner.available && runner.reason === 'loading' && <p className="q-hint" role="status">Looking for the Runner…</p>}
         {!runner.available && runner.reason === 'browser' && (
           <p className="q-set-runs__line">Code can only run in the Infall desktop app. In the browser you can read every Run's captured output.</p>
@@ -214,13 +214,52 @@ function RunsSection({ headingRef }: HeadingProps) {
                   <dd className="q-mono q-set-path">{runner.folder}</dd>
                 </div>
               )}
+              {runner.languages && (
+                <div>
+                  <dt>Languages</dt>
+                  <dd>
+                    {Object.keys(runner.languages).length === 0 ? (
+                      'None set up yet'
+                    ) : (
+                      <ul className="q-set-runs__list" aria-label="Languages on this computer">
+                        {Object.entries(runner.languages).map(([id, l]) => (
+                          <li key={id}>
+                            {l.name.trim() || id}
+                            {l.version && <span className="q-mono q-set-runs__version"> {l.version}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </dd>
+                </div>
+              )}
+              {runner.languages && (
+                <div>
+                  <dt>Environments</dt>
+                  <dd>
+                    {(runner.environments ?? []).length === 0 ? (
+                      'Only the default Python'
+                    ) : (
+                      <ul className="q-set-runs__list" aria-label="Environments on this computer">
+                        {(runner.environments ?? []).map((name) => (
+                          <li key={name} className="q-mono">
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </dd>
+                </div>
+              )}
             </dl>
             <div>
               <button type="button" className="q-btn" onClick={() => void runs.configure()}>
-                Open Runner settings…
+                Open Runner settings
               </button>
             </div>
-            <p className="q-hint">The Runner's settings open in their own window of the desktop app.</p>
+            <p className="q-hint">
+              The Runner's settings open in their own window of the desktop app: the Python, the environments Runs can name, and the languages this computer runs.
+            </p>
           </>
         )}
       </div>

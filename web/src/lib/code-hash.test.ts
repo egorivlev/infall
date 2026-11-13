@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { codeHash, forgetHashes, knownHash, sha256Hex, useRunStale } from './code-hash'
+import { codeHash, forgetHashes, knownHash, sha256Hex, useRunStale, useRunStaleness } from './code-hash'
 import { fakeRunResult, settle } from './testing'
 import type { BlockVM } from './types'
 
@@ -130,5 +130,34 @@ describe('useRunStale', () => {
     expect(hook.result.current).toBeNull()
     hook.rerender({ b: block('print(1)', 'print(1)') })
     expect(hook.result.current).toBe(false)
+  })
+})
+
+describe('useRunStaleness: the code, and what the Run names (M19b)', () => {
+  const named = (text: string, run: Partial<NonNullable<BlockVM['run']>>, result: Parameters<typeof fakeRunResult>[1] = {}, id = 'n1'): BlockVM => ({
+    ...block(text, null, id),
+    run: { result: fakeRunResult(text, result), broken: false, ...run },
+  })
+  it('a Python result on a Run that became Julia is not current, also before the code is hashed', async () => {
+    expect(renderHook(() => useRunStaleness(named('println(1)', { lang: 'julia' }))).result.current).toBe('lang')
+    expect(renderHook(() => useRunStale(named('println(1)', { lang: 'julia' }, {}, 'n2'))).result.current).toBe(true)
+    await hashed('println(1)')
+    expect(renderHook(() => useRunStaleness(named('println(1)', { lang: 'julia' }, {}, 'n3'))).result.current).toBe('lang')
+    expect(renderHook(() => useRunStaleness(named('println(1)', { lang: 'julia' }, { lang: 'julia' }, 'n4'))).result.current).toBe(false)
+    expect(renderHook(() => useRunStaleness(named('println(1)', {}, { lang: 'julia' }, 'n5'))).result.current).toBe('lang')
+  })
+  it('the environment asked for counts for Python and Q#, not for other languages', async () => {
+    await hashed('print(1)')
+    expect(renderHook(() => useRunStaleness(named('print(1)', { env: 'analysis' }))).result.current).toBe('env')
+    expect(renderHook(() => useRunStaleness(named('print(1)', { env: 'analysis' }, { env: { name: 'analysis' } }, 'e2'))).result.current).toBe(false)
+    expect(renderHook(() => useRunStaleness(named('print(1)', {}, { env: { name: 'analysis' } }, 'e3'))).result.current).toBe('env')
+    expect(renderHook(() => useRunStaleness(named('print(1)', { lang: 'julia', env: 'analysis' }, { lang: 'julia' }, 'e4'))).result.current).toBe(false)
+  })
+  it('a changed code is said first', async () => {
+    await hashed('print(2)')
+    expect(renderHook(() => useRunStaleness({ ...named('print(1)', { lang: 'julia' }, {}, 'c1'), text: 'print(2)' })).result.current).toBe('code')
+  })
+  it('null without a result', () => {
+    expect(renderHook(() => useRunStaleness(block('x', null, 'z1'))).result.current).toBeNull()
   })
 })

@@ -1,6 +1,7 @@
 // The hash a Run's result is tied to (api.md §15): SHA-256 of the UTF-8 bytes of the code, as lowercase hex.
 // `useRunStale` compares it with the present code of the Block.
 import { useEffect, useState } from 'react'
+import { PYTHON, runEnv, runLang } from './run-lang'
 import type { BlockVM } from './types'
 
 // prettier-ignore
@@ -135,11 +136,43 @@ export function codeHash(code: string): Promise<string> {
 const MAX_ANSWERS = 500
 const answers = new Map<string, { expected: string; stale: boolean }>()
 
+/** Why a recorded result is not of the Run as it is now: its code, its language, or the environment it asks for. */
+export type RunStaleness = 'code' | 'lang' | 'env'
+
 /**
- * Whether the code of a Run changed since its recorded result: `true` changed, `false` the same, `null` when there
- * is no result (or the Block is not a Run), and for the moment it takes to hash a code never seen before.
+ * Whether the result of a Run was made as the Run is named now (M19b): its language (absent: Python) against the
+ * Run's, then the environment it asked for (`env.name`, absent: none) against the one the Run asks for. Null: the
+ * same, or no result.
+ */
+export function namedStaleness(block: BlockVM): 'lang' | 'env' | null {
+  const result = block.run?.result
+  if (!result) return null
+  if ((result.lang ?? PYTHON) !== runLang(block)) return 'lang'
+  return (result.env?.name ?? undefined) !== runEnv(block) ? 'env' : null
+}
+
+/**
+ * Whether the result of a Run is of other code than the Run's present one, and why: `false` the same, `null` without
+ * a result (or for a Block that is not a Run). A changed code is said first; while a code never seen is being hashed,
+ * a changed language or environment is said at once, and otherwise the answer given before stands (`useRunStale`).
+ */
+export function useRunStaleness(block: BlockVM): RunStaleness | false | null {
+  const code = useCodeStale(block)
+  if (code === true) return 'code'
+  return namedStaleness(block) ?? code
+}
+
+/**
+ * Whether a Run's recorded result is of other code than its present one: `true` changed (the code, or — M19b — its
+ * language or environment), `false` the same, `null` when there is no result (or the Block is not a Run), and for the
+ * moment it takes to hash a code never seen before.
  */
 export function useRunStale(block: BlockVM): boolean | null {
+  const why = useRunStaleness(block)
+  return why === null || why === false ? why : true
+}
+
+function useCodeStale(block: BlockVM): boolean | null {
   const expected = block.run?.result?.code_sha256
   const code = block.text
   const [, again] = useState(0)

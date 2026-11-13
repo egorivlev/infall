@@ -1,0 +1,67 @@
+/* M19 Part 2 and M19b on the Run block: its language, the environment it asks for, what executed its result.
+   The rest of the Run block is in page.css. */
+
+/* "RUN · JULIA": the language is part of the label, in the label's own type. */
+.qp-run__lang { color: var(--q-ink-3); }
+
+/* The environment the Run asks for: a quiet name after the title, giving way first when the strip is narrow. */
+.qp-run__asks {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--q-line-soft);
+  border-radius: var(--q-r-chip);
+  font: calc(11px * var(--q-text, 1)) var(--q-mono);
+  color: var(--q-ink-3);
+}
+@container (max-width: 430px) {
+  .qp-run__asks { display: none; }
+}
+
+/* What executed the result, above who ran it. */
+.qp-run__runtime { display: flex; flex-direction: column; gap: 4px; }
+.qp-run__runtime-line {
+  margin: 0;
+  font: calc(11px * var(--q-text, 1))/1.5 var(--q-mono);
+  color: var(--q-ink-3);
+  overflow-wrap: anywhere;
+}
+.qp-run__runtime-lead { color: var(--q-ink-2); }
+.qp-run__runtime-more {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--q-line);
+  border-radius: var(--q-r-chip);
+  background: transparent;
+  color: var(--q-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.qp-run__runtime-more:hover { color: var(--q-ink); border-color: var(--q-ink-3); }
+.qp-run__runtime-more[aria-expanded="true"] { background: var(--q-sunken); }
+.qp-run__packages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 12px;
+  margin: 0;
+  padding: 6px 8px;
+  list-style: none;
+  border-radius: var(--q-r-chip);
+  background: var(--q-sunken);
+  font: calc(11px * var(--q-text, 1))/1.5 var(--q-mono);
+  color: var(--q-ink-2);
+}
+.qp-run__packages > li { min-width: 0; overflow-wrap: anywhere; }
+
+/* The editor: language, its id when typed by hand, and the environment, side by side when there is room. */
+.qp-run-edit__row { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-start; }
+.qp-run-edit__lang { flex: 0 0 160px; }
+.qp-run-edit__other { flex: 0 1 180px; min-width: 140px; }
+.qp-run-edit__env { flex: 1 1 220px; min-width: 0; }
+.qp-run-edit__mono { font-family: var(--q-mono); font-size: calc(12.5px * var(--q-text, 1)); }
+.qp-run-edit__row .q-error, .qp-run-edit__envhint { margin: 0; }

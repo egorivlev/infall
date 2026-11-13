@@ -15,7 +15,7 @@ const { RELEASE_GRACE_MS, editLock } = await import('./lock')
 const { RUN_STARTER } = await import('./runs/starter')
 const { COLLAPSED_LINES } = await import('./runs/RunBlock')
 const { indentSelection } = await import('./runs/indent')
-const { codeLines, envLine, figureSrc, formatDuration, formatElapsed } = await import('./runs/format')
+const { codeLines, figureSrc, formatDuration, formatElapsed, runtimeLine } = await import('./runs/format')
 const { toasts } = await import('../board/toastStore')
 const { pagePanel, usePagePanel } = await import('../bridge')
 const { GUEST, MEI, block, card, run, runResult, visual } = await import('./testkit')
@@ -92,18 +92,28 @@ describe('Runs: how things are written out', () => {
     expect(formatElapsed(-5)).toBe('0:00')
   })
 
-  it('the environment: Python as major.minor and at most three packages', () => {
-    expect(envLine({ python: '3.12.4', packages: { pennylane: '0.38', torch: '2.4.1', numpy: '2.1.0', scipy: '1.14' } }).text).toBe(
-      'py 3.12 · pennylane 0.38 · torch 2.4.1 · numpy 2.1.0',
-    )
-    expect(envLine({ python: '3.11.9 (main, Apr 2 2024)' }).text).toBe('py 3.11')
-    expect(envLine({ python: 'pypy' }).text).toBe('')
-    expect(envLine(undefined)).toEqual({ text: '', full: '' })
-    expect(envLine({ python: '3.12.4', packages: { a: '1', b: '2', c: '3', d: '4' }, os: 'macOS 15', arch: 'arm64' }).full).toBe(
-      'Python 3.12.4 · a 1 · b 2 · c 3 · d 4 · macOS 15 arm64',
-    )
+  it('what executed a result: Python and its packages, Q# by its package, another language by its version', () => {
+    expect(runtimeLine({ env: { python: '3.12.3', packages: { numpy: '2.1.0', scipy: '1.14.1' } } }, 'Python')).toEqual({
+      lead: 'Python 3.12.3',
+      packages: ['numpy 2.1.0', 'scipy 1.14.1'],
+      full: 'Python 3.12.3 · numpy 2.1.0 · scipy 1.14.1',
+    })
+    expect(runtimeLine({}, 'Python')).toEqual({ lead: 'Python', packages: [], full: 'Python' })
+    expect(runtimeLine({ env: { python: '3.13.1', name: 'analysis', os: 'macos', arch: 'arm64' } }, 'Python')).toEqual({
+      lead: 'Python 3.13.1 (analysis)',
+      packages: [],
+      full: 'Python 3.13.1 · environment “analysis” · macos arm64',
+    })
+    expect(runtimeLine({ lang: 'qsharp', env: { python: '3.12.3', packages: { qdk: '1.34.0' } } }, 'Q#')).toMatchObject({ lead: 'Q#', packages: ['qdk 1.34.0'] })
+    expect(runtimeLine({ lang: 'julia', env: { runtime: 'julia version 1.11.2' } }, 'Julia')).toMatchObject({ lead: 'Julia 1.11.2', full: 'Julia: julia version 1.11.2' })
+    expect(runtimeLine({ lang: 'javascript', env: { runtime: 'v22.3.0' } }, 'JavaScript').lead).toBe('JavaScript 22.3.0')
+    expect(runtimeLine({ lang: 'r', env: { runtime: 'Rscript (R) version 4.4.1 (2024-06-14)' } }, 'R').lead).toBe('R 4.4.1')
+    expect(runtimeLine({ lang: 'shell', env: { runtime: 'GNU bash, version 5.2.26(1)-release' } }, 'Shell').lead).toBe('Shell 5.2.26')
+    expect(runtimeLine({ lang: 'haskell', env: { runtime: 'unknown build' } }, 'haskell')).toMatchObject({ lead: 'haskell', full: 'haskell: unknown build' })
+    expect(runtimeLine({ lang: 'shell' }, 'Shell').lead).toBe('Shell')
     // Not what the contract says a result holds — still only ever text.
-    expect(envLine({ packages: { x: 5 as unknown as string } }).text).toBe('')
+    expect(runtimeLine({ env: { packages: { x: 5 as unknown as string } } }, 'Python').packages).toEqual([])
+    expect(runtimeLine({ env: { python: 'a\n  b' } }, 'Python').lead).toBe('Python a b')
   })
 
   it('a figure becomes a PNG data URL only when its data is plain base64', () => {
@@ -134,7 +144,9 @@ describe('Runs: reading', () => {
     expect(code.querySelector('.qp-run__lines')!.textContent).toBe(CODE.trimEnd())
     expect(g.querySelector('.qp-run__label')).toHaveTextContent('Output')
     expect(inRow().getByText('Not executed yet.')).toBeInTheDocument()
-    expect(g.querySelector('.qp-run__env')).toBeNull() // nothing before the first result
+    expect(g.querySelector('.qp-run__runtime')).toBeNull() // nothing before the first result
+    expect(g.querySelector('.qp-run__kind')).toHaveTextContent('Run · Python')
+    expect(g.querySelector('.qp-run__asks')).toBeNull()
     expect(g.querySelector('.qp-run__record')).toBeNull()
   })
 
@@ -480,7 +492,7 @@ describe('Runs: an execution in this window', () => {
 })
 
 describe('Runs: a recorded result', () => {
-  it('shows the environment in the header, figures on plates, the text, and the record line', () => {
+  it('shows figures on plates, the text, what executed it, and the record line', () => {
     setResult(
       runResult({
         figures: [{ png: PNG }, { png: 'QUJD' }, { png: PNG }],
@@ -488,9 +500,10 @@ describe('Runs: a recorded result', () => {
       }),
     )
     open()
-    const env = row().querySelector('.qp-run__env')!
-    expect(env.textContent).toBe('py 3.12 · pennylane 0.38.0 · torch 2.4.1 · numpy 2.1.0')
+    const env = row().querySelector('.qp-run__runtime-line')!
+    expect(env.textContent).toBe('Python 3.12.4 · pennylane 0.38.0, torch 2.4.1 +2')
     expect(env.getAttribute('title')).toContain('scipy 1.14.1')
+    expect(env.getAttribute('title')).toContain('macOS 15.1 arm64')
     const figures = inRow().getAllByRole('img')
     expect(figures.map((f) => f.getAttribute('alt'))).toEqual([
       'Figure 1 of Run policy_cartpole.py',
@@ -1077,7 +1090,7 @@ describe('Runs: nothing written by people or programs becomes markup', () => {
     expect(r.querySelector('.qp-run__lines')!.textContent).toBe(`</code></pre>${EVIL}\nprint("<b>bold</b>")`)
     expect(r.querySelector('.qp-run__text')!.textContent).toContain('<iframe src="javascript:alert(1)"></iframe>')
     expect(r.querySelector('.qp-run__text')!.childNodes).toHaveLength(1)
-    expect(r.querySelector('.qp-run__env')!.textContent).toBe('py 3.12 · <i>pkg</i> <u>1.0</u>')
+    expect(r.querySelector('.qp-run__runtime-line')!.textContent).toBe('Python 3.12.1<script>x</script> · <i>pkg</i> <u>1.0</u>')
     expect(screen.getByTestId('run-outcome-r1').textContent).toContain(EVIL)
     expect(status().textContent).toContain(EVIL)
     expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined()

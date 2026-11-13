@@ -233,7 +233,9 @@ export type BlockVM = {
   type: 'text' | 'visual' | 'run' // unset on the wire means 'text'
   text: string // Markdown for 'text'; HTML/JavaScript source for 'visual'; code for 'run'
   title: string // caption of a Visual, name of a Run; '' otherwise
-  run?: { result: RunResult | null; broken: boolean } // set for 'run' (M8); `broken`: a result is stored but cannot be read
+  // set for 'run' (M8); `broken`: a result is stored but cannot be read. M19b: `lang` the language id (absent: Python),
+  // `env` the environment the Run asks for (Python and Q#) — both as stored, absent when unset
+  run?: { result: RunResult | null; broken: boolean; lang?: string; env?: string }
   order: string
   ai?: { model: string; pinnedBy: string; pinnedAt: number; reviewedBy?: string } // set when pinned from an AI Conversation (M7)
 }
@@ -393,8 +395,15 @@ export type RunResult = {
   output: string
   output_truncated?: boolean
   figures: { png: string }[] // base64 PNG
-  env?: { python?: string; packages?: Record<string, string>; os?: string; arch?: string }
+  lang?: string // M19b: the language it was executed as; absent: Python
+  env?: RunEnvRecord
 }
+
+/**
+ * What executed a Run (api.md §15). M19: up to 32 `packages`; M19b: `runtime`, what a command Toolchain said its
+ * version is (≤ 40 characters); `name`, the environment the Run asked for (1–60 characters), when it asked for one.
+ */
+export type RunEnvRecord = { python?: string; packages?: Record<string, string>; os?: string; arch?: string; runtime?: string; name?: string }
 
 export type RunEvent =
   | { type: 'approval' }
@@ -409,10 +418,14 @@ export type RunEvent =
       output: string
       output_truncated: boolean
       figures: { png: string }[]
-      env: { python?: string; packages?: Record<string, string>; os?: string; arch?: string }
+      lang?: string // M19b: always sent by an app that has `start`; absent: Python
+      env: { python?: string; packages?: Record<string, string>; os?: string; arch?: string; runtime?: string }
     }
-  | { type: 'error'; reason: 'declined' | 'no_python' | 'busy' | 'failed'; message: string }
+  | { type: 'error'; reason: RunErrorReason; message: string }
   | ({ type: 'stats' } & RunUsage) // M9; about once a second while the process runs; never sent by an M8 app
+
+/** Why the Runner did not execute a Run. M19b adds `no_toolchain` (the language is not set up here) and `no_environment`. */
+export type RunErrorReason = 'declined' | 'no_python' | 'no_toolchain' | 'no_environment' | 'busy' | 'failed'
 
 /** What a Run is using right now, as the Runner measured it (docs/specs/desktop.md, M9). */
 export type RunUsage = {
@@ -433,18 +446,35 @@ export type RunStats = RunUsage & {
   eta_ms?: number // estimated time left; only while `progress` is moving
 }
 
-/** `window.qoopDesktop.runner` (docs/specs/desktop.md, M8). */
+/** A language this device's Runner can execute now: its name and, when known, its version (desktop.md, M19b). */
+export type RunnerLanguage = { name: string; version?: string }
+
+/**
+ * `window.qoopDesktop.runner` (docs/specs/desktop.md, M8; "Environments and Toolchains — as built"). `start`,
+ * `languages` and `environments` exist only in an app from M19b on; `run` executes Python in the default environment
+ * and nothing else.
+ */
 export type QoopRunner = {
-  status(): Promise<{ python?: { path: string; version: string }; folder?: string }>
-  configure(): Promise<void>
+  status(): Promise<{ python?: { path: string; version: string }; folder?: string; languages?: Record<string, RunnerLanguage>; environments?: string[] }>
+  configure(lang?: string): Promise<void>
   run(request: { id: string; code: string; title: string }, onEvent: (event: RunEvent) => void): Promise<void>
+  start?(request: { id: string; code: string; title: string; lang?: string; env?: string }, onEvent: (event: RunEvent) => void): Promise<void>
   cancel(id: string): Promise<void>
 }
 
-/** Whether this device can execute Runs, and why not. */
+/**
+ * Whether this device can execute Runs, and why not. `languages` (M19b) is there only when the app can be asked for a
+ * Run in a language other than Python — it has `runner.start` and its status lists languages; `environments` with it.
+ */
 export type RunnerSetup =
   | { available: false; reason: 'loading' | 'browser' | 'guest' | 'old_app' }
-  | { available: true; python?: { path: string; version: string }; folder?: string }
+  | {
+      available: true
+      python?: { path: string; version: string }
+      folder?: string
+      languages?: Record<string, RunnerLanguage>
+      environments?: string[]
+    }
 
 /** The one execution in flight in this window. */
 export type RunLive = {
@@ -454,6 +484,7 @@ export type RunLive = {
   output: string // live output so far
   startedAt?: number // set once it is running
   stats?: RunStats // M9: the latest sample; absent before the first one and with an M8 app
+  choosing?: true // M19: the Run asked for an environment this device has no answer for; its Runner window asks first
 }
 
 /** How the last execution in this window ended, until dismissed or the next one starts. */
@@ -462,6 +493,7 @@ export type RunOutcome = {
   branch: string
   status: 'recorded' | 'declined' | 'failed' | 'unsaved'
   message?: string // plain sentence for 'failed' and 'unsaved'
+  reason?: RunErrorReason // for 'failed' when the Runner said why
   unsaved?: RunResult // the result that could not be recorded; `runs.saveAgain()` retries
 }
 

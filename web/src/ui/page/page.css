@@ -629,16 +629,6 @@
   color: var(--q-ink); /* a person's words: shown as written */
 }
 .qp-run__title.is-empty { color: var(--q-ink-3); }
-/* When the strip is narrow the environment gives way first, so the name stays readable. */
-.qp-run__env {
-  flex: 0 1000 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: calc(11px * var(--q-text, 1)) var(--q-mono);
-  color: var(--q-ink-3);
-}
 .qp-run__note { flex: none; white-space: nowrap; font-size: calc(11.5px * var(--q-text, 1)); color: var(--q-ink-3); }
 .qp-run__elapsed { flex: none; font: calc(12px * var(--q-text, 1)) var(--q-mono); font-variant-numeric: tabular-nums; color: var(--q-ink-2); }
 .qp-run__edit { flex: none; height: 24px; }
@@ -769,7 +759,7 @@
 
 /* A narrow frame (a phone, a slim panel): the extras go, and the action may take a line of its own. */
 @container (max-width: 430px) {
-  .qp-run__env, .qp-run__note { display: none; }
+  .qp-run__note { display: none; }
   .qp-run__head { flex-wrap: wrap; gap: 6px 8px; }
   .qp-run__title { flex: 1 1 6ch; }
   .qp-run__head > .qp-spacer { display: none; }

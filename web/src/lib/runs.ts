@@ -8,9 +8,25 @@ import type { BoardSync } from './board-sync'
 import { previewing as historyPreviewing } from './history'
 import { ApiError } from './http'
 import { newId, ops } from './ops'
-import { MAX_OUTPUT, toRunEvent, toRunResult, UNREADABLE_RESULT } from './run-result'
+import { isEnvName, isLangId, languageName, PYTHON, runEnv, runLang } from './run-lang'
+import { forOldServer, MAX_OUTPUT, toRunEvent, toRunResult, UNREADABLE_RESULT } from './run-result'
 import { sessionStore } from './session-store'
-import type { BlockVM, Member, QoopRunner, RunLive, RunnerSetup, RunOutcome, RunResult, RunsSnapshot, RunStats, RunUsage, SessionSnapshot } from './types'
+import type {
+  BlockVM,
+  Member,
+  QoopRunner,
+  RunErrorReason,
+  RunEvent,
+  RunLive,
+  RunnerLanguage,
+  RunnerSetup,
+  RunOutcome,
+  RunResult,
+  RunsSnapshot,
+  RunStats,
+  RunUsage,
+  SessionSnapshot,
+} from './types'
 
 export const STOPPED_ANSWERING = 'The Runner stopped answering.'
 const COULD_NOT_RUN = 'The Run could not be executed.'
@@ -35,7 +51,21 @@ export type RunsOptions = {
   now?: () => number
 }
 
-type Found = { python?: { path: string; version: string }; folder?: string }
+type Found = { python?: { path: string; version: string }; folder?: string; languages?: Record<string, RunnerLanguage>; environments?: string[] }
+
+/** The app on this computer is too old to be asked for a Run in this language (desktop.md, "the old-app fail-safe"). */
+export function updateSentence(name: string): string {
+  return `Update Infall on this computer to run ${name} code.`
+}
+
+/** This device's Runner has no Toolchain for the language: the Runner's own sentence for `no_toolchain`. */
+export function notSetUpSentence(name: string): string {
+  return `${name} is not set up in Runner settings on this computer.`
+}
+
+/** A server from before M19 refused a result that names a language, a runtime or an environment. */
+export const OLD_SERVER_SENTENCE =
+  'The output was not recorded: the server of this Workspace does not take results of Runs in other languages or environments yet. It needs an update.'
 
 /** The sample the rate of progress is measured from, and how far the latest sample with progress was. */
 export type ProgressBaseline = { at: number; done: number; total: number; latest: number }
@@ -49,6 +79,8 @@ type Execution = {
   branchName: string
   member: string
   runner: QoopRunner
+  asked: string | undefined // the environment the request named through `start`; recorded as `env.name`
+  choosing: boolean // its Runner window asks which environment the name means here, before the approval
   state: RunLive['state']
   output: string
   startedAt: number | undefined
@@ -78,6 +110,17 @@ function defaultCancelFrame(handle: unknown): void {
   else globalThis.clearTimeout(handle as number)
 }
 
+// Whether the app can be asked for a Run that names a language or an environment (M19b): only through `start`. An
+// app without it drops `lang` from `run` and would execute anything as Python.
+function canStart(runner: QoopRunner): boolean {
+  return typeof (runner as { start?: unknown }).start === 'function'
+}
+
+// The server refused the batch as a bad request: what a server from before M19 says to a result with its new parts.
+function refusedAsNew(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 400 && e.code === 'bad_request'
+}
+
 // The Runner of a bridge, or null for an app from before M8 (a bridge without a usable `runner`).
 function runnerOf(bridge: unknown): QoopRunner | null {
   if (!isRecord(bridge)) return null
@@ -86,7 +129,9 @@ function runnerOf(bridge: unknown): QoopRunner | null {
   return complete ? (r as QoopRunner) : null
 }
 
-function readStatus(answer: unknown): Found {
+// What `status()` said. `languages` (and `environments` with it) only from an app that has `start`: without it a Run
+// in another language cannot be asked for, whatever the status lists. Only ids, names and versions are kept.
+function readStatus(answer: unknown, startable: boolean): Found {
   const found: Found = {}
   if (!isRecord(answer)) return found
   const python = answer.python
@@ -94,6 +139,18 @@ function readStatus(answer: unknown): Found {
     found.python = { path: python.path, version: python.version }
   }
   if (typeof answer.folder === 'string' && answer.folder !== '') found.folder = answer.folder
+  if (startable && isRecord(answer.languages) && !Array.isArray(answer.languages)) {
+    const languages: Record<string, RunnerLanguage> = {}
+    for (const [id, entry] of Object.entries(answer.languages)) {
+      if (!isLangId(id) || !isRecord(entry) || typeof entry.name !== 'string') continue
+      const language: RunnerLanguage = { name: entry.name }
+      if (typeof entry.version === 'string' && entry.version !== '') language.version = entry.version
+      languages[id] = language
+    }
+    found.languages = languages
+    const listed: unknown[] = Array.isArray(answer.environments) ? answer.environments : []
+    found.environments = [...new Set(listed.filter((name): name is string => isEnvName(name)))]
+  }
   return found
 }
 
@@ -214,7 +271,7 @@ export function createRuns(options: RunsOptions = {}) {
     }
     let next: Found
     try {
-      next = readStatus(await bridge.status())
+      next = readStatus(await bridge.status(), canStart(bridge))
     } catch {
       next = {}
     }
@@ -223,12 +280,14 @@ export function createRuns(options: RunsOptions = {}) {
     applySetup()
   }
 
-  async function configure(): Promise<void> {
+  async function configure(lang?: string): Promise<void> {
     const me = self()
     const bridge = me && me.role !== 'guest' ? runnerOf(desktop()) : null
     if (!bridge) return
     try {
-      await bridge.configure()
+      // A language is named only to an app that can run one; an older app opens its settings as before.
+      if (lang !== undefined && isLangId(lang) && canStart(bridge)) await bridge.configure(lang)
+      else await bridge.configure()
     } catch {
       // the window could not be opened: the status is read again all the same
     }
@@ -252,6 +311,7 @@ export function createRuns(options: RunsOptions = {}) {
     x.hasFrame = false
     if (current !== x) return
     const next: RunLive = { block: x.block, branch: x.branch, state: x.state, output: x.output }
+    if (x.choosing && x.state === 'approval') next.choosing = true
     if (x.startedAt !== undefined) next.startedAt = x.startedAt
     if (x.stats !== undefined) next.stats = x.stats
     live = next
@@ -313,25 +373,51 @@ export function createRuns(options: RunsOptions = {}) {
     const problem = cannotRecord(x.block, x.branch, x.branchName)
     if (problem !== null) return { ...where, status: 'unsaved', message: problem, unsaved: result }
     try {
-      await board.submit([ops.setRunResult(x.block, result)])
+      await submitResult(x.block, result)
     } catch (e) {
-      return { ...where, status: 'unsaved', message: notRecorded(e), unsaved: result }
+      return { ...where, status: 'unsaved', message: notRecordedOf(e, result), unsaved: result }
     }
     return { ...where, status: 'recorded' }
   }
 
-  function failed(x: Execution, message: string): RunOutcome {
+  // A server from before M19 refuses a result with more than 8 packages: it is sent once more with the first 8.
+  async function submitResult(block: string, result: RunResult): Promise<void> {
+    try {
+      await board.submit([ops.setRunResult(block, result)])
+    } catch (e) {
+      const smaller = refusedAsNew(e) ? forOldServer(result) : null
+      if (!smaller) throw e
+      await board.submit([ops.setRunResult(block, smaller)])
+    }
+  }
+
+  function notRecordedOf(e: unknown, result: RunResult): string {
+    const named = result.lang !== undefined || result.env?.runtime !== undefined || result.env?.name !== undefined
+    return named && refusedAsNew(e) ? OLD_SERVER_SENTENCE : notRecorded(e)
+  }
+
+  function failed(x: Execution, message: string, reason?: RunErrorReason): RunOutcome {
     const said = message.trim()
-    return { block: x.block, branch: x.branch, status: 'failed', message: said === '' ? COULD_NOT_RUN : said.slice(0, MAX_MESSAGE) }
+    const outcome: RunOutcome = { block: x.block, branch: x.branch, status: 'failed', message: said === '' ? COULD_NOT_RUN : said.slice(0, MAX_MESSAGE) }
+    if (reason !== undefined) outcome.reason = reason
+    return outcome
   }
 
   function onEvent(x: Execution, raw: unknown) {
     if (x.over || current !== x) return
     const event = toRunEvent(raw)
     if (!event) return
-    if (event.type === 'approval') return // the state it starts in
+    if (event.type === 'approval') {
+      // The state it starts in. An environment it asked for has been answered in the Runner's window.
+      if (x.choosing) {
+        x.choosing = false
+        show(x)
+      }
+      return
+    }
     if (event.type === 'started') {
       if (x.state !== 'approval') return
+      x.choosing = false
       x.state = 'running'
       x.startedAt = now()
       show(x)
@@ -354,10 +440,10 @@ export function createRuns(options: RunsOptions = {}) {
       x.baseline = next.baseline
       show(x)
     } else if (event.type === 'error') {
-      end(x, event.reason === 'declined' ? { block: x.block, branch: x.branch, status: 'declined' } : failed(x, event.message))
+      end(x, event.reason === 'declined' ? { block: x.block, branch: x.branch, status: 'declined' } : failed(x, event.message, event.reason))
     } else {
       x.over = true
-      const result = toRunResult(event, x.member, now())
+      const result = toRunResult(event, x.member, now(), { env: x.asked })
       if (!result) {
         end(x, failed(x, UNREADABLE_RESULT))
         return
@@ -389,6 +475,7 @@ export function createRuns(options: RunsOptions = {}) {
     const block = target ? findRun(blockId) : undefined
     if (!target || !block) throw new ApiError(404, 'not_found', 'There is no such Run on the open Board.')
     if (block.text.trim() === '') throw new ApiError(400, 'bad_request', 'This Run has no code yet.')
+    const ask = howToAsk(block, bridge)
 
     let finish: () => void = () => {}
     const finished = new Promise<void>((resolve) => {
@@ -401,6 +488,8 @@ export function createRuns(options: RunsOptions = {}) {
       branchName: board.store.getState().snapshot.branch?.name ?? '',
       member: me.id,
       runner: bridge,
+      asked: ask.via === 'start' ? ask.request.env : undefined,
+      choosing: ask.via === 'start' && ask.request.env !== undefined && !(found?.environments ?? []).includes(ask.request.env),
       state: 'approval',
       output: '',
       startedAt: undefined,
@@ -415,14 +504,34 @@ export function createRuns(options: RunsOptions = {}) {
     current = x
     last = null // the next execution starts: the last outcome, an unsaved result included, is let go
     show(x)
-    const request = { id: x.id, code: block.text, title: block.title.trim() === '' ? 'Untitled Run' : block.title.trim() }
+    const request = { id: x.id, code: block.text, title: block.title.trim() === '' ? 'Untitled Run' : block.title.trim(), ...ask.request }
+    const handle = (event: RunEvent) => onEvent(x, event)
     Promise.resolve()
-      .then(() => bridge.run(request, (event) => onEvent(x, event)))
+      .then(() => (ask.via === 'start' ? bridge.start!(request, handle) : bridge.run(request, handle)))
       .then(
         () => settled(x),
         () => settled(x),
       )
     await finished
+  }
+
+  /**
+   * How the app is asked for this Run, or why it cannot be (thrown). Every Run whose language is not Python goes
+   * only through `start`; an app without `start`, or whose status lists no languages, is refused — never `run`,
+   * which an older app would execute as Python. A Python Run naming an environment uses `start` when it can, else
+   * `run` (the name is only a wish); one naming none uses `run`, exactly as before.
+   */
+  function howToAsk(block: BlockVM, bridge: QoopRunner): { via: 'run' | 'start'; request: { lang?: string; env?: string } } {
+    const lang = runLang(block)
+    if (!isLangId(lang)) throw new ApiError(400, 'bad_lang', 'This Run names a language that cannot be read. Choose its language again.')
+    const env = runEnv(block)
+    if (env !== undefined && !isEnvName(env)) throw new ApiError(400, 'bad_env', 'This Run names an environment that cannot be read. Name it again.')
+    const languages = canStart(bridge) ? found?.languages : undefined
+    if (lang === PYTHON) return env === undefined || !languages ? { via: 'run', request: {} } : { via: 'start', request: { env } }
+    const name = languageName(lang, languages)
+    if (!languages) throw new ApiError(409, 'old_app', updateSentence(name))
+    if (!Object.hasOwn(languages, lang)) throw new ApiError(409, 'no_toolchain', notSetUpSentence(name))
+    return { via: 'start', request: env === undefined ? { lang } : { lang, env } }
   }
 
   // Asks the app to stop; what it captured then arrives as a `done` and is recorded as a stopped result.
@@ -441,10 +550,10 @@ export function createRuns(options: RunsOptions = {}) {
     if (!findRun(o.block)) throw new ApiError(404, 'not_found', 'This Run is no longer on its Page.')
     savingAgain = true
     try {
-      await board.submit([ops.setRunResult(o.block, o.unsaved)])
+      await submitResult(o.block, o.unsaved)
     } catch (e) {
       if (last === o) {
-        last = { ...o, message: notRecorded(e) }
+        last = { ...o, message: notRecordedOf(e, o.unsaved) }
         publish()
       }
       throw e

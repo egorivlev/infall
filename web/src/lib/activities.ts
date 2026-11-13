@@ -125,9 +125,10 @@ function fate(was: Entity | undefined, now: Entity): 'added' | 'removed' | 'chan
   return now.deleted ? 'removed' : 'changed'
 }
 
-// A Visual is edited when its source, its title, or what it is changed; a Run when its code, its name, or what it is.
+// A Visual is edited when its source, its title, or what it is changed; a Run when its code, its name, what it is,
+// or (M19b) the language or environment it names.
 function visualEdited(was: Entity, now: Entity): boolean {
-  return ['text', 'title', 'type'].some((f) => !sameValue(was.fields, now.fields, f))
+  return ['text', 'title', 'type', 'lang', 'env'].some((f) => !sameValue(was.fields, now.fields, f))
 }
 
 // A Run ends a run of Changes with another result than it began with: executed, or its output cleared.

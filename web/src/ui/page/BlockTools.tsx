@@ -2,8 +2,11 @@ import type { DraftResult } from './DraftArea'
 import type { RunStarter } from './runs/starter'
 import type { VisualTemplate } from './visuals/templates'
 
-/** How the editor of a Visual or a Run ended. `title` / `source` are set only when the person changed them. */
-export type VisualResult = { commit: boolean; keyboard: boolean; title?: string; source?: string }
+/**
+ * How the editor of a Visual or a Run ended. `title` / `source` are set only when the person changed them; for a Run
+ * also `lang` (an id, `python` for Python) and `env` ('' for none).
+ */
+export type VisualResult = { commit: boolean; keyboard: boolean; title?: string; source?: string; lang?: string; env?: string }
 
 /** What a Block can ask of the list it is in. Stable for the life of the list. */
 export type BlockHandlers = {

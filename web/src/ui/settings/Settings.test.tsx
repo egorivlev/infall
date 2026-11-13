@@ -235,8 +235,31 @@ describe('Runs', () => {
     h.runner = { available: true, python: { path: '/usr/bin/python3', version: '3.12.1' } }
     render(<App />)
     expect(screen.getByText('3.12.1')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open Runner settings…' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open Runner settings' }))
     expect(h.configure).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('list', { name: 'Languages on this computer' })).toBeNull() // an app from before M19b lists none
+  })
+
+  it('in an app from M19b: this device’s languages and environments, names and versions only', () => {
+    h.runner = {
+      available: true,
+      python: { path: '/usr/bin/python3', version: '3.12.1' },
+      languages: { python: { name: 'Python', version: '3.12.1' }, qsharp: { name: 'Q#', version: 'qdk 1.34.0' }, julia: { name: 'Julia' } },
+      environments: ['analysis', 'base'],
+    }
+    render(<App />)
+    const langs = screen.getByRole('list', { name: 'Languages on this computer' })
+    expect(within(langs).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Python 3.12.1', 'Q# qdk 1.34.0', 'Julia'])
+    const envs = screen.getByRole('list', { name: 'Environments on this computer' })
+    expect(within(envs).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['analysis', 'base'])
+    expect(screen.getByRole('button', { name: 'Open Runner settings' })).toBeInTheDocument()
+  })
+
+  it('in an app from M19b with nothing set up beyond Python', () => {
+    h.runner = { available: true, python: { path: '/usr/bin/python3', version: '3.12.1' }, languages: {}, environments: [] }
+    render(<App />)
+    expect(screen.getByText('None set up yet')).toBeInTheDocument()
+    expect(screen.getByText('Only the default Python')).toBeInTheDocument()
   })
 })
 
