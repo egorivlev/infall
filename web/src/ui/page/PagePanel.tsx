@@ -1,6 +1,6 @@
 import './page.css'
 import './port.css'
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import { ops, useBoard, useHistory, useMembers, usePage } from '../../lib'
 import type { CardVM, PageVM, Status } from '../../lib'
@@ -25,6 +25,10 @@ import { MoreMenu } from './MoreMenu'
 import { PageTodos } from './PageTodos'
 import { count, firstName, memberName } from './people'
 import { Sources } from './Sources'
+import { pdfReader, usePdfReader } from '../pdf/readerStore'
+
+// M19: the reader (and pdf.js behind it) loads only when a PDF is opened.
+const PdfReader = lazy(() => import('../pdf/PdfReader').then((m) => ({ default: m.PdfReader })))
 
 type Props = {
   cardId: string
@@ -217,9 +221,24 @@ export function PagePanel({ cardId, full, onClose }: Props) {
   const [printing, setPrinting] = useState(0)
   const endPrint = useCallback(() => setPrinting(0), [])
 
+  // M19: a Source's PDF opens in this panel's place; it closes with the panel (or when another Card's Page opens).
+  const reader = usePdfReader((s) => s.target)
+  const reading = reader !== null && reader.cardId === cardId
+  useEffect(() => () => pdfReader.closeFor(cardId), [cardId])
+  const readSource = useRef<string | null>(null)
+  const readingSource = reading ? reader.sourceId : null
+
   useEffect(() => {
-    headingRef.current?.focus({ preventScroll: true })
-  }, [cardId])
+    if (readingSource) {
+      readSource.current = readingSource
+      return
+    }
+    // Back from the reader: focus returns to that Source's Open PDF; otherwise to the Page's heading.
+    const from = readSource.current
+    readSource.current = null
+    const button = from ? headingRef.current?.closest('[data-testid="page-panel"]')?.querySelector<HTMLElement>(`[data-source="${CSS.escape(from)}"] .qp-pdf__open`) : null
+    ;(button ?? headingRef.current)?.focus({ preventScroll: true })
+  }, [cardId, readingSource])
 
   // M13: the Page's tools — the Page as a Markdown file, or printed on its own.
   const exportMarkdown = () => {
@@ -251,6 +270,17 @@ export function PagePanel({ cardId, full, onClose }: Props) {
         ? 'Syncing…'
         : 'Synced'
   const label = card ? `Page of ${card.title || 'Untitled'}` : waiting ? 'Page' : 'Page of a removed Card'
+
+  if (reading) {
+    return (
+      <>
+        <Suspense fallback={<section className={`qp-panel${full ? ' is-full' : ''}`} aria-label="Opening the PDF" />}>
+          <PdfReader key={reader.nonce} target={reader} full={full} onClose={() => pdfReader.close()} />
+        </Suspense>
+        <Toast />
+      </>
+    )
+  }
 
   return (
     <section className={`qp-panel${full ? ' is-full' : ''}`} aria-label={label} data-testid="page-panel" data-tour="page" onKeyDown={onKeyDown}>

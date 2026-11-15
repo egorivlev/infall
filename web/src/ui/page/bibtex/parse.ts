@@ -24,6 +24,8 @@ export type BibEntry = {
   doi: string
   url: string
   note: string
+  /** M19: the `file` field as written (Zotero's files; read by fileField.ts); absent when the entry has none. */
+  file?: string
 }
 
 export type BibProblem = { line: number; key: string; reason: string }
@@ -217,7 +219,10 @@ function toEntry(type: string, key: string, line: number, fields: ReadonlyMap<st
   }
 
   const authors = fields.has('author') ? readAuthors(fields.get('author')!) : fields.has('editor') ? readAuthors(fields.get('editor')!) : ''
-  return { key, type, line, title: text('title'), authors, year, doi, url, note: text('note') }
+  const entry: BibEntry = { key, type, line, title: text('title'), authors, year, doi, url, note: text('note') }
+  const file = fields.get('file')
+  if (file !== undefined && file.trim() !== '') entry.file = file
+  return entry
 }
 
 /** Whether only spaces or tabs stand between the start of its line and `index`. */

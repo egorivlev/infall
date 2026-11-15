@@ -1,0 +1,183 @@
+/* The PDF reader (PdfReader.tsx), in the Page panel's place: it reuses .qp-panel for its box. The pages are the
+   PDF's own (white paper, in both themes); everything around them is the app's. */
+
+.qr { font: calc(13px * var(--q-text, 1))/1.4 var(--q-sans); }
+
+.qr-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px 0 10px;
+  border-bottom: 1px solid var(--q-line-soft);
+  background: var(--q-page);
+}
+.qr-back {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--q-ink-2);
+  font-size: calc(12.5px * var(--q-text, 1));
+  cursor: pointer;
+}
+.qr-back:hover { background: var(--q-hover); color: var(--q-ink); }
+.qr-title { display: flex; flex-direction: column; min-width: 0; margin: 0; font: inherit; }
+.qr-title__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 calc(14px * var(--q-text, 1))/1.25 var(--q-serif);
+  color: var(--q-ink);
+}
+.qr-title__file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: calc(10.5px * var(--q-text, 1))/1.3 var(--q-mono); color: var(--q-ink-3); }
+
+.qr-bar, .qr-find {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--q-line-soft);
+  background: var(--q-surface);
+}
+.qr-group { display: inline-flex; align-items: center; gap: 4px; }
+.qr-icon, .qr-tool {
+  flex: none;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--q-ink-2);
+  font-size: calc(12.5px * var(--q-text, 1));
+  cursor: pointer;
+}
+.qr-icon { width: 26px; padding: 0; font-size: calc(15px * var(--q-text, 1)); line-height: 1; }
+.qr-tool { padding: 0 9px; }
+.qr-icon:hover, .qr-tool:hover, .qr-tool[aria-pressed='true'] { background: var(--q-hover); border-color: var(--q-line); color: var(--q-ink); }
+.qr-icon[aria-disabled='true'], .qr-tool[aria-disabled='true'] { color: var(--q-ink-3); background: transparent; border-color: transparent; cursor: not-allowed; }
+.qr-pagefield { display: inline-flex; align-items: center; gap: 6px; }
+.qr-pagefield__input {
+  width: calc(44px * var(--q-text, 1));
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--q-line);
+  border-radius: 4px;
+  background: var(--q-page);
+  color: var(--q-ink);
+  font: calc(12px * var(--q-text, 1)) var(--q-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.qr-pagefield__of { font: calc(12px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.qr-zoom__select {
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--q-line);
+  border-radius: 4px;
+  background: var(--q-page);
+  color: var(--q-ink);
+  font: calc(12px * var(--q-text, 1)) var(--q-mono);
+}
+
+.qr-find { background: var(--q-page); }
+.qr-find__label { flex: 1 1 200px; min-width: 0; max-width: 340px; }
+.qr-find__input { width: 100%; height: 28px; }
+.qr-find__status { min-width: 6em; font: calc(12px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-2); font-variant-numeric: tabular-nums; }
+
+.qr-note {
+  flex: none;
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--q-line-soft);
+  background: var(--q-sunken);
+  font-size: calc(12.5px * var(--q-text, 1));
+  color: var(--q-ink-2);
+}
+
+.qr-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--q-sunken);
+  overscroll-behavior: contain;
+}
+.qr-scroll:focus-visible { outline: 2px solid var(--q-accent); outline-offset: -2px; }
+.qr-state { margin: 0; padding: 32px 24px; color: var(--q-ink-3); }
+.qr-state p { margin: 0 0 12px; color: var(--q-ink-2); }
+.qr-pages { position: relative; }
+
+.qr-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--q-line), 0 1px 3px oklch(0 0 0 / .18);
+  contain: strict;
+}
+.qr-page.is-drawing { background: #f4f4f2; }
+.qr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.qr-page__failed { position: absolute; inset: auto 0 45% 0; margin: 0; text-align: center; color: #555; font-size: calc(12px * var(--q-text, 1)); }
+
+/* pdf.js's text layer (the parts of web/pdf_viewer.css it needs): transparent text exactly over the picture. */
+.qr-text {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  color-scheme: only light;
+  z-index: 1;
+}
+.qr-text :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.qr-text > :not(.markedContent),
+.qr-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.qr-text .markedContent { display: contents; }
+.qr-text ::selection { background: color-mix(in srgb, #2f6fdf, transparent 65%); color: transparent; }
+.qr-text br::selection { background: transparent; }
+.qr-text .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; -webkit-user-select: none; }
+.qr-text.selecting .endOfContent { top: 0; }
+
+/* Find's marks: a tint and an outline (not colour alone); the current one stronger. */
+.qr-text mark.qr-hit {
+  position: static;
+  color: transparent;
+  background: rgb(255 196 0 / .38);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(160 110 0 / .55);
+}
+.qr-text mark.qr-hit.is-active { background: rgb(255 120 0 / .5); box-shadow: 0 0 0 2px rgb(190 70 0 / .9); }
+
+@media (prefers-reduced-motion: reduce) {
+  .qr { animation: none; }
+}

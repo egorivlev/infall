@@ -1,7 +1,9 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import { lookupQuery, lookupSource, newId, ops, page } from '../../lib'
+import { lookupQuery, lookupSource, newId, ops, page, pdfFiles } from '../../lib'
 import type { AttachedSource, LookupResult, Op } from '../../lib'
+import { attachFailure, attachOps, pdfFacts, pdfStep, readyFrom } from '../pdf/attach'
+import type { PreparedPdf } from '../pdf/attach'
 import { useBoardActions } from '../board/useBoardActions'
 import { ImportBibtex } from './bibtex/ImportBibtex'
 import { toBibtex } from './bibtex/write'
@@ -9,21 +11,29 @@ import { exportFile } from './export/exportFile'
 import { fileName } from './files'
 import { LOOKUP_NEEDS_ID, listWords, lookupFailure, registryOf } from './lookupText'
 import { identifierText, parseIdentifier, sourceLink } from './sourceId'
+import { PdfLine } from './SourcePdf'
+import { usePdfDrop, usePdfWork } from './sourcePdfWork'
+import type { PdfWorkApi } from './sourcePdfWork'
 
 const NEEDS_ID = 'This needs a URL starting with http:// or https://, or a DOI such as 10.1103/PhysRevA.52.R2493.'
 
 type RowProps = {
   source: AttachedSource
+  cardId: string
   canEdit: boolean
   onEdit: (id: string) => void
   onRemove: (source: AttachedSource) => void
+  /** M19: the work on this Source's PDF, shared with the drop on the section. */
+  pdf: PdfWorkApi
+  /** A file is being dragged over this row. */
+  dropping: boolean
 }
 
-const SourceRow = memo(function SourceRow({ source, canEdit, onEdit, onRemove }: RowProps) {
+const SourceRow = memo(function SourceRow({ source, cardId, canEdit, onEdit, onRemove, pdf, dropping }: RowProps) {
   const link = sourceLink(source)
   const name = source.title || 'Untitled Source'
   return (
-    <li className="qp-source" data-source={source.id} data-testid={`source-${source.id}`}>
+    <li className={`qp-source${dropping ? ' is-drop' : ''}`} data-source={source.id} data-testid={`source-${source.id}`}>
       <span className={`qp-source__title${source.title ? '' : ' is-empty'}`}>{name}</span>
       <span className="qp-source__year">{source.year}</span>
       <span className="qp-source__authors">{source.authors}</span>
@@ -44,6 +54,7 @@ const SourceRow = memo(function SourceRow({ source, canEdit, onEdit, onRemove }:
           </button>
         </span>
       )}
+      <PdfLine source={source} cardId={cardId} canEdit={canEdit} api={pdf} />
     </li>
   )
 })
@@ -60,6 +71,14 @@ type Look =
   | { kind: 'note'; text: string }
   | { kind: 'failed'; text: string }
   | { kind: 'differs'; registry: string; found: Partial<Record<Detail, string>> }
+
+/** M19, decision 9: after Look up answered for an arXiv id, the server may fetch that paper's PDF — on this button only. */
+type Fetch =
+  | { kind: 'none' }
+  | { kind: 'offer'; id: string }
+  | { kind: 'asking'; id: string }
+  | { kind: 'ready'; id: string; pdf: PreparedPdf }
+  | { kind: 'failed'; id: string; text: string }
 
 type FormProps = {
   cardId: string
@@ -80,6 +99,9 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
   const [year, setYear] = useState(editing?.year ?? '')
   const [touched, setTouched] = useState(false)
   const [look, setLook] = useState<Look>({ kind: 'idle' })
+  const [fetchPdf, setFetchPdf] = useState<Fetch>({ kind: 'none' })
+  const fetching = useRef(0)
+  useEffect(() => () => void fetching.current++, [])
   const lookNoteId = useId()
   const idInputId = useId()
   // The answer that is still wanted: typing another identifier, or closing the form, makes an older one harmless.
@@ -111,6 +133,8 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
       return
     }
     if (ticket !== asking.current) return
+    // An arXiv paper: its PDF can be fetched (not for a Source that has one already).
+    if ('arxiv' in query && !editing?.pdf) setFetchPdf((f) => (f.kind === 'ready' && f.id === query.arxiv ? f : { kind: 'offer', id: query.arxiv }))
     // A bare arXiv id is not an address a Source can keep: put the paper's address (or DOI) in its place.
     if (!parseIdentifier(idText)) {
       const better = found.url ?? (found.doi ? `doi:${found.doi}` : '')
@@ -140,6 +164,20 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
           ? `${registry} knows this one but has no title, authors or year for it. Fill them in by hand.`
           : `The fields already match what ${registry} has.`,
     })
+  }
+
+  const fetchFromArxiv = async () => {
+    if (fetchPdf.kind !== 'offer' && fetchPdf.kind !== 'failed') return
+    const id = fetchPdf.id
+    const ticket = ++fetching.current
+    setFetchPdf({ kind: 'asking', id })
+    try {
+      const stored = await pdfFiles.fetchArxiv(id)
+      const pdf = await readyFrom(stored, `${id.replace('/', '_')}.pdf`)
+      if (ticket === fetching.current) setFetchPdf({ kind: 'ready', id, pdf })
+    } catch (e) {
+      if (ticket === fetching.current) setFetchPdf({ kind: 'failed', id, text: attachFailure(e) })
+    }
   }
 
   const replaceAll = () => {
@@ -184,7 +222,12 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
         const value = fields[field].trim()
         if (value !== editing[field]) batch.push(ops.setSourceField(editing.id, field, value))
       }
-      void actions.submit(batch)
+      if (fetchPdf.kind === 'ready') {
+        // Only the PDF changed: the step is named for it.
+        const label = batch.length === 0 ? pdfStep.attach(title.trim() || editing.title) : undefined
+        batch.push(...attachOps(editing.id, fetchPdf.pdf))
+        void actions.submit(batch, label ? { label } : undefined)
+      } else void actions.submit(batch)
     } else if (existing) {
       if (!onThisCard) void actions.submit([ops.attach({ card: cardId, source: existing.id })])
     } else {
@@ -193,8 +236,10 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
       if (title.trim()) details.title = title.trim()
       if (authors.trim()) details.authors = authors.trim()
       if (year.trim()) details.year = year.trim()
-      // One batch: the Source and its place on this Card arrive together or not at all.
-      void actions.submit([ops.createSource({ id, ...parsed, ...details }), ops.attach({ card: cardId, source: id })])
+      // One batch: the Source, its place on this Card (and its PDF, when one was fetched) arrive together or not at all.
+      const batch = [ops.createSource({ id, ...parsed, ...details }), ops.attach({ card: cardId, source: id })]
+      if (fetchPdf.kind === 'ready') batch.push(...attachOps(id, fetchPdf.pdf))
+      void actions.submit(batch)
     }
     onDone()
   }
@@ -231,6 +276,10 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
               if (look.kind !== 'idle') {
                 asking.current++
                 setLook({ kind: 'idle' })
+              }
+              if (fetchPdf.kind !== 'none') {
+                fetching.current++
+                setFetchPdf({ kind: 'none' })
               }
             }}
             onBlur={() => setTouched(idText.trim() !== '')}
@@ -274,6 +323,32 @@ function SourceForm({ cardId, attached, editing, onDone }: FormProps) {
                 </button>
               </div>
             </div>
+          )}
+        </div>
+      )}
+      {!existing && fetchPdf.kind !== 'none' && (
+        <div className="qp-fetch" aria-live="polite">
+          {(fetchPdf.kind === 'offer' || fetchPdf.kind === 'asking' || fetchPdf.kind === 'failed') && (
+            <button
+              type="button"
+              className="q-btn q-btn--sm"
+              aria-disabled={fetchPdf.kind === 'asking' ? true : undefined}
+              title="Infall’s server downloads it from arxiv.org; only the arXiv id is sent"
+              onClick={() => void fetchFromArxiv()}
+            >
+              {fetchPdf.kind === 'asking' ? 'Fetching the PDF…' : fetchPdf.kind === 'failed' ? 'Try fetching the PDF again' : 'Fetch the PDF from arXiv'}
+            </button>
+          )}
+          {fetchPdf.kind === 'asking' && <p className="qp-fetch__note">Asking arXiv for arXiv:{fetchPdf.id}… The form stays usable meanwhile.</p>}
+          {fetchPdf.kind === 'ready' && (
+            <p className="qp-fetch__note" role="status">
+              The PDF from arXiv is ready ({pdfFacts(fetchPdf.pdf)}). It is attached when you press {editing ? 'Update Source' : 'Add Source'}.
+            </p>
+          )}
+          {fetchPdf.kind === 'failed' && (
+            <p className="qp-fetch__note is-failed" role="alert">
+              {fetchPdf.text}
+            </p>
           )}
         </div>
       )}
@@ -330,6 +405,8 @@ type Props = {
 /** The Sources attached to this Card. `form` is 'add', the id of the Source being edited, or null. */
 export function Sources({ cardId, cardTitle, sources, canEdit }: Props) {
   const actions = useBoardActions()
+  const pdf = usePdfWork(cardId)
+  const drop = usePdfDrop(sources, canEdit, pdf)
   const rootRef = useRef<HTMLElement>(null)
   const [form, setForm] = useState<string | null>(null)
   const [importing, setImporting] = useState<HTMLElement | null>(null)
@@ -363,7 +440,13 @@ export function Sources({ cardId, cardTitle, sources, canEdit }: Props) {
   }
 
   return (
-    <section className="qp-sources" ref={rootRef} data-tour="sources" aria-labelledby="qp-sources-head">
+    <section
+      className={`qp-sources${drop.over !== null ? ' is-drop' : ''}`}
+      ref={rootRef}
+      data-tour="sources"
+      aria-labelledby="qp-sources-head"
+      {...drop.handlers}
+    >
       <h2 className="qp-sources__head" id="qp-sources-head">
         <span className="q-caps">Sources</span> <span className="qp-sources__n">{sources.length}</span>
       </h2>
@@ -375,12 +458,26 @@ export function Sources({ cardId, cardTitle, sources, canEdit }: Props) {
                 <SourceForm cardId={cardId} attached={sources} editing={s} onDone={close} />
               </li>
             ) : (
-              <SourceRow key={s.id} source={s} canEdit={canEdit} onEdit={handlers.edit} onRemove={handlers.remove} />
+              <SourceRow
+                key={s.id}
+                source={s}
+                cardId={cardId}
+                canEdit={canEdit}
+                onEdit={handlers.edit}
+                onRemove={handlers.remove}
+                pdf={pdf}
+                dropping={drop.over === s.id}
+              />
             ),
           )}
         </ul>
       )}
       {sources.length === 0 && shown !== 'add' && <p className="qp-sources__none">No Sources on this Card yet.</p>}
+      {drop.note && (
+        <p className="qp-sources__drop" role="status">
+          {drop.note}
+        </p>
+      )}
       {shown === 'add' && (
         <div className="qp-source qp-source--form">
           <SourceForm cardId={cardId} attached={sources} onDone={close} />

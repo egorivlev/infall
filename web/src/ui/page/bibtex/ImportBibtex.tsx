@@ -3,10 +3,14 @@ import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'r
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ApiError, board, page, undo } from '../../../lib'
+import { preparePdf } from '../../pdf/attach'
+import { desktopFolders } from '../../pdf/desktop'
 import { readFileText } from '../files'
 import { count } from '../people'
 import { packBatches, planBoardImport, planCardImport } from './importPlan'
 import type { ImportPlan } from './importPlan'
+import { addPdfOps, entriesWithPdf, gatherPdfs, outcomeLines } from './importPdfs'
+import type { PdfOutcome } from './importPdfs'
 import { describeProblem, parseBibtex } from './parse'
 
 /** Where the entries go: Sources on one Card, or Cards in a new Frame on the Board. */
@@ -32,9 +36,10 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 type Stage =
   | { kind: 'choose' }
+  | { kind: 'attaching'; done: number; total: number }
   | { kind: 'importing'; done: number; total: number }
-  | { kind: 'done'; total: number; created: number; reused: number }
-  | { kind: 'stopped'; done: number; total: number; why: string }
+  | { kind: 'done'; total: number; created: number; reused: number; pdfs: PdfOutcome | null }
+  | { kind: 'stopped'; done: number; total: number; why: string; pdfs: PdfOutcome | null }
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -72,6 +77,12 @@ function stoppedBecause(error: unknown): string {
   return 'something unexpected went wrong.'
 }
 
+/** The report's line when the file named PDFs but none were attached. */
+function noFilesLine(n: number, desktop: boolean): string {
+  const had = n === 1 ? '1 entry had a PDF in its file field' : `${n} entries had a PDF in their file field`
+  return desktop ? `${had}; no folder was picked, so no PDF was attached.` : `${had}; in a browser no PDF is attached (the desktop app can attach them).`
+}
+
 const fileTitle = (name: string) => name.replace(/\.(bib|bibtex|txt)$/i, '').trim()
 
 /**
@@ -90,7 +101,12 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
   const [stage, setStage] = useState<Stage>({ kind: 'choose' })
   const shown = useDeferredValue(text)
   const parsed = useMemo(() => parseBibtex(shown), [shown])
-  const busy = stage.kind === 'importing'
+  const busy = stage.kind === 'importing' || stage.kind === 'attaching'
+  // M19 (decision 10): the PDFs an entry's `file` field names — attached in the desktop app from a folder the
+  // person picks; in a browser the entries come in without them, and the report says how many had one.
+  const folders = useMemo(() => desktopFolders(), [])
+  const [folder, setFolder] = useState<{ token: string; name: string } | null>(null)
+  const [folderError, setFolderError] = useState('')
   const closeRef = useRef(onClose)
   useEffect(() => {
     closeRef.current = onClose
@@ -126,20 +142,46 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
   }
 
   const n = parsed.entries.length
+  const withPdf = useMemo(() => entriesWithPdf(parsed.entries), [parsed.entries])
+
+  const pickFolder = async () => {
+    if (!folders) return
+    setFolderError('')
+    try {
+      const picked = await folders.pick()
+      if (picked) setFolder(picked)
+    } catch (e) {
+      setFolderError(`The folder could not be opened. ${e instanceof Error ? e.message : ''}`.trim())
+    }
+  }
+
   const start = async () => {
     if (busy || n === 0) return
     const entries = parsed.entries
+    // The PDFs first: each is read from the folder and stored, so the Sources' fields can go in with the entries.
+    let gathered: Awaited<ReturnType<typeof gatherPdfs>> | null = null
+    if (folders && folder && withPdf > 0) {
+      setStage({ kind: 'attaching', done: 0, total: withPdf })
+      gathered = await gatherPdfs(
+        entries,
+        (path) => folders.read(folder.token, path),
+        (bytes, fileName) => preparePdf(bytes, fileName),
+        (done, total) => setStage({ kind: 'attaching', done, total }),
+      )
+    }
     const plan =
       target.kind === 'card'
         ? planCardImport(entries, target.cardId, (input) => page.findSource(input))
         : planBoardImport(entries, target.place(), fileTitle(name) || 'Imported BibTeX', (input) => page.findSource(input))
+    if (gathered) addPdfOps(plan, gathered.byEntry, gathered.outcome)
+    const pdfs = gathered?.outcome ?? null
     setStage({ kind: 'importing', done: 0, total: entries.length })
     const result = await send(plan, entries.length, (done) => setStage({ kind: 'importing', done, total: entries.length }))
     if (result.error !== undefined) {
-      setStage({ kind: 'stopped', done: result.done, total: entries.length, why: stoppedBecause(result.error) })
+      setStage({ kind: 'stopped', done: result.done, total: entries.length, why: stoppedBecause(result.error), pdfs })
       return
     }
-    setStage({ kind: 'done', total: entries.length, created: plan.created, reused: plan.reused })
+    setStage({ kind: 'done', total: entries.length, created: plan.created, reused: plan.reused, pdfs })
     if (target.kind === 'board' && plan.frame) target.onFrame(plan.frame.id)
   }
 
@@ -180,6 +222,8 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
         `Imported ${count(stage.total, 'entry', 'entries')}${onCard ? '' : ` as ${count(stage.total, 'Card')}`}.`,
         stage.created > 0 && `${count(stage.created, 'new Source')}.`,
         stage.reused > 0 && `Reused ${count(stage.reused, 'Source')} already in Infall.`,
+        ...(stage.pdfs ? outcomeLines(stage.pdfs, folder?.name ?? 'the folder') : []),
+        !stage.pdfs && withPdf > 0 && noFilesLine(withPdf, Boolean(folders)),
       ]
       return lines.filter((l): l is string => Boolean(l))
     }
@@ -246,6 +290,44 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
                 setName('')
               }}
             />
+            {withPdf > 0 && (
+              <div className="qp-import__pdfs" data-testid="bibtex-pdfs">
+                {folders ? (
+                  <>
+                    <p className="qp-import__pdfs-line">
+                      {count(withPdf, 'entry names a PDF', 'entries name a PDF')} in its <code>file</code> field.{' '}
+                      {folder ? (
+                        <>
+                          PDFs from <b>“{folder.name}”</b> are attached to their Sources.
+                        </>
+                      ) : (
+                        'Pick the folder the paths start from — the one Zotero exported to, or Zotero’s storage folder — to attach them.'
+                      )}
+                    </p>
+                    <div className="qp-import__pdfs-actions">
+                      <button type="button" className="q-btn q-btn--sm" onClick={() => void pickFolder()}>
+                        {folder ? 'Choose another folder…' : 'Attach the PDFs…'}
+                      </button>
+                      {folder && (
+                        <button type="button" className="q-btn q-btn--sm q-btn--quiet" onClick={() => setFolder(null)}>
+                          Import without PDFs
+                        </button>
+                      )}
+                    </div>
+                    {folderError && (
+                      <p className="q-error" role="alert">
+                        {folderError}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="qp-import__pdfs-line">
+                    {count(withPdf, 'entry names a PDF', 'entries name a PDF')} in its <code>file</code> field. In a browser the entries come in without
+                    their PDFs; the desktop app can attach them.
+                  </p>
+                )}
+              </div>
+            )}
             <p className="qp-import__found" role="status" aria-live="polite">
               {text.trim() === ''
                 ? 'Zotero, Mendeley and JabRef export BibTeX: in Zotero, File › Export Library… › BibTeX.'
@@ -254,6 +336,15 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
                   : `${count(n, 'entry', 'entries')} found${name ? ` in “${name}”` : ''}.${problems.length ? ` ${count(problems.length, 'entry', 'entries')} could not be read.` : ''}`}
             </p>
           </>
+        )}
+
+        {stage.kind === 'attaching' && (
+          <div className="qp-import__progress">
+            <progress max={stage.total} value={stage.done} aria-label="PDFs read and sent" />
+            <p role="status">
+              Attaching the PDFs… {stage.done} of {stage.total}
+            </p>
+          </div>
         )}
 
         {stage.kind === 'importing' && (
@@ -273,7 +364,7 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
           </div>
         )}
 
-        {problems.length > 0 && stage.kind !== 'importing' && (
+        {problems.length > 0 && !busy && (
           <details className="qp-import__problems" open={stage.kind !== 'choose'}>
             <summary>
               Could not read {count(problems.length, 'entry', 'entries')}
@@ -298,7 +389,7 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
                 {n === 0 ? 'Import' : `Import ${count(n, 'entry', 'entries')}`}
               </button>
             </>
-          ) : stage.kind === 'importing' ? (
+          ) : stage.kind === 'importing' || stage.kind === 'attaching' ? (
             <button type="button" className="q-btn" disabled>
               Importing…
             </button>

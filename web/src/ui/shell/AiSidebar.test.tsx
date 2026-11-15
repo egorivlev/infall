@@ -20,6 +20,9 @@ vi.mock('../../lib', () => ({
   useBoard: () => h.board,
   useAi: () => h.ai,
   useSuggestions: () => [],
+  // M19: the search box asks for words in PDFs; nothing is found here.
+  useSources: () => [],
+  pdfFiles: { search: async () => [] },
   useRuns: () => ({ runner: { available: false, reason: 'browser' }, live: null, last: null }), // nothing runs: the top bar has no Runner monitor
   useMembers: () => [],
   useBranches: (): BranchInfo[] => [],
