@@ -439,6 +439,13 @@ const LICENCES = [
   { font: 'Source Serif 4', file: '/licenses/LICENSE-Source-Serif-4.txt' },
 ]
 
+/** M19: the PDF reader's renderer and what it ships with. */
+const SOFTWARE = [
+  { name: 'PDF.js', note: 'Apache License 2.0', file: '/licenses/LICENSE-pdf.js.txt' },
+  { name: 'PDF.js standard fonts (Foxit, Liberation)', note: 'their own licences', file: '/licenses/LICENSE-pdf.js-fonts.txt' },
+  { name: 'PDF.js image decoders (OpenJPEG, PDFium JBIG2)', note: 'BSD licences', file: '/licenses/LICENSE-pdf.js-decoders.txt' },
+]
+
 function About({ member, headingRef }: { member: Member } & HeadingProps) {
   const ws = useWorkspace()
   const tutorialWorkspace = ws.kind === 'local' && ws.preset === TUTORIAL_PRESET
@@ -484,6 +491,20 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
               <a href={l.file} target="_blank" rel="noreferrer noopener">
                 {l.font}
               </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="q-settings__card q-set-card">
+        <h2 className="q-panel-title">Software licences</h2>
+        <p className="q-hint">PDFs are read with PDF.js, which comes with Infall: nothing is fetched from the internet to show them.</p>
+        <ul className="q-settings__list">
+          {SOFTWARE.map((l) => (
+            <li key={l.file}>
+              <a href={l.file} target="_blank" rel="noreferrer noopener">
+                {l.name}
+              </a>{' '}
+              <span className="q-hint">— {l.note}</span>
             </li>
           ))}
         </ul>

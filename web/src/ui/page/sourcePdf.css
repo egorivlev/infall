@@ -1,0 +1,64 @@
+/* M19: a Source's PDF in its row (SourcePdf.tsx), and Fetch the PDF from arXiv in the Source form. */
+.qp-pdf {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-width: 0;
+}
+.qp-pdf__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.qp-pdf__file { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.qp-pdf__chip {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--q-line);
+  border-radius: 3px;
+  font: 500 calc(9.5px * var(--q-text, 1))/1.4 var(--q-mono);
+  letter-spacing: .07em;
+  color: var(--q-ink-2);
+}
+.qp-pdf__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: calc(11.5px * var(--q-text, 1)) var(--q-mono);
+  color: var(--q-ink-2);
+}
+.qp-pdf__facts { flex: none; font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); white-space: nowrap; }
+.qp-pdf__actions { display: inline-flex; align-items: center; gap: 14px; }
+.qp-pdf__open {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--q-line);
+  border-radius: 5px;
+  background: var(--q-raised);
+  color: var(--q-ink);
+  font-size: calc(12px * var(--q-text, 1));
+  cursor: pointer;
+}
+.qp-pdf__open:hover { background: var(--q-hover); }
+/* Attach PDF… only shows on hover or focus, like Edit and Remove; Open PDF always shows. */
+.qp-pdf[data-pdf='no'] .qp-pdf__attach { opacity: 0; transition: opacity var(--q-fast) var(--q-ease); }
+.qp-source:hover .qp-pdf__attach, .qp-source:focus-within .qp-pdf__attach, .qp-source.is-drop .qp-pdf__attach { opacity: 1; }
+.qp-pdf[data-pdf='no']:not(:has(.qp-pdf__attach)):not(:has(.qp-pdf__sending, .qp-pdf__failed)) { display: none; }
+.qp-pdf__sending, .qp-pdf__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.qp-pdf__state { font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-2); }
+.qp-pdf__bar { position: relative; width: 120px; height: 4px; border-radius: 2px; background: var(--q-line-soft); overflow: hidden; }
+.qp-pdf__bar > span { position: absolute; inset: 0 auto 0 0; background: var(--q-accent); }
+.qp-pdf__failed { flex-basis: 100%; margin: 0; font-size: calc(12px * var(--q-text, 1)); color: var(--q-st-question); }
+
+/* Dropping a file on the Sources section. */
+.qp-sources.is-drop { outline: 2px dashed var(--q-accent); outline-offset: -2px; }
+.qp-source.is-drop { background: var(--q-accent-soft); }
+.qp-sources__drop { margin: 0; padding: 8px 12px; border-top: 1px solid var(--q-line-soft); font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-2); }
+
+/* Fetch the PDF from arXiv (the Source form). */
+.qp-fetch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.qp-fetch__note { margin: 0; font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-2); }
+.qp-fetch__note.is-failed { color: var(--q-st-question); }
+
+@media (prefers-reduced-motion: reduce) {
+  .qp-pdf[data-pdf='no'] .qp-pdf__attach { transition: none; }
+}

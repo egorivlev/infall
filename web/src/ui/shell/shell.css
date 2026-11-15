@@ -89,6 +89,13 @@
 .q-search__title--empty { color: var(--q-ink-3); font-style: italic; }
 .q-search__sum { font-size: calc(11.5px * var(--q-text, 1)); color: var(--q-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .q-search__none { margin: 0; padding: 10px 8px; font-size: calc(12.5px * var(--q-text, 1)); color: var(--q-ink-3); }
+/* M19: places in the PDFs of Sources. */
+.q-search__group { padding: 8px 8px 3px; border-top: 1px solid var(--q-line-soft); margin-top: 3px; font: 500 calc(10px * var(--q-text, 1))/1.2 var(--q-mono); letter-spacing: .07em; text-transform: uppercase; color: var(--q-ink-3); }
+.q-search__group:first-child { border-top: 0; margin-top: 0; padding-top: 4px; }
+/* Two lines at most, so ", page N" is not cut off by a long title. */
+.q-search__where { font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-2); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.q-search__where b { font-weight: 600; color: var(--q-ink); }
+.q-search__opt--pdf .q-search__sum mark { background: var(--q-accent-soft); color: var(--q-ink); border-radius: 2px; box-shadow: 0 0 0 1px var(--q-accent-soft); }
 
 .q-guest-badge { display: flex; align-items: center; gap: var(--q-s2); height: 24px; padding: 0 10px; border-radius: var(--q-r); border: 1px solid var(--q-st-question); font-size: calc(12px * var(--q-text, 1)); white-space: nowrap; }
 .q-guest-badge svg { color: var(--q-st-question); }

@@ -249,6 +249,11 @@ export type SourceVM = {
   year: string
   note: string
   cards: string[] // ids of live Cards it is attached to
+  /** M19: the SHA-256 of the Source's PDF (`pdf`); absent when it has none. The other three only with it. */
+  pdf?: string
+  pdfName?: string // `pdf_name`
+  pdfSize?: number // `pdf_size`, bytes
+  pdfPages?: number // `pdf_pages`; absent while unknown
 }
 
 /** A Source as attached to one Card. `attachment` is the Attachment entity to remove to detach. */
@@ -337,6 +342,12 @@ export type QoopDesktop = {
   moveFile?: () => Promise<Uint8Array>
   /** M18: the import answered (`ok`) or failed; ok marks the Local Workspace Moved and forgets the move. */
   moveDone?: (result: { ok: boolean }) => Promise<void>
+  /** M19: hands a PDF to the system's own viewer (written to a private temp file first). Absent in an older app. */
+  openExternally?: (file: { suggestedName: string; bytes: Uint8Array }) => Promise<void>
+  /** M19 (Import BibTeX with files): the system's folder picker; a token for the picked folder, or null when cancelled. */
+  pickFolder?: () => Promise<{ token: string; name: string } | null>
+  /** M19: a PDF inside the folder `token` stands for (a path relative to it, or absolute inside it); rejects outside it, over 100 MB, or not a PDF. */
+  readFileIn?: (token: string, path: string) => Promise<Uint8Array>
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }

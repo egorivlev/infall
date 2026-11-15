@@ -8,7 +8,7 @@ import type { Op } from '../../../lib'
 import type { BibEntry } from './parse'
 
 /** The Source on this Branch with the same DOI or address, if any (`page.findSource`). */
-export type FindSource = (input: { url?: string; doi?: string }) => { id: string; cards: readonly string[] } | undefined
+export type FindSource = (input: { url?: string; doi?: string }) => { id: string; cards: readonly string[]; pdf?: string } | undefined
 
 /** Ops in the order they must be applied, kept per entry so a batch never splits one entry. */
 export type ImportPlan = {
@@ -21,6 +21,8 @@ export type ImportPlan = {
   reused: number
   /** The new Frame (Board import only). */
   frame?: { id: string; x: number; y: number; w: number; h: number }
+  /** M19: per entry, in the file's order: the Source it uses, the group its ops are in, and the PDF that Source already has. */
+  entries: { source: string; group: number; pdf?: string }[]
 }
 
 /** One Text value may hold at most this many characters (api.md §11). */
@@ -55,17 +57,17 @@ function sourcesFor(entries: readonly BibEntry[], find: FindSource) {
     const existing = key ? find(doi ? { doi } : { url }) : undefined
     if (existing) {
       reused++
-      return { id: existing.id, cards: existing.cards, create: null as Op | null }
+      return { id: existing.id, cards: existing.cards, create: null as Op | null, pdf: existing.pdf }
     }
     const earlier = key ? made.get(key) : undefined
     if (earlier) {
       reused++
-      return { id: earlier, cards: [] as readonly string[], create: null }
+      return { id: earlier, cards: [] as readonly string[], create: null, pdf: undefined as string | undefined }
     }
     const id = newId()
     if (key) made.set(key, id)
     created++
-    return { id, cards: [] as readonly string[], create: ops.createSource({ id, ...sourceFields(e, doi, url) }) }
+    return { id, cards: [] as readonly string[], create: ops.createSource({ id, ...sourceFields(e, doi, url) }), pdf: undefined as string | undefined }
   })
   return { out, created, reused }
 }
@@ -80,7 +82,8 @@ export function planCardImport(entries: readonly BibEntry[], cardId: string, fin
     onCard.add(id)
     return group
   })
-  return { groups, sizes: groups.map(() => 1), created, reused }
+  const list = out.map((o, i) => ({ source: o.id, group: i, ...(o.pdf ? { pdf: o.pdf } : {}) }))
+  return { groups, sizes: groups.map(() => 1), created, reused, entries: list }
 }
 
 export const GRID_GAP = 24
@@ -108,19 +111,21 @@ export function planBoardImport(entries: readonly BibEntry[], at: { x: number; y
   }
   const groups: Op[][] = [[ops.createFrame({ ...frame, title: clip(frameTitle, 200) })]]
   const sizes = [0]
+  const list: ImportPlan['entries'] = []
   entries.forEach((e, i) => {
     const card = newId()
     const x = frame.x + FRAME_PAD + (i % cols) * (CARD_W + GRID_GAP)
     const y = frame.y + FRAME_PAD + Math.floor(i / cols) * (CARD_H + GRID_GAP)
     const title = clip(e.title || e.key || '', 2000)
-    const { id, create } = out[i]!
+    const { id, create, pdf } = out[i]!
+    list.push({ source: id, group: groups.length, ...(pdf ? { pdf } : {}) })
     const group: Op[] = [ops.createCard({ id: card, x, y, status: 'idea', ...(title ? { title } : {}) })]
     if (create) group.push(create)
     group.push(ops.attach({ card, source: id }))
     groups.push(group)
     sizes.push(1)
   })
-  return { groups, sizes, created, reused, frame }
+  return { groups, sizes, created, reused, frame, entries: list }
 }
 
 /** At most this many ops per request (the sync layer's limit) … */

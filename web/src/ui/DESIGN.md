@@ -412,3 +412,40 @@ Spec: [docs/specs/team-move.md](../../../docs/specs/team-move.md) (binding). Dat
 - The To-dos screen pattern: the header starts with two tabs (links) "To-dos" | "For you n", then serif "For you", mono "n unseen · m mentions", **Mark all as seen**. One row per mention, newest first: avatar, "**Ana** mentioned you on Card <title>" (or "a Card that was removed"), time; unseen rows have a stronger border and "● NEW" (word and shape, not colour alone). A row is a button: it goes to the Board, opens the Page at the Comment and marks the mentions up to it as seen.
 - Empty: serif "No mentions yet", "When a Member writes @<you> in a Comment, it shows here, newest first." Loading after 150 ms: "Loading mentions…".
 - The notice (`ui/shell/MentionNotice.tsx`): bottom right, `role="status"`, for 8 s (held while hovered or focused): "**Ana** mentioned you on Card <title>." **Open** ×.
+
+
+---
+
+# M19 Part 1 — a PDF on a Source
+
+Spec: [docs/specs/pdf-sources.md](../../../docs/specs/pdf-sources.md) Part 1 (binding). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M19 Part 1". Code: `ui/page/SourcePdf.tsx` + `sourcePdfWork.ts` (the row's PDF line, the drop), `ui/page/Sources.tsx` (Fetch the PDF from arXiv), `ui/pdf/` (`PdfReader.tsx`, `PdfPage.tsx`, `layout.ts`, `find.ts`, `remember.ts`, `text.ts`, `attach.ts`, `engine.ts` + `engineImpl.ts` — pdf.js, loaded lazily with the reader), `ui/shell/searchPdf.ts`, `ui/page/bibtex/fileField.ts` + `importPdfs.ts`. Vocabulary: Source, PDF, Page, Card, Member, Guest. Never "document" or "attachment" for the Source.
+
+## In a Source row (Page → Sources)
+- A line under the row: chip "PDF" (mono 9.5 caps), the file name (mono, ellipsis, full name in `title`), "12 pages · 1.4 MB" (mono `--q-ink-3`), and **Open PDF** (small outlined button, always shown). Members also get **Replace…** and **Remove PDF**. Without a PDF, Members see **Attach PDF…** on hover/focus like Edit (`title` "Or drop a PDF file on this Source"). Guests and a moved copy: Open PDF only.
+- Attaching: "Attaching “x.pdf”… 45 %", a 120px bar (`role="progressbar"`) and **Stop**; at 100 % "reading its pages". A refusal: the server's sentence in `--q-st-question` (`role="alert"`) + **Dismiss**. Not a PDF: "“notes.txt” is not a PDF. Attach a .pdf file."
+- Replace (picked, or dropped on a Source that has one) asks inline: "Replace “old.pdf” with “new.pdf”? Undo brings the old one back." **Replace** (focused) / **Keep the old one**.
+- Remove PDF: at once, toast "Removed the PDF from <title>." with **Undo**.
+- Undo steps: "Attach a PDF to <title>", "Replace the PDF of <title>", "Remove the PDF from <title>" ("Untitled Source" without a title).
+- Drop a file on the Sources section: dashed accent outline; on a row, that row tints `--q-accent-soft` and gets it; elsewhere the only Source gets it; otherwise "Drop the PDF on the Source it belongs to." / "Add the Source first, then attach its PDF."
+
+## The Source form — Fetch the PDF from arXiv (decision 9)
+- After Look up answered for an arXiv id (not a DOI; not on a Source that has a PDF): **Fetch the PDF from arXiv** (`title` "Infall’s server downloads it from arxiv.org; only the arXiv id is sent"). Asking: "Fetching the PDF…" and "Asking arXiv for arXiv:<id>… The form stays usable meanwhile." Done: "The PDF from arXiv is ready (12 pages · 1.4 MB). It is attached when you press Add Source." (Update Source when editing). Failed: the server's sentence + **Try fetching the PDF again**. Typing another identifier forgets it.
+
+## The reader (decision 7) — in the Page panel's place
+- The Page panel's box (`qp-panel`; ⤢ full width works). Header: **‹ Page** ("Back to the Page", Esc), the Source title (serif 14/600) over the file name (mono 10.5), **Save a copy** (browser, or an app without `openExternally`) / **Open in the system viewer**, ⤢, ✕ "Close the PDF". Toolbar (`role="toolbar"` "PDF", wraps when narrow): ‹ "Previous page", page field ("Page, of N") + "of N", › "Next page"; − "Zoom out", zoom `<select>` ("Fit width (87 %)", 25 %…400 %), + "Zoom in", **Fit width** (`aria-pressed`, the default; fits the widest page); **Find** at the right.
+- Pages: white paper on `--q-sunken` in both themes, 12px apart, centred, a hairline and a small shadow. Only the pages in view and two either side are in the document (a 300-page PDF keeps ≤ 7); each is drawn into a new canvas that replaces the old one when ready (no blank flash on zoom), at device pixels × interface scale, capped at 16 Mpx per page. pdf.js's text layer lies over each page: selection and copy are the browser's own.
+- Keys (anywhere in the reader but a field): ← / PageUp previous page, → / PageDown next, Home / End, ↑ ↓ scroll, + / − zoom, 0 fit width, ⌘F / Ctrl+F Find (also when nothing has focus), Esc closes Find, then the reader. Focus goes into the pages on open, and back to that Source's Open PDF on close.
+- Find (`role="search"`): field "Find in this PDF"; status "3 of 12" / "No matches" / "Reading the text…" / "This PDF has no text to search or select." (mono, tabular); ↑ "Previous match" (⇧Enter), ↓ "Next match" (Enter), ✕ "Close Find". Matches come from the stored text (case ignored, any spacing); marks on the page are an amber tint with a 1px outline, the current one stronger (2px) — not colour alone. The current match is brought to the middle of the view; nothing scrolls smoothly.
+- A PDF without text: a quiet strip under the toolbar, "This PDF has no text to search or select."
+- Opening: "Opening the PDF…" after 150 ms. Failure: "The PDF could not be opened. <why>" + **Try again**.
+- The page each PDF was left at is remembered on this device (`localStorage` "infall-pdf-pages", the newest 200 PDFs).
+
+## Search (⌘K) — decision 8
+- Under the Cards, a group "IN PDFS" (mono caps): one option per page — "in the PDF of **<Source title>**, page N" (two lines at most) and the snippet with the words marked (`--q-accent-soft`). Choosing it goes to the Board, focuses the Card, opens its Page, and the reader at that page with Find showing the words and that match chosen.
+
+## Import BibTeX with files — decision 10
+- When entries have a `file = {…}` field naming a PDF, a box under the file field. Desktop app: "N entries name a PDF in its file field. Pick the folder the paths start from — the one Zotero exported to, or Zotero’s storage folder — to attach them." + **Attach the PDFs…**; after picking: "PDFs from “<folder>” are attached to their Sources." + **Choose another folder…** / **Import without PDFs**. Browser: "… In a browser the entries come in without their PDFs; the desktop app can attach them."
+- The import first reads and sends the PDFs ("Attaching the PDFs… 3 of 12"), then the entries; the PDFs' fields go into the same batches, so the import stays one Undo step. Report lines: "Attached 10 PDFs.", "2 PDFs were not found in “<folder>”: “a.pdf”, “b.pdf”.", "1 PDF is larger than the server takes and was left out: “x.pdf”.", "“y.pdf” could not be attached: <why>.", "1 Source already had a PDF; it was kept."; in a browser "N entries had a PDF in their file field; in a browser no PDF is attached (the desktop app can attach them)."
+
+## Settings → About
+- A card "Software licences": PDF.js (Apache License 2.0), PDF.js standard fonts (Foxit, Liberation), PDF.js image decoders (OpenJPEG, PDFium JBIG2) — files in `public/licenses/`.

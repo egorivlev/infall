@@ -705,3 +705,32 @@ updateSentence(name), notSetUpSentence(name)
 - **Staleness**: a result is of other code when its hash differs (`code`, said first), its `lang` (absent: python) differs from the Run's (`lang`), or its `env.name` (absent: none) differs from the environment the Run asks for (`env`; Python and Q# only). The language and environment are known at once, without hashing.
 - **Server** (not built here; `crates/core/src/schema.rs` today refuses unknown Block fields): it must accept on a Block `lang` (Text, `^[a-z][a-z0-9_-]{0,23}$`) and `env` (Text, 1–60 characters, one line, no control or invisible characters, no space at either end), and in `result`: `lang` (an id), `env.runtime` (≤ 40), `env.name` (as `env` above), `env.packages` up to 32.
 - `testing.ts`: `fakeRunner({ languages?, environments?, start? })` — `start` exists when `languages` is given unless `start` says otherwise; each execution has `via: 'run' | 'start'` and `request` with `lang` / `env`; its `done` carries `lang` when asked through `start`; `configureLangs`. The fake server checks `lang` / `env` as above (400 `bad_request`); `server.oldRuns = true` plays a server from before M19 (unknown fields, and results with the new parts or more than 8 packages refused).
+
+## M19 Part 1 — a PDF on a Source (docs/specs/pdf-sources.md, Contracts)
+
+Code: `files.ts` (the endpoints, `pdfOps`, `sourcePdf`), `files.fake.ts` (the fake server's routes; `FakeServer.pdf`), and a few lines in `board-state.ts` that read the fields. Types: `SourceVM` gains optional `pdf` (the hash), `pdfName`, `pdfSize`, `pdfPages` — present only when `pdf` holds a 64-hex hash; `pdfPages` absent while unknown; flat, so Sources still compare key by key. `QoopDesktop` gains `openExternally?`, `pickFolder?`, `readFileIn?`. New exported types `StoredPdf`, `PdfHit`, `SourcePdf`.
+
+```ts
+pdfFiles.upload(file: Blob | Uint8Array, { onProgress?, signal? }): Promise<StoredPdf>   // PUT /api/files/pdf
+pdfFiles.url(hash): string                         // '/api/files/pdf/<hash>' — what pdf.js opens (Range requests)
+pdfFiles.bytes(hash): Promise<Uint8Array>          // the whole file (Save a copy, Open in the system viewer)
+pdfFiles.putText(hash, pages: string[]): Promise<void>     // PUT …/text {pages}
+pdfFiles.getText(hash): Promise<string[] | null>   // GET …/text; null on 404
+pdfFiles.fetchArxiv(id): Promise<StoredPdf>        // POST /api/sources/fetch-pdf {arxiv}
+pdfFiles.search(q): Promise<PdfHit[]>              // GET /api/search/pdf?q=
+pdfOps.attach(source, { hash, name, size, pages }): Op[]   // four Sets: pdf, pdf_name, pdf_size, pdf_pages
+pdfOps.remove(source): Op[]                        // the four set to Null
+sourcePdf(vm): SourcePdf | null; isPdfBytes(head); pdfName(name); fitText(pages, max?)
+MAX_PDF_TEXT_BYTES (20 MB), DEFAULT_MAX_PDF_BYTES (100 MB; the server's answer is what counts)
+```
+
+What the layer assumes where the spec is loose — **the server agent should match or say**:
+
+- **Fields** (Research Content, ordinary ops): `pdf` Text (lowercase 64-hex SHA-256), `pdf_name` Text (the file's base name, ≤ 255 characters, no path), `pdf_size` Float (bytes, whole), `pdf_pages` Float (whole, ≥ 1) or unset. The layer also reads `pdf_size` / `pdf_pages` given as Text digits. Attach, replace and remove each send all four Sets in one batch.
+- **`PUT /api/files/pdf`**: body the raw bytes, `Content-Type: application/pdf`, `X-Qoop-Request: 1` (XMLHttpRequest for upload progress, else fetch). `200 {hash, size, pages: null}` (a `pages` number is taken if ever sent). Refusals in the usual error body; the UI shows `error.message` as it is (413 `too_large`, 415 `not_pdf`). Refused locally without sending: a Guest or a moved copy (403), an empty file (400), no `%PDF-` in the first KiB (415 `not_pdf`).
+- **`GET /api/files/pdf/{hash}`**: opened by pdf.js with `fetch` on the main thread, same origin, cookie session, `Range: bytes=a-b` in 256 KiB chunks (`disableAutoFetch`). To read a large file in parts it needs `Accept-Ranges: bytes`, `Content-Length` and `206` + `Content-Range`; without them it reads the whole file, which also works. 403 / 404 read "This PDF is not available to you." / "The server does not have this PDF’s file."
+- **`PUT /api/files/pdf/{hash}/text`** `{"pages": [string, …]}` — page 1 first, one string per page, `\n` where the PDF ends a line, `''` for a page without text (a scanned PDF is sent as all empty strings so it is not read again). Any 2xx. Sent once per window per hash, by Members only: after attaching, and after the first open when `GET` answered 404. **`GET`** → `200 {"pages": [...]}`, `404` when none.
+- **`POST /api/sources/fetch-pdf`** `{"arxiv": "<id>"}` — the id as `lookupQuery` gives it (no version: `2103.05577`, `quant-ph/0101001`); answers as the upload does; 502 with a sentence. The UI then reads the bytes once with `GET …/{hash}` to count the pages, and names the file `<id>.pdf` (`/` → `_`).
+- **`GET /api/search/pdf?q=<words>`** → `[{"hash", "page", "snippet"}]` (a bare array; `{"hits": [...]}` is read too). `page` counts **from 1**. The snippet is shown as plain text with the query's words marked; 60–80 characters around the match read best. Asked 200 ms after typing stops, for 2 characters or more, by Members and Guests (for a Guest the server should answer only hashes on main's present Board, or 403 — the UI then shows no PDF results). One result per (hash, page); hashes that no live Source on a live Card of the open Branch has are dropped.
+- **Desktop bridge** (as the M19 task gives it, which differs from the spec's `readFileAt(path, under)`): `pickFolder(): Promise<{token, name} | null>`, `readFileIn(token, relativeOrAbsolutePath): Promise<Uint8Array>` (rejects outside the folder, not found, not a PDF, over 100 MB — the UI treats any rejection as "not found" and tries the next, shorter form of the path), `openExternally({suggestedName, bytes}): Promise<void>`. Read in `ui/pdf/desktop.ts`.
+- `testing.ts`: `server.pdf` (`files`, `texts`, `textPuts`, `arxiv`, `fetched`, `maxBytes`, `fail`, `gate`, `searches`, `store(bytes)`); `tinyPdf(label)`, `contentHash(bytes)` (the fake's hash is a 64-hex digest of its own, not SHA-256). `server.fetch` also takes a `URL` / `Request` now (pdf.js passes one).

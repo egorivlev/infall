@@ -27,6 +27,9 @@ vi.mock('../../lib', () => ({
   useSession: () => h.session,
   useBoard: (): BoardSnapshot => ({ status: 'live', seq: 1, branch: { id: 'b', name: 'main', seq: 1, checkpoints: 0 }, cards: [], frames: [], connections: [], presence: [], pending: 0, readOnly: false }) as unknown as BoardSnapshot,
   useSuggestions: () => [],
+  // M19: the search box asks for words in PDFs; nothing is found here.
+  useSources: () => [],
+  pdfFiles: { search: async () => [] },
   useRuns: () => ({ runner: h.runner, live: null, last: null }),
   runs: { configure: h.configure },
   useMembers: () => [],
