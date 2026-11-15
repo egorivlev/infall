@@ -1,19 +1,23 @@
 // The `result` of a Run (api.md §15): reading the stored JSON strictly, writing it, building it from what the
 // Runner reports, and saying it in one line where a raw value would otherwise be shown.
+import { isEnvName, isLangId, PYTHON } from './run-lang'
 import type { RunEvent, RunResult, RunUsage, Value } from './types'
 
 export const MAX_RESULT = 600_000 // characters of the JSON text
 export const MAX_OUTPUT = 64_000
 export const MAX_FIGURES = 3
 export const MAX_FIGURE = 160_000 // base64 characters
-const MAX_PACKAGES = 8
+export const MAX_PACKAGES = 32 // M19 (8 before)
+/** How many packages a server from before M19 takes in a result. */
+export const OLD_MAX_PACKAGES = 8
+export const MAX_RUNTIME = 40 // characters of what a command Toolchain said its version is
 const MAX_PACKAGE_NAME = 60
 const MAX_PACKAGE_VERSION = 40
 const MAX_ENV_TEXT = 200
 const MAX_MEMBER_ID = 200
 
-const KEYS = ['v', 'by', 'at', 'code_sha256', 'exit', 'stopped', 'duration_ms', 'output', 'output_truncated', 'figures', 'env']
-const ENV_KEYS = ['python', 'packages', 'os', 'arch']
+const KEYS = ['v', 'by', 'at', 'code_sha256', 'exit', 'stopped', 'duration_ms', 'output', 'output_truncated', 'figures', 'lang', 'env']
+const ENV_KEYS = ['python', 'packages', 'os', 'arch', 'runtime', 'name']
 const SHA256 = /^[0-9a-f]{64}$/
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/ // with the length check below: standard base64, padded
 const PNG_START = 'iVBORw0KGgo' // the PNG signature, in base64
@@ -53,6 +57,8 @@ function goodEnv(v: unknown): boolean {
   if (v === undefined) return true
   if (!isRecord(v) || !onlyKeys(v, ENV_KEYS)) return false
   if (!shortText(v.python, MAX_ENV_TEXT) || !shortText(v.os, MAX_ENV_TEXT) || !shortText(v.arch, MAX_ENV_TEXT)) return false
+  if (!shortText(v.runtime, MAX_RUNTIME)) return false
+  if (v.name !== undefined && !isEnvName(v.name)) return false
   const packages = v.packages
   if (packages === undefined) return true
   if (!isRecord(packages)) return false
@@ -83,6 +89,7 @@ export function checkRunResult(v: unknown): RunResult | null {
     Array.isArray(v.figures) &&
     v.figures.length <= MAX_FIGURES &&
     v.figures.every(goodFigure) &&
+    (v.lang === undefined || isLangId(v.lang)) &&
     goodEnv(v.env)
   return good ? (v as unknown as RunResult) : null
 }
@@ -144,12 +151,15 @@ function ordered(r: RunResult): RunResult {
   const out: RunResult = { v: 1, by: r.by, at: r.at, code_sha256: r.code_sha256, exit: r.exit, duration_ms: r.duration_ms, output: r.output, figures: r.figures.map((f) => ({ png: f.png })) }
   if (r.stopped !== undefined) out.stopped = r.stopped
   if (r.output_truncated !== undefined) out.output_truncated = r.output_truncated
+  if (r.lang !== undefined) out.lang = r.lang
   if (r.env !== undefined) {
     const env: NonNullable<RunResult['env']> = {}
     if (r.env.python !== undefined) env.python = r.env.python
     if (r.env.packages !== undefined) env.packages = { ...r.env.packages }
     if (r.env.os !== undefined) env.os = r.env.os
     if (r.env.arch !== undefined) env.arch = r.env.arch
+    if (r.env.runtime !== undefined) env.runtime = r.env.runtime
+    if (r.env.name !== undefined) env.name = r.env.name
     out.env = env
   }
   return out
@@ -212,7 +222,7 @@ export function fitRunResult(result: RunResult): RunResult {
 
 // ---- from the Runner ----
 
-const REASONS = ['declined', 'no_python', 'busy', 'failed'] as const
+const REASONS = ['declined', 'no_python', 'no_toolchain', 'no_environment', 'busy', 'failed'] as const
 export const UNREADABLE_RESULT = 'The Runner sent a result that cannot be read.'
 export const MAX_STEP = 120 // characters of what the code says it is doing
 
@@ -283,6 +293,7 @@ export function toRunEvent(raw: unknown): RunEvent | null {
     const python = textOrNothing(raw.env.python)
     const os = textOrNothing(raw.env.os)
     const arch = textOrNothing(raw.env.arch)
+    const runtime = textOrNothing(raw.env.runtime)
     if (python !== undefined) env.python = python
     if (isRecord(raw.env.packages)) {
       const packages: Record<string, string> = {}
@@ -291,8 +302,9 @@ export function toRunEvent(raw: unknown): RunEvent | null {
     }
     if (os !== undefined) env.os = os
     if (arch !== undefined) env.arch = arch
+    if (runtime !== undefined) env.runtime = runtime
   }
-  return {
+  const done: RunEvent = {
     type: 'done',
     exit,
     stopped: raw.stopped === true,
@@ -303,14 +315,21 @@ export function toRunEvent(raw: unknown): RunEvent | null {
     figures: (figures as { png: string }[]).map((f) => ({ png: f.png })),
     env,
   }
+  if (raw.lang !== undefined) {
+    if (typeof raw.lang !== 'string') return unreadable
+    done.lang = raw.lang
+  }
+  return done
 }
 
 /**
  * The result to record for an execution that ended: who and when are the page's, the rest is what the app
  * reported (the code hash too: it is of the code the app executed), made to fit the server's limit
- * (`fitRunResult`). Null when that is not a §15 result.
+ * (`fitRunResult`). `lang` is the language the app says it executed (written only when it is not Python); `asked`
+ * the environment the request named, kept as `env.name` (only when the app was asked through `start`). Packages
+ * beyond 32 and a runtime beyond 40 characters are left out. Null when that is not a §15 result.
  */
-export function toRunResult(done: Extract<RunEvent, { type: 'done' }>, by: string, at: number): RunResult | null {
+export function toRunResult(done: Extract<RunEvent, { type: 'done' }>, by: string, at: number, asked: { env?: string } = {}): RunResult | null {
   const result: RunResult = {
     v: 1,
     by,
@@ -323,8 +342,33 @@ export function toRunResult(done: Extract<RunEvent, { type: 'done' }>, by: strin
   }
   if (done.stopped) result.stopped = true
   if (done.output_truncated) result.output_truncated = true
-  if (Object.keys(done.env).length > 0) result.env = done.env
+  if (done.lang !== undefined && done.lang !== PYTHON) result.lang = done.lang
+  const env: NonNullable<RunResult['env']> = { ...done.env }
+  if (env.packages !== undefined) {
+    const entries = Object.entries(env.packages)
+    if (entries.length > MAX_PACKAGES) env.packages = Object.fromEntries(entries.slice(0, MAX_PACKAGES))
+  }
+  if (env.runtime !== undefined) {
+    const runtime = firstChars(env.runtime.trim(), MAX_RUNTIME)
+    if (runtime === '') delete env.runtime
+    else env.runtime = runtime
+  }
+  if (asked.env !== undefined && isEnvName(asked.env)) env.name = asked.env
+  if (Object.keys(env).length > 0) result.env = env
   return checkRunResult(result) ? ordered(fitRunResult(result)) : null
+}
+
+// ---- for a server from before M19 ----
+
+/**
+ * The same result as a server from before M19 takes it, or null when it cannot be: one with more than 8 packages
+ * comes back with its first 8; one that carries a language, a runtime or an environment name cannot be written there.
+ */
+export function forOldServer(result: RunResult): RunResult | null {
+  if (result.lang !== undefined || result.env?.runtime !== undefined || result.env?.name !== undefined) return null
+  const packages = result.env?.packages
+  if (!packages || Object.keys(packages).length <= OLD_MAX_PACKAGES) return null
+  return ordered({ ...result, env: { ...result.env, packages: Object.fromEntries(Object.entries(packages).slice(0, OLD_MAX_PACKAGES)) } })
 }
 
 // ---- in one line ----

@@ -3,6 +3,7 @@
 // Title as `#`, the Card's summary, then the blocks in order: text as it is written (formulas are already
 // `$…$` / `$$…$$` in it), a Run as a fenced code block followed by its captured output, a Visual as a line saying
 // one is here, text pinned from an AI marked as such; the Sources as a numbered list at the end.
+import { isLangId, runLang } from '../../../lib'
 import type { BlockVM, RunResult } from '../../../lib'
 import { figureSrc } from '../runs/format'
 import { sourceLink } from '../sourceId'
@@ -75,7 +76,9 @@ function blockMarkdown(block: BlockVM, nameOf: MarkdownPage['nameOf']): string {
   }
   if (block.type === 'run') {
     const name = block.title.trim() || 'Run'
-    const code = fenced(block.text, 'python')
+    // The fence is tagged with the Run's language id (M19b; portability.md), Python when it names none.
+    const lang = runLang(block)
+    const code = fenced(block.text, isLangId(lang) ? lang : '')
     const result = block.run?.result ?? null
     const out = block.run?.broken
       ? '*This result cannot be shown.*'

@@ -95,6 +95,8 @@ function fieldWord(kind: Kind, field: string, sim: Sim = null): string {
   if (sim === 'visual' && field === 'text') return 'source'
   if (sim === 'run' && field === 'text') return 'code'
   if (sim === 'run' && field === 'title') return 'name'
+  if (sim === 'run' && field === 'lang') return 'language'
+  if (sim === 'run' && field === 'env') return 'environment'
   if (kind === 'Block' && field === 'result') return 'output'
   if (kind === 'Connection' && field === 'from') return 'start'
   if (kind === 'Connection' && field === 'to') return 'end'
@@ -110,7 +112,7 @@ function fieldHeadline(kind: Kind, field: string, sim: Sim): string {
       ? 'Visual'
       : sim === 'visual' && field === 'title'
         ? 'Visual title'
-        : sim === 'run' && (field === 'text' || field === 'title')
+        : sim === 'run' && (field === 'text' || field === 'title' || field === 'lang' || field === 'env')
           ? `Run ${fieldWord(kind, field, sim)}`
           : kind === 'Block' && field === 'text'
             ? 'Paragraph'

@@ -1,7 +1,7 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { ops, runs, useMembers, useRunStale, useRuns, useSession } from '../../../lib'
-import type { BlockVM, RunResult } from '../../../lib'
+import { isLangId, languageName, notSetUpSentence, ops, PYTHON, runEnv, runLang, runs, updateSentence, useMembers, useRunStaleness, useRuns, useSession } from '../../../lib'
+import type { BlockVM, RunnerLanguage, RunResult } from '../../../lib'
 import { useBoardActions } from '../../board/useBoardActions'
 import { ConfirmDialog } from '../../shell/ConfirmDialog'
 import { formatDateTime } from '../../shell/dates'
@@ -12,22 +12,29 @@ import { MoreMenu } from '../MoreMenu'
 import type { MenuItem } from '../MoreMenu'
 import type { BlockHandlers } from '../BlockTools'
 import { memberName } from '../people'
-import { codeLines, envLine, figureSrc, formatDuration, formatElapsed } from './format'
+import { codeLines, figureSrc, formatDuration, formatElapsed, runtimeLine, SHOWN_PACKAGES } from './format'
 import { RunEditor } from './RunEditor'
+import './runs.css'
 
 /** Code longer than this is folded to its first lines until asked for. */
 export const COLLAPSED_LINES = 24
 const MAX_FIGURES = 24
+const NO_ENVIRONMENTS: readonly string[] = []
 /** How close to the end of the output still counts as "at the end" (px). */
 const END_SLACK = 16
 
 const APPROVAL_LINE = 'Check the Infall window that just opened: it shows this code and asks before running it.'
 const BROWSER_LINE = "Code can only run in the Infall desktop app. You're in the browser — "
 const OLD_APP_LINE = 'This version of the desktop app cannot run code. Update the app.'
+export const CHOOSING_LINE = 'Waiting for a choice in the Runner window…'
+export const BAD_LANG_LINE = 'This Run names a language that cannot be read. Choose its language again.'
 
 /** Why `runs.run` could not start, in plain words. */
 function startSentence(e: unknown): string {
-  switch (errorCode(e)) {
+  const code = errorCode(e)
+  // The sentences of the language checks are the layer's own (the Runner's words).
+  if ((code === 'old_app' || code === 'no_toolchain' || code === 'bad_lang' || code === 'bad_env') && e instanceof Error && e.message) return e.message
+  switch (code) {
     case 'busy':
       return 'Another Run is in progress.'
     case 'no_runner':
@@ -144,11 +151,65 @@ const Figures = memo(function Figures({ figures, label }: { figures: RunResult['
   )
 })
 
+/**
+ * What executed the result: "Python 3.12.3 · numpy 2.1.0, scipy 1.14.1 +5", "Q# · qdk 1.34.0", "Julia 1.11.2". The
+ * packages beyond the first few are behind a disclosure that lists every one.
+ */
+const RuntimeLine = memo(function RuntimeLine({ result, device, label }: { result: RunResult; device: Record<string, RunnerLanguage> | undefined; label: string }) {
+  const [all, setAll] = useState(false)
+  const listId = useId()
+  const lang = typeof result.lang === 'string' && result.lang !== '' ? result.lang : PYTHON
+  const line = useMemo(() => runtimeLine(result, languageName(lang, device)), [result, lang, device])
+  const shown = line.packages.slice(0, SHOWN_PACKAGES)
+  const rest = line.packages.length - shown.length
+  return (
+    <div className="qp-run__runtime">
+      <p className="qp-run__runtime-line" title={line.full}>
+        <span className="qp-run__runtime-lead">{line.lead}</span>
+        {shown.length > 0 && <span> · {shown.join(', ')}</span>}
+        {rest > 0 && (
+          <>
+            {' '}
+            <button
+              type="button"
+              className="qp-run__runtime-more"
+              aria-expanded={all}
+              aria-controls={listId}
+              aria-label={all ? `Hide the packages of ${label}` : `Show all ${line.packages.length} packages of ${label}`}
+              onClick={() => setAll((v) => !v)}
+            >
+              +{rest}
+            </button>
+          </>
+        )}
+      </p>
+      {rest > 0 && all && (
+        <ul className="qp-run__packages" id={listId} aria-label={`Packages of ${label}`}>
+          {line.packages.map((p, i) => (
+            <li key={i}>{p}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+})
+
 /** Who executed it, when, against which code; how long it took and how it ended. */
-const RecordLine = memo(function RecordLine({ block, result }: { block: BlockVM; result: RunResult }) {
+const RecordLine = memo(function RecordLine({ block, result, device }: { block: BlockVM; result: RunResult; device: Record<string, RunnerLanguage> | undefined }) {
   const members = useMembers()
   const session = useSession()
-  const stale = useRunStale(block)
+  const stale = useRunStaleness(block)
+  const madeAs = languageName(typeof result.lang === 'string' && result.lang !== '' ? result.lang : PYTHON, device)
+  const staleText =
+    stale === 'code'
+      ? ' · code changed since'
+      : stale === 'lang'
+        ? ` · ran as ${madeAs}`
+        : stale === 'env'
+          ? result.env?.name
+            ? ` · ran in “${result.env.name}”`
+            : ' · ran in the default environment'
+          : ''
   const me = session.status === 'signed_in' ? session.member : null
   const by = me && me.id === result.by ? me : members.find((m) => m.id === result.by)
   const who = me && me.id === result.by ? 'you' : memberName(members, result.by).name
@@ -169,7 +230,7 @@ const RecordLine = memo(function RecordLine({ block, result }: { block: BlockVM;
           </>
         )}
         {stale === false && <span> · current code</span>}
-        {stale === true && <span className="qp-run__stale"> · code changed since</span>}
+        {staleText !== '' && <span className="qp-run__stale">{staleText}</span>}
       </span>
       <span className="qp-spacer" />
       <span className="qp-run__stats">
@@ -254,6 +315,9 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
           n={n}
           title={title}
           code={text}
+          lang={block.run?.lang ?? ''}
+          env={block.run?.env ?? ''}
+          environments={(runner.available && runner.environments) || NO_ENVIRONMENTS}
           onFinish={(result) => {
             refocus.current = true
             handlers.finishVisual(id, result) // a name and a text, like a Visual: one batch
@@ -275,7 +339,19 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
   const otherLive = live !== null && !mine
   const outcome = !readOnly && lastOutcome !== null && lastOutcome.block === id && lastOutcome.branch === branchId ? lastOutcome : null
   const executable = !readOnly && runner.available
-  const env = envLine(result?.env)
+  const device = runner.available ? runner.languages : undefined
+  const lang = runLang(block)
+  const langName = isLangId(lang) ? languageName(lang, device) : lang
+  const asked = runEnv(block)
+  // M19b: why this device cannot be asked for a Run in this language (shown instead of Run), or null.
+  let notHere: { text: string; settings: boolean } | null = null
+  if (runner.available && lang !== PYTHON) {
+    if (!isLangId(lang)) notHere = { text: BAD_LANG_LINE, settings: false }
+    else if (!runner.languages) notHere = { text: updateSentence(langName), settings: false }
+    else if (!Object.hasOwn(runner.languages, lang)) notHere = { text: notSetUpSentence(langName), settings: true }
+  }
+  // A Python Run naming an environment needs no default Python in an app that resolves names itself.
+  const needsPython = runner.available && lang === PYTHON && !runner.python && !(asked !== undefined && runner.languages)
 
   /** A strip is about to go away with the button that was pressed: focus moves to the Run's main control instead of being lost. */
   const keepFocus = () => (goRef.current ?? viewRef.current)?.focus({ preventScroll: true })
@@ -286,6 +362,7 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
     runs.run(id).catch((e: unknown) => setStartError(startSentence(e)))
   }
   const configure = () => void runs.configure()
+  const configureLang = () => void (lang === PYTHON || !isLangId(lang) ? runs.configure() : runs.configure(lang))
   const recordAgain = () => {
     if (againState === 'busy') return
     setAgainState('busy')
@@ -316,7 +393,15 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
         Run
       </button>
     )
-  } else if (!runner.python && !isLive) {
+  } else if (notHere !== null && !isLive) {
+    // The language cannot be executed here: the strip under the header says why and offers the settings.
+    action = (
+      <button ref={goRef} type="button" className="q-btn q-btn--sm qp-run__go" aria-disabled title={notHere.text}>
+        <PlayGlyph />
+        Run
+      </button>
+    )
+  } else if (needsPython && !isLive) {
     action = (
       <button ref={goRef} type="button" className="q-btn q-btn--sm qp-run__go" title="Choose the Python this computer runs code with" onClick={configure}>
         Set up the Runner…
@@ -349,13 +434,14 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
   // ---- "⋯" ----
   const menu: MenuItem[] = []
   if (executable) {
-    menu.push({ label: 'Runner settings…', onPick: configure })
+    menu.push({ label: 'Runner settings…', onPick: configureLang })
     if (canEdit && !isLive && (result !== null || broken)) menu.push({ label: 'Clear output', onPick: () => setConfirming(true) })
   }
 
   // ---- what a screen reader is told when the state changes (one polite element) ----
   let announce = ''
-  if (phase === 'approval') announce = 'Waiting for you in the Infall window'
+  if (phase === 'approval' && live?.choosing) announce = 'Waiting for a choice in the Runner window'
+  else if (phase === 'approval') announce = 'Waiting for you in the Infall window'
   else if (isLive) announce = 'Run started'
   else if (startError) announce = `Run failed: ${startError}`
   else if (outcome?.status === 'recorded') announce = result?.stopped === true || result?.exit === null ? 'Run stopped' : 'Run finished'
@@ -385,13 +471,18 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
     )
   } else if (outcome?.status === 'failed') {
     const message = outcome.message || 'The Run could not be started.'
-    const aboutPython = (runner.available && !runner.python) || /python/i.test(message)
+    const aboutSetup =
+      (runner.available && !runner.python) ||
+      /python/i.test(message) ||
+      outcome.reason === 'no_python' ||
+      outcome.reason === 'no_toolchain' ||
+      outcome.reason === 'no_environment'
     strip = (
       <div className="qp-run__strip qp-run__strip--warn" data-testid={`run-outcome-${id}`}>
         <WarnGlyph />
         <span className="qp-run__strip-text">{message}</span>
-        {aboutPython && executable && (
-          <button type="button" className="q-btn q-btn--sm" onClick={configure}>
+        {aboutSetup && executable && (
+          <button type="button" className="q-btn q-btn--sm" onClick={configureLang}>
             Runner settings…
           </button>
         )}
@@ -474,7 +565,8 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
           Part of the output was left out.
         </p>,
       )
-    out.push(<RecordLine key="record" block={block} result={result} />)
+    out.push(<RuntimeLine key="runtime" result={result} device={device} label={label} />)
+    out.push(<RecordLine key="record" block={block} result={result} device={device} />)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -504,13 +596,15 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
           <svg className="qp-run__glyph" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden="true">
             <path d="M3.5 2.3 L9.6 6 L3.5 9.7 Z" />
           </svg>
-          <span className="qp-run__kind">Run</span>
+          <span className="qp-run__kind">
+            Run<span className="qp-run__lang"> · {langName}</span>
+          </span>
           <span className={`qp-run__title${title ? '' : ' is-empty'}`} title={name}>
             {name}
           </span>
-          {env.text && (
-            <span className="qp-run__env" title={env.full}>
-              {env.text}
+          {asked !== undefined && (
+            <span className="qp-run__asks" title={`Asks for the environment “${asked}”`}>
+              {asked}
             </span>
           )}
           <span className="qp-spacer" />
@@ -524,7 +618,18 @@ export const RunBlock = memo(function RunBlock({ block, index, last, editing, ca
           {menu.length > 0 && <MoreMenu label={`More for ${label}`} items={menu} />}
           {action}
         </div>
-        {phase === 'approval' && <p className="qp-run__strip qp-run__strip--wait">{APPROVAL_LINE}</p>}
+        {phase === 'approval' && <p className="qp-run__strip qp-run__strip--wait">{live?.choosing ? CHOOSING_LINE : APPROVAL_LINE}</p>}
+        {notHere !== null && !isLive && !readOnly && (
+          <div className="qp-run__strip qp-run__strip--info" data-testid={`run-lang-${id}`}>
+            <WarnGlyph />
+            <span className="qp-run__strip-text">{notHere.text}</span>
+            {notHere.settings && (
+              <button type="button" className="q-btn q-btn--sm" onClick={configureLang}>
+                Open Runner settings
+              </button>
+            )}
+          </div>
+        )}
         {note !== null && (
           <div className="qp-run__strip qp-run__strip--info">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">

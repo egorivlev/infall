@@ -11,6 +11,7 @@ import { sessionStore } from './session-store'
 import { FAKE_USAGE, FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, TINY_PNG, fakeDesktop, fakeRunner, fakeRunResult, installDesktop, settle } from './testing'
 import type { FakeRunner } from './testing'
 import type { BlockVM, RunResult } from './types'
+import { createUndo } from './undo-store'
 
 // Half of a character pair standing alone: what a careless cut leaves behind.
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
@@ -529,7 +530,7 @@ describe('when the app does not run it', () => {
     const { running, x } = await start(r)
     x.error(reason, message)
     await running
-    expect(snap(r).last).toEqual({ block: 'r1', branch: 'main-id', status: 'failed', message })
+    expect(snap(r).last).toEqual({ block: 'r1', branch: 'main-id', status: 'failed', message, reason })
     expect(stored()).toBeNull()
   })
   it('failed without a sentence still says something; an unknown reason reads as failed', async () => {
@@ -1210,5 +1211,226 @@ describe('the fake server and Runs', () => {
     expect(answer.body.error).toMatchObject({ code: 'bad_request' })
     expect(answer.body.error!.message).toMatch(/\.$/)
     expect(server.seq).toBe(before)
+  })
+})
+
+describe('Runs in other languages and environments (M19 Part 2, M19b)', () => {
+  const LANGS = { python: { name: 'Python', version: '3.12.3' }, julia: { name: 'Julia', version: 'julia version 1.11.2' }, qsharp: { name: 'Q#', version: 'qdk 1.34.0' } }
+  /** The Run `r1` names `lang` and `env` (committed by someone else, as from another window). */
+  const name = (lang: string | null, env: string | null = null, id = 'r1') => server.commit([ops.setRunLang(id, lang), ops.setRunEnv(id, env)], OTHER.id)
+  const withRunner = (r: FakeRunner) => {
+    runner = r
+    desk = fakeDesktop({ runner })
+  }
+
+  it('the setup lists languages and environments only from an app with `start`', async () => {
+    withRunner(fakeRunner({ languages: { ...LANGS, Bad: { name: 'x' }, odd: 5 as never }, environments: ['analysis', 'a\nb', 7 as never, 'analysis'] }))
+    const r = await ready()
+    expect(snap(r).runner).toEqual({
+      available: true,
+      python: { path: '/usr/bin/python3', version: '3.12.3' },
+      languages: LANGS,
+      environments: ['analysis'],
+    })
+    withRunner(fakeRunner({ languages: LANGS, start: false }))
+    await r.api.refresh()
+    expect(snap(r).runner).toEqual({ available: true, python: { path: '/usr/bin/python3', version: '3.12.3' } })
+  })
+
+  describe('the old-app fail-safe: a Run that is not Python never goes through `run`', () => {
+    it.each([
+      ['an app without `start`', () => fakeRunner()],
+      ['an app with `start` whose status lists no languages', () => fakeRunner({ start: true })],
+      ['an app whose status lists languages but has no `start`', () => fakeRunner({ languages: LANGS, start: false })],
+    ])('%s: refused, nothing executed', async (_what, makeRunner) => {
+      withRunner(makeRunner())
+      name('julia')
+      const r = await ready()
+      const e = await caught(r.api.run('r1'))
+      expect(e).toMatchObject({ status: 409, code: 'old_app', message: 'Update Infall on this computer to run Julia code.' })
+      expect(runner.executions).toEqual([])
+      expect(snap(r)).toMatchObject({ live: null, last: null })
+    })
+    it('Q# too, and a language this build has no name for says its id', async () => {
+      name('qsharp')
+      name('haskell', null, 'r2')
+      const r = await ready()
+      expect((await caught(r.api.run('r1'))).message).toBe('Update Infall on this computer to run Q# code.')
+      expect((await caught(r.api.run('r2'))).message).toBe('Update Infall on this computer to run haskell code.')
+      expect(runner.executions).toEqual([])
+    })
+  })
+
+  it('a language this device has not set up is refused with the Runner’s sentence', async () => {
+    withRunner(fakeRunner({ languages: { python: LANGS.python } }))
+    name('julia')
+    const r = await ready()
+    expect(await caught(r.api.run('r1'))).toMatchObject({ status: 409, code: 'no_toolchain', message: 'Julia is not set up in Runner settings on this computer.' })
+    expect(runner.executions).toEqual([])
+  })
+
+  it('a stored language that is not an id is refused, never run as Python', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    server.commit([{ Set: { entity: 'r1', field: 'lang', value: { Text: 'Julia' } } }], OTHER.id)
+    const r = await ready()
+    expect(await caught(r.api.run('r1'))).toMatchObject({ status: 400, code: 'bad_lang' })
+    expect(runner.executions).toEqual([])
+  })
+
+  it('Julia: asked through `start` with its language and no environment; the result records the language and runtime', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    name('julia', 'analysis') // an environment is ignored for Julia
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(x.via).toBe('start')
+    expect(x.request).toEqual({ id: x.request.id, code: CODE, title: 'Sweep', lang: 'julia' })
+    x.start()
+    x.done({ env: { runtime: 'julia version 1.11.2', os: 'macos', arch: 'arm64' } })
+    await running
+    expect(stored()).toMatchObject({ lang: 'julia', env: { runtime: 'julia version 1.11.2', os: 'macos', arch: 'arm64' } })
+    expect(snap(r).last).toMatchObject({ status: 'recorded' })
+  })
+
+  it('Python without an environment goes through `run`, exactly as before, also in a new app', async () => {
+    withRunner(fakeRunner({ languages: LANGS, environments: ['analysis'] }))
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(x.via).toBe('run')
+    expect(x.request).toEqual({ id: x.request.id, code: CODE, title: 'Sweep' })
+    x.done()
+    await running
+    expect(stored()).not.toHaveProperty('lang')
+    expect(stored()!.env).toEqual({ python: '3.12.3', os: 'macos', arch: 'arm64' })
+  })
+
+  it('Python naming an environment the device knows: `start` with `env`, recorded as `env.name`', async () => {
+    withRunner(fakeRunner({ languages: LANGS, environments: ['analysis'] }))
+    name(null, 'analysis')
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(x.via).toBe('start')
+    expect(x.request).toEqual({ id: x.request.id, code: CODE, title: 'Sweep', env: 'analysis' })
+    expect(snap(r).live).not.toHaveProperty('choosing')
+    x.done({ env: { python: '3.13.1', packages: { numpy: '2.1.0' } } })
+    await running
+    expect(stored()!.env).toEqual({ python: '3.13.1', packages: { numpy: '2.1.0' }, name: 'analysis' })
+  })
+
+  it('an environment the device has no answer for: waiting for a choice in the Runner window until the approval', async () => {
+    withRunner(fakeRunner({ languages: LANGS, environments: [] }))
+    name(null, 'analysis')
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(snap(r).live).toMatchObject({ state: 'approval', choosing: true })
+    x.approval()
+    expect(snap(r).live).toMatchObject({ state: 'approval' })
+    expect(snap(r).live).not.toHaveProperty('choosing')
+    x.start()
+    x.done()
+    await running
+  })
+
+  it('closed without a choice: `no_environment`, failed with the Runner’s sentence and its reason', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    name(null, 'analysis')
+    const r = await ready()
+    const { running, x } = await start(r)
+    x.error('no_environment', 'No environment on this computer is chosen for “analysis”.')
+    await running
+    expect(snap(r).last).toEqual({
+      block: 'r1',
+      branch: 'main-id',
+      status: 'failed',
+      reason: 'no_environment',
+      message: 'No environment on this computer is chosen for “analysis”.',
+    })
+    expect(stored()).toBeNull()
+  })
+
+  it('Python naming an environment in an old app: `run` without it (the name is only a wish), and no name recorded', async () => {
+    name(null, 'analysis')
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(x.via).toBe('run')
+    expect(x.request).toEqual({ id: x.request.id, code: CODE, title: 'Sweep' })
+    x.done()
+    await running
+    expect(stored()!.env).not.toHaveProperty('name')
+  })
+
+  it('Q#: `start` with its language and environment', async () => {
+    withRunner(fakeRunner({ languages: LANGS, environments: ['quantum'] }))
+    name('qsharp', 'quantum')
+    const r = await ready()
+    const { running, x } = await start(r)
+    expect(x.request).toMatchObject({ lang: 'qsharp', env: 'quantum' })
+    x.done({ env: { python: '3.12.3', packages: { qdk: '1.34.0' } } })
+    await running
+    expect(stored()).toMatchObject({ lang: 'qsharp', env: { python: '3.12.3', packages: { qdk: '1.34.0' }, name: 'quantum' } })
+  })
+
+  it('`configure(lang)` names the language to an app that can run it, and nothing to an older one', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    const r = await ready()
+    await r.api.configure('julia')
+    await r.api.configure()
+    expect(runner.configureLangs).toEqual(['julia', undefined])
+    withRunner(fakeRunner())
+    await r.api.configure('julia')
+    expect(runner.configureLangs).toEqual([undefined])
+  })
+
+  it('a server from before M19: a Python result with 12 packages is recorded with its first 8', async () => {
+    server.oldRuns = true
+    const r = await ready()
+    const { running, x } = await start(r)
+    x.done({ env: { python: '3.12.3', packages: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`p${i}`, '1'])) } })
+    await running
+    expect(Object.keys(stored()!.env!.packages!)).toHaveLength(8)
+    expect(snap(r).last).toMatchObject({ status: 'recorded' })
+  })
+
+  it('a server from before M19b: the result of a Julia Run is kept unsaved, with a sentence saying why', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    name('julia')
+    const r = await ready()
+    server.oldRuns = true
+    const { running, x } = await start(r)
+    x.done({ env: { runtime: 'julia version 1.11.2' } })
+    await running
+    expect(snap(r).last).toMatchObject({
+      status: 'unsaved',
+      message: 'The output was not recorded: the server of this Workspace does not take results of Runs in other languages or environments yet. It needs an update.',
+    })
+  })
+
+  it('a Guest executes nothing in any language', async () => {
+    withRunner(fakeRunner({ languages: LANGS }))
+    name('julia')
+    sessionStore.setState({ status: 'signed_in', member: GUEST }, true)
+    const r = await ready()
+    expect(await caught(r.api.run('r1'))).toMatchObject({ code: 'read_only' })
+    expect(snap(r).runner).toEqual({ available: false, reason: 'guest' })
+    expect(runner.executions).toEqual([])
+  })
+
+  it('changing the language and the environment is one step of Undo, and Undo puts both back', async () => {
+    const u = createUndo(board)
+    try {
+      await openBoard()
+      await u.gesture(() => board.submit([ops.setRunLang('r1', 'qsharp'), ops.setRunEnv('r1', 'quantum')]))
+      await settle()
+      expect(blockOf().run).toMatchObject({ lang: 'qsharp', env: 'quantum' })
+      expect(u.current().undo).toBe('Edit Run Sweep in the Page of Threshold')
+      expect(await u.undo()).toMatchObject({ done: true })
+      await settle()
+      expect(blockOf().run).not.toHaveProperty('lang')
+      expect(blockOf().run).not.toHaveProperty('env')
+      expect(await u.redo()).toMatchObject({ done: true })
+      await settle()
+      expect(blockOf().run).toMatchObject({ lang: 'qsharp', env: 'quantum' })
+    } finally {
+      u.internal.dispose()
+    }
   })
 })

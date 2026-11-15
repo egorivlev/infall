@@ -1,4 +1,5 @@
 // Pure op builders. Output matches the wire format in docs/specs/api.md.
+import { isEnvName, isLangId, PYTHON } from './run-lang'
 import { encodeRunResult } from './run-result'
 import type { ConnectionKind, Fields, Op, RunResult, Status, Value } from './types'
 
@@ -86,6 +87,23 @@ export const ops = {
    */
   setRunResult(block: string, result: RunResult | null): Op {
     return set(block, 'result', result === null ? 'Null' : txt(encodeRunResult(result)))
+  },
+  /**
+   * The language of a Run (api.md §15 "Languages"): an id, `^[a-z][a-z0-9_-]{0,23}$`. Python, and null, unset it —
+   * a Run without `lang` is Python, so a Run made Python again is stored as every Run before M19b. Throws `RangeError`
+   * for anything else.
+   */
+  setRunLang(block: string, lang: string | null): Op {
+    if (lang !== null && !isLangId(lang)) throw new RangeError('A language id is a lowercase letter, then up to 23 lowercase letters, digits, - or _.')
+    return set(block, 'lang', lang === null || lang === PYTHON ? 'Null' : txt(lang))
+  },
+  /**
+   * The environment a Run asks for (Python and Q#; desktop.md M19): one line of 1–60 characters, no space at either
+   * end, nothing invisible. '' and null unset it (the default environment). Throws `RangeError` for anything else.
+   */
+  setRunEnv(block: string, env: string | null): Op {
+    if (env !== null && env !== '' && !isEnvName(env)) throw new RangeError('An environment name is one line of 1–60 characters.')
+    return set(block, 'env', env === null || env === '' ? 'Null' : txt(env))
   },
   /** A text Block pinned from an AI Conversation: it carries what produced it, who pinned it, and when (unix ms). */
   pinBlock(input: { id?: string; card: string; text: string; order: string; model: string; pinnedBy: string; pinnedAt: number }): Op {

@@ -107,6 +107,10 @@
 .q-set-actions { display: flex; flex-wrap: wrap; gap: var(--q-s2); }
 .q-set-actions a.q-btn:hover { text-decoration: none; color: var(--q-ink); }
 .q-set-runs__line { color: var(--q-ink-2); }
+/* The Runs section names more than Python and Folder (M19b): its terms need a wider column. */
+.q-set-runs .q-set-facts dt { width: 96px; }
+.q-set-runs__list { display: flex; flex-wrap: wrap; gap: 2px var(--q-s3); margin: 0; padding: 0; list-style: none; }
+.q-set-runs__version { color: var(--q-ink-3); font-size: calc(12px * var(--q-text, 1)); }
 :root:not([data-room="wide"]) .q-set { grid-template-columns: 168px minmax(0, 1fr); }
 :root[data-room="narrow"] .q-set { grid-template-columns: 136px minmax(0, 1fr); }
 :root[data-room="narrow"] .q-set-nav { padding-inline: var(--q-s2); }

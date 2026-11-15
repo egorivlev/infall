@@ -21,6 +21,22 @@ const result = (extra: Partial<RunResult> = {}): RunResult => ({
 })
 
 describe('pageMarkdown', () => {
+  it('tags the fence of a Run with its language id (M19b), python when it names none', () => {
+    const runOf = (id: string, lang?: string): BlockVM => ({
+      id,
+      card: 'c',
+      type: 'run',
+      text: 'x = 1\n',
+      title: `r${id}`,
+      order: id,
+      run: { result: null, broken: false, ...(lang ? { lang } : {}) },
+    })
+    const md = pageMarkdown({ title: 'T', summary: '', blocks: [runOf('1'), runOf('2', 'julia'), runOf('3', 'qsharp'), runOf('4', 'Not An Id')], sources: [], nameOf })
+    expect(md).toContain('```python\nx = 1\n```')
+    expect(md).toContain('```julia\nx = 1\n```')
+    expect(md).toContain('```qsharp\nx = 1\n```')
+    expect(md).toContain('**Run: r4**\n\n```\nx = 1\n```')
+  })
   it('writes every kind of block, in order, with the Sources at the end', () => {
     const md = pageMarkdown({
       title: 'QRL on CartPole',

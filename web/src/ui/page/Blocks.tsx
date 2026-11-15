@@ -267,6 +267,9 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
       const batch = []
       if (result.title !== undefined) batch.push(ops.setBlockTitle(id, result.title))
       if (result.source !== undefined) batch.push(ops.setBlockText(id, result.source))
+      // A Run's language and environment go in the same batch: one step of Undo with the rest of the edit.
+      if (result.lang !== undefined) batch.push(ops.setRunLang(id, result.lang))
+      if (result.env !== undefined) batch.push(ops.setRunEnv(id, result.env))
       void actions.submit(batch, { join: `new:${id}` })
     },
     [actions],

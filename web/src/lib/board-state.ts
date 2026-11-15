@@ -148,7 +148,8 @@ function sameBlock(a: BlockVM, b: BlockVM): boolean {
   const { ai: aiA, run: runA, ...restA } = a
   const { ai: aiB, run: runB, ...restB } = b
   if (!shallowEqual(restA, restB)) return false
-  if (runA !== runB && !(runA && runB && runA.result === runB.result && runA.broken === runB.broken)) return false
+  if (runA !== runB && !(runA && runB && runA.result === runB.result && runA.broken === runB.broken && runA.lang === runB.lang && runA.env === runB.env))
+    return false
   return aiA === undefined || aiB === undefined ? aiA === aiB : sameKeys(aiA, aiB, Object.is)
 }
 
@@ -330,7 +331,17 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
       if (!list) blocks.set(card, (list = []))
       const block: BlockVM = { id, card, type, text: text(f, 'text'), title: type === 'text' ? '' : text(f, 'title'), order: text(f, 'order') }
       // The stored result is parsed once per value (run-result.ts), so an unrelated change costs a lookup.
-      if (type === 'run') block.run = readRunResult(f.result)
+      if (type === 'run') {
+        block.run = readRunResult(f.result)
+        // M19b: what the Run names, as stored (the server checks the shape); unset leaves the shared object alone.
+        const lang = text(f, 'lang')
+        const env = text(f, 'env')
+        if (lang !== '' || env !== '') {
+          block.run = { ...block.run }
+          if (lang !== '') block.run.lang = lang
+          if (env !== '') block.run.env = env
+        }
+      }
       const ai = blockAi(f)
       if (ai) block.ai = ai
       list.push(block)

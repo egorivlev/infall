@@ -4,6 +4,7 @@ import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
 import { sha256Hex } from './code-hash'
+import { isEnvName, isLangId } from './run-lang'
 import { checkRunResult, MAX_RESULT } from './run-result'
 import type {
   AccessToken,
@@ -33,6 +34,8 @@ import type {
   RunEvent,
   RunResult,
   RunUsage,
+  RunnerLanguage,
+  Value,
   ServerFrame,
   Suggestion,
   Todo,
@@ -147,7 +150,10 @@ export const FAKE_USAGE: RunUsage = { cpu_percent: 96, cores: 10, memory_bytes: 
 
 /** One execution inside the fake Runner: what the page asked for, and the handles a test drives it with. */
 export type FakeExecution = {
-  request: Parameters<QoopRunner['run']>[0]
+  /** What the page asked for: through `run` `{ id, code, title }`, through `start` also `lang` and `env` when named. */
+  request: { id: string; code: string; title: string; lang?: string; env?: string }
+  /** Which call of the bridge asked for it (M19b): `start` names a language and an environment, `run` does not. */
+  via: 'run' | 'start'
   /** The bridge's promise has settled. */
   ended: boolean
   started: boolean
@@ -180,17 +186,34 @@ export type FakeExecution = {
  * with a stopped `done` carrying what was written, one still at the approval with `declined` — unless
  * `cancelStops` is false, which plays an app that does not react.
  */
-export function fakeRunner(options: { python?: { path: string; version: string } | null; folder?: string } = {}) {
+export function fakeRunner(
+  options: {
+    python?: { path: string; version: string } | null
+    folder?: string
+    /** M19b: the languages `status()` lists. Without: an app from before M19b (no `languages`, and no `start` unless `start` says so). */
+    languages?: Record<string, RunnerLanguage>
+    /** M19: the environments `status()` lists (with `languages`; default none). */
+    environments?: string[]
+    /** Whether the bridge has `start`. Default: when `languages` is given. */
+    start?: boolean
+  } = {},
+) {
   const executions: FakeExecution[] = []
   const cancelled: string[] = []
+  const hasStart = options.start ?? options.languages !== undefined
   const runner = {
     /** What `status()` reports; null plays a Runner with no interpreter chosen. */
     python: (options.python === undefined ? { path: '/usr/bin/python3', version: '3.12.3' } : options.python) as { path: string; version: string } | null,
     folder: options.folder as string | undefined,
+    /** What `status().languages` lists; undefined leaves it out (an older app). */
+    languages: options.languages as Record<string, RunnerLanguage> | undefined,
+    environments: options.environments as string[] | undefined,
     /** When true, `status()` rejects. */
     statusFails: false,
     statusCalls: 0,
     configureCalls: 0,
+    /** The language each `configure` call named (undefined: none). */
+    configureLangs: [] as (string | undefined)[],
     /** Called while the settings window is "open": change `python` / `folder` here. */
     onConfigure: null as (() => void) | null,
     cancelStops: true,
@@ -202,70 +225,30 @@ export function fakeRunner(options: { python?: { path: string; version: string }
       if (!x) throw new Error('fake Runner: nothing was executed')
       return x
     },
-    async status(): Promise<{ python?: { path: string; version: string }; folder?: string }> {
+    async status(): Promise<Awaited<ReturnType<QoopRunner['status']>>> {
       runner.statusCalls++
       if (runner.statusFails) throw new Error('bridge down')
-      const status: { python?: { path: string; version: string }; folder?: string } = {}
+      const status: Awaited<ReturnType<QoopRunner['status']>> = {}
       if (runner.python) status.python = { ...runner.python }
       if (runner.folder !== undefined) status.folder = runner.folder
+      if (runner.languages !== undefined) {
+        status.languages = structuredClone(runner.languages)
+        status.environments = [...(runner.environments ?? [])]
+      }
       return status
     },
-    async configure(): Promise<void> {
+    async configure(lang?: string): Promise<void> {
       runner.configureCalls++
+      runner.configureLangs.push(lang)
       runner.onConfigure?.()
     },
-    run(request: FakeExecution['request'], onEvent: (event: RunEvent) => void): Promise<void> {
-      return new Promise<void>((resolve, reject) => {
-        const x: FakeExecution = {
-          request,
-          ended: false,
-          started: false,
-          output: '',
-          emit: (event) => {
-            if (!x.ended) onEvent(event as RunEvent)
-          },
-          approval: () => x.emit({ type: 'approval' }),
-          start: () => {
-            x.started = true
-            x.emit({ type: 'started' })
-          },
-          write: (text) => {
-            x.output += text
-            x.emit({ type: 'output', text })
-          },
-          stats: (patch = {}) => x.emit({ type: 'stats', ...FAKE_USAGE, ...patch }),
-          done: (patch = {}) => {
-            x.emit({
-              type: 'done',
-              exit: 0,
-              stopped: false,
-              duration_ms: 1200,
-              code_sha256: sha256Hex(request.code),
-              output: x.output,
-              output_truncated: false,
-              figures: [],
-              env: { python: '3.12.3', os: 'macos', arch: 'arm64' },
-              ...patch,
-            })
-            x.end()
-          },
-          error: (reason, message = '') => {
-            x.emit({ type: 'error', reason, message })
-            x.end()
-          },
-          end: () => {
-            x.ended = true
-            resolve()
-          },
-          reject: (error = new Error('bridge failed')) => {
-            x.ended = true
-            reject(error)
-          },
-        }
-        executions.push(x)
-        runner.script?.(x)
-      })
+    run(request: { id: string; code: string; title: string }, onEvent: (event: RunEvent) => void): Promise<void> {
+      return execute('run', request, onEvent)
     },
+    /** M19b; undefined plays an app from before it. */
+    start: (hasStart ? (request: FakeExecution['request'], onEvent: (event: RunEvent) => void) => execute('start', request, onEvent) : undefined) as
+      | ((request: FakeExecution['request'], onEvent: (event: RunEvent) => void) => Promise<void>)
+      | undefined,
     async cancel(id: string): Promise<void> {
       cancelled.push(id)
       const x = executions.find((e) => e.request.id === id && !e.ended)
@@ -273,6 +256,62 @@ export function fakeRunner(options: { python?: { path: string; version: string }
       if (x.started) x.done({ exit: null, stopped: true, figures: [] })
       else x.error('declined')
     },
+  }
+
+  function execute(via: FakeExecution['via'], request: FakeExecution['request'], onEvent: (event: RunEvent) => void): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const lang = via === 'start' ? (request.lang ?? 'python') : undefined
+      const x: FakeExecution = {
+        request: { ...request },
+        via,
+        ended: false,
+        started: false,
+        output: '',
+        emit: (event) => {
+          if (!x.ended) onEvent(event as RunEvent)
+        },
+        approval: () => x.emit({ type: 'approval' }),
+        start: () => {
+          x.started = true
+          x.emit({ type: 'started' })
+        },
+        write: (text) => {
+          x.output += text
+          x.emit({ type: 'output', text })
+        },
+        stats: (patch = {}) => x.emit({ type: 'stats', ...FAKE_USAGE, ...patch }),
+        done: (patch = {}) => {
+          x.emit({
+            type: 'done',
+            exit: 0,
+            stopped: false,
+            duration_ms: 1200,
+            code_sha256: sha256Hex(request.code),
+            output: x.output,
+            output_truncated: false,
+            figures: [],
+            ...(lang === undefined ? {} : { lang }),
+            env: lang === undefined || lang === 'python' || lang === 'qsharp' ? { python: '3.12.3', os: 'macos', arch: 'arm64' } : { os: 'macos', arch: 'arm64' },
+            ...patch,
+          })
+          x.end()
+        },
+        error: (reason, message = '') => {
+          x.emit({ type: 'error', reason, message })
+          x.end()
+        },
+        end: () => {
+          x.ended = true
+          resolve()
+        },
+        reject: (error = new Error('bridge failed')) => {
+          x.ended = true
+          reject(error)
+        },
+      }
+      executions.push(x)
+      runner.script?.(x)
+    })
   }
   return runner satisfies QoopRunner
 }
@@ -427,6 +466,11 @@ export class FakeServer {
   gate: Promise<void> | null = null // when set, POST /ops waits for it before applying
   responseGate: Promise<void> | null = null // when set, POST /ops waits for it after applying, before answering
   failNext: { status: number; code: string } | null = null
+  /**
+   * Plays a server from before M19/M19b: a Run's `lang` and `env` are unknown fields, and a result that names a
+   * language, a runtime or an environment, or lists more than 8 packages, is refused (400 `bad_request`).
+   */
+  oldRuns = false
   failChanges = false
   /** When set, `GET …/board` (without `at`) waits for it before answering. */
   boardGate: Promise<void> | null = null
@@ -657,6 +701,24 @@ export class FakeServer {
   resultProblem(b: FakeBranch, ops: Op[]): string | null {
     const after = applyOps(b.entities, ops)
     if (!after.ok) return null // refused as any batch that does not apply
+    // M19b: what a Run names, as the server is asked to check it (api.md §15 "Languages"; desktop.md M19).
+    for (const op of ops) {
+      const named: [string, Value][] =
+        'Set' in op
+          ? op.Set.field === 'lang' || op.Set.field === 'env'
+            ? [[op.Set.field, op.Set.value]]
+            : []
+          : 'Create' in op
+            ? (['lang', 'env'] as const).flatMap((f): [string, Value][] => (op.Create.fields[f] === undefined ? [] : [[f, op.Create.fields[f]!]]))
+            : []
+      for (const [field, value] of named) {
+        if (this.oldRuns) return `unknown field \`${field}\` on Block`
+        if (value === 'Null') continue
+        if (!('Text' in value)) return `A Run's ${field} must be text.`
+        if (field === 'lang' && !isLangId(value.Text)) return 'A language id is 1–24 characters: a lowercase letter, then lowercase letters, digits, - or _.'
+        if (field === 'env' && !isEnvName(value.Text)) return 'An environment name is one line of 1–60 characters.'
+      }
+    }
     for (const op of ops) {
       const [entity, value] =
         'Set' in op && op.Set.field === 'result' ? [op.Set.entity, op.Set.value] : 'Create' in op ? [op.Create.entity, op.Create.fields.result] : []
@@ -671,6 +733,11 @@ export class FakeServer {
       }
       const result = checkRunResult(json)
       if (!result) return 'That is not the result of a Run.'
+      if (
+        this.oldRuns &&
+        (result.lang !== undefined || result.env?.runtime !== undefined || result.env?.name !== undefined || Object.keys(result.env?.packages ?? {}).length > 8)
+      )
+        return 'That is not the result of a Run.'
       if (result.by !== this.actor.id) return 'A result is recorded by the Member who executed the Run.'
       const type = after.entities[entity]?.fields.type
       const isRun = after.entities[entity]?.kind === 'Block' && typeof type === 'object' && 'Text' in type && type.Text === 'run'
