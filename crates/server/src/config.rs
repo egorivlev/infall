@@ -16,6 +16,11 @@ pub const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
 pub const DEFAULT_ARXIV_URL: &str = "https://export.arxiv.org";
 /// How long a Source lookup may take in all (contract §17).
 pub const LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long arXiv may take to answer, and to send each next part, when the server fetches a
+/// PDF from it (M19, api.md §20).
+pub const PDF_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// `QOOP_MAX_PDF_MB` unless set: the largest PDF the server stores (M19, decision 4).
+pub const DEFAULT_MAX_PDF_MB: u64 = 100;
 
 /// Everything the server needs to know about where it runs.
 #[derive(Debug, Clone)]
@@ -44,6 +49,11 @@ pub struct Config {
     /// The largest Workspace file `POST /api/workspace/import` takes, in bytes
     /// (`QOOP_MAX_IMPORT_MB`, default 512 MiB).
     pub max_import_bytes: u64,
+    /// The largest PDF stored, in bytes (`QOOP_MAX_PDF_MB`, default 100 MiB; M19).
+    pub max_pdf_bytes: u64,
+    /// How long arXiv may take to answer, and to send each next part, when a PDF is fetched
+    /// from it. Not read from the environment: always `PDF_FETCH_TIMEOUT`, except in tests.
+    pub pdf_fetch_timeout: Duration,
 }
 
 /// `QOOP_MAX_IMPORT_MB` unless set.
@@ -101,6 +111,15 @@ impl Config {
                 .ok_or("QOOP_MAX_IMPORT_MB must be a whole number of megabytes, at least 1")?,
             None => DEFAULT_MAX_IMPORT_MB,
         };
+        let max_pdf_mb = match var("QOOP_MAX_PDF_MB") {
+            Some(raw) => raw
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .filter(|n| (1..=1024 * 1024).contains(n))
+                .ok_or("QOOP_MAX_PDF_MB must be a whole number of megabytes, at least 1")?,
+            None => DEFAULT_MAX_PDF_MB,
+        };
         Ok(Config {
             addr,
             db: PathBuf::from(var("QOOP_DB").unwrap_or_else(|| "./qoop.db".to_string())),
@@ -114,6 +133,8 @@ impl Config {
             arxiv_url,
             lookup_timeout: LOOKUP_TIMEOUT,
             max_import_bytes: max_import_mb * 1024 * 1024,
+            max_pdf_bytes: max_pdf_mb * 1024 * 1024,
+            pdf_fetch_timeout: PDF_FETCH_TIMEOUT,
         })
     }
 
@@ -133,6 +154,8 @@ impl Config {
             arxiv_url: DEFAULT_ARXIV_URL.to_string(),
             lookup_timeout: LOOKUP_TIMEOUT,
             max_import_bytes: DEFAULT_MAX_IMPORT_MB * 1024 * 1024,
+            max_pdf_bytes: DEFAULT_MAX_PDF_MB * 1024 * 1024,
+            pdf_fetch_timeout: PDF_FETCH_TIMEOUT,
         }
     }
 

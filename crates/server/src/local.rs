@@ -7,8 +7,9 @@ pub mod port;
 pub mod seed;
 
 pub use port::{
-    APPLICATION_ID, EXPORTER_SETTING, Imported, KIND_SETTING, PortError, WORKSPACE_FILE_EXTENSION,
-    export_for_move, export_workspace, import_workspace,
+    APPLICATION_ID, EXPORTER_SETTING, ExportOptions, FileStats, Imported, KIND_SETTING, PortError,
+    WORKSPACE_FILE_EXTENSION, export_for_move, export_workspace, export_workspace_with, file_stats,
+    import_workspace,
 };
 
 use std::fs::OpenOptions;
@@ -305,6 +306,8 @@ pub fn local_config(addr: SocketAddr, web_dir: PathBuf) -> Config {
         arxiv_url: DEFAULT_ARXIV_URL.to_string(),
         lookup_timeout: LOOKUP_TIMEOUT,
         max_import_bytes: crate::config::DEFAULT_MAX_IMPORT_MB * 1024 * 1024,
+        max_pdf_bytes: crate::config::DEFAULT_MAX_PDF_MB * 1024 * 1024,
+        pdf_fetch_timeout: crate::config::PDF_FETCH_TIMEOUT,
     }
 }
 

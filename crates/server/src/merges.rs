@@ -101,6 +101,12 @@ pub async fn apply(
             crate::boards::MAX_TEXT_CHARS
         )));
     }
+    // A hand-written value for one of a Source's PDF fields has that field's shape (M19).
+    for (key, decision) in &body.decisions {
+        if let (Some(field), Decision::Custom(value)) = (key.field.as_deref(), decision) {
+            crate::files::check_field(field, value).map_err(ApiError::BadRequest)?;
+        }
+    }
     let decisions = Decisions::try_from(body.decisions).map_err(|e| bad_decision(&e.0))?;
     let name = body
         .checkpoint

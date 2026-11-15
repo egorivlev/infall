@@ -11,6 +11,7 @@ pub mod chat;
 pub mod comments;
 pub mod config;
 pub mod error;
+pub mod files;
 pub mod graph;
 pub mod history;
 pub mod live;
@@ -136,6 +137,7 @@ pub(crate) fn assemble(
         throttle: Throttle::default(),
         tool_rate: tokens::RateLimit::default(),
         lookup_rate: tokens::RateLimit::new(sources::LOOKUPS_PER_MINUTE),
+        pdf_fetch_rate: tokens::RateLimit::new(files::FETCHES_PER_MINUTE),
         ai: ai::AiState::new().map_err(StartError::Other)?,
         clock,
         hashing: Semaphore::new(4),

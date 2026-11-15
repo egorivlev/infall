@@ -910,6 +910,7 @@ mod tests {
             throttle: Throttle::default(),
             tool_rate: RateLimit::default(),
             lookup_rate: RateLimit::default(),
+            pdf_fetch_rate: RateLimit::default(),
             ai: crate::ai::AiState::new().unwrap(),
             clock: Clock::manual(0),
             hashing: Semaphore::new(1),

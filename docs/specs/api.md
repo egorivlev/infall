@@ -1,4 +1,4 @@
-# Infall — server API contract (M1–M18)
+# Infall — server API contract (M1–M19)
 
 The contract between `crates/server` and `web/`. Both are built against this file; where they disagree with it, this file wins. Vocabulary: [CONTEXT.md](../../CONTEXT.md). Versioning rules: [core.md](core.md).
 
@@ -25,6 +25,7 @@ Environment:
 | `QOOP_DEV_ORIGIN` | unset | one extra allowed Origin (e.g. `http://localhost:5173`) for local UI development |
 | `QOOP_WEB_DIR` | `./web/dist` | built UI to serve; any non-`/api` path that is not a file serves `index.html` |
 | `QOOP_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
+| `QOOP_MAX_PDF_MB` | `100` | the largest PDF the server stores, in MiB (a whole number ≥ 1; §20) |
 
 ## 2. Storage
 
@@ -39,7 +40,7 @@ SQLite (`rusqlite`, bundled). Tables: `members`, `sessions`, `invites` (and the 
 
 Ids are uuid strings, times unix ms, as everywhere in the schema. Every successful mutation is written inside one transaction before the response is sent, and writes only what it adds: an edit inserts its Changes as rows; a fork, a Checkpoint or a Merge adds its rows; a Restore that forgets Merges rewrites the few `sync_points` rows of the Branches concerned. Nothing written grows with the length of the history. The `Workspace` lives in memory behind one lock; the database is read once at start, from these tables. Until schema version 5 the Research Content was one `workspace` row holding the whole `Workspace` as JSON, rewritten on every mutation.
 
-The database runs in WAL mode with `synchronous=FULL`. The schema is created on first start and its version kept in `PRAGMA user_version` (7 now; §19 for what 7 added); a newer binary migrates an older file in place when it opens it, every step in one transaction. Before migrating, it copies the file as it is to `<db>.v<old version>-backup` beside it (owner-only on unix, synced to disk) and removes that copy only once the migration has verifiably succeeded: the step to 6 reads the Workspace back from the new tables and compares it with the old row before dropping the row, the transaction has committed, and `PRAGMA quick_check` passes (the step to 6 also compacts the file with `VACUUM` after the commit, giving back the pages of the old row). On any failure the file is left as it was, the copy stays, and the error names it. A copy left behind by a run that stopped between the commit and the removal is removed by the next open that finds the file at the current version. An older binary refuses a newer file (`newer than this binary`; for Workspace files `NewerVersion`, §17). The store sits behind a small storage trait, with an in-memory implementation for tests.
+The database runs in WAL mode with `synchronous=FULL`. The schema is created on first start and its version kept in `PRAGMA user_version` (8 now; §19 for what 7 added, §20 for 8); a newer binary migrates an older file in place when it opens it, every step in one transaction. Before migrating, it copies the file as it is to `<db>.v<old version>-backup` beside it (owner-only on unix, synced to disk) and removes that copy only once the migration has verifiably succeeded: the step to 6 reads the Workspace back from the new tables and compares it with the old row before dropping the row, the transaction has committed, and `PRAGMA quick_check` passes (the step to 6 also compacts the file with `VACUUM` after the commit, giving back the pages of the old row). On any failure the file is left as it was, the copy stays, and the error names it. A copy left behind by a run that stopped between the commit and the removal is removed by the next open that finds the file at the current version. An older binary refuses a newer file (`newer than this binary`; for Workspace files `NewerVersion`, §17). The store sits behind a small storage trait, with an in-memory implementation for tests.
 
 ## 3. People and sessions
 
@@ -170,7 +171,7 @@ Server → client:
 
 ## 8. Responses and headers
 
-`Content-Type: application/json` for API responses. For every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and for HTML `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'`. Request bodies over 1 MiB are refused; `POST /api/branches/{id}/ops` accepts up to 2 MiB (§15).
+`Content-Type: application/json` for API responses. For every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and for HTML `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self'; frame-ancestors 'none'` (`worker-src 'self'` since M19: what `default-src 'self'` already allowed, said outright for the PDF reader's worker, §20). Request bodies over 1 MiB are refused; `POST /api/branches/{id}/ops` accepts up to 2 MiB (§15).
 
 ## 9. M2 — History, Checkpoints, Restore, Branches
 
@@ -242,7 +243,18 @@ The plan is not trusted: the server recomputes it under the write lock (the core
 ## 11. M4 — Pages, Sources, To-dos
 
 ### Pages and Sources
-Research Content, so they are ordinary entities sent through `POST /api/branches/{id}/ops` and returned by the Board endpoints (core.md §1): `Kind` gains `"Block" | "Source" | "Attachment"`. Nothing new on the server for them. Sizes: a single Text value may be at most 100 000 characters (`400 bad_request` otherwise) — this applies to every Text field of every kind, and to hand-written values in `POST /api/merges`.
+Research Content, so they are ordinary entities sent through `POST /api/branches/{id}/ops` and returned by the Board endpoints (core.md §1): `Kind` gains `"Block" | "Source" | "Attachment"`. Nothing new on the server for them (but for the PDF fields of a Source, M19, below). Sizes: a single Text value may be at most 100 000 characters (`400 bad_request` otherwise) — this applies to every Text field of every kind, and to hand-written values in `POST /api/merges`.
+
+**A Source's PDF (M19, §20).** A Source has four more fields, Research Content like its title — in History, per Branch, merged, restored and undone with no special code:
+
+| Field | Value | Checked on every op and every hand-written Merge value (`400 bad_request` otherwise) |
+|---|---|---|
+| `pdf` | Text | the hash the server gave for the file: 64 lowercase hex characters (its SHA-256) |
+| `pdf_name` | Text | 1–255 characters, no control characters (one line) |
+| `pdf_size` | Float | a whole number ≥ 0 (bytes) |
+| `pdf_pages` | Float | a whole number ≥ 0 |
+
+Null clears any of them; a value of another type is the core's `409 rejected`. The server does not check that `pdf` names a stored file (a Workspace file may come without its PDFs, §20), nor that `pdf_size` and `pdf_pages` match it. Attaching is one batch of `Set`s (or a `Create` with them); removing sets them to Null; replacing sets new values. The bytes are never removed (§20).
 
 ### Who is editing a Page (soft lock)
 Not stored, not versioned; lives only in the live connection.
@@ -389,6 +401,7 @@ The glossary says a Guest reads the Research Content of `main` and nothing else:
 - `GET /api/branches` for a Guest lists only `main`, with `checkpoints: 0`.
 - WebSocket for a Guest: `subscribe` on `main` is answered with `subscribed`; after that the only frame a Guest ever receives is `{ type: "refresh", branch: string, seq: number }` — sent whenever `main` gains Changes (coalesced: at most one per 500 ms), and once right after `subscribed` if the `after` they sent is not the head. No `changes`, `presence`, `editing`, `checkpoint`, `branches`, `todos` or `suggestions` frames. On `refresh` the client fetches the Board again.
 - Everything else stays refused as before (`403`): ops, Members, invites, History, Checkpoints, Branches, Merge, To-dos, Suggestions, access tokens, `/mcp`.
+- **PDFs (M19, §20)**: a Guest may `GET /api/files/pdf/{hash}` and `GET /api/files/pdf/{hash}/text` only when a Source that is live on the present Board of `main` has `pdf` = that hash, and `GET /api/search/pdf` searches only those. Any other hash — named only on another Branch, only in the past, by a removed Source, by nothing, or never stored — is `404 not_found`, the same body for each, so a Guest learns nothing about what exists. Storing a PDF or its text, and fetching from arXiv, are `403`.
 - `GET /api/invites/lookup` additionally returns `access_until` (unix ms) for a Guest invite, so the invite screen can say until when.
 
 ## 14. M7 — the AI sidebar's server side (OpenRouter path)
@@ -447,7 +460,7 @@ A Text value holding one JSON object, at most **600 000 characters**, or Null (n
   "output": "…",                  // standard output and standard error, in arrival order; ≤ 64 000 characters
   "output_truncated": true,       // optional; the middle of the output was dropped
   "figures": [ { "png": "<base64>" } ],   // ≤ 3; each ≤ 160 000 base64 characters and a real PNG (signature checked)
-  "env": { "python": "3.12.3", "packages": { "pennylane": "0.38.0" }, "os": "macos", "arch": "arm64" }  // optional, every part optional; ≤ 32 packages (8 before M18); names ≤ 60, values ≤ 40 characters
+  "env": { "python": "3.12.3", "packages": { "pennylane": "0.38.0" }, "os": "macos", "arch": "arm64" }  // optional, every part optional; ≤ 32 packages (8 before M18); names ≤ 60, values ≤ 40 characters; `name` (M19) as "Languages" below says
 }
 ```
 
@@ -463,7 +476,8 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
 
 - A Run has one more field, **`lang`** (Text): the id of the language its code is written in, `^[a-z][a-z0-9_-]{0,23}$`. Unset means `python`, so every Run that exists stays what it was. The server checks the shape when it is set on a Run (`400 bad_request` otherwise) and nothing else: it keeps no list of languages, because it executes none.
 - `lang` is a field like `title`: two Branches changing it meet in a field Conflict, decided by taking one side; History and Restore need nothing new.
-- A Run also has **`env`** (Text): the Toolchain environment it asks for, 1–60 characters on one line (no control characters; `400 bad_request` otherwise; Null clears it). Research Content like `lang`; the server reads nothing more into it.
+- A Run also has **`env`** (Text): the Toolchain environment it asks for, 1–60 characters on one line, no white space at either end, no control or invisible characters (zero-width spaces and joiners, direction marks, soft hyphen, byte-order mark, variation selectors; `400 bad_request` otherwise; Null clears it). Research Content like `lang`; the server reads nothing more into it.
+- A result's `env` may also carry **`name`** (M19, Part 2): the environment the Run asked for when it was executed, with exactly the rule of the Block's `env` above (`400 bad_request` otherwise). The server does not compare it with the Block's `env`: like `lang`, it records what was executed.
 - The `result` object gains two optional parts, and stays `"v": 1`:
   ```jsonc
   "lang": "julia",                              // the language it was executed as; absent means python
@@ -531,7 +545,7 @@ A Workspace file is a SQLite database (rollback journal, no `-wal` beside it) wi
 | every `settings` row except `preset` and `tutorial_state` | anything a later version keeps there is left out unless it is added to the list on purpose |
 | each Member's `password_hash` | replaced by the hash of a fresh random password nobody knows |
 
-Kept: the Research Content with all its history (Changes, Checkpoints, Branches), Members (id, name, email, role, colour), To-dos, Suggestions, the Preset and the Tutorial's progress. The entry key (§16) lives only in memory and is never in a database. The clean copy is then written to `dest` (never over an existing file: `DestinationExists`; owner-only, mode 0600, on unix) and the scratch file is removed. A database whose schema is newer than the build is `NewerVersion`.
+Kept: the Research Content with all its history (Changes, Checkpoints, Branches), Members (id, name, email, role, colour), To-dos, Suggestions, the Preset and the Tutorial's progress, and (since M19, §20) the stored PDFs and their text unless the export is asked to leave them out. The entry key (§16) lives only in memory and is never in a database. The clean copy is then written to `dest` (never over an existing file: `DestinationExists`; owner-only, mode 0600, on unix) and the scratch file is removed. A database whose schema is newer than the build is `NewerVersion`.
 
 **Import** takes a Workspace file, or a Local Workspace's own database copied by hand (out of the app's data folder, or from a backup of that folder made by other means) — the way back in for a person whose only copy is `workspace.sqlite`.
 
@@ -724,3 +738,75 @@ type ForYouItem = { comment: string; card: string; author: string; at: number; s
 - Outside versioning: the same on every Branch, not in History, never merged, and kept when the Card is removed. Workspace files carry them both ways (above).
 - Live, to every connected Member and Admin, never to Guests: `{ type: "comments", card }` after a Comment is written, edited or deleted and after a thread is resolved or reopened; `{ type: "for_you", count }` to a Member's own connections when their unseen count may have changed (a mention, an edit that adds them, a deletion that took one of their entries, their own `seen`). The client fetches the thread or the list again.
 - In a moved Local Workspace every write above is `403 moved`.
+
+## 20. M19 — a PDF on a Source
+
+See [pdf-sources.md](pdf-sources.md), Part 1 (decisions 1–10, Contracts → Server). Members and Admins unless said; Team and Local Workspaces alike; `401` without a session. All refusals use the usual error body (§4). What a Source says about its PDF is §11's four fields; this section is the bytes.
+
+New error codes:
+
+| Status | Code | When |
+|---|---|---|
+| 404 | `file_missing` | a well-formed hash whose bytes this Workspace does not have — never stored, or left out of the Workspace file it came from. The web UI says "This PDF was not included in the Workspace file" when a Source names it |
+| 404 | `no_text` | `GET …/text` of a stored file whose text has not been stored yet |
+| 415 | `not_a_pdf` | `PUT /api/files/pdf` with a body that does not start with `%PDF-` |
+| 416 | `range_not_satisfiable` | a `Range` that lies outside the file; `Content-Range: bytes */<size>` |
+| 502 | `fetch_failed` | arXiv did not give the PDF (below) |
+
+A hash in a path that is not 64 lowercase hex characters is `404 not_found`.
+
+### Storage (schema version 8)
+
+Migrated in place from every earlier version as in §2. Three tables, outside the Change log and outside versioning; nothing in them is ever deleted (decision 3: a Change on any Branch, present or past, may name a hash; a later milestone may add cleaning):
+
+| Table | One row per | Columns |
+|---|---|---|
+| `pdf_files` | stored file | `hash` (SHA-256 of the bytes, 64 lowercase hex), `size`, `created_at`, `text_pages` (null until its text is stored) |
+| `pdf_chunks` | 256 KiB part of a file, key (`hash`, `n`) | `hash`, `n` (from 0), `bytes` |
+| `pdf_text` | page of a file's text, key (`hash`, `page`) | `hash`, `page` (from 0), `text` |
+
+**Why in the database and not a folder beside it.** A Local Workspace is one folder whose backups and moves are `export_workspace`, and a Team server backs up with `export-workspace`; both take one consistent snapshot of one file (`VACUUM INTO`), which now carries the PDFs with nothing more to copy or keep in step. A database copied by hand (§17's rescue) brings them too, and one transaction makes "stored" and "named by a Source" agree. The cost is a larger database (the PDFs' size added; a migration's safety copy and an export copy it), which a few hundred MB of papers does not make a problem. Parts of 256 KiB let a `Range` read only what it needs; an upload is received into a private scratch file beside the database and then written in one transaction. Who stored a file is not recorded.
+
+### Endpoints
+
+| Method, path | Who | Body | Response |
+|---|---|---|---|
+| `PUT /api/files/pdf` | Member | the PDF itself, streamed (any `Content-Type`; the UI sends `application/pdf`). The usual write rules of §3 apply | `200 { hash, size, pages: null }` — `pages` is the UI's to find out and put in `pdf_pages`. Idempotent: the same bytes again store nothing and answer the same. `415 not_a_pdf` unless the first bytes are `%PDF-` (checked as they arrive; the name and declared type do not count); `413 too_large` over `QOOP_MAX_PDF_MB` (at once from `Content-Length`, else as soon as the body passes it) |
+| `GET /api/files/pdf/{hash}` | Member; a Guest per §13 | — | `200` the bytes, or `206` one range: `Content-Type: application/pdf`, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable`, `Accept-Ranges: bytes`, `ETag: "<hash>"`, `Content-Length`; `Content-Range: bytes <first>-<last>/<size>` with `206`. `Range: bytes=a-b`, `bytes=a-` and `bytes=-n` are served (an end past the file is cut to it); several ranges, another unit or a malformed header give the whole file (`200`); a start at or past the end, or `-0`, is `416 range_not_satisfiable`. `If-Range` with another validator than the `ETag` gives the whole file; `If-None-Match` with it gives `304`. `HEAD` answers the headers alone. `404 file_missing` when the bytes are not here |
+| `PUT /api/files/pdf/{hash}/text` | Member | `{ "pages": ["text of page 1", …] }` exactly (no other key; strings), at most 20 MiB of body and 100 000 pages | `200 { stored: true }`, or `{ stored: false }` when the file already had its text: the first write wins and is never replaced. `404 file_missing` when the file is not stored, `413 too_large` over 20 MiB, `400 bad_request` for any other shape |
+| `GET /api/files/pdf/{hash}/text` | Member; a Guest per §13 | — | `200 { pages: string[] }` as first stored. `404 file_missing`, `404 no_text` |
+| `POST /api/sources/fetch-pdf` | Member | `{ "arxiv": "<id>" }` and no other key; an id in any form §17 takes (`arXiv:…`, an arxiv.org address, a version) | as `PUT /api/files/pdf` |
+| `GET /api/search/pdf?q=` | Member; a Guest searches only what §13 lets them read | — | `200 [{ hash, page, snippet }]` |
+
+**Fetching from arXiv** (decision 9): only on that request, the server asks `GET <QOOP_ARXIV_URL>/pdf/<id>` — the same base address as §17's lookup (`https://export.arxiv.org` by default, arXiv's address for programs, so the hosts the server ever calls stay the ones §14 and §17 name), the id percent-encoded as §17 encodes it, with `Accept: application/pdf` and the same client as §17 (generic `User-Agent`, no cookie, nothing about the Workspace or the person, no redirects followed, no proxy). arXiv has 30 s to answer and then 30 s for each next part of the body (`Config::pdf_fetch_timeout`, not read from the environment). Per Member at most 30 a minute, counted apart from lookups (`429 too_many_requests`; a refused request is not counted, nor a bad body, which sends nothing). Answers, each with a sentence that ends with what to do (try again, or download the PDF and attach it), never arXiv's own text:
+
+| Status, code | When |
+|---|---|
+| `200` | stored, as `PUT /api/files/pdf` |
+| `400 bad_request` | the body is not `{ "arxiv": "<arXiv id>" }` |
+| `404 not_found` | arXiv answers `404` |
+| `413 too_large` | the PDF is over `QOOP_MAX_PDF_MB` (from its `Content-Length`, or as it arrives); nothing is stored |
+| `502 fetch_failed` | arXiv could not be reached, answered with another error status or a redirect, took longer than above, broke off, or sent something that does not start with `%PDF-` |
+
+**Search** (decision 8): the stored text of every file is searched for `q` (trimmed, 1–200 characters, else `400 bad_request`), ignoring case (Unicode lowercase) and how white space runs (any run of white space in the text or in `q` matches any other, so words broken over a line are found). Plain substring matching over the stored pages, no index: SQLite's FTS5 is compiled into the bundled build, but its token matching is not this, and the text of a Workspace's PDFs is small enough to read through. One result per page that matches, by `hash`, then `page`; at most 50. `page` counts from 1. `snippet` is up to 200 characters of the page around the first match, white space collapsed. Files whose text is not stored, and scanned PDFs with no text, are simply not found. The web UI maps `hash` to the Sources of the Branch it shows.
+
+**Read-only Workspaces** (§19): `PUT` of a file or its text and `POST /api/sources/fetch-pdf` are `403 moved`; reading and search keep working.
+
+### Workspace files
+
+Every Workspace file carries the stored PDFs and their text: `export_workspace` (and so `export_for_move` and the desktop app's backups), `GET /api/workspace/export` and `export-workspace`. Every import brings them: a Local file or a hand-copied database into a new Local Workspace (§17), a Team file into a Local Workspace (§19), any file onto an empty Team server (§19 — added to what the server already stores, never replacing it: a file the server has without text gets the file's text). They are content, not secrets: who stored a file and from where is not kept, and the stripping of §17 and §19 leaves them as they are. A Workspace file with many PDFs can pass `QOOP_MAX_IMPORT_MB` (512 MiB by default); raise it for such a move.
+
+A file exported without them (below) has none of the three tables' rows (`secure_delete` and `VACUUM` as in §17, so not a byte of them); its Sources still name their hashes, and `GET` of each is `404 file_missing` until the same file is attached again (same bytes, same hash: the Source is whole again with no edit).
+
+In `qoop_server::local`:
+
+```rust
+pub struct ExportOptions { pub include_files: bool }   // Default: include_files = true
+pub fn export_workspace_with(db: &Path, dest: &Path, options: ExportOptions) -> Result<(), PortError>;
+// export_workspace(db, dest) = export_workspace_with(db, dest, ExportOptions::default())
+pub struct FileStats { pub count: u64, pub bytes: u64 }  // Default: 0, 0
+pub fn file_stats(db: &Path) -> Result<FileStats, PortError>;
+// How many PDFs the Workspace at `db` stores and their bytes in all ("Include PDFs (N files,
+// X MB)"). Reads without changing anything, safe while it is open; a database from before
+// schema version 8 has none. `PortError::Io` when there is no database at `db`.
+```

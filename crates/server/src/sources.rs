@@ -272,7 +272,7 @@ async fn fetch(st: &Shared, url: &str, accept: &str, registry: &str) -> Result<V
 // ---------------------------------------------------------------- Crossref
 
 /// Percent-encodes everything in a DOI but unreserved characters and `/`.
-fn encode_path(s: &str) -> String {
+pub(crate) fn encode_path(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
