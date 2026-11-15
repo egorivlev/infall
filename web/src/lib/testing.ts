@@ -4,6 +4,8 @@ import { applyOps } from './board-state'
 import type { Entities } from './board-state'
 import type { SocketLike } from './board-sync'
 import { sha256Hex } from './code-hash'
+import { FakePdfStore } from './files.fake'
+export { FakePdfStore, contentHash, tinyPdf } from './files.fake'
 import { checkRunResult, MAX_RESULT } from './run-result'
 import type {
   AccessToken,
@@ -522,6 +524,8 @@ export class FakeServer {
   lookups: Record<string, { title: string; authors: string; year: string; doi: string | null; url: string | null }> = {}
   lookupFail: { status: number; code: string; message: string } | null = null
   lookupGate: Promise<void> | null = null
+  /** M19: the stored PDFs, their text, arXiv downloads and PDF search (files.fake.ts). */
+  pdf = new FakePdfStore()
   /** M15b: when set, `GET /api/graph` waits for it. */
   graphGate: Promise<void> | null = null
   /** M15b: how many of the next `GET /api/graph` requests fail with a 500. */
@@ -1319,7 +1323,9 @@ export class FakeServer {
     return this.json(r.status, r.body)
   }
 
-  fetch = async (path: string, init?: RequestInit): Promise<Response> => {
+  fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    // M19: pdf.js asks with an absolute URL object; the routes below read a same-origin path.
+    const path = typeof input === 'string' ? input : input instanceof URL ? input.pathname + input.search : new URL(input.url).pathname
     const method = init?.method ?? 'GET'
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : (init?.body ?? undefined)
     this.requests.push({ method, path, body })
@@ -1330,6 +1336,10 @@ export class FakeServer {
     if (path.startsWith('/api/workspace/')) {
       const answer = await this.moveRoute(path, method, body)
       return 'ok' in answer ? answer : this.respond(answer)
+    }
+    if (path.startsWith('/api/files/') || path === '/api/sources/fetch-pdf' || path.startsWith('/api/search/pdf')) {
+      const answer = await this.pdf.route(path, init, body, { actor: this.actor, main: this.main.entities, readOnly: false })
+      if (answer) return 'status' in answer && !('ok' in answer) ? this.respond(answer) : (answer as Response)
     }
     if (path === '/api/invites' || path.startsWith('/api/invites/')) return this.respond(this.inviteRoute(path, method, body))
     if (path.startsWith('/api/cards/') || path.startsWith('/api/comments') || path.startsWith('/api/for-you')) {

@@ -113,6 +113,23 @@ function float(fields: Fields, name: string, fallback: number): number {
   return typeof v === 'object' && 'Float' in v ? v.Float : fallback
 }
 
+/** M19: a count kept as a number (or, leniently, as digits in text); undefined when there is none. */
+function count(fields: Fields, name: string): number | undefined {
+  const v = fields[name]
+  const n = typeof v === 'object' && 'Float' in v ? v.Float : typeof v === 'object' && 'Text' in v && /^\d+$/.test(v.Text) ? Number(v.Text) : NaN
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined
+}
+
+/** M19: a Source's PDF fields, only when it has a PDF (`pdf` holds its hash); flat, so Sources compare key by key. */
+function sourcePdfFields(f: Fields): Pick<SourceVM, 'pdf' | 'pdfName' | 'pdfSize' | 'pdfPages'> {
+  const pdf = text(f, 'pdf').trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(pdf)) return {}
+  const out: Pick<SourceVM, 'pdf' | 'pdfName' | 'pdfSize' | 'pdfPages'> = { pdf, pdfName: text(f, 'pdf_name'), pdfSize: count(f, 'pdf_size') ?? 0 }
+  const pages = count(f, 'pdf_pages')
+  if (pages !== undefined && pages > 0) out.pdfPages = pages
+  return out
+}
+
 function ref(fields: Fields, name: string): string {
   const v = fields[name]
   return typeof v === 'object' && 'Ref' in v ? v.Ref : ''
@@ -344,6 +361,7 @@ export function toPageIndex(entities: Entities, prev?: PageIndex): PageIndex {
         year: text(f, 'year'),
         note: text(f, 'note'),
         cards: [],
+        ...sourcePdfFields(f),
       })
     } else if (e.kind === 'Attachment') {
       const card = ref(f, 'card')
