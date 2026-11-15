@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "qoop-core"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "proptest",
  "serde",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "qoop-server"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "argon2",
  "axum",

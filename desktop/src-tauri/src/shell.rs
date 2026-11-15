@@ -1119,20 +1119,22 @@ fn start_view(
 /// How many PDFs a Local Workspace keeps with its database, and their size (`WorkspaceEntry
 /// .files`): when it has some, Export… asks whether to include them.
 fn stored_files(db: &Path) -> Option<FilesSummary> {
-    // TODO(M19 zone 1): once the server crate can count a Workspace's stored PDFs, answer
-    // `Some(FilesSummary { count, bytes })` from it here (`None` when it cannot be read).
-    let _ = db;
-    None
+    let stats = qoop_server::local::file_stats(db).ok()?;
+    Some(FilesSummary {
+        count: stats.count,
+        bytes: stats.bytes,
+    })
 }
 
 /// Writes a Workspace file of the database at `db` to `dest`, with the Workspace's PDFs or
 /// without them (docs/specs/pdf-sources.md, decision 6; Export… asks, backups always include
 /// them).
 fn export_with_files(db: &Path, dest: &Path, include_files: bool) -> Result<(), PortError> {
-    // TODO(M19 zone 1): replace the next two lines with
-    // `export_workspace_with(db, dest, ExportOptions { include_files })` (and import both).
-    let _ = include_files;
-    export_workspace(db, dest)
+    qoop_server::local::export_workspace_with(
+        db,
+        dest,
+        qoop_server::local::ExportOptions { include_files },
+    )
 }
 
 /// Makes a Local Workspace from a Preset and opens it.
