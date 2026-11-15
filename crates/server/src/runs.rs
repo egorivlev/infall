@@ -39,6 +39,24 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 /// The most characters of a Run Block's `env` field (one line).
 pub const MAX_BLOCK_ENV_CHARS: usize = 60;
 
+/// Whether `s` is an environment's name, as a Run Block's `env` and a result's `env.name`
+/// carry it: 1–60 characters on one line, no white space at either end, and no control or
+/// invisible characters (zero-width, joiners, direction marks, soft hyphen, BOM).
+pub fn is_env_name(s: &str) -> bool {
+    let invisible = |c: char| {
+        matches!(c,
+            '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}' | '\u{1160}' | '\u{17B4}'
+            | '\u{17B5}' | '\u{180B}'..='\u{180F}' | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{206F}' | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}' | '\u{FEFF}' | '\u{FFA0}' | '\u{FFF0}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E0FFF}')
+    };
+    !s.is_empty()
+        && fits(s, MAX_BLOCK_ENV_CHARS)
+        && s.trim() == s
+        && !s.chars().any(|c| c.is_control() || invisible(c))
+}
+
 /// Whether `s` is a language id: `^[a-z][a-z0-9_-]{0,23}$` (api.md §15, "Languages").
 pub fn is_lang(s: &str) -> bool {
     let mut chars = s.chars();
@@ -167,11 +185,21 @@ fn check_env(env: &Value) -> Result<(), String> {
         .ok_or("The environment of a Run must be an object.")?;
     only_keys(
         map,
-        &["python", "packages", "os", "arch", "runtime"],
+        &["python", "packages", "os", "arch", "runtime", "name"],
         "The environment of a Run",
     )?;
     for key in ["python", "os", "arch", "runtime"] {
         check_env_value(map, key)?;
+    }
+    // The environment the Run asked for (its Block's `env` when it was executed).
+    match map.get("name") {
+        None => {}
+        Some(Value::String(n)) if is_env_name(n) => {}
+        Some(_) => {
+            return Err(format!(
+                "In the environment of a Run `name` must be 1 to {MAX_BLOCK_ENV_CHARS} characters on one line, with no space at either end."
+            ));
+        }
     }
     let Some(packages) = map.get("packages") else {
         return Ok(());
@@ -344,14 +372,14 @@ fn check_block_fields(ops: &[Op]) -> Result<(), ApiError> {
         };
         let ok = match field {
             "lang" => is_lang(t),
-            _ => !t.is_empty() && fits(t, MAX_BLOCK_ENV_CHARS) && !t.chars().any(char::is_control),
+            _ => is_env_name(t),
         };
         if !ok {
             return Err(ApiError::BadRequest(if field == "lang" {
                 "The `lang` of a Run must be a language id such as \"julia\".".to_string()
             } else {
                 format!(
-                    "The `env` of a Run must be 1 to {MAX_BLOCK_ENV_CHARS} characters on one line."
+                    "The `env` of a Run must be 1 to {MAX_BLOCK_ENV_CHARS} characters on one line, with no space at either end."
                 )
             }));
         }
@@ -470,6 +498,32 @@ mod tests {
         r["env"] = json!({ "runtime": "r".repeat(41) });
         assert!(parse(&r.to_string()).is_err());
         assert!(is_lang("a_b-9") && !is_lang("9a") && !is_lang("a b"));
+    }
+
+    #[test]
+    fn a_result_may_name_the_environment_it_asked_for() {
+        let mut r = valid();
+        for good in ["analysis", "py 3.12 (conda)", &"é".repeat(60)] {
+            r["env"] =
+                json!({ "name": good, "python": "3.12.3", "packages": { "numpy": "2.1.0" } });
+            assert!(parse(&r.to_string()).is_ok(), "{good}");
+        }
+        for bad in [
+            json!(""),
+            json!(" analysis"),
+            json!("analysis "),
+            json!("a\nb"),
+            json!("a\tb"),
+            json!("zero\u{200B}width"),
+            json!("bom\u{FEFF}"),
+            json!("e".repeat(61)),
+            json!(5),
+            json!(null),
+        ] {
+            r["env"] = json!({ "name": bad.clone() });
+            assert!(parse(&r.to_string()).is_err(), "{bad}");
+        }
+        assert!(!is_env_name("rtl\u{202E}x") && is_env_name("a b"));
     }
 
     #[test]
