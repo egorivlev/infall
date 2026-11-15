@@ -19,11 +19,11 @@ use crate::app::{AppState, Shared, blocking};
 use crate::auth::{Admin, normalize_email};
 use crate::error::ApiError;
 use crate::live::Hub;
-use crate::local::PortError;
 use crate::local::port::{
     Facts, check_header, copy_new, create_private, export_file, prepare_for_team, remove_scratch,
     scratch_path,
 };
+use crate::local::{ExportOptions, PortError};
 use crate::store::{ImportOutcome, MemberRecord, Role, SqliteStore, Store, StoreError};
 
 const LOCAL_IMPORT: &str =
@@ -60,7 +60,7 @@ pub async fn is_empty(st: &Shared) -> Result<bool, ApiError> {
 
 /// Where this server makes its private scratch files: beside its database, or in the
 /// system's temporary folder for a database that is not a file.
-fn scratch_file(st: &AppState, what: &str) -> Result<PathBuf, ApiError> {
+pub(crate) fn scratch_file(st: &AppState, what: &str) -> Result<PathBuf, ApiError> {
     let db = &st.config.db;
     let name = db.to_string_lossy();
     let base = if name.is_empty() || name == ":memory:" || name.starts_with("file:") {
@@ -253,10 +253,12 @@ pub async fn export(State(st): State<Shared>, Admin(who): Admin) -> Result<Respo
     let by = who.id();
     {
         let (db, dest) = (db.clone(), dest.clone());
-        tokio::task::spawn_blocking(move || export_file(&db, &dest, Some(by)))
-            .await
-            .map_err(|e| ApiError::internal(format!("export task failed: {e}")))?
-            .map_err(ApiError::internal)?;
+        tokio::task::spawn_blocking(move || {
+            export_file(&db, &dest, Some(by), ExportOptions::default())
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("export task failed: {e}")))?
+        .map_err(ApiError::internal)?;
     }
     tracing::info!(by = %by.0, "workspace file exported");
     let file = tokio::fs::File::open(&dest)

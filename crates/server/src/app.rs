@@ -25,14 +25,16 @@ use crate::live::{self, Hub};
 use crate::store::{Store, StoreResult};
 use crate::tokens::RateLimit;
 use crate::{
-    Clock, boards, chat, comments, graph, history, local, mcp, merges, people, sources,
+    Clock, boards, chat, comments, files, graph, history, local, mcp, merges, people, sources,
     suggestions, todos, tokens, transfer,
 };
 
 /// Request bodies over this are refused.
 pub const BODY_LIMIT: usize = 1024 * 1024;
 
-const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
+/// `worker-src 'self'` is what `default-src 'self'` already allows, said outright: the PDF
+/// reader's worker (pdf.js, shipped with the UI) runs from this origin, and from nowhere else.
+const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self'; frame-ancestors 'none'";
 
 /// The policy of the page a Visual runs in (contract §13): sandboxed into an opaque origin,
 /// no network, embeddable only by the app itself.
@@ -58,6 +60,8 @@ pub struct AppState {
     pub tool_rate: RateLimit,
     /// Source lookups per Member (contract §17).
     pub lookup_rate: RateLimit,
+    /// PDFs fetched from arXiv per Member (M19, api.md §20).
+    pub pdf_fetch_rate: RateLimit,
     /// The OpenRouter path of the AI sidebar: its HTTP client, turn limit and model list.
     pub ai: AiState,
     pub clock: Clock,
@@ -158,6 +162,20 @@ pub fn router(st: Shared) -> Router {
         .route("/ai/models", get(ai::get_models))
         .route("/ai/chat", post(chat::chat))
         .route("/sources/lookup", post(sources::lookup))
+        .route("/sources/fetch-pdf", post(files::fetch_pdf))
+        // A PDF and its text stream in under their own limits (`QOOP_MAX_PDF_MB`, 20 MB).
+        .route(
+            "/files/pdf",
+            put(files::put_pdf).layer(DefaultBodyLimit::disable()),
+        )
+        .route("/files/pdf/{hash}", get(files::get_pdf))
+        .route(
+            "/files/pdf/{hash}/text",
+            get(files::get_text)
+                .put(files::put_text)
+                .layer(DefaultBodyLimit::disable()),
+        )
+        .route("/search/pdf", get(files::search))
         .route("/ws", get(live::ws_handler))
         .route("/workspace", get(local::get_workspace))
         // A Workspace file streams in under its own limit (`QOOP_MAX_IMPORT_MB`).

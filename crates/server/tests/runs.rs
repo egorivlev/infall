@@ -201,6 +201,16 @@ async fn a_member_records_a_result_and_a_guest_reads_it_with_the_board_of_main()
         assert_eq!(fields["result"], text(&r.to_string()));
     }
 
+    // A result may name the environment the Run asked for (`env.name`).
+    let mut named = result(&w.ada);
+    named["env"] =
+        json!({ "name": "analysis", "python": "3.12.3", "packages": { "numpy": "2.1.0" } });
+    let res = w
+        .post(&w.admin, &w.main, json!([set_result(&w.run, &named)]))
+        .await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+    assert_eq!(w.result_on(&w.main, &w.run).await, text(&named.to_string()));
+
     // A Guest cannot record one.
     let res = w
         .post(&guest, &w.main, json!([set_result(&w.run, &r)]))
@@ -298,6 +308,20 @@ async fn a_result_of_any_other_shape_is_refused() {
             "hash too short",
             put(&["code_sha256"], json!("a".repeat(63))),
         ),
+        (
+            "env.name with a space at its end",
+            put(&["env"], json!({ "name": "analysis " })),
+        ),
+        (
+            "env.name with an invisible character",
+            put(&["env"], json!({ "name": "anal\u{200B}ysis" })),
+        ),
+        (
+            "env.name too long",
+            put(&["env"], json!({ "name": "e".repeat(61) })),
+        ),
+        ("env.name empty", put(&["env"], json!({ "name": "" }))),
+        ("env.name a number", put(&["env"], json!({ "name": 3 }))),
         (
             "hash too long",
             put(&["code_sha256"], json!("a".repeat(65))),

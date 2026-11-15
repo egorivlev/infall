@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod content;
+mod files;
+
+pub use files::{CHUNK_BYTES, PdfFile, TextOutcome};
 
 /// What a person may do (contract §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -496,6 +499,35 @@ pub trait Store: Send + Sync + 'static {
     fn import_prepared(&self, _file: &Path) -> StoreResult<ImportOutcome> {
         Err(unsupported())
     }
+
+    // ------------------------------------------------------------ PDFs (schema 8)
+
+    /// The stored file with that hash, if there is one.
+    fn pdf_file(&self, _hash: &str) -> StoreResult<Option<PdfFile>> {
+        Err(unsupported())
+    }
+    /// Stores the bytes of the file at `from`, whose SHA-256 is `hash` and which is `size`
+    /// bytes long, all at once; false, and nothing written, when it is already stored.
+    fn insert_pdf(&self, _hash: &str, _size: u64, _from: &Path, _at: i64) -> StoreResult<bool> {
+        Err(unsupported())
+    }
+    /// Part `n` of a stored file: its bytes from `n * CHUNK_BYTES` up to the next part.
+    fn pdf_chunk(&self, _hash: &str, _n: u64) -> StoreResult<Option<Vec<u8>>> {
+        Err(unsupported())
+    }
+    /// Stores the text of each page of a stored file, unless it already has its text.
+    fn set_pdf_text(&self, _hash: &str, _pages: &[String]) -> StoreResult<TextOutcome> {
+        Err(unsupported())
+    }
+    /// The stored text of a file's pages, in order; `None` when there is none.
+    fn pdf_text(&self, _hash: &str) -> StoreResult<Option<Vec<String>>> {
+        Err(unsupported())
+    }
+    /// Calls `visit(hash, page, text)` for every stored page (pages counted from 0), by hash
+    /// and then page, until it returns false.
+    fn scan_pdf_text(&self, _visit: &mut dyn FnMut(&str, u32, &str) -> bool) -> StoreResult<()> {
+        Err(unsupported())
+    }
 }
 
 fn unsupported() -> StoreError {
@@ -505,7 +537,7 @@ fn unsupported() -> StoreError {
 // ---------------------------------------------------------------- SQLite
 
 /// The schema version this binary writes; kept in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE members (
@@ -666,6 +698,32 @@ CREATE TABLE for_you (
 CREATE INDEX for_you_member ON for_you(member, at);
 ";
 
+/// M19 (docs/specs/pdf-sources.md, Part 1): stored PDFs, by the SHA-256 of their bytes, and
+/// the text of their pages. Outside the Change log and outside versioning: a Source names a
+/// file by its hash, and one stored file serves every Source and Branch that names it. The
+/// bytes are kept in parts of `files::CHUNK_BYTES`, so that a range is read without the
+/// whole file. `text_pages` is null until the text is stored (`pdf_text`), once.
+const SCHEMA_V8: &str = "
+CREATE TABLE pdf_files (
+    hash TEXT PRIMARY KEY,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    text_pages INTEGER
+);
+CREATE TABLE pdf_chunks (
+    hash TEXT NOT NULL REFERENCES pdf_files(hash),
+    n INTEGER NOT NULL,
+    bytes BLOB NOT NULL,
+    PRIMARY KEY (hash, n)
+);
+CREATE TABLE pdf_text (
+    hash TEXT NOT NULL REFERENCES pdf_files(hash),
+    page INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    PRIMARY KEY (hash, page)
+);
+";
+
 /// The setting that changes whenever a Workspace file replaces the Research Content
 /// (`import_prepared`). A server that read the Workspace before such a change refuses to
 /// write it over the new one (see `SqliteStore::check_epoch`).
@@ -692,6 +750,8 @@ const MIGRATIONS: &[Step] = &[
     Step::Code(content::from_json_row),
     // Version 7: M18.
     Step::Sql(SCHEMA_V7),
+    // Version 8: M19, PDFs on Sources.
+    Step::Sql(SCHEMA_V8),
 ];
 
 /// The SQLite store: one connection behind a mutex.
@@ -1361,6 +1421,21 @@ fn import_prepared_on(conn: &mut Connection, file: &Path) -> StoreResult<ImportO
                 [],
             )?;
         }
+        // Stored PDFs are kept by their content and never replaced: the file's are added to
+        // whatever is here (one may have been uploaded before the Workspace had content).
+        tx.execute_batch(
+            "INSERT OR IGNORE INTO main.pdf_files (hash, size, created_at, text_pages)
+                 SELECT hash, size, created_at, NULL FROM incoming.pdf_files;
+             INSERT OR IGNORE INTO main.pdf_chunks (hash, n, bytes)
+                 SELECT hash, n, bytes FROM incoming.pdf_chunks;
+             INSERT OR IGNORE INTO main.pdf_text (hash, page, text)
+                 SELECT t.hash, t.page, t.text FROM incoming.pdf_text t
+                 WHERE (SELECT m.text_pages FROM main.pdf_files m WHERE m.hash = t.hash) IS NULL;
+             UPDATE main.pdf_files SET text_pages =
+                 (SELECT i.text_pages FROM incoming.pdf_files i WHERE i.hash = main.pdf_files.hash)
+                 WHERE text_pages IS NULL
+                   AND hash IN (SELECT hash FROM incoming.pdf_files WHERE text_pages IS NOT NULL);",
+        )?;
         tx.execute(
             "INSERT INTO main.for_you (member, comment, card, author, at, seen)
              SELECT member, comment, card, author, at, seen FROM incoming.for_you
@@ -1639,6 +1714,30 @@ impl Store for SqliteStore {
     fn import_prepared(&self, file: &Path) -> StoreResult<ImportOutcome> {
         let mut conn = self.conn()?;
         import_prepared_on(&mut conn, file)
+    }
+
+    fn pdf_file(&self, hash: &str) -> StoreResult<Option<PdfFile>> {
+        files::file_on(&*self.conn()?, hash)
+    }
+
+    fn insert_pdf(&self, hash: &str, size: u64, from: &Path, at: i64) -> StoreResult<bool> {
+        files::insert_on(&mut *self.conn()?, hash, size, from, at)
+    }
+
+    fn pdf_chunk(&self, hash: &str, n: u64) -> StoreResult<Option<Vec<u8>>> {
+        files::chunk_on(&*self.conn()?, hash, n)
+    }
+
+    fn set_pdf_text(&self, hash: &str, pages: &[String]) -> StoreResult<TextOutcome> {
+        files::set_text_on(&mut *self.conn()?, hash, pages)
+    }
+
+    fn pdf_text(&self, hash: &str) -> StoreResult<Option<Vec<String>>> {
+        files::text_on(&*self.conn()?, hash)
+    }
+
+    fn scan_pdf_text(&self, visit: &mut dyn FnMut(&str, u32, &str) -> bool) -> StoreResult<()> {
+        files::scan_on(&*self.conn()?, visit)
     }
 
     fn load_workspace(&self) -> StoreResult<Option<Workspace>> {
@@ -2242,6 +2341,8 @@ struct Memory {
     comments: Vec<CommentRecord>,
     resolved: HashMap<Uuid, bool>,
     for_you: HashMap<MemberId, Vec<ForYouRecord>>,
+    /// Stored PDFs by hash: the bytes, and the text of the pages once stored.
+    pdfs: std::collections::BTreeMap<String, (Vec<u8>, Option<Vec<String>>)>,
 }
 
 /// An in-memory store with the same rules as SQLite (tests).
@@ -2789,5 +2890,70 @@ impl Store for MemoryStore {
             e.seen = true;
         }
         Ok(true)
+    }
+
+    fn pdf_file(&self, hash: &str) -> StoreResult<Option<PdfFile>> {
+        Ok(self.lock()?.pdfs.get(hash).map(|(bytes, text)| PdfFile {
+            hash: hash.to_string(),
+            size: bytes.len() as u64,
+            has_text: text.is_some(),
+        }))
+    }
+
+    fn insert_pdf(&self, hash: &str, size: u64, from: &Path, _at: i64) -> StoreResult<bool> {
+        let mut m = self.lock()?;
+        if m.pdfs.contains_key(hash) {
+            return Ok(false);
+        }
+        let bytes = std::fs::read(from)
+            .map_err(|e| StoreError::Backend(format!("the uploaded file: {e}")))?;
+        if bytes.len() as u64 != size {
+            return Err(StoreError::Backend(
+                "the uploaded file changed while it was stored".to_string(),
+            ));
+        }
+        m.pdfs.insert(hash.to_string(), (bytes, None));
+        Ok(true)
+    }
+
+    fn pdf_chunk(&self, hash: &str, n: u64) -> StoreResult<Option<Vec<u8>>> {
+        let m = self.lock()?;
+        let Some((bytes, _)) = m.pdfs.get(hash) else {
+            return Ok(None);
+        };
+        let start = n.saturating_mul(CHUNK_BYTES);
+        if start >= bytes.len() as u64 {
+            return Ok(None);
+        }
+        let end = (start + CHUNK_BYTES).min(bytes.len() as u64);
+        Ok(Some(bytes[start as usize..end as usize].to_vec()))
+    }
+
+    fn set_pdf_text(&self, hash: &str, pages: &[String]) -> StoreResult<TextOutcome> {
+        let mut m = self.lock()?;
+        Ok(match m.pdfs.get_mut(hash) {
+            None => TextOutcome::NoFile,
+            Some((_, Some(_))) => TextOutcome::AlreadyStored,
+            Some((_, text)) => {
+                *text = Some(pages.to_vec());
+                TextOutcome::Stored
+            }
+        })
+    }
+
+    fn pdf_text(&self, hash: &str) -> StoreResult<Option<Vec<String>>> {
+        Ok(self.lock()?.pdfs.get(hash).and_then(|(_, t)| t.clone()))
+    }
+
+    fn scan_pdf_text(&self, visit: &mut dyn FnMut(&str, u32, &str) -> bool) -> StoreResult<()> {
+        let m = self.lock()?;
+        for (hash, (_, text)) in &m.pdfs {
+            for (i, page) in text.iter().flatten().enumerate() {
+                if !visit(hash, i as u32, page) {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
     }
 }

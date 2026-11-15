@@ -110,8 +110,85 @@ pub(crate) struct Facts {
 ///
 /// The copy is made and cleaned beside `db` (the folder that already holds the secrets),
 /// and only the clean file is written to `dest`.
+///
+/// The stored PDFs and their text go with it (`export_workspace_with` can leave them out).
 pub fn export_workspace(db: &Path, dest: &Path) -> Result<(), PortError> {
-    export_file(db, dest, None)
+    export_workspace_with(db, dest, ExportOptions::default())
+}
+
+/// What an export takes besides the Workspace itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExportOptions {
+    /// The stored PDFs and the text of their pages (docs/specs/pdf-sources.md, decision 6).
+    /// Without them the Sources still name their PDFs, and a Workspace made from the file
+    /// answers `404 file_missing` for each.
+    pub include_files: bool,
+}
+
+impl Default for ExportOptions {
+    /// Everything: what `export_workspace`, backups and a move take.
+    fn default() -> ExportOptions {
+        ExportOptions {
+            include_files: true,
+        }
+    }
+}
+
+/// `export_workspace`, with or without the stored PDFs (`options`).
+pub fn export_workspace_with(
+    db: &Path,
+    dest: &Path,
+    options: ExportOptions,
+) -> Result<(), PortError> {
+    export_file(db, dest, None, options)
+}
+
+/// How many PDFs a Workspace stores, and their bytes in all: what "Include PDFs (N files,
+/// X MB)" says before an export. Reads the database at `db` (safe while it is open)
+/// without changing it; a database from before PDFs were stored has none.
+pub fn file_stats(db: &Path) -> Result<FileStats, PortError> {
+    if !db.is_file() {
+        return Err(PortError::Io(format!(
+            "There is no Workspace database at {}.",
+            db.display()
+        )));
+    }
+    let cannot_read = |e: rusqlite::Error| {
+        PortError::Io(format!(
+            "The Workspace database {} could not be read: {e}.",
+            db.display()
+        ))
+    };
+    let conn = Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(cannot_read)?;
+    conn.busy_timeout(std::time::Duration::from_secs(10))
+        .map_err(cannot_read)?;
+    if !has_table(&conn, "pdf_files").map_err(cannot_read)? {
+        return Ok(FileStats { count: 0, bytes: 0 });
+    }
+    let (count, bytes): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM pdf_files",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(cannot_read)?;
+    Ok(FileStats {
+        count: count.max(0) as u64,
+        bytes: bytes.max(0) as u64,
+    })
+}
+
+/// What `file_stats` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FileStats {
+    /// How many PDFs are stored.
+    pub count: u64,
+    /// Their sizes added up.
+    pub bytes: u64,
 }
 
 /// The Workspace file the desktop app hands to a Team server (docs/specs/team-move.md,
@@ -122,7 +199,12 @@ pub fn export_for_move(db: &Path, dest: &Path) -> Result<(), PortError> {
 }
 
 /// `export_workspace`, recording `by` as who exported a Team file (`None`: its oldest Admin).
-pub(crate) fn export_file(db: &Path, dest: &Path, by: Option<MemberId>) -> Result<(), PortError> {
+pub(crate) fn export_file(
+    db: &Path,
+    dest: &Path,
+    by: Option<MemberId>,
+    options: ExportOptions,
+) -> Result<(), PortError> {
     if exists(dest) {
         return Err(PortError::DestinationExists);
     }
@@ -133,7 +215,7 @@ pub(crate) fn export_file(db: &Path, dest: &Path, by: Option<MemberId>) -> Resul
         )));
     }
     let scratch = scratch_path(db, "export")?;
-    let result = export_via(db, &scratch, dest, by);
+    let result = export_via(db, &scratch, dest, by, options);
     remove_scratch(&scratch);
     result
 }
@@ -143,6 +225,7 @@ fn export_via(
     scratch: &Path,
     dest: &Path,
     by: Option<MemberId>,
+    options: ExportOptions,
 ) -> Result<(), PortError> {
     let cannot_read = |e: rusqlite::Error| {
         PortError::Io(format!(
@@ -188,9 +271,9 @@ fn export_via(
         let local = setting(&conn, PRESET_SETTING)?.is_some();
         drop(conn);
         if local {
-            strip_local(scratch, true)
+            strip_local(scratch, true, options.include_files)
         } else {
-            strip_team(scratch, by)
+            strip_team(scratch, by, options.include_files)
         }
     })();
     cleaned.map_err(|e| PortError::Io(format!("The copy could not be cleaned: {e}.")))?;
@@ -215,13 +298,20 @@ fn export_via(
 ///   knows (a Member who is a name only keeps an empty one).
 ///
 /// With `stamp`, the copy is then marked as a Workspace file of a Local Workspace and names
-/// its one Member as who exported it.
-fn strip_local(path: &Path, stamp: bool) -> rusqlite::Result<()> {
+/// its one Member as who exported it. Without `files`, the stored PDFs and their text are
+/// taken out too.
+///
+/// The stored PDFs are content, not secrets: they carry nothing about who uploaded them or
+/// from where, so they stay.
+fn strip_local(path: &Path, stamp: bool, files: bool) -> rusqlite::Result<()> {
     let mut conn = Connection::open(path)?;
     let _mode: String = conn.query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA secure_delete = ON;")?;
     let tx = conn.transaction()?;
     delete_secrets(&tx)?;
+    if !files {
+        delete_files(&tx)?;
+    }
     if has_table(&tx, "settings")? {
         tx.execute(
             "DELETE FROM settings WHERE name NOT IN (?1, ?2)",
@@ -259,13 +349,17 @@ fn strip_local(path: &Path, stamp: bool) -> rusqlite::Result<()> {
 /// docs/specs/team-move.md lists — sessions, invites, access tokens, AI settings and keys,
 /// every setting, and of each Member everything but their name: email, password hash,
 /// access time (Guests, who are not Members, go entirely) — marks it as a Team Workspace's
-/// file, records who exported it (`by`, else the oldest Admin), and rebuilds it.
-fn strip_team(path: &Path, by: Option<MemberId>) -> rusqlite::Result<()> {
+/// file, records who exported it (`by`, else the oldest Admin), and rebuilds it. Without
+/// `files`, the stored PDFs and their text are taken out too.
+fn strip_team(path: &Path, by: Option<MemberId>, files: bool) -> rusqlite::Result<()> {
     let mut conn = Connection::open(path)?;
     let _mode: String = conn.query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA secure_delete = ON;")?;
     let tx = conn.transaction()?;
     delete_secrets(&tx)?;
+    if !files {
+        delete_files(&tx)?;
+    }
     tx.execute("DELETE FROM settings", [])?;
     let exporter: Option<String> = match by {
         Some(m) => Some(m.0.to_string()),
@@ -310,6 +404,16 @@ fn stamp_file(conn: &Connection, kind: &str, owner: &str) -> rusqlite::Result<()
 /// Sessions, invites, access tokens and AI settings, whichever of them the file has.
 fn delete_secrets(conn: &Connection) -> rusqlite::Result<()> {
     for table in ["sessions", "invites", "access_tokens", "ai_settings"] {
+        if has_table(conn, table)? {
+            conn.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+    }
+    Ok(())
+}
+
+/// The stored PDFs and the text of their pages, whichever of them the file has.
+fn delete_files(conn: &Connection) -> rusqlite::Result<()> {
+    for table in ["pdf_text", "pdf_chunks", "pdf_files"] {
         if has_table(conn, table)? {
             conn.execute(&format!("DELETE FROM {table}"), [])?;
         }
@@ -415,7 +519,7 @@ fn import_via(file: &Path, scratch: &Path, db: &Path) -> Result<Imported, PortEr
         } else {
             // A database copied by hand: everything an export takes out is taken out, the
             // `-wal` is folded in, and it is marked, so it is from here on a Workspace file.
-            strip_local(scratch, false)
+            strip_local(scratch, false, true)
                 .map_err(|e| PortError::Io(format!("The copy could not be cleaned: {e}.")))?;
         }
         facts.preset.as_deref().and_then(Preset::from_id)

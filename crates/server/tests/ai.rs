@@ -803,7 +803,7 @@ async fn a_database_file_from_before_m7_upgrades_in_place_and_keeps_its_data() {
         assert_eq!(app.chat(&cookie, "hi").await.last()["type"], "done");
     }
     assert_eq!(version(&path), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 7);
+    assert_eq!(SCHEMA_VERSION, 8);
 
     // Opening the upgraded file again changes nothing.
     let store: Arc<dyn Store> = Arc::new(SqliteStore::open(&path).unwrap());

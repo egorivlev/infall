@@ -98,6 +98,25 @@ pub enum ApiError {
     /// A request body over its limit; the value is the sentence.
     #[error("{0}")]
     TooLarge(String),
+    /// A PDF a Source names whose bytes this Workspace does not have (M19): a Workspace file
+    /// exported without its PDFs, or a hash nothing was ever stored under.
+    #[error("file missing")]
+    FileMissing,
+    /// A stored PDF whose text has not been stored yet (M19).
+    #[error("no text")]
+    NoText,
+    /// What was sent as a PDF does not start as one (M19).
+    #[error("not a PDF")]
+    NotAPdf,
+    /// A `Range` that lies outside the file; the value is the file's size.
+    #[error("range not satisfiable")]
+    RangeNotSatisfiable(u64),
+    /// arXiv did not give the PDF asked for; the value is the sentence (M19).
+    #[error("{0}")]
+    FetchFailed(&'static str),
+    /// A Member who asked for more PDFs from arXiv than a minute allows (M19).
+    #[error("too many fetches")]
+    TooManyFetches,
     /// Logged, never shown.
     #[error("internal: {0}")]
     Internal(String),
@@ -242,6 +261,32 @@ impl ApiError {
                 crate::local::PortError::NewerVersion.to_string(),
             ),
             TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "too_large", m.clone()),
+            FileMissing => (
+                StatusCode::NOT_FOUND,
+                "file_missing",
+                "This PDF is not stored in this Workspace. It may have been left out of the Workspace file it came from; attach it again.".into(),
+            ),
+            NoText => (
+                StatusCode::NOT_FOUND,
+                "no_text",
+                "The text of this PDF has not been stored yet.".into(),
+            ),
+            NotAPdf => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "not_a_pdf",
+                "This file is not a PDF. Only PDF files can be attached to a Source.".into(),
+            ),
+            RangeNotSatisfiable(_) => (
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                "range_not_satisfiable",
+                "The range asked for lies outside this file.".into(),
+            ),
+            FetchFailed(m) => (StatusCode::BAD_GATEWAY, "fetch_failed", (*m).into()),
+            TooManyFetches => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Too many PDFs fetched from arXiv in a minute. Try again in a moment.".into(),
+            ),
             Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
@@ -257,12 +302,23 @@ impl IntoResponse for ApiError {
             tracing::error!(%cause, "internal error");
         }
         let (status, code, message) = self.parts();
+        let range = match &self {
+            ApiError::RangeNotSatisfiable(size) => Some(*size),
+            _ => None,
+        };
         let detail = match self {
             ApiError::Rejected(v) | ApiError::Undecided(v) | ApiError::BadDecision(v) => v,
             _ => Value::Null,
         };
         let body = json!({ "error": { "code": code, "message": message, "detail": detail } });
-        (status, Json(body)).into_response()
+        let mut res = (status, Json(body)).into_response();
+        if let Some(size) = range
+            && let Ok(v) = axum::http::HeaderValue::from_str(&format!("bytes */{size}"))
+        {
+            res.headers_mut()
+                .insert(axum::http::header::CONTENT_RANGE, v);
+        }
+        res
     }
 }
 

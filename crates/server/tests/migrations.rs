@@ -13,6 +13,9 @@
 //!   a Delete undone by a Restore — then its database (`VACUUM INTO`) and its export.
 //! - `v6.sqlite`, `v6.infall`: `v5.sqlite` as the M15 follow-up build (schema version 6,
 //!   Research Content as rows of Changes) migrated it, and that build's export of it.
+//! - `v7.sqlite`, `v7.infall`: `v6.sqlite` as the M18 build (schema version 7: Comments,
+//!   Members as names) migrated it, with a Comment written on a Card and its thread
+//!   resolved through that build's store, and that build's export of it.
 //! - `v1.sqlite` … `v4.sqlite`: that database taken back to each older schema, as the
 //!   releases of M1 (1), M4 (2), M5 (3) and M7 (4) left their files: the tables a version
 //!   did not have yet dropped (`settings` before 5, `ai_settings` before 4, `access_tokens`
@@ -110,15 +113,17 @@ fn assert_rich(ws: &Workspace) {
 
 /// The tables schema version 7 added.
 const V7_TABLES: [&str; 3] = ["comment_threads", "comments", "for_you"];
+/// The tables schema version 8 added (stored PDFs and their text).
+const V8_TABLES: [&str; 3] = ["pdf_chunks", "pdf_files", "pdf_text"];
 
 #[test]
 fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
-    for old in 1..=6i64 {
+    for old in 1..=7i64 {
         let dir = tempfile::tempdir().unwrap();
         let name = format!("v{old}.sqlite");
         let db = copy_of(&name, dir.path());
         assert_eq!(version(&db), old);
-        // Version 6 has no JSON row; it was made from the version 5 file.
+        // Versions 6 and 7 have no JSON row; they were made from the version 5 file.
         let before_ws = if old < 6 {
             old_workspace(&db)
         } else {
@@ -160,6 +165,7 @@ fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
         ]
         .into_iter()
         .chain(V7_TABLES)
+        .chain(V8_TABLES)
         {
             if !expected_tables.iter().any(|x| x == t) {
                 expected_tables.push(t.to_string());
@@ -177,7 +183,7 @@ fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
                 .unwrap()
                 .1
                 .clone();
-            if table == "invites" {
+            if table == "invites" && old < 7 {
                 // Version 7 added `claims`, null for every invite there was.
                 for row in &mut after {
                     assert_eq!(row.pop(), Some(Cell::Null), "v{old}");
@@ -199,9 +205,16 @@ fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
             }
         }
 
-        for t in V7_TABLES {
+        let new_tables = V8_TABLES.iter().chain(V7_TABLES.iter().filter(|_| old < 7));
+        for t in new_tables {
             let empty = after_rows.iter().find(|(name, _)| name == t).unwrap();
             assert!(empty.1.is_empty(), "v{old}: {t}");
+        }
+        if old == 7 {
+            for t in ["comments", "comment_threads"] {
+                let kept = after_rows.iter().find(|(name, _)| name == t).unwrap();
+                assert_eq!(kept.1.len(), 1, "v7: {t}");
+            }
         }
 
         // And through the store, as the server reads them.
@@ -210,6 +223,12 @@ fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
         assert_eq!(members[0].name, "Ada Lovelace");
         assert!(members[0].claimed());
         assert!(store.comments(uuid::Uuid::new_v4()).unwrap().1.is_empty());
+        assert_eq!(store.comment_total().unwrap(), usize::from(old == 7));
+        assert!(store.pdf_file(&"0".repeat(64)).unwrap().is_none());
+        assert_eq!(
+            qoop_server::local::file_stats(&db).unwrap(),
+            qoop_server::local::FileStats::default()
+        );
         if old >= 2 {
             let todos = store.todos().unwrap();
             assert!(todos.iter().any(|t| t.text == "Check the upgrade"));
@@ -413,9 +432,16 @@ async fn workspace_files_and_databases_of_the_old_layout_import_and_read_the_sam
     let in_place = copy_of("v5.sqlite", dir.path());
     let expected_ws = old_workspace(&in_place);
 
-    for (i, file) in ["v5.infall", "v5.sqlite", "v6.infall", "v6.sqlite"]
-        .into_iter()
-        .enumerate()
+    for (i, file) in [
+        "v5.infall",
+        "v5.sqlite",
+        "v6.infall",
+        "v6.sqlite",
+        "v7.infall",
+        "v7.sqlite",
+    ]
+    .into_iter()
+    .enumerate()
     {
         let target = dir
             .path()
@@ -425,7 +451,7 @@ async fn workspace_files_and_databases_of_the_old_layout_import_and_read_the_sam
         assert_eq!(imported.preset, Some(Preset::Tutorial), "{file}");
         assert!(!imported.from_team);
         // Imported as it is; the first open migrates it.
-        let was = if file.starts_with("v5") { 5 } else { 6 };
+        let was: i64 = file[1..2].parse().unwrap();
         assert_eq!(version(&target), was);
         let server = start(&target, web.path()).await;
         assert!(!migration_copy_path(&target, was).exists());

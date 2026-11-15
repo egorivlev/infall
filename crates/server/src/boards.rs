@@ -68,6 +68,7 @@ impl CheckedOps {
     /// Checks what `actor` sent: the size of every Text, and every `result` of a Run.
     pub(crate) fn new(ops: Vec<Op>, actor: MemberId) -> Result<CheckedOps, ApiError> {
         check_text_sizes(&ops)?;
+        crate::files::check_ops(&ops)?;
         let carries_result = runs::check_results(&ops, actor)?;
         Ok(CheckedOps {
             ops,

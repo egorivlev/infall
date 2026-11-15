@@ -114,6 +114,11 @@ fn spec(kind: EntityKind, field: &str) -> Option<(FieldClass, Type)> {
         (Source, "url" | "doi" | "title" | "authors" | "year" | "note") => {
             Some((Content, Type::Text))
         }
+        // The one PDF a Source may carry (M19): the SHA-256 of its bytes, which are stored
+        // outside the Change log by that hash, and what the Source shows of it. Which PDF a
+        // Source has is Research Content like its title: in History, per Branch, merged.
+        (Source, "pdf" | "pdf_name") => Some((Content, Type::Text)),
+        (Source, "pdf_size" | "pdf_pages") => Some((Content, Type::Float)),
         (Attachment, "card" | "source") => Some((Content, Type::Ref)),
         _ => None,
     }
