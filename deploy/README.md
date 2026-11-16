@@ -71,13 +71,13 @@ Set `INFALL_DOMAIN=localhost` in `.env` and follow the same steps. Caddy then us
 |---|---|
 | `server` | the Infall server, as an unprivileged user (uid 10001) with a read-only system; reachable only from Caddy |
 | `caddy` | HTTPS on ports 80 and 443, certificates, the request size limits |
-| `backup` | a copy of the database every day at `INFALL_BACKUP_TIME` (UTC), and one when it starts if none is younger than a day |
+| `backup` | a Workspace file every day at `INFALL_BACKUP_TIME` (UTC), and one when it starts if none is younger than a day ([Back up and restore](#back-up-and-restore)) |
 
-Docker keeps the data in named volumes: `infall_data` (the database `qoop.db`, the secret key `secret-key`, and the copies made before upgrades in `pre-upgrade/`), `infall_backups` (the daily copies), and `infall_caddy-data` (certificates). `docker compose down` keeps them; only `docker compose down -v` or `docker volume rm` deletes them.
+Docker keeps the data in named volumes: `infall_data` (the database `qoop.db`, the secret key `secret-key`, and the copies made before upgrades in `pre-upgrade/`), `infall_backups` (the daily Workspace files, and the database copies made with `backup-database`), and `infall_caddy-data` (certificates). `docker compose down` keeps them; only `docker compose down -v` or `docker volume rm` deletes them.
 
 #### The secret key
 
-The server seals Members' OpenRouter keys (for the AI sidebar in a browser) with a secret key. On first start it makes one in the data volume. Backups leave it out on purpose, so that a backup alone does not open the sealed keys. Keep a copy of it in your password manager:
+The server seals Members' OpenRouter keys (for the AI sidebar in a browser) with a secret key. On first start it makes one in the data volume. Backups leave it out on purpose, so that a backup alone does not open the sealed keys (a Workspace file holds no AI keys at all; a database copy holds them sealed). Keep a copy of it in your password manager:
 
 ```sh
 docker compose run --rm --no-deps --entrypoint cat server /data/secret-key
@@ -87,19 +87,51 @@ Without it, a restored Workspace works fully, and each Member types their OpenRo
 
 ### Back up and restore
 
-The `backup` service writes `infall-<UTC time>.db.gz` into the `infall_backups` volume every day and keeps the newest `INFALL_BACKUP_KEEP` (14 by default). Each is a consistent copy made while the server runs (SQLite's online backup), checked with `PRAGMA integrity_check` before it is kept.
+There are two kinds of backup. They answer different questions, so know which one you hold before you need it.
+
+| | **Workspace file** (`infall-<time>.infall.gz`) | **Database copy** (`infall-<time>.db.gz`, and the copies in `pre-upgrade/`) |
+|---|---|---|
+| Made | every day by the `backup` service, automatically | by hand (`backup-database`); before every upgrade, automatically; daily too if `INFALL_BACKUP_DATABASE=yes` |
+| Holds | every Branch, the history, Checkpoints, To-dos, Suggestions and Comments, and each Member and Admin **as a name** | everything on this server, exactly as it was |
+| Does not hold | emails, passwords, sign-ins, invites, access tokens, AI keys and settings, Guests | the secret key (keep that separately, [above](#the-secret-key)) |
+| Put back with | `import-workspace` (or the page's **Bring in a Workspace file…**) onto an **empty** server, of this version or any newer one | `restore`, over this server's database, with this version or a newer one |
+| Afterwards | the importing Admin owns the work of whoever was Admin; every other person is "not signed in yet" until you **Invite** them again from Members and they take their name back (other Admins come back as Members) | everyone signs in as before |
+| Use it for | the work itself: a new host, a new server, a damaged database, opening the Workspace in the desktop app | putting **this** server back as it was: a failed upgrade, a mistake an hour ago, a disaster where re-inviting everyone is not wanted |
+
+The daily Workspace file is the one to rely on: it is made by the server's own export (`qoop-server export-workspace`), from a consistent snapshot, safe while the server runs; checked with `PRAGMA integrity_check`, compressed, and the newest `INFALL_BACKUP_KEEP` (14) are kept. One is made when the service starts if none is younger than a day. It is also what an Admin's **Settings → Workspace → Export Workspace file…** gives (compressed), so it opens in the desktop app too after `gunzip`.
 
 ```sh
-docker compose run --rm backup backup          # make one now
-docker compose run --rm backup list-backups    # newest first
-docker compose cp backup:/backups/infall-20260101T033000Z.db.gz .   # copy one out of Docker
+docker compose run --rm backup backup            # a Workspace file now
+docker compose run --rm backup backup-database   # a database copy now (sign-ins and all)
+docker compose run --rm backup list-backups      # both kinds, newest first, each labelled
+docker compose cp backup:/backups/infall-20260101T033000Z.infall.gz .   # copy one out of Docker
 ```
 
-Copies in a volume on the same host do not survive losing the host. Copy one off the host regularly (the `cp` line above, then `scp` or your provider's object storage). These files are not encrypted; the systemd route's `backup.sh` shows how to encrypt with `age` if they leave machines you control.
+To have a database copy every day as well, set `INFALL_BACKUP_DATABASE=yes` in `.env` and run `docker compose up -d`. It keeps its own newest `INFALL_BACKUP_KEEP`.
 
-Backups are database copies, not Workspace files: the server has no command yet to write a Workspace file from the command line. Once it has one (`qoop-server export-workspace <file>`), the backup job is to use it.
+Copies in a volume on the same host do not survive losing the host. Copy them off the host regularly (the `cp` line above, then `scp` or your provider's object storage). These files are not encrypted; the systemd route's `backup.sh` shows how to encrypt with `age` if they leave machines you control. A database copy also holds sign-in data (password hashes, session hashes, sealed AI keys): guard it like the server itself.
 
-**Restore** (everything made after that backup is lost):
+#### Restore from a Workspace file (the usual way)
+
+Onto an empty server: a fresh setup on a new host, or this one with its data volume emptied. Everything made after that file is lost.
+
+1. If you are reusing this host: `docker compose down`, then `docker volume rm infall_data` (this deletes the database; the backups volume stays). On a new host: steps 1–3 of [Steps](#steps).
+2. `docker compose up -d`, then create the first Admin (step 4). Use your own email: you take over the work of whoever was Admin in the file.
+3. Bring the file in, from the backups volume or from outside Docker:
+
+   ```sh
+   docker compose run --rm --no-deps backup import-workspace infall-20260101T033000Z.infall.gz --admin-email you@example.org
+   # or, a file on this machine:
+   docker compose run --rm -T --no-deps backup import-workspace - --admin-email you@example.org < infall-20260101T033000Z.infall.gz
+   docker compose restart server
+   ```
+
+   It prints whose work is now yours and the names not signed in yet. Restart the server afterwards, as the command says: until then the running server refuses to write. (Instead of the command line, the Admin's first screen in the browser offers **Bring in a Workspace file…**; that needs no restart, but takes the file uncompressed: `gunzip` it first.)
+4. Open **Members**. Each other person is listed as "<name> — not signed in yet": **Invite** them with their email; when they accept, their Changes, To-dos and Comments are theirs again. Members re-enter their OpenRouter keys if they used the AI sidebar in the browser.
+
+#### Restore a database copy (this server, as it was)
+
+Puts back everything, sign-ins included. Everything made after that copy is lost.
 
 ```sh
 docker compose stop server
@@ -107,17 +139,19 @@ docker compose run --rm --no-deps backup restore infall-20260101T033000Z.db.gz
 docker compose up -d
 ```
 
-`restore` refuses while the server is running. It keeps the database it replaces as `qoop.db.before-restore-<time>` in the data volume; delete it once you are sure. To restore a file from outside Docker, give `-` and send it on standard input:
+`restore` refuses while the server is running, and refuses a Workspace file (that would leave nobody able to sign in). It keeps the database it replaces as `qoop.db.before-restore-<time>` in the data volume; delete it once you are sure. To restore a file from outside Docker, give `-` and send it on standard input:
 
 ```sh
 docker compose run --rm -T --no-deps backup restore - < infall-20260101T033000Z.db.gz
 ```
 
-Do a test restore once now, on your own computer with `INFALL_DOMAIN=localhost`, and then every few months. A backup you have never restored is a hope.
+The sealed OpenRouter keys in a database copy open only with the same secret key: on a new host set `QOOP_SECRET_KEY` to the old one, or Members type their keys again.
+
+Do a test restore of both kinds once now, on your own computer with `INFALL_DOMAIN=localhost`, and then every few months. A backup you have never restored is a hope.
 
 ### Upgrade
 
-1. Make a backup now (`docker compose run --rm backup backup`).
+1. Make a backup now (`docker compose run --rm backup backup`). The image makes a database copy by itself as well, below.
 2. Set `INFALL_VERSION` in `.env` to the new version.
 3. Start it:
 
@@ -127,9 +161,9 @@ Do a test restore once now, on your own computer with `INFALL_DOMAIN=localhost`,
    docker compose logs server | tail
    ```
 
-Before a different server opens the database, the image copies it into `pre-upgrade/` in the data volume and says so in the log (`copying the database to /data/pre-upgrade/… first`). It keeps the last 3 such copies (`INFALL_UPGRADE_KEEP`). If that copy fails, the server does not start, and nothing has changed.
+Before a different server opens the database, the image makes a database copy into `pre-upgrade/` in the data volume and says so in the log (`copying the database to /data/pre-upgrade/… first`). It keeps the last 3 such copies (`INFALL_UPGRADE_KEEP`). If that copy fails, the server does not start, and nothing has changed.
 
-A newer server may migrate the database in place, and an older one cannot be relied on to open a migrated file. **To go back**, set the old `INFALL_VERSION` again and restore the copy from before the upgrade:
+This one is a database copy on purpose, not a Workspace file: a newer server may migrate the database in place, an older one cannot be relied on to open a migrated file, and an older server also refuses a Workspace file made by a newer one. Only the copy from before the upgrade takes you back. **To go back**, set the old `INFALL_VERSION` again and restore it:
 
 ```sh
 docker compose stop server
@@ -140,29 +174,33 @@ docker compose up -d
 
 ### Move the data elsewhere
 
-To another host, or from this one to a fresh setup:
+To another host, or from this one to a fresh setup. Two ways, as for backups:
 
-1. On the old host: `docker compose stop server`, then `docker compose run --rm --no-deps backup backup` (`--no-deps` keeps the server stopped), then copy that file out (`docker compose cp …`, above) along with the secret key.
-2. On the new host: steps 1 and 2 of [Steps](#steps), with `QOOP_SECRET_KEY` set in `.env` to the old key. Skip creating an Admin: the Admins come with the data.
-3. On the new host, before the first start:
+- **Everything, sign-ins included (a database copy).**
+  1. On the old host: `docker compose stop server`, then `docker compose run --rm --no-deps backup backup-database` (`--no-deps` keeps the server stopped), then copy that file out (`docker compose cp …`, above) along with the secret key.
+  2. On the new host: steps 1 and 2 of [Steps](#steps), with `QOOP_SECRET_KEY` set in `.env` to the old key. Skip creating an Admin: the Admins come with the data.
+  3. On the new host, before the first start:
 
-   ```sh
-   docker compose run --rm -T --no-deps backup restore - < infall-<time>.db.gz
-   docker compose up -d
-   ```
+     ```sh
+     docker compose run --rm -T --no-deps backup restore - < infall-<time>.db.gz
+     docker compose up -d
+     ```
 
-4. Point the domain's DNS at the new host. If the domain changes, change `INFALL_DOMAIN`: invite links already sent still name the old one.
+  The new host must run the same version or a newer one.
+- **The work only (a Workspace file).** The newest daily one, or an Admin's **Export Workspace file…**; then [Restore from a Workspace file](#restore-from-a-workspace-file-the-usual-way) on the new host. Everyone except you is invited again. This also works between different versions and from a Team server to the desktop app.
 
-From the systemd route, the same works with the database file itself: copy `/var/lib/qoop/qoop.db` with `sqlite3 /var/lib/qoop/qoop.db ".backup /tmp/qoop.db"` and restore that file with `restore -` (a plain database file is taken as it is).
+Then point the domain's DNS at the new host. If the domain changes, change `INFALL_DOMAIN`: invite links already sent still name the old one.
 
-**A Local Workspace onto this server** comes as a Workspace file, onto an empty server only. Once the server has it (M18), the Admin's first screen offers **Bring in a Workspace file…**, and on the command line:
+From the systemd route, the database copy way works with the database file itself: copy `/var/lib/qoop/qoop.db` with `sqlite3 /var/lib/qoop/qoop.db ".backup /tmp/qoop.db"` and restore that file with `restore -` (a plain database file is taken as it is).
+
+**A Local Workspace onto this server** comes as a Workspace file, onto an empty server only. The desktop app's **Move to a Team server…** does it in one press after you sign in; from a browser, the Admin's first screen offers **Bring in a Workspace file…**; on the command line:
 
 ```sh
-docker compose run --rm -v "$PWD/project.infall:/in/project.infall:ro" server \
-  import-workspace /in/project.infall --admin-email you@example.org
+docker compose run --rm -T --no-deps backup import-workspace - --admin-email you@example.org < project.infall
+docker compose restart server
 ```
 
-The Admin named there must exist (step 4); the Workspace file's own Member becomes that Admin.
+The Admin named there must exist (step 4); the Workspace file's own Member becomes that Admin. The command refuses, and changes nothing, when the server already has work in it.
 
 ### Forgot a password
 
@@ -190,7 +228,9 @@ Then set `INFALL_IMAGE=infall` and `INFALL_VERSION=local` in `.env`. The image i
 - **`restore` says the server is still running:** `docker compose stop server` first.
 - **`create-admin` says the email exists:** that Admin is there already; use `reset-password` if the password is lost.
 - **Disk full:** `docker system df`. Old images of earlier versions can go: `docker image prune`. Do not remove volumes.
-- **The backup service is `(unhealthy)`:** no copy younger than 26 hours. `docker compose logs backup` says why.
+- **The backup service is `(unhealthy)`:** no Workspace file younger than 26 hours. `docker compose logs backup` says why.
+- **`import-workspace` says the Workspace is not empty:** a Workspace file goes only onto an empty server. Restore onto a fresh data volume ([Restore from a Workspace file](#restore-from-a-workspace-file-the-usual-way)), or use a database copy with `restore`.
+- **After `import-workspace` the page says something went wrong when you change anything:** the server was running during the import; `docker compose restart server`.
 
 ## The systemd route
 
@@ -199,8 +239,6 @@ Infall is one binary (`qoop-server`), a folder of static web files, and one SQLi
 This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
 
 On this route, placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
-
-This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
 
 ### 1. Prerequisites
 
@@ -464,7 +502,7 @@ What both routes do:
 - **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS, and SSH takes keys only. Caddy is the only way in: on the systemd route Infall listens on `127.0.0.1` only; in the container it is reachable only on the compose network, and only Caddy publishes ports.
 - **Contained service.** Infall runs as an unprivileged user that can write only to its own data folder: in a systemd sandbox, or in a container with a read-only system, no capabilities and `no-new-privileges`.
 - **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves — on the systemd route step 10 and `sudo apt upgrade`; in the container a new `INFALL_VERSION`, and a newer `caddy:2.x` tag in `compose.yaml`).
-- **Backups.** On the systemd route encrypted, with the decryption key off the server, plus an off-machine copy if you set one up. In the container daily, consistent and checked, but not encrypted and on the same host until you copy them off.
+- **Backups.** On the systemd route encrypted, with the decryption key off the server, plus an off-machine copy if you set one up. In the container a daily Workspace file (the work, no sign-ins), consistent and checked, plus database copies before upgrades and on request; not encrypted, and on the same host until you copy them off.
 - **Few outgoing requests.** The server connects out only for two things, and only when a Member uses them: the AI sidebar's OpenRouter path (once a Member has added a key), and **Look up** in the Source form, which sends one DOI to `api.crossref.org` or one arXiv id to `export.arxiv.org` over HTTPS, with nothing about the Workspace or the person. The firewall of [harden.md](harden.md) allows outgoing connections; if you restrict them, allow HTTPS to those hosts, or those two features say they could not reach them. The full list for Members: [docs/privacy.md](../docs/privacy.md).
 
 What it does not do:

@@ -1,9 +1,11 @@
-# Infall Team server: the server, Caddy in front of it (HTTPS), and a daily backup job.
+# Infall Team server: the server, Caddy in front of it (HTTPS), and a daily backup job
+# (a Workspace file every day; README.md, "Back up and restore").
 # Settings come from .env next to this file (copy .env.example). Guide: README.md.
 #
 #   docker compose up -d                                   start, or apply a new version
 #   docker compose run --rm server create-admin --email you@example.org --name "Your Name"
-#   docker compose run --rm backup backup                  a backup now
+#   docker compose run --rm backup backup                  a Workspace file now
+#   docker compose run --rm backup backup-database         a copy of the whole database now
 #   docker compose logs -f server                          the server's log
 name: infall
 
@@ -65,6 +67,9 @@ services:
     environment:
       INFALL_BACKUP_KEEP: ${INFALL_BACKUP_KEEP:-14}
       INFALL_BACKUP_TIME: ${INFALL_BACKUP_TIME:-03:30}
+      INFALL_BACKUP_DATABASE: ${INFALL_BACKUP_DATABASE:-no}
+      INFALL_UPGRADE_KEEP: ${INFALL_UPGRADE_KEEP:-3}
+      NO_COLOR: "1"
     volumes:
       - data:/data
       - backups:/backups
