@@ -757,13 +757,18 @@ mod tests {
         // Pieces of 3 MB of bytes: their text stays under what one piece may carry.
         assert!(js.contains("var SAVE_CHUNK_BYTES = 3145728;"));
         assert!((3_145_728usize).div_ceil(3) * 4 <= crate::transfer::MAX_SAVE_CHUNK_TEXT);
+        // `moveDone` sends booleans only, and `cancel` only with `ok: false`.
+        assert!(js.contains("var ok = !!(result && result.ok === true);"));
+        assert!(js.contains("var cancel = !ok && !!(result && result.cancel === true);"));
+        assert!(js.contains("call('move_done', { ok: ok, cancel: cancel })"));
         // Moving starts nothing in the start screen's commands.
         assert!(!js.contains("workspace_move"));
     }
 
     #[test]
     fn a_move_is_handed_only_to_the_main_windows_page_of_its_server() {
-        // `move_handover`, `move_file_chunk` and `move_done` pass `check_caller` first, with
+        // `move_handover`, `move_file_chunk` and `move_done` (`cancel` included) pass
+        // `check_caller` first, with
         // the origin the bridge was granted to; the registry then answers only about a move
         // pending to that same origin (workspaces.rs, `a_pending_move_is_kept_and_told_to_its_
         // server_only`). So: another window, another server in the main window, or the

@@ -545,8 +545,31 @@ impl Registry {
         Ok(())
     }
 
-    /// Forgets the pending move to `origin` and deletes its file.
-    fn forget_move(&self, origin: &str) {
+    /// What `moveDone({ ok, cancel })` from the page of `origin` does: `ok` finishes the move
+    /// (`cancel` is not looked at), `cancel` alone cancels it, neither keeps it for another
+    /// try. `false` when nothing is being moved there (the page is then refused).
+    pub fn move_done(
+        &self,
+        origin: &str,
+        ok: bool,
+        cancel: bool,
+        now: i64,
+    ) -> Result<bool, String> {
+        if self.pending_move(origin, now).is_none() {
+            return Ok(false);
+        }
+        if ok {
+            self.finish_move(origin)?;
+        } else if cancel {
+            self.cancel_move(origin)?;
+        }
+        Ok(true)
+    }
+
+    /// The server of `origin` cannot take the Workspace (`moveDone({ ok: false, cancel: true })`):
+    /// the pending move is forgotten with its file, and the Local Workspace stays as it was
+    /// (not marked as moved). Nothing happens when nothing is being moved there.
+    pub fn cancel_move(&self, origin: &str) -> Result<(), String> {
         let dropped = self.update(|stored| {
             let mut dropped = Vec::new();
             stored.pending_moves.retain(|m| {
@@ -556,10 +579,14 @@ impl Registry {
                 m.origin != origin
             });
             Ok(dropped)
-        });
-        if let Ok(dropped) = dropped {
-            self.delete_move_files(&dropped);
-        }
+        })?;
+        self.delete_move_files(&dropped);
+        Ok(())
+    }
+
+    /// Forgets the pending move to `origin` and deletes its file.
+    fn forget_move(&self, origin: &str) {
+        let _ = self.cancel_move(origin);
     }
 
     fn delete_move_files(&self, files: &[String]) {
@@ -1602,6 +1629,83 @@ mod tests {
     }
 
     #[test]
+    fn a_cancelled_move_is_forgotten_with_its_file_and_the_workspace_stays() {
+        // `moveDone({ ok: false, cancel: true })`: the server can never take it (not empty,
+        // or the person is not an Admin), so nothing is left waiting.
+        let d = dirs();
+        let r = registry(&d);
+        let (local, pending) = moving(&r, b"data");
+        let path = r.move_file_path(&pending);
+        // From another server: nothing is touched.
+        r.cancel_move("https://evil.example").unwrap();
+        assert!(path.exists());
+        assert_eq!(r.pending_move(SERVER, T0), Some(pending));
+        r.cancel_move(SERVER).unwrap();
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert_eq!(r.handover(SERVER, T0), None);
+        assert!(registry(&d).pending_move(SERVER, T0).is_none());
+        // The Local Workspace is as it was, and can be moved again.
+        let kept = registry(&d).get(&local.id).unwrap();
+        assert_eq!(kept, local);
+        assert!(!kept.read_only());
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, "again").unwrap();
+        r.add_pending_move(&local.id, SERVER, &file, T0).unwrap();
+        assert_eq!(r.handover(SERVER, T0).unwrap().size, 5);
+        // Cancelling twice, or when nothing is pending, does nothing.
+        r.cancel_move(SERVER).unwrap();
+        r.cancel_move(SERVER).unwrap();
+        assert!(!path.exists());
+        assert_eq!(r.get(&local.id).unwrap().moved_to, None);
+    }
+
+    #[test]
+    fn move_done_finishes_cancels_or_keeps_the_move() {
+        // Not ok, no cancel: kept for another try.
+        let d = dirs();
+        let r = registry(&d);
+        let (local, pending) = moving(&r, b"data");
+        let path = r.move_file_path(&pending);
+        assert_eq!(r.move_done(SERVER, false, false, T0), Ok(true));
+        assert!(path.exists());
+        assert!(r.pending_move(SERVER, T0).is_some());
+        // Cancel from another server is refused, and touches nothing.
+        assert_eq!(
+            r.move_done("https://evil.example", false, true, T0),
+            Ok(false)
+        );
+        assert_eq!(
+            r.move_done("https://evil.example", true, false, T0),
+            Ok(false)
+        );
+        assert!(path.exists());
+        assert!(r.pending_move(SERVER, T0).is_some());
+        // Cancel: the move and its file go, the Workspace is not moved.
+        assert_eq!(r.move_done(SERVER, false, true, T0), Ok(true));
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert_eq!(r.get(&local.id).unwrap().moved_to, None);
+        // Nothing pending any more: refused.
+        assert_eq!(r.move_done(SERVER, false, true, T0), Ok(false));
+        assert_eq!(r.move_done(SERVER, true, false, T0), Ok(false));
+        assert_eq!(r.get(&local.id).unwrap().moved_to, None);
+
+        // ok with cancel: still marked moved.
+        let d = dirs();
+        let r = registry(&d);
+        let (local, pending) = moving(&r, b"data");
+        let path = r.move_file_path(&pending);
+        assert_eq!(r.move_done(SERVER, true, true, T0), Ok(true));
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert_eq!(
+            registry(&d).get(&local.id).unwrap().moved_to.as_deref(),
+            Some(SERVER)
+        );
+    }
+
+    #[test]
     fn a_pending_move_is_dropped_with_its_file_after_a_week() {
         let d = dirs();
         let r = registry(&d);
@@ -1651,6 +1755,28 @@ mod tests {
         assert!(!r.move_file_path(&first).exists());
         assert_eq!(r.pending_move(SERVER, T0).unwrap().file, file);
         assert_eq!(r.handover(SERVER, T0).unwrap().size, 3);
+        // The same Workspace to another server: the move there replaces this one, and its
+        // file goes.
+        const OTHER: &str = "https://other.example.org";
+        r.remember_team(OTHER).unwrap();
+        let (moved_file, moved_path) = r.new_move_file().unwrap();
+        fs::write(&moved_path, "elsewhere").unwrap();
+        r.add_pending_move(&local.id, OTHER, &moved_file, T0 + 6)
+            .unwrap();
+        assert!(!path.exists());
+        assert!(r.pending_move(SERVER, T0).is_none());
+        assert_eq!(r.handover(SERVER, T0), None);
+        assert_eq!(r.pending_move(OTHER, T0).unwrap().file, moved_file);
+        assert_eq!(r.handover(OTHER, T0).unwrap().size, 9);
+        assert_eq!(registry(&d).load().pending_moves.len(), 1);
+        // And back again.
+        let (file, path) = r.new_move_file().unwrap();
+        fs::write(&path, "two").unwrap();
+        r.add_pending_move(&local.id, SERVER, &file, T0 + 7)
+            .unwrap();
+        assert!(!moved_path.exists());
+        assert!(r.pending_move(OTHER, T0).is_none());
+        assert_eq!(registry(&d).load().pending_moves.len(), 1);
         // Another Workspace to the same server takes its place.
         let other = r.create_local("blank", Some("Other")).unwrap();
         let (file2, path2) = r.new_move_file().unwrap();

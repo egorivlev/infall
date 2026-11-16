@@ -399,7 +399,10 @@
   }
 
   function moveDone(result) {
-    return call('move_done', { ok: !!(result && result.ok === true) }).then(function () {});
+    // `cancel` only with `ok: false`: the server can never take it, so the move is dropped.
+    var ok = !!(result && result.ok === true);
+    var cancel = !ok && !!(result && result.cancel === true);
+    return call('move_done', { ok: ok, cancel: cancel }).then(function () {});
   }
 
   // `window.print()` opens the system's print dialog for this page.
