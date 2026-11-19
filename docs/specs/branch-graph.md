@@ -163,3 +163,16 @@ Zone 2 depends on zone 1's response shape, fixed above. Zones 3 and 4 depend on 
 ## Not in M15b
 
 Restore from the graph. Hiding or archiving Branches. Deleting or renaming a Branch or a Checkpoint. Merges other than between a Branch and its parent. Dots of other Branches appearing live. Drawing Merges that changed nothing. Comparing two moments. Search or filter in the graph.
+
+## As built (2026-11-25)
+
+The decisions above stand. The code on `main` ([api.md §18](api.md#18-m15b--the-branch-graph), `web/src/lib/CONTRACT.md` "M15b — the Branch Graph", `web/src/ui/branches/**`) differs or adds:
+
+- **The response**: each Branch also has `seq` (its head); `parent` is a moment `{ branch, seq }` and, with `created_by` and `created_at`, is absent for `main`; Checkpoints carry `author` and `at`. `gap_ms` defaults to 600000 and is `400` when not a whole number ≥ 0.
+- **A Checkpoint ends a Merge or a Restore batch too**, not only an edit Activity; each part keeps its kind, `source` and `to`.
+- **Order of rows**: a Branch's first row is always above the row it was started from, and a Merge row above the row of its source moment, whatever the clocks say.
+- **Lines and columns**: `main`'s line, like every other, stops at its newest dot. A column is reused only above the row where the previous line in it ended, not on that row. A Branch started from inside an Activity (someone kept editing after "from now") leaves from that Activity's dot.
+- **Where it will start**, in words, has more cases than section 2: "from the start of exp-A", "from your work at …", "from Ana's Merge at …", "from Ana's Restore at …", "from Change 12 of main".
+- **Add Checkpoint here** sends `POST /api/branches/{id}/checkpoints { name, seq }` (the `seq` of the moment, which that endpoint has taken since M2), to any Branch, not only the open one.
+- **Staying current**: the graph is also fetched again when the socket reconnects and on a `checkpoint` frame of the open Branch; other Branches' dots appear on opening and on window focus, as decided.
+- **Section 5**: the glossary's **Merge** now says that only a Branch and the one it was started from are merged.

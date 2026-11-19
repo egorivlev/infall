@@ -117,3 +117,20 @@ A pending move older than 7 days, or whose origin is forgotten, is dropped with 
 ## Not in M18
 
 Merging into a non-empty server. Several Workspaces on one server. Emails in files. Email notifications. Comments on Branches or versioned Comments. Single sign-on.
+
+## As built (2026-11-25)
+
+The decisions above stand. Where the code on `main` differs from this file, or says more than it, it is listed here; the exact shapes are in [api.md §19](api.md#19-m18--from-alone-to-a-team-workspace-files-onto-and-off-a-team-server-members-as-names-comments-for-you) and [desktop.md, M18](desktop.md#m18--moving-a-local-workspace-onto-a-team-server).
+
+- **`moved_to`.** `LocalOptions` has `moved_to: Option<String>` beside `read_only`, and `build_local_app_with` takes both. In a moved Local Workspace `GET /api/workspace` gives `moved_to` (the Team origin), which Contract B did not have; the UI names the host from it, and says "a Team server" without it.
+- **Read-only** refuses every `/api` request that is not `GET` or `HEAD`, before any handler, except `POST /api/sources/lookup` (it only reads). An `editing` claim over the WebSocket gets an error frame with code `moved`; the tool layer refuses `suggest_*` with the same sentence.
+- **Team files leave Guests out** (with their For you entries), and every setting; decision 5 did not name Guests. Each Member and Admin keeps id, name, role, colour and `created_at`.
+- **Who exported**: a file records `file_kind` (`local` or `team`) and `exported_by`. Over HTTP that is the Admin who pressed the button. **Command-line exports record the oldest Admin** (by `created_at`, then id): `qoop-server export-workspace <dest>`, which this file did not have, and `export_workspace` of a Team database.
+- **Team file into a Local Workspace** (decision 6): the exporter becomes the one Member who can sign in, as an Admin with the email `me@local.invalid`; the others stay names with role `member`. The Workspace is then treated as a Blank one, and its Member is renamed after the computer's user at the first start.
+- **Import onto a Team server**: the file's `main` takes the server's `main` id, so open windows stay on it; a Member of the file whose id is already on the server keeps their account; the owner's id is replaced everywhere, inside Change ops too (a Pin's `ai_pinned_by` and `ai_reviewed_by`, a Run result's `by`). The body may have any `Content-Type`; over the limit is `413 too_large`.
+- **`content_epoch`**: after `import-workspace`, a server that was running on the same database refuses to write until it is restarted, so it cannot write its empty Workspace over the one brought in.
+- **The exported file's name** is the host of the server's public origin (`:` as `-`) with `.infall`, not the Workspace's name.
+- **Comments**: the server does not read `@Name` in the text; the client sends the mentioned ids. Nobody gets a For you entry for mentioning themself. `GET /api/comments/counts` gives as `open` the number of Comments in the thread, resolved or not. Resolving a Card that has no Comments is `404`.
+- **The desktop side**: the move's file is kept in `moves/` in the app's data folder and refused over 512 MB; there is one pending move per Team server and per Local Workspace; it is dropped also when the Local Workspace is removed. The moved row's menu has **Open this copy (read-only)** besides Rename, Export…, Show in folder and Remove…. The copy's bar **Open on the server** goes back to the start screen (the bridge cannot open another origin from the copy).
+- **PDFs** (M19) travel in every Workspace file of both kinds; a Team Workspace's export always includes them.
+- **Backups of the container** are SQLite copies, not Workspace files, until the backup job uses `export-workspace` (release.md §10.2).

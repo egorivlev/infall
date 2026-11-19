@@ -79,3 +79,26 @@ This shares its shape with M19b's Toolchains (a Run names what it wants; the dev
 ## Not in M19
 
 Annotation and highlights. OCR. PDFs on Cards without a Source. Other file types. Cleaning unreferenced files. Installing packages.
+
+## As built (2026-11-25)
+
+The decisions above stand, with these differences in the code on `main`. Exact shapes: [api.md §20](api.md#20-m19--a-pdf-on-a-source), [desktop.md, M19](desktop.md#m19--pdfs-across-the-bridge) and its "Environments and Toolchains — as built", and `web/src/lib/CONTRACT.md` (the M19 sections).
+
+Part 1:
+
+- **PDFs are stored in the database**, not in a folder beside it: the tables `pdf_files`, `pdf_chunks` (parts of 256 KiB, so a `Range` reads only what it needs) and `pdf_text`, schema version 8. The reason (api.md §20): one consistent snapshot carries them in every export and backup, and one transaction keeps "stored" and "named by a Source" in step. Nothing in them is ever deleted.
+- **Refusal codes**: `415 not_a_pdf`, `413 too_large`, `404 file_missing` (a hash this Workspace does not have), `404 no_text`, `416 range_not_satisfiable`, `502 fetch_failed`. The web library's own local refusal uses the code `not_pdf`.
+- **Text**: `PUT …/text` takes at most 20 MiB and 100 000 pages and answers `{ stored }`; the first write wins.
+- **arXiv** (decision 9): the server asks `https://export.arxiv.org/pdf/<id>` (the base address Look up already uses, `QOOP_ARXIV_URL`), not `arxiv.org`; 30 s to answer and 30 s for each further part; no redirects followed; at most 30 a minute per Member.
+- **Search** (decision 8): `GET /api/search/pdf?q=` was added (the web UI's search was client-side): a case-insensitive substring over the stored pages, white space matched loosely, 1–200 characters, at most 50 results, one per page, `page` counted from 1, a snippet of up to 200 characters. Guests search only what they may read.
+- **Desktop bridge** (decision 10): `pickFolder(): Promise<{ token, name } | null>` (a token and the folder's name, never its path), `readFileIn(token, path)` (a relative or absolute path, or a whole BibTeX `file` field; only inside the folder once every link is followed), and `openExternally({ suggestedName, bytes })`; not `pickFolder(): string`, `readFileAt(path, under)` and `openFileExternally`.
+- **Export without PDFs** (decision 6): the checkbox is on the desktop start screen's **Export…** of a Local Workspace only, shown when it has PDFs; a Team Workspace's **Export Workspace file…** always includes them. The crate has `export_workspace_with(db, dest, ExportOptions { include_files })`, and `file_stats(db)` for the count.
+- **The reader** (decision 7) has one hand-over button: **Open in the system viewer** in the desktop app, **Save a copy** in a browser. A Source whose file is missing (left out of a Workspace file) reads "The server does not have this PDF’s file."; api.md §20 says the UI says "This PDF was not included in the Workspace file", which it does not.
+
+Part 2:
+
+- **Environments** are found also on the `PATH`; `QOOP_PYTHON_BIN` overrides every Python Run. An environment is started as its Python, not activated (no `PATH` or `CONDA_PREFIX` change).
+- **Asking** (decision 2): the Runner settings window opens at the question; the answer is kept in `runner.json` under `names`; closing the window without one fails the Run (`no_environment`).
+- **The record** (decision 3): up to 32 packages; the result also records `env.name`, the environment the Run asked for, and the Run block marks a result whose environment differs from the Run's.
+- **Approvals** (decision 4) are remembered per Workspace, code, **language**, interpreter or program path, and **folder**, not per code and interpreter path alone. Approvals from before ask once more.
+- **A missing package** (decision 5): the line `[qoop] This environment has no package <name>.` is printed into the output by the Runner's `runner.py`, not added by the Run block.
