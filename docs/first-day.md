@@ -22,6 +22,16 @@ If the link is lost, used by the wrong person or expired: **Revoke** it if it is
 
 If the Member will use the desktop app, also give them the package for their computer and its SHA-256, so they can tell the real file: `Infall-<version>.dmg` for a Mac (`scripts/package-macos.sh`), `infall_<version>_amd64.deb` for Ubuntu (`scripts/package-linux.sh`), `Infall-<version>-x64-setup.exe` for Windows (`scripts/package-windows.sh`; never yet started on Windows). Each script prints the SHA-256.
 
+### After a Workspace file came in
+
+When the server's Workspace came from a Workspace file (a Local Workspace moved from the desktop app, or a Team Workspace exported from another server: [the tutorial](tutorial.md#14-from-alone-to-a-team), part 14), the people in it are already there as **names**, with their Changes, Checkpoints, To-dos and Comments, but none of them can sign in yet. The file had no emails.
+
+1. Open **Members**. Each such name reads "<name> — not signed in yet" and has **Invite**.
+2. Press **Invite** beside the name. The form above says "Whoever accepts takes over the name <name> — their Changes, Checkpoints, To-dos and Comments." Enter that person's email, choose the role, and press **Create invite for <name>**. (**Invite someone new instead** makes an ordinary invite.)
+3. Copy the link and send it to that person, as in steps 4 and 5.
+
+A name nobody will take over can be removed with **Remove**, like any Member; what they did stays in History.
+
 ## The new Member
 
 1. Open the link you were sent. The page says "You're invited as a Member" and shows your email.
@@ -29,7 +39,15 @@ If the Member will use the desktop app, also give them the package for their com
 3. Press **Join Infall**. You are signed in and see the Board.
 4. Press **+ Card** at the top left of the Board and give the Card a title. Everyone else sees it at once, with your name on the Change.
 
-⌘Z (Ctrl+Z on Windows and Linux) takes back your own last gesture and never another Member's work: what someone else changed since stays as they left it ([the tutorial](tutorial.md#undo), part 1).
+### Taking over a name
+
+If the Admin's invite was for a name that came with a Workspace file, opening it and pressing **Join Infall** makes you that Member: everything already under the name (Changes in History, Checkpoints, To-dos, Comments) is yours from then on. The name you type replaces the one in the file.
+
+### Undo and Comments
+
+⌘Z (Ctrl+Z on Windows and Linux) takes back your own last gesture and never another Member's work: what someone else changed since stays as they left it ([the tutorial](tutorial.md#undo), part 1). Comments never change anyone's work either: they sit beside the Board, not in it.
+
+**Comments**, in a Card's Page below its Sources and To-dos, are for talking about the Card: a question, a remark, `@Name` to ask someone, who finds it under **For you** ([the tutorial](tutorial.md#15-comments-and-for-you), part 15). They are outside History: the same on every Branch, never merged or restored, and not taken back by Undo. So a decision, a result, or anything the team should still find in a year belongs in the Card's Page, as Research Content; say in the thread where you put it, and **Resolve** the thread. Edit or delete only your own Comments; an Admin can delete any.
 
 From then on, sign in at `https://qoop.example.org` with your email and that password. The link does not work a second time: it says "This invite is no longer valid."
 
@@ -53,4 +71,6 @@ Most people arrive with papers already in a reference manager. Bring them in as 
 
 For a single paper, type its DOI or arXiv address into **URL or DOI** in the Source form and press **Look up**: the title, authors and year are filled in. Only then does the team's server send that DOI or arXiv id, and nothing else, to Crossref or arXiv ([Privacy](privacy.md)).
 
-To take work out: **Export as Markdown** and **Print…** under a Page's **Page tools** (⋯), **Export BibTeX** for Sources (a Page's Sources row, or **BibTeX ▾** on the Board). Details are in [the tutorial](tutorial.md#12-getting-work-in-and-out), part 12. The team's Workspace as a whole is the server's database; the Admin backs it up ([deploy guide](../deploy/README.md), step 9). Workspace files (`.infall`) and automatic backups are for Local Workspaces in the desktop app.
+To take work out: **Export as Markdown** and **Print…** under a Page's **Page tools** (⋯), **Export BibTeX** for Sources (a Page's Sources row, or **BibTeX ▾** on the Board). Details are in [the tutorial](tutorial.md#12-getting-work-in-and-out), part 12. The team's Workspace as a whole is the server's database; the Admin backs it up ([deploy guide](../deploy/README.md)), and can take all of it out as one Workspace file (`.infall`) with **Settings → Workspace → Export Workspace file…**, to put on another server or open in the desktop app ([the tutorial](tutorial.md#14-from-alone-to-a-team), part 14).
+
+Started alone in the desktop app? A Local Workspace moves onto this server while the server is still empty: **Move to a Team server…** in its row on the start screen, then the Admin's one press on the server (part 14). Do it before anyone adds anything there.

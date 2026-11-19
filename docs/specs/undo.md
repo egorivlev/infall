@@ -58,3 +58,15 @@ Zone 2 depends on zone 1. Zone 3 depends on a bridge contract written in zone 1'
 ## Not in M15
 
 Undo that survives closing the app. Undo of To-dos, Merges, Restores, Checkpoints. Undo across Branches. Undoing someone else's Changes. A visible list of steps to jump back in.
+
+## As built (2026-11-25)
+
+The decisions above stand. The code on `main` (`web/src/lib/undo*.ts`, `web/src/ui/shell/UndoKeys.tsx`, the desktop Edit menu; contracts in `web/src/lib/CONTRACT.md`, "M15 — Undo", and [desktop.md, "M15 — Undo in the Edit menu"](desktop.md#m15--undo-in-the-edit-menu)) differs or adds:
+
+- **Keys**: Ctrl+Y redoes on Windows and Linux only, not on a Mac; no key acts with Alt, or with Cmd and Ctrl together. Besides text fields (decision 6), the keys are also left alone inside a modal dialog such as Import BibTeX.
+- **Joining** (decisions 3 and 6): a Card, Frame or block just added and the text typed into it right after are one step ("Add Card Axions"); an empty block added and removed again leaves no step.
+- **When a list is cleared** (decision 4, more cases): also when the Board had to be fetched again (Changes it never saw cannot be checked), when the catch-up fetch on returning to a Branch fails, and every list when the signed-in Member changes.
+- **Your own Changes from outside the list** (another window, a Run's result) count as someone else's for decision 5: "Not undone — you changed this since."
+- **A refused Undo** keeps its step: "Could not undo … — the Board was updated meanwhile. Try again."
+- **The Edit menu** (decision 11): the page owns the keys on every platform; the menu shows the app's own item, named for the step, only while the main window has focus and the page names a step, and the system's own item otherwise (macOS, Windows). Linux has an **Edit** menu of its own whose two items have no keys and are greyed out when there is nothing to do.
+- **Steps added since**: attaching, replacing and removing a Source's PDF (M19); changing a Run's language or environment, in the same step as its code (M19b); clearing a Run's output. A moved, read-only Local Workspace (M18) has no Undo.

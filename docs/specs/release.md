@@ -76,6 +76,45 @@ Do these by hand, in the packaged app, on each platform it is handed out for. Ea
 3. **Quitting leaves no crash.** Quit the app from its menu while a Local Workspace is open, and again from the start screen. It ends within a few seconds; macOS shows no "quit unexpectedly" report and nothing is left running (`pgrep -l qoop-desktop` prints nothing; on Windows, Task Manager).
 4. **Out and in.** In any Workspace: **Export as Markdown** on a Page, **Print…** to a PDF, **Export BibTeX** on the Board, then **Import BibTeX…** of that file on the Board of another Workspace. **Look up** one DOI and one arXiv id (this one needs the network).
 
+Since M15 (0.9.0), one line each; the tutorial part named in brackets says how. A Team server for the M18 items: the container from `deploy/README.md` on `localhost` is enough.
+
+**Undo (M15)**
+5. Move one Card and five Cards, delete a Card with a Page, Sources and Connections, edit a title in place: ⌘Z and ⇧⌘Z take back and redo each, one press per gesture (part 1).
+6. **Edit → Undo** and **Edit → Redo** in the menu name the step ("Undo Move 3 Cards") and do it; inside a text field they undo the typing (macOS, Windows; Linux has its own **Edit** menu).
+7. A second window as another Member edits the same title: my ⌘Z leaves it and says "1 left as it is — <name> changed it since."; after a Merge into the open Branch ⌘Z says "Nothing to undo. To go further back, use History."
+
+**Branch Graph (M15b)**
+8. **Branches** draws every Branch from the first Change; start a Branch from a dot on a Branch that is not open, and one from a ◆; **Preview the Board** of a dot agrees with where it started (part 7).
+9. **Add Checkpoint here** on an old dot; **Show every Change** lists as many Changes as the dot says; the same with the keyboard only (↑ ↓ ← → Enter N Esc).
+
+**From alone to a team (M18)**
+10. **Move to a Team server…** of a Tutorial Workspace onto an empty server: sign in as Admin, **Bring in … from this computer**, "The Workspace is in"; the row says **Moved to <host>**, **Open on the server** opens it, **Open this copy (read-only)** shows the bar and refuses edits (part 14).
+11. On a fresh server, **Bring in a Workspace file…** of an export from the desktop app; then `qoop-server import-workspace` of the same file on another fresh server.
+12. **Export Workspace file…** (Settings → Workspace) as Admin; bring it into a second empty server; **Invite** a "not signed in yet" name, accept as that person: their Changes in History are theirs.
+13. **Import a workspace…** of that Team file in the desktop app: a Local Workspace with you as its Member and the others as names.
+14. Comments with an `@` mention between two Members in two windows: the badge, the short notice with **Open**, **For you**, **Resolve**, **Reopen**; a Guest sees none of it; the thread survives an export and import (part 15).
+
+**PDFs (M19)**
+15. **Attach PDF…** to a Source, **Open PDF**, **Find** a word, ⌘K finds a word from page 3 and opens the reader there; ⌘Z takes the attach back, ⇧⌘Z redoes it (part 16).
+16. **Open in the system viewer** (desktop), **Save a copy** (browser); **Look up** an arXiv id, **Fetch the PDF from arXiv** (needs the network).
+17. **Import BibTeX…** of a Zotero export with files: **Attach the PDFs…**, pick the folder, the PDFs land on their Sources.
+18. **Export…** of a Workspace with PDFs: **Include PDFs (N files, X MB)** ticked imports with the PDFs; unticked, the reader says the server does not have the file.
+
+**Runs (M19 Part 2, M19b)**
+19. A Run in a second language (Julia or Q#): **Set up Julia** (or the Q# switch) in Runner settings, run it, **Stop** it, read the result line ("Julia …", "Q# · qdk …") (part 17).
+20. The same code sent as another language asks for approval again; the approval window shows the language, the **Environment** and the command.
+21. A Run naming an environment that exists here (a conda or `.venv` one) runs there and records its packages; one naming an unknown name opens Runner settings at the question, **Use it for “…”** is remembered and not asked again.
+22. An app from before 0.9.0 against a Julia Run says "Update Infall on this computer to run Julia code." and runs nothing.
+
+**The Board as a picture (M19 Part 3)**
+23. **Export ▾** → **Board as SVG…** and **Board as PNG…** at 2×, with and without **Visible area only** and **Light background**; both open in another program and look like the Board (part 18).
+
+**Updates (M20 groundwork), only in a build with an update feed**
+24. **Check for updates…** finds a newer version from the feed, the start screen says "Restart to update", pressing it backs up every Local Workspace and starts the new version; a build without a feed has no such item.
+
+**Windows data folder (0.9.0)**
+25. On a Windows computer that had an earlier build: the first start moves the Local Workspaces from `%APPDATA%\app.qoop.desktop\workspaces\` to `%LOCALAPPDATA%\app.qoop.desktop\workspaces\`, they open, and nothing is left in the old place (section 9.3, step 5).
+
 **The macOS start check and full-screen apps.** Until M13, `scripts/package-macos.sh` looked for the app's window only among the windows on the visible Space. With a full-screen app in front, the new window opens on another Space, the script saw no window and stopped with "no window of at least 720 x 560 within a minute". Since M13 it lists every window of the program at layer 0, on any Space, still requiring one of at least 720 × 560. If it still fails that way, run it from a normal desktop with no full-screen app in front, or, after starting the packaged app by hand and seeing its start screen, run it with `--no-verify`.
 
 ## 9. Windows and Ubuntu for real, and builds on every push (M16)

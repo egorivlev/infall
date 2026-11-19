@@ -15,7 +15,7 @@ A Workspace kept on a server the team runs, which Members sign in to.
 _Avoid_: Remote workspace, cloud workspace
 
 **Local Workspace**:
-A Workspace kept only on one person's computer by the desktop app. It has exactly one Member and needs no server and no sign-in.
+A Workspace kept only on one person's computer by the desktop app. It has exactly one Member and needs no server and no sign-in. Once moved onto a Team server, the copy left on the computer can be read but no longer changed.
 _Avoid_: Offline mode, personal workspace, solo mode
 
 **Preset**:
@@ -73,11 +73,15 @@ The part of the desktop app that executes Runs on the member's own hardware. A m
 _Avoid_: Kernel, agent, worker
 
 **Toolchain**:
-What the Runner starts to execute a Run written in one language: a program on the member's own computer and how it is handed the code. Each member sets up their own, per device; a Run only names its language. (Comes with Runs in more than Python, M19b; until then the only one is Python.)
+What the Runner starts to execute a Run written in one language: a program on the member's own computer and how it is handed the code. Each member sets up their own, per device; a Run only names its language.
 _Avoid_: Kernel, interpreter (for anything but Python), backend
 
+**Environment**:
+The Python setup a Run asks to be executed in, given by a name only. Each member decides on their own device which of their Pythons a name means; a Run naming none uses that device's default. The name is a wish, never an instruction to install anything.
+_Avoid_: Kernel, venv (for the name), runtime
+
 **Source**:
-An external reference — a paper, preprint, or web page — identified by its URL or DOI. One Source may be attached to many cards.
+An external reference — a paper, preprint, or web page — identified by its URL or DOI. One Source may be attached to many cards, and may carry one PDF of the paper.
 _Avoid_: Link, article, reference, citation
 
 **Connection**:
@@ -136,11 +140,7 @@ A task owned by one Member, visible to all Members, and assignable by any Member
 _Avoid_: Task, ticket
 
 **Comment**:
-A Member's remark in the thread of one Card, visible to all Members, the same on every Branch, and outliving the Card. May mention other Members, who then find it in their list of mentions. A thread can be marked resolved.
-_Avoid_: Note, message, chat
-
-**Comment**:
-A Member's remark in the thread attached to one Card, for the other Members to read. A fact about the team's discussion, so it is the same on every Branch, is not in History, and outlives the Card if it is removed. May mention a Member by name.
+A Member's remark in the thread attached to one Card, for the other Members to read; Guests never see them. A fact about the team's discussion, so it is the same on every Branch, is not in History, and outlives the Card if it is removed. May mention a Member by name, who then finds it among the Comments that mention them. A thread can be marked resolved and reopened.
 _Avoid_: Note, message, chat, review
 
 **Conversation**:

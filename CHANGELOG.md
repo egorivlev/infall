@@ -6,34 +6,50 @@ What changed in Infall, newest first, written from the repository's history. Mil
 
 ## 0.9.0 — the beta (unreleased)
 
-The first version number that means something: the beta the plan sends to three researchers. Everything from 0.1.0 to here was numbered 0.1.0.
+The first version number that means something: the beta the plan sends to three researchers. Everything from 0.1.0 to here was numbered 0.1.0. 0.9.0 holds M18, M19 and M19b, built and merged on 25 November, on top of M15 and M15b below. The server's schema is version 8; a database or Workspace file of any earlier version is brought up to it.
+
+**How much of 0.9.0 has been seen working.** Every zone was merged with its own test suites passing on macOS, as its builder reported; the web UI's new screens are tested against the fake server in jsdom, and some were looked at in a browser. At `7f62d3a`, `cargo test --workspace` (core and server) was run again: 506 tests, all passing; the web UI's and the desktop app's suites were not run again. **Nothing below has been run through by hand in the packaged app** (the checklist is release.md §8, items 5–25), nor on Windows or Linux. Where an entry was checked less than that, it says so.
+
+### From alone to a team (M18, [team-move.md](docs/specs/team-move.md))
+
+- **Move to a Team server…** on the start screen: a Local Workspace goes onto an **empty** Team server. The app writes its Workspace file and opens the server; the server's first screen offers the Admin **Bring in <name> from this computer**, one press. The local Member's Changes, Checkpoints, To-dos, Pins and Comments become the Admin's. The copy on this computer stays, marked **Moved to <host>**, and opens read-only (**Open on the server**, **Open this copy (read-only)**). *The whole move has not been seen end to end in the packaged app; its parts were tested apart.*
+- **An empty Team server's first screen**: **Start empty** or **Bring in a Workspace file…**, with progress, and the names the file brought, each with **Invite**. The same on the command line: `qoop-server import-workspace <file> --admin-email <e>`.
+- **Leaving a server**: an Admin's **Export Workspace file…** (Settings → Workspace), and `qoop-server export-workspace <dest>` (it records the oldest Admin as who exported). Every Branch, the history, Checkpoints, To-dos, Comments, Suggestions and PDFs; Members and Admins as names only; no emails, passwords, sessions, invites, access tokens, AI settings or Guests. The desktop app opens such a file as a Local Workspace with the exporter as its one Member; another empty Team server takes it in with everyone else as **not signed in yet**.
+- **Members as names**: an invite can take over such a name (`claims`); whoever accepts becomes that Member, with everything under the name.
+- **Comments**: one thread per Card in its Page, `@` mentions of Members, edit and delete one's own (an Admin any), resolve and reopen, a count on the Card. Outside versioning like To-dos, kept when the Card is removed, never shown to Guests; in a Local Workspace they are notes to oneself and travel with a move.
+- **For you**: the Comments that mention you, beside To-dos, with an unseen count in the rail and a short notice when a mention arrives.
+- **Changes stored append-only** (schema version 6, before M18 proper): an edit appends rows instead of rewriting the Workspace; migrated from every earlier version. Schema version 7 adds Comments, For you, names without an email and claims.
+- **The official container** for a Team server: `deploy/compose.yaml` with Caddy and automatic HTTPS from one domain setting, daily backups (database copies, until the backup job uses `export-workspace`), a checked copy before every upgrade, the first Admin in one command. Rehearsed on this Mac against `localhost` (release.md §10.4); *not on a real domain; the image workflow has never run; no outsider has installed it yet*.
+- Desktop bridge for the move: `moveHandover`, `moveFile`, `moveDone`; `saveBinaryFile` for files the page makes (a PNG, a Team Workspace's file).
+
+### PDFs on Sources (M19 Part 1, [pdf-sources.md](docs/specs/pdf-sources.md))
+
+- A Source carries one PDF: **Attach PDF…** or drop a file, **Open PDF**, **Replace…**, **Remove PDF**, each one step of Undo. Stored once by its SHA-256, in the Workspace's database (schema version 8), never duplicated; which PDF a Source has is ordinary Research Content. At most 100 MB a file (`QOOP_MAX_PDF_MB`), PDFs only.
+- **The reader**, in the Page's place: pages, zoom, **Fit width**, **Find** (⌘F), text selection, **Open in the system viewer** (desktop) or **Save a copy** (browser); the page is remembered per PDF on this device. PDF.js ships with Infall.
+- **Search**: the text is read in the browser once and stored beside the file; ⌘K finds words in PDFs, "in the PDF of <title>, page N".
+- **Fetch the PDF from arXiv** after Look up found an arXiv paper: the server downloads it, sending only the id, on that button only. *Tested against a fake arXiv; once for real by hand is still to do.*
+- **Import BibTeX…** with Zotero's, JabRef's or Mendeley's `file` fields: **Attach the PDFs…** from a folder you pick, in the desktop app (`pickFolder`, `readFileIn`, `openExternally`; the page never sees a path). In a browser the entries come in without their PDFs and the report says how many had one.
+- **Workspace files carry the PDFs**: exports, backups, moves, Team files. **Export…** on the start screen asks "Include PDFs (N files, X MB)", ticked, when there are any.
+
+### Runs in more than Python, an environment per Run (M19 Part 2 and M19b, [desktop.md](docs/specs/desktop.md))
+
+- A Run names its **language** (`lang`; unset is Python) and, for Python and Q#, an **environment** (`env`); each Member decides on their own computer what those names start. Nothing is ever installed.
+- **Runner settings**: environments found (conda, pyenv, `venv`/`.venv` in the folder, the `PATH`) or added by hand; **Names Runs ask for**, asked once when a Run names one this computer lacks; **Languages**: Q# through the default Python's `qdk`, presets for Julia, R, JavaScript (node) and Shell (bash; on Windows Git for Windows' bash), any other language as a program with `{file}` among its arguments.
+- **The approval window** names the language, the environment and the interpreter or command; an approval is remembered per code, language, interpreter or program, and folder, so the same code as another language asks again. Approvals from before ask once more.
+- **A result records what ran**: the Python version and up to 32 packages the code imported with what they need directly ("Python 3.12.3 · numpy 2.1.0, …"), Q#'s `qdk` version, another language's `--version`; and `[qoop] This environment has no package <name>.` when one is missing.
+- An app from before 0.9.0 refuses a Run in another language ("Update Infall on this computer to run Julia code.") instead of running it as Python.
+- Every Run starts with the documented usage-report switches of `qdk`/`qsharp`, `huggingface_hub` and `mlflow` turned off.
+- *macOS only: Julia and R were not installed here, so their presets were tested with stand-ins; node, bash and Q# (qdk 1.28 and 1.34) ran for real. Windows and Linux not run.*
+
+### The Board as a picture (M19 Part 3)
+
+- **Export ▾** → **Board as SVG…** or **Board as PNG…** (1×, 2×, 4×), the whole Board or the visible area, on the theme's background or a light one, at the moment History shows.
 
 ### Desktop app
 
-- **PDFs from a folder you choose** (M19, decision 10): the bridge gains `pickFolder()`, `readFileIn(token, path)` and `openExternally({ suggestedName, bytes })`, so Import BibTeX can attach the PDFs a Zotero, JabRef or Mendeley export points at, and a PDF can be opened in the system's viewer. The page never sees a path; only PDFs inside the chosen folder, at most 100 MB, can be read. *The web UI that calls them is a separate zone; not seen end to end.*
-- **Export… asks about PDFs** when the Workspace has any ("Include PDFs (N files, X MB)", on by default). *Waits for the server crate to count and export them; until then the question is never asked.*
 - **Windows: Local Workspaces live in the local app data folder** (`%LOCALAPPDATA%\app.qoop.desktop\`), not the roaming one; those an earlier version kept in `%APPDATA%` are moved on the first start, checked byte for byte, and any that cannot be moved stay where they are and are used from there. *Tested with folders on macOS; never run on Windows.*
 - **Updates** (M20 groundwork): a build made with an update key and feed checks for a new version at most once a day and from **Check for updates…**, downloads it, checks its signature, and offers "Restart to update" on the start screen — never while a Workspace is open. Every Local Workspace is backed up before the update is installed. Today's builds have no key and no feed, so they have no updater and say nothing. *Seen on macOS against a feed served on the same machine: the check, the download and the signature check. Installing an update was not tried on any system.*
-- Version 0.9.0 in the app (`Cargo.toml`, `tauri.conf.json`).
-
-## M19b and M19 Part 2 — Runs in more than Python, an environment per Run (25 Nov)
-
-- A Run names its language and, for Python and Q#, an environment; each Member decides on their own computer what those names start (Toolchains). Q# through the `qdk` package, presets for Julia, R, JavaScript and Shell, any other language by hand.
-- Runner settings: named environments (conda, pyenv, `.venv`, by hand), names Runs ask for, languages; the approval window names the language, environment and command; an approval is remembered per language and interpreter.
-- A Run's result records Python and the versions of the packages its code imported.
-- Every Run starts with the documented usage-report switches of common packages turned off.
-- *macOS only. Windows and Linux not run.*
-
-## M18 — From alone to a team (25 Nov)
-
-- **Move to a Team server…**: a Local Workspace is handed to an empty Team server through the bridge (`moveHandover`, `moveFile`, `moveDone`); the copy left on this computer becomes read-only. `saveBinaryFile` for files the page makes.
-- **Changes stored append-only** (schema version 6), with a migration from every earlier version: an edit no longer rewrites the whole Workspace.
-- **The official container** for a Team server: `compose.yaml` with Caddy and HTTPS, daily backups, a checked copy before every upgrade. Rehearsed on this Mac; *the image workflow has never run*.
-- *The server side of the move (taking a Workspace file in) is still being built at the time of writing; the move has not been seen end to end.*
-
-## M19 Part 3 — the Board as an image (25 Nov)
-
-- Export the Board as SVG and PNG.
+- Version 0.9.0 in the app and the server crates (`Cargo.toml`, `tauri.conf.json`).
 
 ## M15 — Undo, and the Board at size (24–25 Nov)
 
