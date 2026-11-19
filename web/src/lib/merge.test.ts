@@ -349,6 +349,19 @@ describe('merge.decide and setCheckpointName', () => {
     expect(snap().decided).toBe(1)
   })
 
+  it('decides a Source’s PDF whole: the four fields follow the one chosen (M19)', async () => {
+    merge.close()
+    server.commit([ops.createSource({ id: 's', title: 'Kitaev' })], ME.id)
+    const pdfConflicts = ['pdf', 'pdf_name', 'pdf_size', 'pdf_pages'].map((f) => field('s', f, 'Null', T(`${f} S`), T(`${f} T`)))
+    server.mergeScript = { auto: [], conflicts: [TITLE, ...pdfConflicts] }
+    await merge.open('try', 'main')
+    merge.decide('s:pdf_size', 'target')
+    expect(snap().conflicts.map((c) => c.choice)).toEqual([null, 'target', 'target', 'target', 'target'])
+    expect(snap().decided).toBe(4)
+    merge.decide('s:pdf', null)
+    expect(snap().conflicts.map((c) => c.choice)).toEqual([null, null, null, null, null])
+  })
+
   it('ignores an unknown Conflict and a hand-written value where it is not allowed', () => {
     const before = snap()
     merge.decide('zzz:title', 'source')

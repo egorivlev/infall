@@ -101,7 +101,17 @@ function fieldWord(kind: Kind, field: string, sim: Sim = null): string {
   if (kind === 'Connection' && field === 'from') return 'start'
   if (kind === 'Connection' && field === 'to') return 'end'
   if (kind === 'Source' && (field === 'url' || field === 'doi')) return field.toUpperCase()
+  if (kind === 'Source' && field in PDF_FIELD_WORDS) return PDF_FIELD_WORDS[field]!
   return field
+}
+
+// M19: a Source's PDF is four fields that go together (files.ts `pdfOps`); each Conflict on one of them is decided
+// for all four of that Source (merge.ts `decide`), so a Merge never pairs one side's file with the other's name.
+const PDF_FIELD_WORDS: Record<string, string> = { pdf: 'PDF', pdf_name: 'PDF file name', pdf_size: 'PDF size', pdf_pages: 'PDF page count' }
+
+/** Whether a field of a Source is one of the four that say which PDF it has. */
+export function isPdfField(field: string | null): boolean {
+  return field !== null && field in PDF_FIELD_WORDS
 }
 
 // The headline of a field Conflict.
@@ -147,8 +157,9 @@ type Saying = Pick<MergeWorld, 'memberName' | 'now'>
 
 // One side of a field Conflict in plain words. `world` names the Cards a Connection end refers to. A Run's result
 // is said in one line — who, when, how it ended, how much — never as the JSON it is stored as.
-function describeValue(kind: Kind, field: string, value: Value, world: Entities, saying: Saying = {}): ConflictSide {
+function describeValue(kind: Kind, field: string, value: Value, world: Entities, saying: Saying = {}, entity = ''): ConflictSide {
   if (kind === 'Block' && field === 'result') return { text: resultValueLine(value, saying.memberName, saying.now) }
+  if (kind === 'Source' && isPdfField(field)) return { text: pdfValueText(field, value, world[entity]) }
   if (kind === 'Card' && field === 'status') {
     const status = statusOf(value)
     return { text: STATUS_WORDS[status], status }
@@ -158,6 +169,22 @@ function describeValue(kind: Kind, field: string, value: Value, world: Entities,
   if ('Float' in value) return { text: String(value.Float) }
   if (kind === 'Connection' && field === 'kind') return { text: capital(value.Text) }
   return { text: value.Text.trim() === '' ? EMPTY : value.Text }
+}
+
+// One side of a Conflict on a Source's PDF: the file by its name (never the hash), its size, its page count.
+function pdfValueText(field: string, value: Value, source: Entity | undefined): string {
+  const num = typeof value === 'object' && 'Float' in value ? value.Float : Number(typeof value === 'object' && 'Text' in value ? value.Text : NaN)
+  if (value === 'Null') return field === 'pdf' ? 'No PDF' : EMPTY
+  if (field === 'pdf') {
+    const name = source?.fields.pdf_name
+    const same = JSON.stringify(source?.fields.pdf ?? 'Null') === JSON.stringify(value)
+    return same && typeof name === 'object' && 'Text' in name && name.Text ? `The PDF ${name.Text}` : 'Another PDF'
+  }
+  if (field === 'pdf_name') return typeof value === 'object' && 'Text' in value ? value.Text : EMPTY
+  if (!Number.isFinite(num)) return EMPTY
+  if (field === 'pdf_pages') return `${num} ${num === 1 ? 'page' : 'pages'}`
+  // Powers of 1024, as every size in the UI.
+  return num < 1024 * 1024 ? `${Math.max(1, Math.round(num / 1024))} KB` : `${(num / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function entityOf(op: Op): string {
@@ -229,8 +256,8 @@ export function buildConflicts(plan: MergePlan, w: MergeWorld): BuiltConflict[] 
           ...common,
           type: 'field',
           headline: fieldHeadline(entityKind, field, sim),
-          source: { ...describeValue(entityKind, field, source, sourceWorld, w), ...lastTouch(w.sourceChanges, sourceFrom, touches) },
-          target: { ...describeValue(entityKind, field, target, targetWorld, w), ...lastTouch(w.targetChanges, targetFrom, touches) },
+          source: { ...describeValue(entityKind, field, source, sourceWorld, w, key.entity), ...lastTouch(w.sourceChanges, sourceFrom, touches) },
+          target: { ...describeValue(entityKind, field, target, targetWorld, w, key.entity), ...lastTouch(w.targetChanges, targetFrom, touches) },
           canEdit: isEditable(entityKind, field),
         },
         print: JSON.stringify([source, target]),

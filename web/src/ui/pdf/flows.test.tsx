@@ -4,7 +4,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const engine = vi.hoisted(() => ({ pages: 3, texts: null as string[] | null, opened: [] as unknown[] }))
+const engine = vi.hoisted(() => ({ pages: 3, texts: null as string[] | null, opened: [] as unknown[], openError: null as unknown }))
 vi.mock('./engine', () => {
   const doc = () => ({
     numPages: engine.pages,
@@ -24,6 +24,7 @@ vi.mock('./engine', () => {
     loadEngine: async () => ({}),
     openPdf: async (source: unknown) => {
       engine.opened.push(source)
+      if (engine.openError) throw engine.openError
       return { doc: doc(), cancel() {} }
     },
     countPages: async () => engine.pages,
@@ -47,7 +48,7 @@ const { toasts } = await import('../board/toastStore')
 const { usePagePanel, pagePanel } = await import('../bridge')
 const { pdfReader, usePdfReader } = await import('./readerStore')
 const { forgetTexts } = await import('./text')
-const { NO_TEXT } = await import('./PdfReader')
+const { NO_TEXT, PDF_NOT_INCLUDED } = await import('./PdfReader')
 const { rememberedPage } = await import('./remember')
 
 let server: InstanceType<typeof FakeServer>
@@ -79,6 +80,7 @@ beforeEach(async () => {
   engine.pages = 3
   engine.texts = null
   engine.opened = []
+  engine.openError = null
   forgetTexts()
   localStorage.clear()
   server = new FakeServer()
@@ -402,6 +404,14 @@ describe('the reader', () => {
     engine.texts = ['', ' ', '']
     await openReader(3)
     expect(screen.getByText(NO_TEXT)).toBeInTheDocument()
+  })
+
+  it('a file left out of the Workspace file (404 file_missing) says so', async () => {
+    // pdf.js rejects a 404 with a ResponseException carrying the status.
+    engine.openError = Object.assign(new Error('Unexpected server response (404)'), { name: 'ResponseException', status: 404 })
+    await openReader(3)
+    expect(screen.getByRole('alert')).toHaveTextContent(PDF_NOT_INCLUDED)
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
   })
 
   it('Save a copy in a browser; Open in the system viewer in the desktop app', async () => {

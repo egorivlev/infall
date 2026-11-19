@@ -168,6 +168,42 @@ describe('buildConflicts: field Conflicts', () => {
     )
     expect(list.map((c) => c.vm.id)).toEqual(['a:summary', 'a:title', 'b:title'])
   })
+
+  it('words a Source’s PDF (M19): the file by its name, never the hash; size and pages in words; not editable', () => {
+    const src = ops.createSource({ id: 's', title: 'Kitaev 2003' })
+    const ha = 'a'.repeat(64)
+    const hb = 'b'.repeat(64)
+    const pdf = (hash: string, name: string, size: number, pages: number) => [
+      set('s', 'pdf', T(hash)),
+      set('s', 'pdf_name', T(name)),
+      set('s', 'pdf_size', { Float: size }),
+      set('s', 'pdf_pages', { Float: pages }),
+    ]
+    const w = world([src, ...pdf(ha, 'preprint.pdf', 820_000, 12)], [src, ...pdf(hb, 'journal.pdf', 1_400_000, 9)])
+    const list = buildConflicts(
+      plan([
+        field('s', 'pdf', 'Null', T(ha), T(hb)),
+        field('s', 'pdf_name', 'Null', T('preprint.pdf'), T('journal.pdf')),
+        field('s', 'pdf_size', 'Null', { Float: 820_000 }, { Float: 1_400_000 }),
+        field('s', 'pdf_pages', 'Null', { Float: 12 }, { Float: 9 }),
+      ]),
+      w,
+    ).map((c) => c.vm)
+    expect(list.map((c) => c.headline)).toEqual([
+      'PDF changed on both',
+      'PDF file name changed on both',
+      'PDF size changed on both',
+      'PDF page count changed on both',
+    ])
+    expect(list[0]).toMatchObject({ source: { text: 'The PDF preprint.pdf' }, target: { text: 'The PDF journal.pdf' }, canEdit: false })
+    expect(list.map((c) => [c.source.text, c.target.text]).slice(2)).toEqual([
+      ['801 KB', '1.3 MB'],
+      ['12 pages', '9 pages'],
+    ])
+    expect(list.every((c) => !c.canEdit)).toBe(true)
+    // Removed on one side.
+    expect(one(field('s', 'pdf', 'Null', T(ha), 'Null'), w).target).toMatchObject({ text: 'No PDF' })
+  })
 })
 
 describe('buildConflicts: edit vs delete', () => {

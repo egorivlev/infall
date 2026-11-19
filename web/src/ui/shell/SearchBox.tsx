@@ -6,7 +6,7 @@ import type { PdfHit } from '../../lib'
 import { pdfReader } from '../pdf/readerStore'
 import { Icon } from './Icon'
 import { searchCards } from './searchCards'
-import { markedParts, pdfResultText, pdfResults } from './searchPdf'
+import { markedParts, pdfResultText, pdfResults, snippetAround } from './searchPdf'
 import type { PdfResult } from './searchPdf'
 import { useDismiss } from './useDismiss'
 import { useOnBoard } from './useOnBoard'
@@ -169,7 +169,7 @@ export function SearchBox() {
                     id={optionId(i)}
                     role="option"
                     aria-selected={i === active}
-                    aria-label={`${pdfResultText(r)}: ${r.snippet}`}
+                    aria-label={`${pdfResultText(r)}: ${snippetAround(r.snippet, query)}`}
                     className="q-search__opt q-search__opt--pdf"
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActive(i)}
@@ -180,7 +180,7 @@ export function SearchBox() {
                     </span>
                     {r.snippet && (
                       <span className="q-search__sum">
-                        {markedParts(r.snippet, query).map((p, k) => (p.hit ? <mark key={k}>{p.text}</mark> : <span key={k}>{p.text}</span>))}
+                        {markedParts(snippetAround(r.snippet, query), query).map((p, k) => (p.hit ? <mark key={k}>{p.text}</mark> : <span key={k}>{p.text}</span>))}
                       </span>
                     )}
                   </li>

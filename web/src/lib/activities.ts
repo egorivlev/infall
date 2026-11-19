@@ -156,6 +156,14 @@ function pageLine(e: PageEdits, card: string): string | null {
   return e.reordered > 0 ? `Reordered the Page of ${card}` : null
 }
 
+// M19: which PDF a Source has (its `pdf` hash; the name, size and pages go with it and say nothing of their own).
+function pdfLine(was: string, now: string, source: string): string | null {
+  if (was === now) return null
+  if (!was) return `Attached a PDF to ${source}`
+  if (!now) return `Removed the PDF from ${source}`
+  return `Replaced the PDF of ${source}`
+}
+
 function plural(n: number, kind: Kind): string {
   return `${n} ${kind}${n === 1 ? '' : 's'}`
 }
@@ -251,19 +259,33 @@ export function describeChanges(
       const what = fate(was, now)
       const source = sourceName(after[ref(now.fields, 'source')])
       const card = titleOf(after[ref(now.fields, 'card')])
-      if (what === 'added') lines.push(`Added Source ${source} to ${card}`)
-      else if (what === 'removed') lines.push(`Removed Source ${source} from ${card}`)
+      if (what === 'added') {
+        lines.push(`Added Source ${source} to ${card}`)
+        // A new Source that came with its PDF: said here, after the line that names it.
+        const s = ref(now.fields, 'source')
+        const pdf = !before[s] && after[s] && !after[s].deleted ? pdfLine('', text(after[s].fields, 'pdf'), source) : null
+        if (pdf && !lines.includes(pdf)) lines.push(pdf)
+      } else if (what === 'removed') lines.push(`Removed Source ${source} from ${card}`)
       continue
     }
     if (now.kind === 'Source') {
       const name = sourceName(now)
       if (!was) {
         if (now.deleted) lines.push(`Added and removed Source ${name}`)
-        else if (!attachedNow.has(id)) lines.push(`Added Source ${name}`) // attached at once: that line says it
+        else if (!attachedNow.has(id)) {
+          // Attached at once: the Attachment's line says it, and its PDF after it.
+          lines.push(`Added Source ${name}`)
+          const pdf = pdfLine('', text(now.fields, 'pdf'), name)
+          if (pdf) lines.push(pdf)
+        }
       } else if (now.deleted) {
         if (!was.deleted) lines.push(`Removed Source ${name}`)
       } else if (was.deleted) lines.push(`Brought back Source ${name}`)
-      else if (SOURCE_FIELDS.some((f) => !sameValue(was.fields, now.fields, f))) lines.push(`Edited Source ${name}`)
+      else {
+        if (SOURCE_FIELDS.some((f) => !sameValue(was.fields, now.fields, f))) lines.push(`Edited Source ${name}`)
+        const pdf = pdfLine(text(was.fields, 'pdf'), text(now.fields, 'pdf'), name)
+        if (pdf) lines.push(pdf)
+      }
       continue
     }
     if (!was) {

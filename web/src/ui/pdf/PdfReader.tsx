@@ -20,6 +20,7 @@ import {
   fitWidthZoom,
   layoutPages,
   pagesToDraw,
+  revealTop,
   scrollTopFor,
   scrollTopForAnchor,
   stepZoom,
@@ -34,6 +35,9 @@ import { rememberedPage, rememberPage } from './remember'
 import { pdfText } from './text'
 
 export const NO_TEXT = 'This PDF has no text to search or select.'
+/** `404 file_missing` (api.md §20): the Source names a file this Workspace does not have, as after an import of a
+ * Workspace file exported without its PDFs. */
+export const PDF_NOT_INCLUDED = 'This PDF was not included in the Workspace file.'
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const FIND_KEY = MAC ? '⌘F' : 'Ctrl+F'
 
@@ -46,7 +50,7 @@ type TextState = { kind: 'idle' } | { kind: 'reading' } | { kind: 'ready'; pages
 function openFailure(e: unknown): string {
   const status = (e as { status?: number })?.status
   if (status === 403) return 'This PDF is not available to you.'
-  if (status === 404) return 'The server does not have this PDF’s file.'
+  if (status === 404) return PDF_NOT_INCLUDED
   const name = (e as { name?: string })?.name
   if (name === 'InvalidPDFException') return 'The file is damaged or is not a PDF.'
   if (name === 'PasswordException') return 'This PDF is protected by a password, which Infall cannot open.'
@@ -200,7 +204,7 @@ export function PdfReader({ target, full, onClose }: Props) {
       if (!el) return
       const i = n - 1
       const y = (layout.tops[i] ?? 0) + fraction * (layout.heights[i] ?? 0)
-      const to = Math.max(0, y - el.clientHeight / 2)
+      const to = revealTop(layout, n, y, el.clientHeight)
       if (Math.abs(to - el.scrollTop) < 4) return
       // A jump, never a smooth scroll: nothing in the reader moves by itself.
       el.scrollTop = to
@@ -564,18 +568,21 @@ export function PdfReader({ target, full, onClose }: Props) {
         {load.kind === 'loading' && late && <p className="qr-state">Opening the PDF…</p>}
         {load.kind === 'failed' && (
           <div className="qr-state" role="alert">
-            <p>The PDF could not be opened. {load.text}</p>
-            <button
-              type="button"
-              className="q-btn"
-              onClick={() => {
-                setLoad({ kind: 'loading' })
-                setLate(false)
-                setAttempt((a) => a + 1)
-              }}
-            >
-              Try again
-            </button>
+            {/* A file left out of the Workspace file is not there to try again: the sentence says why, alone. */}
+            <p>{load.text === PDF_NOT_INCLUDED ? load.text : `The PDF could not be opened. ${load.text}`}</p>
+            {load.text !== PDF_NOT_INCLUDED && (
+              <button
+                type="button"
+                className="q-btn"
+                onClick={() => {
+                  setLoad({ kind: 'loading' })
+                  setLate(false)
+                  setAttempt((a) => a + 1)
+                }}
+              >
+                Try again
+              </button>
+            )}
           </div>
         )}
         {doc && (

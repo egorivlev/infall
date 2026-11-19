@@ -77,7 +77,7 @@ describe('gathering the PDFs', () => {
     })
     expect(refused.outcome.tooLarge).toEqual(['Jerbi - 2021.pdf'])
     const failed = await gatherPdfs(entries.slice(0, 1), read, async () => {
-      throw new ApiError(415, 'not_pdf', 'This file is not a PDF.')
+      throw new ApiError(415, 'not_a_pdf', 'This file is not a PDF.')
     })
     expect(failed.outcome.failed).toEqual([{ name: 'Jerbi - 2021.pdf', why: 'This file is not a PDF.' }])
   })

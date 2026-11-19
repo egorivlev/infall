@@ -164,7 +164,7 @@ export function fitText(pages: readonly string[], maxBytes = MAX_PDF_TEXT_BYTES)
 export const pdfFiles = {
   /**
    * Stores a PDF (`PUT /api/files/pdf`) and resolves with its hash, size and (usually null) page count. Idempotent
-   * by content. Rejects locally, without a request: 403 for a Guest or a moved copy, 415 `not_pdf` when the first
+   * by content. Rejects locally, without a request: 403 for a Guest or a moved copy, 415 `not_a_pdf` when the first
    * bytes are not a PDF's, 400 for an empty file. The server's refusals come through as they are (413 over the
    * limit, 415 not a PDF), their `message` the server's sentence.
    */
@@ -178,7 +178,7 @@ export const pdfFiles = {
     } catch {
       throw new ApiError(400, 'unreadable', 'The file could not be read.')
     }
-    if (!isPdfBytes(head)) throw new ApiError(415, 'not_pdf', 'This file is not a PDF.')
+    if (!isPdfBytes(head)) throw new ApiError(415, 'not_a_pdf', 'This file is not a PDF.')
     const body = isBytes(file) ? new Blob([file as BlobPart], { type: 'application/pdf' }) : file
     return put(body, total, options.onProgress, options.signal)
   },

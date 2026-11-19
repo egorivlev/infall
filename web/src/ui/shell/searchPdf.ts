@@ -48,6 +48,33 @@ export function pdfResultText(r: Pick<PdfResult, 'sourceTitle' | 'page'>): strin
   return `in the PDF of ${r.sourceTitle}, page ${r.page}`
 }
 
+/**
+ * The part of a snippet around the first place the query is found: the server sends up to 200 characters with the
+ * match anywhere in them, and the result line shows one line, so the words found must be near its start. Cut at
+ * word boundaries, with "…" where something was left out; the start of the snippet when the query is not in it.
+ */
+export function snippetAround(text: string, query: string, before = 24, max = 90): string {
+  const words = query.trim().split(/\s+/).filter(Boolean)
+  if (text.length <= max) return text
+  const m = words.length ? queryPattern(words, 'iu').exec(text) : null
+  if (!m) return `${text.slice(0, max).replace(/\s+\S*$/, '')}…`
+  let start = Math.max(0, m.index - before)
+  if (start > 0) {
+    const space = text.lastIndexOf(' ', m.index - 1)
+    if (space >= 0 && space >= start - 12) start = space + 1
+  }
+  let end = Math.max(start + max, m.index + m[0].length)
+  if (end < text.length) {
+    const space = text.indexOf(' ', end)
+    if (space >= 0 && space - end < 12) end = space
+  }
+  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`
+}
+
+function queryPattern(words: string[], flags: string): RegExp {
+  return new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), flags)
+}
+
 /** The snippet in parts, the words of the query marked (case ignored), for <mark>. */
 export function markedParts(text: string, query: string): { text: string; hit: boolean }[] {
   const words = query.trim().split(/\s+/).filter(Boolean)

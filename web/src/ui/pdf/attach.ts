@@ -2,6 +2,7 @@
 // set the Source's fields — one Undo step, named as decision 2's contract says ("Attach a PDF to <title>").
 import { ApiError, pdfFiles, pdfName, pdfOps } from '../../lib'
 import type { Op, StoredPdf, UploadProgress } from '../../lib'
+import { formatSize } from '../shell/moved'
 import { countPages } from './engine'
 import { storeTextOf } from './text'
 
@@ -63,13 +64,12 @@ export function attachFailure(e: unknown): string {
   return 'The PDF could not be attached. Try again.'
 }
 
-/** "820 KB", "1.4 MB", "12 bytes". */
+/**
+ * "801 KB", "1.4 MB", "12 bytes": in powers of 1024, as every size in the UI is (shell/moved.ts `formatSize`) and as
+ * the server counts its limits (`QOOP_MAX_PDF_MB`: "A PDF may be at most 100 MB here").
+ */
 export function sizeText(bytes: number): string {
-  if (!(bytes >= 0)) return ''
-  if (bytes < 1000) return `${Math.round(bytes)} ${bytes === 1 ? 'byte' : 'bytes'}`
-  if (bytes < 1_000_000) return `${Math.max(1, Math.round(bytes / 1000))} KB`
-  const mb = bytes / 1_000_000
-  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  return formatSize(bytes)
 }
 
 /** "1 page", "12 pages"; '' when unknown. */

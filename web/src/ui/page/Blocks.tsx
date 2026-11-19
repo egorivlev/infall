@@ -184,6 +184,9 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
 
   // Moving a Block reorders the DOM, which can drop focus from the button that was pressed.
   const moved = useRef<{ id: string; by: -1 | 1 } | null>(null)
+  // Blocks added here whose first editor is still open: what that editor sends joins the step that added the Block.
+  // A later edit is a step of its own, so Undo takes back that edit, not the whole Block (and a Run's output with it).
+  const fresh = useRef(new Set<string>())
   useLayoutEffect(() => {
     const m = moved.current
     if (!m) return
@@ -214,7 +217,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
         if (result.keyboard) queueMicrotask(() => endRef.current?.focus({ preventScroll: true }))
       }
       // A Block just added: what is typed into it, or its removal, joins the step that added it.
-      const step = { join: `new:${id}` }
+      const step = fresh.current.delete(id) ? { join: `new:${id}` } : {}
       if (before.trim() === '' && (!result.commit || text === '')) {
         // An empty Block left empty is removed again — quietly: there is nothing to bring back (and no step).
         void actions.submit([ops.remove(id)], step)
@@ -263,6 +266,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
         next.delete(id)
         return next.size ? next : NONE
       })
+      const joins = fresh.current.delete(id)
       if (!result.commit || !latest.current.blocks.some((b) => b.id === id)) return
       const batch = []
       if (result.title !== undefined) batch.push(ops.setBlockTitle(id, result.title))
@@ -270,7 +274,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
       // A Run's language and environment go in the same batch: one step of Undo with the rest of the edit.
       if (result.lang !== undefined) batch.push(ops.setRunLang(id, result.lang))
       if (result.env !== undefined) batch.push(ops.setRunEnv(id, result.env))
-      void actions.submit(batch, { join: `new:${id}` })
+      void actions.submit(batch, joins ? { join: `new:${id}` } : {})
     },
     [actions],
   )
@@ -287,6 +291,7 @@ export function Blocks({ cardId, blocks, canEdit, readOnly = !canEdit, branchId 
           ? ops.addBlock({ id, card, type: 'run', title: start.title, text: start.source, order })
           : ops.addBlock({ id, card, type: 'visual', title: start.title, text: start.source, order })
       void actions.submit([op], { key: `new:${id}` })
+      fresh.current.add(id)
       setEditing((s) => new Set(s).add(id))
     },
     [actions],
