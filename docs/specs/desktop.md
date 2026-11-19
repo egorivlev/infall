@@ -506,7 +506,7 @@ workspace_move({ id: string, address: string }): void
 - Local only, and not one already moved. The address is checked exactly as for `workspace_connect` (the M7 rules and the health check), before anything is written.
 - A Workspace file is written with Contract A's `export_for_move` (until the server crate has it, a local wrapper around `export_workspace`: `shell::export_for_move`) into `moves/` in the app's data directory, a folder only the owner can open, under a random name. A file larger than 512 MB is refused (what a Team server takes by default).
 - The Team Workspace is remembered as `workspace_connect` remembers it, the pending move `{ id, origin, file, at }` is kept in `workspaces.json` (`pendingMoves`; `file` is a name in `moves/`, never a path), and the Team Workspace is opened. One pending move per Team server and per Local Workspace: a new one replaces the one before, and its file.
-- A pending move is dropped with its file when it is 7 days old, when its Team Workspace is forgotten, when its Local Workspace is removed, or once the server has the Workspace. Files in `moves/` that no pending move names (a move cut short) are deleted when the app starts.
+- A pending move is dropped with its file when it is 7 days old, when its Team Workspace is forgotten, when its Local Workspace is removed, once the server has the Workspace, or when the server's page cancels it (`moveDone({ ok: false, cancel: true })`). Files in `moves/` that no pending move names (a move cut short) are deleted when the app starts.
 
 `WorkspaceEntry` gains `movedTo: string | null`: the Team origin a Local Workspace was moved to. Such a Workspace's server is started with `read_only: true` (in one place, `shell::local_options`).
 
@@ -520,9 +520,12 @@ moveHandover(): Promise<{ name: string; size: number } | null>
   // The Local Workspace's name and its file's size in bytes.
 moveFile(): Promise<Uint8Array>
   // The file's bytes. Rejects with a sentence when there is nothing to hand over.
-moveDone(result: { ok: boolean }): Promise<void>
+moveDone(result: { ok: boolean; cancel?: boolean }): Promise<void>
   // ok: the Local Workspace is marked movedTo = this origin, its file deleted, the move
-  // forgotten. Not ok: nothing changes; the page can ask again.
+  // forgotten (cancel is ignored). Not ok: nothing changes; the page can ask again.
+  // Not ok with cancel: true (the server can never take it: not empty, or the person is not
+  // an Admin): the move is forgotten and its file deleted; the Local Workspace stays as it
+  // was, not moved, and can be moved again from the start screen.
 ```
 
 ## Bridge — saving a file the page made

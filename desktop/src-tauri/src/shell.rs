@@ -1587,8 +1587,10 @@ async fn move_file_chunk(
 }
 
 /// The page says whether this server took the Workspace. `ok`: the Local Workspace is marked
-/// as moved here (it opens read-only from now on) and its file is deleted. Not `ok`: the move
-/// stays, so the Admin can try again.
+/// as moved here (it opens read-only from now on) and its file is deleted (`cancel` is not
+/// looked at). Not `ok`: the move stays, so the Admin can try again; with `cancel` (the server
+/// can never take it) the move is forgotten with its file and the Local Workspace stays as it
+/// was.
 #[tauri::command]
 fn move_done(
     webview: Webview,
@@ -1596,17 +1598,15 @@ fn move_done(
     state: State<'_, AppState>,
     key: String,
     ok: bool,
+    cancel: Option<bool>,
 ) -> Result<(), String> {
     let origin = check_bridge_caller(&webview, &state, &key)?;
     let ws = workspaces(&app);
     let registry = ws.registry.lock().unwrap();
-    if registry.pending_move(&origin, now_ms() as i64).is_none() {
-        return Err(NOTHING_TO_HAND_OVER.to_owned());
+    match registry.move_done(&origin, ok, cancel == Some(true), now_ms() as i64)? {
+        true => Ok(()),
+        false => Err(NOTHING_TO_HAND_OVER.to_owned()),
     }
-    if ok {
-        registry.finish_move(&origin)?;
-    }
-    Ok(())
 }
 
 // ---- saving a file the page made (docs/specs/desktop.md, M18) ---------------------------
