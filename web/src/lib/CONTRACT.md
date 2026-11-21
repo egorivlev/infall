@@ -743,3 +743,18 @@ What the layer assumes where the spec is loose — **the server agent should mat
 - History says "Attached a PDF to <Source>", "Replaced the PDF of <Source>", "Removed the PDF from <Source>" (the hash decides; a page count found later says nothing); a new Source that comes with its PDF gets the Attached line after the one that adds it. Merge words the four fields "PDF", "PDF file name", "PDF size", "PDF page count" (the file by its name, never the hash; not editable by hand), and `merge.decide` on any of them decides all four of that Source alike, so a Merge never pairs one side's file with the other's name.
 - Sizes in the UI are in powers of 1024 everywhere (the PDF row used powers of 1000), as the server's limits are.
 - The first editor of a Block just added joins the step that added it; a later edit (a Run executed, then changed to another language) is a step of its own.
+
+## 0.9 — the desktop window's fullscreen state (window chrome)
+
+Types in `types.ts`: `QoopDesktop` gains `fullscreen?`:
+
+```ts
+fullscreen?: {
+  current(): boolean                                // synchronous; the last known state
+  subscribe(fn: (on: boolean) => void): () => void  // called on every change; returns the unsubscribe
+}
+```
+
+- Optional: feature-detect. The UI reads it only through `useDesktopFullscreen()` in `ui/shell/windowChrome.ts` (a `useSyncExternalStore` over it), which is false in a browser, in an app without the member, and when the member is not an object with both functions (or one of them throws). The first render uses `current()`. The lib does not read it.
+- Used for one thing: the macOS top bar stops leaving room for the traffic lights while the window is in fullscreen (DESIGN.md "Top bar, two rows").
+- `testing.ts`: `fakeFullscreen(on?)` is a fake member — `current()`, `subscribe`, `set(on)` (changes it and tells every subscriber), `listeners` (how many are subscribed). Put it on a bridge: `installDesktop({ ...fakeDesktop(), fullscreen: fakeFullscreen(true) })`.

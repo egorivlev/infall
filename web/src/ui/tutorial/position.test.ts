@@ -3,10 +3,11 @@ import { placePopover, ringBox, sameBox, unionBox } from './position'
 
 const VIEW = { width: 1440, height: 900 }
 const POP = { width: 320, height: 180 }
+// The boxes are laid out like the app's: the top bar is 72px (two 36px rows), a toolbar control sits in its second row.
 
 describe('placing the popover', () => {
   it('goes under a control with room below', () => {
-    expect(placePopover({ left: 300, top: 36, width: 120, height: 26 }, POP, VIEW)).toEqual({ left: 300, top: 72 })
+    expect(placePopover({ left: 300, top: 41, width: 120, height: 26 }, POP, VIEW)).toEqual({ left: 300, top: 77 })
   })
 
   it('goes above a control at the bottom', () => {
@@ -18,21 +19,21 @@ describe('placing the popover', () => {
   })
 
   it('stands to the left of a full-height panel at the right edge', () => {
-    expect(placePopover({ left: 1064, top: 66, width: 376, height: 834 }, POP, VIEW)).toEqual({ left: 1064 - 10 - 320, top: 66 })
+    expect(placePopover({ left: 1064, top: 72, width: 376, height: 828 }, POP, VIEW)).toEqual({ left: 1064 - 10 - 320, top: 72 })
   })
 
   it('sits inside the bottom-left corner of a control with no room around it', () => {
-    expect(placePopover({ left: 224, top: 66, width: 1216, height: 834 }, POP, VIEW)).toEqual({ left: 248, top: 900 - 180 - 24 })
+    expect(placePopover({ left: 224, top: 72, width: 1216, height: 828 }, POP, VIEW)).toEqual({ left: 248, top: 900 - 180 - 24 })
   })
 })
 
 describe('the ring', () => {
   it('is drawn a little outside the control', () => {
-    expect(ringBox({ left: 300, top: 36, width: 120, height: 26 }, VIEW)).toEqual({ left: 296, top: 32, width: 128, height: 34 })
+    expect(ringBox({ left: 300, top: 41, width: 120, height: 26 }, VIEW)).toEqual({ left: 296, top: 37, width: 128, height: 34 })
   })
 
   it('never leaves the window', () => {
-    expect(ringBox({ left: 0, top: 66, width: 1440, height: 834 }, VIEW)).toEqual({ left: 2, top: 62, width: 1436, height: 836 })
+    expect(ringBox({ left: 0, top: 72, width: 1440, height: 828 }, VIEW)).toEqual({ left: 2, top: 68, width: 1436, height: 830 })
   })
 })
 

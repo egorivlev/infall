@@ -11,7 +11,7 @@ import { RunMonitor } from './monitor/RunMonitor'
 import { Presence } from './Presence'
 import { SearchBox } from './SearchBox'
 import { ThemeToggle } from './ThemeToggle'
-import { macDesktopWindow } from './windowChrome'
+import { macDesktopWindow, useDesktopFullscreen } from './windowChrome'
 
 /**
  * Two rows (design: QTopBar). The first is the window's title bar — in the macOS desktop app the traffic lights sit in
@@ -23,9 +23,11 @@ import { macDesktopWindow } from './windowChrome'
 export function TopBar({ member, branch, available }: { member: Member; branch: string; available: boolean }) {
   const guest = member.role === 'guest'
   const moved = useWorkspace().readOnly === true // M18: a moved copy names no moments; History still reads
+  const fullscreen = useDesktopFullscreen()
+  const titlebar = ['q-titlebar', macDesktopWindow() && 'is-mac-window', fullscreen && 'is-fullscreen'].filter(Boolean).join(' ')
   return (
     <header className="q-topbar">
-      <div className={macDesktopWindow() ? 'q-titlebar is-mac-window' : 'q-titlebar'} data-tauri-drag-region="deep">
+      <div className={titlebar} data-tauri-drag-region="deep">
         <div className="q-topbar__brand">
           <Logo size={18} />
           <span className="q-topbar__name">Infall</span>
