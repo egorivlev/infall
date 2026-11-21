@@ -333,6 +333,32 @@ export function installDesktop(desk: unknown): () => void {
 }
 
 /**
+ * A fake `qoopDesktop.fullscreen` (window chrome, 0.9): `current()` answers `on`; `set(on)` changes it and tells every
+ * subscriber, as the app does when the window enters or leaves fullscreen. `listeners` is how many are subscribed.
+ */
+export function fakeFullscreen(on = false) {
+  const fns = new Set<(on: boolean) => void>()
+  const fs = {
+    on,
+    get listeners() {
+      return fns.size
+    },
+    current: () => fs.on,
+    subscribe(fn: (on: boolean) => void): () => void {
+      fns.add(fn)
+      return () => {
+        fns.delete(fn)
+      }
+    },
+    set(next: boolean) {
+      fs.on = next
+      for (const fn of [...fns]) fn(next)
+    },
+  }
+  return fs
+}
+
+/**
  * A fake `window.qoopDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
  * `emit` / `end` / `fail`; with `script` set, a run plays those events and ends by itself. `cancel` ends the run,
  * as the app does when it has terminated the process. It has a Runner (`runner`, a `fakeRunner()` unless one is

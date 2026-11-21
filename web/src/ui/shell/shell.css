@@ -6,20 +6,22 @@
 /* No min-width: the shell fits any window. What gives way when there is little room is decided by `data-room` on
    <html> — the window measured in interface (zoomed) pixels, ../settings/apply.ts — never by a media query, which
    would measure unzoomed pixels: "wide" ≥ 1100, "medium" 900–1099, "narrow" < 900. */
-.q-shell { --q-topbar-h: 66px; --q-rail-w: 224px; display: grid; grid-template-columns: var(--q-rail-w) minmax(0, 1fr); grid-template-rows: var(--q-topbar-h) minmax(0, 1fr); height: 100%; background: var(--q-canvas); color: var(--q-ink); }
+.q-shell { --q-topbar-h: 72px; --q-rail-w: 224px; display: grid; grid-template-columns: var(--q-rail-w) minmax(0, 1fr); grid-template-rows: var(--q-topbar-h) minmax(0, 1fr); height: 100%; background: var(--q-canvas); color: var(--q-ink); }
 /* M7: the AI sidebar (ui/ai) takes a 376px column at the right on every screen; in a room under "wide" it lies over the work area instead. */
 :root[data-room="wide"] .q-shell.has-ai { grid-template-columns: var(--q-rail-w) minmax(0, 1fr) 376px; }
 .q-work { position: relative; z-index: 0; /* own stacking context: Board overlays stay under top-bar menus */ min-width: 0; min-height: 0; overflow: hidden; }
 .q-board-host { position: absolute; inset: 0; }
 
-/* ---- top bar: two rows (design QTopBar) — the window's title bar (30px), then the Branch toolbar (36px) ---- */
+/* ---- top bar: two rows (design QTopBar) — the window's title bar (36px), then the Branch toolbar (36px) ---- */
 .q-topbar { grid-column: 1 / -1; position: relative; z-index: 5; display: flex; flex-direction: column; min-width: 0; }
 [data-branch]:not([data-branch="main"]) .q-topbar::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2; background: var(--q-branch); }
 
-.q-titlebar { height: 30px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; --q-logo-cut: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); background: var(--q-logo-cut); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
+.q-titlebar { height: 36px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; --q-logo-cut: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); background: var(--q-logo-cut); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
 .q-topbar__brand { width: var(--q-rail-w); flex: none; height: 100%; display: flex; align-items: center; gap: var(--q-s2); padding-left: 13px; border-right: 1px solid var(--q-chrome-line); }
 /* macOS desktop app: the traffic lights (three 12px buttons, 8px apart, at x 13) are drawn here. */
 .q-titlebar.is-mac-window .q-topbar__brand { padding-left: 75px; }
+/* In fullscreen macOS hides them: no room kept, the mark back at 13px (no transition: the window jumps anyway). */
+.q-titlebar.is-mac-window.is-fullscreen .q-topbar__brand { padding-left: 13px; }
 .q-topbar__name { font-weight: 600; letter-spacing: .01em; }
 .q-topbar__search { flex: 1; min-width: 96px; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 var(--q-s4); }
 .q-topbar__people { flex: none; display: flex; align-items: center; gap: var(--q-s2); min-width: 0; }
@@ -73,7 +75,7 @@
 .q-cp__error { margin: 0; }
 .q-cp__actions { display: flex; justify-content: flex-end; gap: var(--q-s2); }
 
-.q-search { position: relative; width: 100%; max-width: 380px; height: 22px; display: flex; align-items: center; gap: var(--q-s2); padding: 0 8px; border-radius: var(--q-r); background: var(--q-sunken); border: 1px solid var(--q-chrome-line); color: var(--q-ink-3); }
+.q-search { position: relative; width: 100%; max-width: 380px; height: 24px; display: flex; align-items: center; gap: var(--q-s2); padding: 0 8px; border-radius: var(--q-r); background: var(--q-sunken); border: 1px solid var(--q-chrome-line); color: var(--q-ink-3); }
 .q-search:focus-within { border-color: var(--q-accent); }
 .q-search__icon { display: flex; }
 .q-search__input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--q-ink); font-size: calc(12px * var(--q-text, 1)); outline: none; appearance: none; }
@@ -183,6 +185,7 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 :root[data-room="narrow"] .q-topbar__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 :root[data-room="narrow"] .q-topbar__brand { justify-content: center; padding-left: 0; }
 :root[data-room="narrow"] .q-titlebar.is-mac-window .q-topbar__brand { width: auto; padding-left: 75px; padding-right: 13px; }
+:root[data-room="narrow"] .q-titlebar.is-mac-window.is-fullscreen .q-topbar__brand { padding-left: 13px; }
 :root[data-room="narrow"] .q-account__name, :root[data-room="narrow"] .q-presence > .q-caps { display: none; }
 :root[data-room="narrow"] .q-topbar__search { padding: 0 var(--q-s2); }
 

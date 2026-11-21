@@ -351,6 +351,11 @@ export type QoopDesktop = {
   pickFolder?: () => Promise<{ token: string; name: string } | null>
   /** M19: a PDF inside the folder `token` stands for (a path relative to it, or absolute inside it); rejects outside it, over 100 MB, or not a PDF. */
   readFileIn?: (token: string, path: string) => Promise<Uint8Array>
+  /**
+   * 0.9: whether the window is in fullscreen (macOS then hides the traffic lights). `current()` is synchronous, the
+   * last known state; `subscribe` is called on every change and returns its unsubscribe. Absent in an older app.
+   */
+  fullscreen?: { current(): boolean; subscribe(fn: (on: boolean) => void): () => void }
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }

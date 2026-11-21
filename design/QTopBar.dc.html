@@ -21,7 +21,7 @@
   .qt-i:disabled{opacity:.4;cursor:default}
   .qt-mi{display:flex;width:100%;justify-content:space-between;align-items:center;gap:28px;padding:6px 10px;border:0;border-radius:4px;background:transparent;color:var(--q-ink);font:12.5px 'IBM Plex Sans',sans-serif;text-align:left;cursor:pointer;white-space:nowrap}
   .qt-mi:hover{background:var(--q-hover)}
-  .qt-search{display:flex;align-items:center;gap:8px;width:100%;max-width:380px;height:22px;padding:0 8px;border-radius:4px;background:var(--q-sunken);border:1px solid var(--q-chrome-line);color:var(--q-ink-3);font:12px 'IBM Plex Sans',sans-serif;cursor:text;box-sizing:border-box}
+  .qt-search{display:flex;align-items:center;gap:8px;width:100%;max-width:380px;height:24px;padding:0 8px;border-radius:4px;background:var(--q-sunken);border:1px solid var(--q-chrome-line);color:var(--q-ink-3);font:12px 'IBM Plex Sans',sans-serif;cursor:text;box-sizing:border-box}
   .qt-search:hover{border-color:var(--q-line)}
   .qt-drag{-webkit-app-region:drag;app-region:drag}
   .qt-drag button,.qt-drag nav{-webkit-app-region:no-drag;app-region:no-drag}
@@ -31,11 +31,11 @@
   .qt-wc:focus-visible,.qt-m:focus-visible,.qt-b:focus-visible,.qt-i:focus-visible,.qt-mi:focus-visible,.qt-search:focus-visible{outline:2px solid var(--q-accent);outline-offset:-2px}
 </style>
 </helmet>
-<div ref="{{ setRoot }}" style="position:relative;height:66px;display:flex;flex-direction:column;box-sizing:border-box;color:var(--q-ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;">
+<div ref="{{ setRoot }}" style="position:relative;height:72px;display:flex;flex-direction:column;box-sizing:border-box;color:var(--q-ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;">
   <sc-if value="{{ notMain }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--q-branch);z-index:2;"></div></sc-if>
 
   <!-- Row 1: window title bar (macOS traffic lights or Windows menus + caption buttons live here) -->
-  <div class="qt-drag" style="height:30px;flex:none;box-sizing:border-box;display:flex;align-items:center;padding-right:{{ row1PadR }};background:color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken));border-bottom:1px solid var(--q-chrome-line);">
+  <div class="qt-drag" style="height:36px;flex:none;box-sizing:border-box;display:flex;align-items:center;padding-right:{{ row1PadR }};background:color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken));border-bottom:1px solid var(--q-chrome-line);">
     <div style="width:224px;box-sizing:border-box;padding-left:{{ logoPadL }};display:flex;align-items:center;gap:8px;height:100%;border-right:1px solid var(--q-chrome-line);flex:none;">
       <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
         <div aria-hidden="true" style="display:flex;align-items:center;gap:8px;margin-right:10px;flex:none;">
