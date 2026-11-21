@@ -86,6 +86,17 @@ export function scrollTopFor(layout: Layout, n: number): number {
 }
 
 /**
+ * Where to scroll to show a find hit at `y` (scroll content pixels) on page `n`, so that the page the reader names
+ * (`currentPage`) is the hit's page: the page's top at the top of the view when the hit is in the upper part of
+ * the page, else the hit in the middle of the view.
+ */
+export function revealTop(layout: Layout, n: number, y: number, viewHeight: number): number {
+  const top = scrollTopFor(layout, n)
+  if (y >= top && y - top < viewHeight * 0.6) return top
+  return Math.max(0, y - viewHeight / 2)
+}
+
+/**
  * Where the view is, as a page and how far into it (0…1): kept across a change of zoom or of the page sizes,
  * so the reader stays on the same line.
  */

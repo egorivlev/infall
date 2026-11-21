@@ -340,8 +340,11 @@ export type QoopDesktop = {
   moveHandover?: () => Promise<{ name: string; size: number } | null>
   /** M18: the pending move's Workspace file. */
   moveFile?: () => Promise<Uint8Array>
-  /** M18: the import answered (`ok`) or failed; ok marks the Local Workspace Moved and forgets the move. */
-  moveDone?: (result: { ok: boolean }) => Promise<void>
+  /**
+   * M18: the import answered (`ok`) or failed; ok marks the Local Workspace Moved and forgets the move. `cancel` with
+   * ok false drops the pending move and its file (the Local Workspace stays as it was); an older app ignores it.
+   */
+  moveDone?: (result: { ok: boolean; cancel?: boolean }) => Promise<void>
   /** M19: hands a PDF to the system's own viewer (written to a private temp file first). Absent in an older app. */
   openExternally?: (file: { suggestedName: string; bytes: Uint8Array }) => Promise<void>
   /** M19 (Import BibTeX with files): the system's folder picker; a token for the picked folder, or null when cancelled. */

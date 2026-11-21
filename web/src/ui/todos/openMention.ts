@@ -6,7 +6,7 @@ import { useOnBoard } from '../shell/useOnBoard'
 /** Where a mention is: the Card's title on the open Branch, else that it was removed (its thread is kept). */
 export function cardWords(card: string, cards: readonly { id: string; title: string }[]): string {
   const found = cards.find((c) => c.id === card)
-  return found ? `Card ${found.title || 'Untitled'}` : 'a Card that was removed'
+  return found ? `the Card “${found.title || 'Untitled'}”` : 'a Card that was removed'
 }
 
 /** Opens the Page of the mention's Card at the Comment, and marks it (and every older one) as seen. */

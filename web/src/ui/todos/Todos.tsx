@@ -113,7 +113,8 @@ export function Todos({ me }: { me: Member }) {
     <div className="qt">
       <header className="qt__head">
         <TodoTabs current="todos" unseen={unseen} />
-        <h1 className="qt__title">To-dos</h1>
+        {/* The tab above names the screen; the heading is for screen readers (it read twice). */}
+        <h1 className="qt__title q-sr">To-dos</h1>
         <span className="qt__count">
           {open} open · {columns.length} {columns.length === 1 ? 'Member' : 'Members'}
         </span>

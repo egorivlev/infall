@@ -13,6 +13,7 @@ import {
   MIN_ZOOM,
   PAD,
   pagesToDraw,
+  revealTop,
   scrollTopFor,
   scrollTopForAnchor,
   stepZoom,
@@ -54,6 +55,20 @@ describe('page windowing', () => {
     expect(currentPage(big, big.tops[9]!, 900)).toBe(10)
     expect(currentPage(big, big.tops[9]! - 400, 900)).toBe(9)
     expect(currentPage(big, big.tops[9]! - 400, 1500)).toBe(10)
+  })
+
+  it('a find hit is shown so that the page named is the hit\'s page', () => {
+    // A hit near the top of page 3: the page's top goes to the top of the view, and the reader says page 3
+    // (centring the hit would leave the end of page 2 under the third of the view).
+    const near = big.tops[2]! + 40
+    const to = revealTop(big, 3, near, 700)
+    expect(to).toBe(scrollTopFor(big, 3))
+    expect(currentPage(big, to, 700)).toBe(3)
+    // A hit far down a page: in the middle of the view, still on its page.
+    const far = big.tops[2]! + big.heights[2]! - 30
+    const to2 = revealTop(big, 3, far, 700)
+    expect(to2).toBe(far - 350)
+    expect(currentPage(big, to2, 700)).toBe(3)
   })
 
   it('goes to a page; an anchor keeps the line across a zoom', () => {
@@ -177,9 +192,9 @@ describe('words', () => {
 
   it('sizes and pages', () => {
     expect(sizeText(512)).toBe('512 bytes')
-    expect(sizeText(820_000)).toBe('820 KB')
+    expect(sizeText(820_000)).toBe('801 KB') // powers of 1024, as every size in the UI
     expect(sizeText(1_430_000)).toBe('1.4 MB')
-    expect(sizeText(42_000_000)).toBe('42 MB')
+    expect(sizeText(42_000_000)).toBe('40 MB')
     expect(pdfFacts({ size: 1_430_000, pages: 12 })).toBe('12 pages · 1.4 MB')
     expect(pdfFacts({ size: 2000, pages: null })).toBe('2 KB')
   })

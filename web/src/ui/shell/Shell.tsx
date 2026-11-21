@@ -11,6 +11,8 @@ import { ForYou, Todos } from '../todos'
 import { Tour, Tutorial, TUTORIAL_PRESET } from '../tutorial'
 import { Branches } from './Branches'
 import { FirstScreen } from './FirstScreen'
+import { PendingMoveBar } from './PendingMoveBar'
+import { usePendingMove } from './pendingMove'
 import { MentionNotice } from './MentionNotice'
 import { MovedBar } from './MovedBar'
 import { useFirstScreen } from './moved'
@@ -55,7 +57,11 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
   const view = viewFor(route, member, local, moved)
   // M18: an empty Team server greets its Admin (team-move.md, decision 4); kept up after an import to show the answer.
   const holding = useFirstScreen((s) => s.holding)
+  const imported = useFirstScreen((s) => s.imported === true)
   const firstScreen = member.role === 'admin' && !local && (ws.empty === true || holding) && view === 'board'
+  // A move the desktop app holds for this server that only the empty server's first screen could take.
+  const pendingMove = usePendingMove(ws.status === 'ready' && !local && !firstScreen)
+  const bar = moved || pendingMove !== null
 
   // What kind of Workspace this is: asked once per session; until it answers, it reads as a Team Workspace.
   useEffect(() => {
@@ -161,10 +167,10 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
       <TopBar member={member} branch={branch} available={!missing} />
       {/* A Merge starts from the Branches screen, so that is where the rail points. */}
       <Rail member={member} route={view === 'merge' ? 'branches' : view} branch={branch} />
-      <main className={moved ? 'q-work has-bar' : 'q-work'} ref={work}>
-        {moved ? (
+      <main className={bar ? 'q-work has-bar' : 'q-work'} ref={work}>
+        {bar ? (
           <>
-            <MovedBar />
+            {moved ? <MovedBar /> : <PendingMoveBar name={pendingMove!} admin={member.role === 'admin'} />}
             <div className="q-work__body">{content}</div>
           </>
         ) : (
@@ -174,8 +180,9 @@ export function Shell({ member, route }: { member: Member; route: Route }) {
       {aiOpen && <AiSidebar branch={branch} />}
       {/* Undo / Redo keys and the desktop Edit menu's bridge (docs/specs/undo.md): once, for the whole window. */}
       <UndoKeys />
-      {/* Keyed by Member: the offer and its answer are each person's own. A Tutorial Workspace has the Tutorial instead of the offer. */}
-      <Tour key={member.id} member={member} view={missing ? 'missing' : view} offer={!tutorialWorkspace} />
+      {/* Keyed by Member: the offer and its answer are each person's own. A Tutorial Workspace has the Tutorial instead of the offer;
+          an empty server's first screen, and the window that just brought a Workspace in, have no offer either. */}
+      <Tour key={member.id} member={member} view={missing ? 'missing' : view} offer={!tutorialWorkspace && !firstScreen && !imported} />
       {tutorialWorkspace && <Tutorial key={member.id} />}
       {/* A mention arriving while you are here (M18). Guests have no Comments. */}
       {!isGuest && <MentionNotice />}

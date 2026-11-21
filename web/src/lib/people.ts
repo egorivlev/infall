@@ -54,7 +54,8 @@ export const invites = {
   async remove(id: string): Promise<void> {
     await request('DELETE', `/api/invites/${encodeURIComponent(id)}`)
   },
-  lookup(token: string): Promise<{ email: string; role: Role; access_until?: number }> {
+  /** M18: `claims` when the invite takes over an unclaimed Member's name (api.md §19). */
+  lookup(token: string): Promise<{ email: string; role: Role; access_until?: number; claims?: { id: string; name: string } }> {
     return request('GET', `/api/invites/lookup?token=${encodeURIComponent(token)}`)
   },
 }

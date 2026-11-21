@@ -336,3 +336,25 @@ describe('the editor', () => {
     expect(row().querySelector('.qp-run__kind')).toHaveTextContent('Run · Julia')
   })
 })
+
+describe('Undo steps of a Run', () => {
+  it('the first editor of a Run just added joins the step that added it; a later edit is a step of its own', async () => {
+    const { undo } = await import('../../../lib')
+    const gesture = vi.spyOn(undo, 'gesture')
+    pageStore.setState({ blocks: [] })
+    open()
+    fireEvent.click(screen.getByRole('button', { name: '+ Add block' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Run' }))
+    const added = gesture.mock.calls.at(-1)![1] as { key: string }
+    expect(added).toEqual({ key: expect.stringMatching(/^new:/) })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'a.py' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(gesture.mock.calls.at(-1)![1]).toEqual({ join: added.key })
+    // Executed, then edited again: Undo takes back that edit, not the whole Run with its output.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'b.py' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(gesture.mock.calls.at(-1)![1]).toEqual({})
+    gesture.mockRestore()
+  })
+})

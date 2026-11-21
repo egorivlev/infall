@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { describeChanges, groupActivities, groupShapes, replay } from './activities'
 import type { Entities } from './board-state'
+import { pdfOps } from './files'
 import { ops } from './ops'
 import { fakeRunResult, loadActivityFixture } from './testing'
 import type { Change, Checkpoint, Op, Origin } from './types'
@@ -392,6 +393,23 @@ describe('describeChanges: Pages and Sources', () => {
     const removed = replay(base, [ops.remove('s1')])
     expect(lines(many([ops.restore('s1')]), removed)).toEqual([['Brought back Source Kitaev 2003']])
     expect(said([ops.setSourceField('s1', 'note', 'x'), ops.setSourceField('s1', 'note', '')])).toEqual([['No lasting changes']])
+  })
+  it('says when a PDF was attached to a Source, replaced or removed (M19)', () => {
+    const a = { hash: 'a'.repeat(64), name: 'kitaev.pdf', size: 1000, pages: 3 }
+    const b = { hash: 'b'.repeat(64), name: 'other.pdf', size: 2000, pages: 5 }
+    expect(said(pdfOps.attach('s1', a))).toEqual([['Attached a PDF to Kitaev 2003']])
+    const withA = replay(base, pdfOps.attach('s1', a))
+    expect(lines(many(pdfOps.attach('s1', b)), withA)).toEqual([['Replaced the PDF of Kitaev 2003']])
+    expect(lines(many(pdfOps.remove('s1')), withA)).toEqual([['Removed the PDF from Kitaev 2003']])
+    // Only the page count found later: nothing to say about which PDF it is.
+    expect(lines(many([{ Set: { entity: 's1', field: 'pdf_pages', value: { Float: 4 } } }]), withA)).toEqual([['No lasting changes']])
+    // A new Source that comes with its PDF (Fetch the PDF from arXiv, or attached in the same Activity).
+    expect(said([ops.createSource({ id: 's2', title: 'Dennis 2002' }), ops.attach({ id: 'at2', card: 'b', source: 's2' }), ...pdfOps.attach('s2', b)])).toEqual([
+      ['Added Source Dennis 2002 to Decoder', 'Attached a PDF to Dennis 2002'],
+    ])
+    expect(said([...pdfOps.attach('s1', a), ops.setSourceField('s1', 'year', '2003')])).toEqual([
+      ['Edited Source Kitaev 2003', 'Attached a PDF to Kitaev 2003'],
+    ])
   })
   it('names an untitled Source by its DOI, else its address', () => {
     expect(said([ops.createSource({ id: 's2', doi: '10.1000/x', url: 'https://example.com' })])).toEqual([['Added Source 10.1000/x']])

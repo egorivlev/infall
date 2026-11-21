@@ -10,6 +10,8 @@ import { FakeServer, FakeSocket, installDesktop, ME, settle } from '../../lib/te
 import { workspace, workspaceStore } from '../../lib/workspace'
 import { FirstScreen } from './FirstScreen'
 import { formatSize, useFirstScreen } from './moved'
+import { PendingMoveBar } from './PendingMoveBar'
+import { resetPendingMove, usePendingMove } from './pendingMove'
 
 const ADMIN: Member = { ...ME, name: 'Elena Varga', role: 'admin' }
 let server: FakeServer
@@ -38,7 +40,7 @@ afterEach(() => {
   cleanup()
   uninstall?.()
   uninstall = null
-  useFirstScreen.setState({ holding: false })
+  useFirstScreen.setState({ holding: false, imported: false })
   act(() => sessionStore.setState({ status: 'signed_out' }, true))
   vi.unstubAllGlobals()
 })
@@ -89,6 +91,7 @@ describe('the choice', () => {
     // The answer stays up after the server is no longer empty, until the Admin goes on.
     expect(workspaceStore.getState().empty).toBe(false)
     expect(useFirstScreen.getState().holding).toBe(true)
+    expect(useFirstScreen.getState().imported).toBe(true) // no Tour offered in this window
     fireEvent.click(screen.getByRole('button', { name: 'Open the Board' }))
     expect(useFirstScreen.getState().holding).toBe(false)
   })
@@ -148,7 +151,8 @@ describe('a move handed over by the desktop app', () => {
     fireEvent.click(screen.getByRole('button', { name: /Bring in Tutorial from this computer/ }))
     await flush()
     expect(desk.moveDone).toHaveBeenCalledWith({ ok: false })
-    expect(screen.getByRole('alert')).toHaveTextContent('This file was made by a newer Infall. Update the server first.')
+    expect(screen.getByRole('alert')).toHaveTextContent('This file was made by a newer Infall. Update the server first. Try again, or bring in a Workspace file exported from the desktop app.')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Choose another file')
     expect(screen.getByRole('button', { name: /Bring in Tutorial from this computer/ })).toBeInTheDocument()
   })
 
@@ -158,6 +162,53 @@ describe('a move handed over by the desktop app', () => {
     await flush()
     expect(screen.queryByRole('button', { name: /from this computer/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Bring in a Workspace file…' })).toHaveClass('q-btn--primary')
+  })
+})
+
+describe('a pending move this server cannot take (not empty, or not its Admin)', () => {
+  function Harness({ active, admin }: { active: boolean; admin: boolean }) {
+    const name = usePendingMove(active)
+    return name ? <PendingMoveBar name={name} admin={admin} /> : <p>no bar</p>
+  }
+  function bridge(handover: { name: string; size: number } | null) {
+    const desk = { moveHandover: vi.fn(async () => handover), moveFile: vi.fn(async () => new Uint8Array(1)), moveDone: vi.fn(async () => {}) }
+    uninstall = installDesktop(desk)
+    return desk
+  }
+  afterEach(() => resetPendingMove())
+
+  it('says why it was not brought in, to an Admin; Cancel the move tells the app and hides the bar for this window', async () => {
+    const desk = bridge({ name: 'Tutorial', size: 10 })
+    const { rerender } = render(<Harness active admin />)
+    await flush()
+    expect(screen.getByTestId('pending-move-bar')).toHaveTextContent('Tutorial from this computer was not brought in: a Workspace can only be moved onto an empty Team server.')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel the move' }))
+    await flush()
+    expect(desk.moveDone).toHaveBeenCalledWith({ ok: false, cancel: true })
+    expect(screen.queryByTestId('pending-move-bar')).toBeNull()
+    rerender(<Harness active admin={false} />)
+    await flush()
+    expect(screen.queryByTestId('pending-move-bar')).toBeNull()
+  })
+
+  it('to a Member: only an Admin of an empty server can bring it in', async () => {
+    bridge({ name: 'Lab notes', size: 10 })
+    render(<Harness active admin={false} />)
+    await flush()
+    expect(screen.getByTestId('pending-move-bar')).toHaveTextContent('Lab notes from this computer was not brought in: only an Admin of an empty Team server can bring it in.')
+  })
+
+  it('nothing while the first screen is up (it offers the move itself), and nothing without a pending move', async () => {
+    const desk = bridge({ name: 'Tutorial', size: 10 })
+    const { rerender } = render(<Harness active={false} admin />)
+    await flush()
+    expect(screen.getByText('no bar')).toBeInTheDocument()
+    expect(desk.moveHandover).not.toHaveBeenCalled()
+    uninstall?.()
+    bridge(null)
+    rerender(<Harness active admin />)
+    await flush()
+    expect(screen.getByText('no bar')).toBeInTheDocument()
   })
 })
 

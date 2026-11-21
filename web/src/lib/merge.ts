@@ -7,7 +7,7 @@ import type { BoardSync } from './board-sync'
 import { sync } from './board-sync'
 import { isGuest, setBranches } from './branches-store'
 import { ApiError, request } from './http'
-import { buildAuto, buildConflicts, countLayoutKept, defaultCheckpointName, toDecisions } from './merge-view'
+import { buildAuto, buildConflicts, countLayoutKept, defaultCheckpointName, isPdfField, toDecisions } from './merge-view'
 import { membersStore, members as membersApi } from './people'
 import { readRunResult } from './run-result'
 import { sessionStore } from './session-store'
@@ -263,6 +263,12 @@ export function createMerge(boardSync: BoardSync) {
     if (choice !== null && typeof choice === 'object' && !current.canEdit) return
     const conflicts = s.conflicts.slice()
     conflicts[at] = { ...current, choice }
+    // A Source's PDF is decided whole: its file, name, size and page count come from the same side.
+    if (current.type === 'field' && isPdfField(current.field)) {
+      conflicts.forEach((c, i) => {
+        if (i !== at && c.type === 'field' && c.key.entity === current.key.entity && isPdfField(c.field)) conflicts[i] = { ...c, choice }
+      })
+    }
     set({ conflicts, decided: conflicts.filter((c) => c.choice !== null).length, replanned: false })
   }
 

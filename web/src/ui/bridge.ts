@@ -156,7 +156,8 @@ export function desktopSaveBinaryFile(): SaveBinaryFile | null {
 export type DesktopMove = {
   handover(): Promise<{ name: string; size: number } | null>
   file(): Promise<Uint8Array>
-  done(result: { ok: boolean }): Promise<void>
+  /** `cancel` (with ok false): drop the pending move and its file; an older app ignores it and keeps the move. */
+  done(result: { ok: boolean; cancel?: boolean }): Promise<void>
 }
 
 export function desktopMove(): DesktopMove | null {

@@ -32,7 +32,7 @@ export function applyPrefs(p: Prefs, root: HTMLElement = document.documentElemen
 // - "narrow" < 900 (the desktop app's smallest window at 100 %): the rail folds to its icons as well, and opens over
 //   the work area on demand.
 // `--q-vw` / `--q-vh` are the window in the same pixels: inside the zoomed <body>, `100vw` is zoomed too and overshoots.
-// index.html sets the same before the first paint.
+// public/boot.js (loaded by index.html) sets the same before the first paint.
 
 export const ROOM_WIDE = 1100
 export const ROOM_NARROW = 900

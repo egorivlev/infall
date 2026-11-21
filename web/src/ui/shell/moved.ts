@@ -24,7 +24,8 @@ export function movedWords(movedTo: string | null): string {
 export const OPEN_ON_SERVER_HINT = 'Goes back to the start screen, where this Workspace’s row has Open on the server.'
 
 /** The first screen stays up after an import, so its answer can be read, until the Admin goes on to the Board. */
-export const useFirstScreen = create<{ holding: boolean }>(() => ({ holding: false }))
+export const useFirstScreen = create<{ holding: boolean; imported?: boolean }>(() => ({ holding: false }))
+// `imported`: a Workspace file was brought in in this window — its Admin knows Infall, so the Tour is not offered.
 
 /** "830 KB", "2.4 MB", "1.1 GB"; "512 bytes". Powers of 1024, one decimal under 10. */
 export function formatSize(bytes: number): string {

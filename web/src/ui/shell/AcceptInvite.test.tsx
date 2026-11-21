@@ -70,6 +70,18 @@ describe('AcceptInvite', () => {
     expect(h.lookups[0]).toEqual(['tok'])
   })
 
+  it('an invite that takes over a name says whose, what comes with it, and offers that name', async () => {
+    h.lookup = async () => ({ email: 'ana@lab.example', role: 'member', claims: { id: 'm-ana', name: 'Ana on her laptop' } })
+    const user = userEvent.setup()
+    render(<AcceptInvite token="tok" />)
+    expect(await screen.findByRole('heading', { name: "You're taking over Ana on her laptop" })).toBeInTheDocument()
+    expect(screen.getByText('You join as a Member. Their Changes, To-dos and Comments become yours.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Name')).toHaveValue('Ana on her laptop')
+    await user.type(screen.getByLabelText('Password'), 'correct horse battery')
+    await user.click(screen.getByRole('button', { name: 'Join Infall' }))
+    expect(h.accepts[0]).toEqual(['tok', 'Ana on her laptop', 'correct horse battery'])
+  })
+
   it('rejects a password under 12 characters and keeps the rule visible', async () => {
     h.lookup = async () => ({ email: 'a@b.org', role: 'member' })
     const user = userEvent.setup()

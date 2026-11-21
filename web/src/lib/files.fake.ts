@@ -94,7 +94,7 @@ export class FakePdfStore {
       const bytes = await bytesOf(body)
       if (!bytes) return fail(400, 'bad_request', 'No file came with the request.')
       if (bytes.length > this.maxBytes) return fail(413, 'too_large', `This PDF is larger than ${Math.round(this.maxBytes / 1024 / 1024)} MB, the most this server takes.`)
-      if (!isPdf(bytes)) return fail(415, 'not_pdf', 'This file is not a PDF.')
+      if (!isPdf(bytes)) return fail(415, 'not_a_pdf', 'This file is not a PDF.')
       const hash = this.store(bytes)
       return { status: 200, body: { hash, size: bytes.length, pages: null } }
     }

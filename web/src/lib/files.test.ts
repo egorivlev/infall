@@ -62,7 +62,7 @@ describe('upload', () => {
 
   it('refuses a file that is not a PDF by its first bytes, without a request', async () => {
     const e = await rejection(pdfFiles.upload(new Blob(['hello, not a pdf'])))
-    expect(e).toMatchObject({ status: 415, code: 'not_pdf' })
+    expect(e).toMatchObject({ status: 415, code: 'not_a_pdf' })
     expect(server.requests.filter((r) => r.path === '/api/files/pdf')).toHaveLength(0)
   })
 
@@ -71,7 +71,7 @@ describe('upload', () => {
     const e = await rejection(pdfFiles.upload(tinyPdf('big')))
     expect(e).toMatchObject({ status: 413, code: 'too_large' })
     expect(e.message).toMatch(/larger than/)
-    server.pdf.fail = { status: 415, code: 'not_pdf', message: 'The server says this is not a PDF.' }
+    server.pdf.fail = { status: 415, code: 'not_a_pdf', message: 'The server says this is not a PDF.' }
     server.pdf.maxBytes = 1e9
     expect(await rejection(pdfFiles.upload(tinyPdf('x')))).toMatchObject({ status: 415, message: 'The server says this is not a PDF.' })
   })

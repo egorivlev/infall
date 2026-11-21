@@ -153,9 +153,17 @@ describe('writing', () => {
     const user = userEvent.setup()
     render(<Comments card="c1" />)
     await flush()
-    expect(section().getByText(/Notes to yourself/)).toBeInTheDocument()
+    expect(section().getByText('Comments here are for you alone: this Workspace has one Member. They go with it if it moves to a Team server.')).toBeInTheDocument()
     await user.type(section().getByRole('combobox'), '@')
     expect(options()).toEqual(['Me'])
+  })
+
+  it('in a moved copy the hint says the Comments went with it', async () => {
+    server.workspace = { kind: 'local', preset: null, read_only: true }
+    await act(async () => workspace.load())
+    render(<Comments card="c1" />)
+    await flush()
+    expect(section().getByText('Comments here are for you alone: this Workspace has one Member. They went with it to the Team server.')).toBeInTheDocument()
   })
 })
 

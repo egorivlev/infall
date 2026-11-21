@@ -13,7 +13,7 @@ import { navigate } from './router'
 type Stage =
   | { kind: 'choose' }
   | { kind: 'sending'; what: string; sent: number; total: number }
-  | { kind: 'failed'; text: string }
+  | { kind: 'failed'; text: string; fromDesktop: boolean }
   | { kind: 'done'; result: ImportResult }
 
 /** After the file is in: the Board, its Branches, To-dos, Comments and mentions are fetched again. */
@@ -71,12 +71,13 @@ export function FirstScreen() {
         onProgress: (sent, all) => !control.signal.aborted && setStage({ kind: 'sending', what, sent, total: all || total }),
       })
       if (fromDesktop) await move?.done({ ok: true }).catch(() => {})
+      useFirstScreen.setState({ imported: true })
       setStage({ kind: 'done', result })
       reloadEverything()
     } catch (e) {
       if (fromDesktop) await move?.done({ ok: false }).catch(() => {})
       if ((e as { code?: unknown } | null)?.code === 'aborted') return setStage({ kind: 'choose' })
-      setStage({ kind: 'failed', text: serverSentence(e) })
+      setStage({ kind: 'failed', text: serverSentence(e), fromDesktop })
     } finally {
       if (stop.current === control) stop.current = null
     }
@@ -185,7 +186,8 @@ export function FirstScreen() {
                 <input ref={fileRef} type="file" className="q-sr" tabIndex={-1} aria-label="Workspace file" accept=".infall,application/octet-stream" onChange={onPick} />
                 {stage.kind === 'failed' && (
                   <p className="q-error" role="alert">
-                    {stage.text} Choose another file, or try again.
+                    {/* The app handed the file over: there was no file to choose, so only trying again is offered. */}
+                    {stage.text} {stage.fromDesktop ? 'Try again, or bring in a Workspace file exported from the desktop app.' : 'Choose another file, or try again.'}
                   </p>
                 )}
                 <p className="q-hint">

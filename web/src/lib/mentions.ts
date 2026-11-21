@@ -65,9 +65,13 @@ export function mentionCandidates<T extends Named>(query: string, members: reado
   return scored.slice(0, limit).map((s) => s.m)
 }
 
-/** Puts `@<name> ` in place of the mention being typed (from `start` to `caret`); returns the text and the caret after it. */
+/**
+ * Puts `@<name> ` in place of the mention being typed (from `start` to `caret`); returns the text and the caret after
+ * it. No space is added before a space already there, nor before punctuation that follows ("@Ana, can you…").
+ */
 export function insertMention(text: string, start: number, caret: number, name: string): { text: string; caret: number } {
   const after = text.slice(caret)
-  const insert = `@${name}${after.startsWith(' ') ? '' : ' '}`
-  return { text: text.slice(0, start) + insert + after, caret: start + insert.length + (after.startsWith(' ') ? 1 : 0) }
+  const space = after.startsWith(' ') ? 'there' : /^[\p{P}]/u.test(after) && !/^[([{“‘«]/u.test(after) ? 'none' : 'add'
+  const insert = `@${name}${space === 'add' ? ' ' : ''}`
+  return { text: text.slice(0, start) + insert + after, caret: start + insert.length + (space === 'there' ? 1 : 0) }
 }
