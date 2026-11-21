@@ -40,7 +40,8 @@ export function ForYou({ me }: { me: Member }) {
     <div className="qt qf">
       <header className="qt__head">
         <TodoTabs current="for-you" unseen={snap.unseen} />
-        <h1 className="qt__title">For you</h1>
+        {/* The tab above names the screen; the heading is for screen readers (it read twice). */}
+        <h1 className="qt__title q-sr">For you</h1>
         <span className="qt__count">
           {snap.unseen} unseen · {snap.items.length} {snap.items.length === 1 ? 'mention' : 'mentions'}
         </span>

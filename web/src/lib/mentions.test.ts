@@ -41,4 +41,9 @@ describe('completing a mention', () => {
     expect(insertMention('Hi @An', 3, 6, 'Ana Ruiz')).toEqual({ text: 'Hi @Ana Ruiz ', caret: 13 })
     expect(insertMention('Hi @An there', 3, 6, 'Ana Ruiz')).toEqual({ text: 'Hi @Ana Ruiz there', caret: 13 })
   })
+  it('adds no space before punctuation that follows; an opening bracket still gets one', () => {
+    expect(insertMention('@An, can you check?', 0, 3, 'Ana Ruiz')).toEqual({ text: '@Ana Ruiz, can you check?', caret: 9 })
+    expect(insertMention('ask @An.', 4, 7, 'Ana Ruiz')).toEqual({ text: 'ask @Ana Ruiz.', caret: 13 })
+    expect(insertMention('@An(see)', 0, 3, 'Ana Ruiz')).toEqual({ text: '@Ana Ruiz (see)', caret: 10 })
+  })
 })

@@ -12,10 +12,10 @@ type Lookup =
   | { status: 'loading' }
   | { status: 'invalid' }
   | { status: 'failed'; message: string }
-  | { status: 'ready'; email: string; role: Role; accessUntil?: number }
+  | { status: 'ready'; email: string; role: Role; accessUntil?: number; claims?: string }
 
-// api.md §13: the lookup of a Guest invite also says until when. Optional here until the data layer's type has it.
-type InviteLookup = { email: string; role: Role; access_until?: number }
+// api.md §13: the lookup of a Guest invite also says until when; §19: an invite that takes over a name says which.
+type InviteLookup = { email: string; role: Role; access_until?: number; claims?: { id: string; name: string } }
 
 const ROLE_WORD: Record<Role, string> = { admin: 'an Admin', member: 'a Member', guest: 'a Guest' }
 const PASSWORD_RULE = 'At least 12 characters'
@@ -32,7 +32,17 @@ export function AcceptInvite({ token }: { token: string }) {
     let cancelled = false
     invites
       .lookup(token)
-      .then((r: InviteLookup) => !cancelled && setLookup({ status: 'ready', email: r.email, role: r.role, accessUntil: r.access_until }))
+      .then(
+        (r: InviteLookup) =>
+          !cancelled &&
+          setLookup({
+            status: 'ready',
+            email: r.email,
+            role: r.role,
+            accessUntil: r.access_until,
+            claims: typeof r.claims?.name === 'string' && r.claims.name.trim() !== '' ? r.claims.name : undefined,
+          }),
+      )
       .catch((e: unknown) => {
         if (cancelled) return
         setLookup(isInviteGone(e) ? { status: 'invalid' } : { status: 'failed', message: describeLookupError(e) })
@@ -83,15 +93,17 @@ export function AcceptInvite({ token }: { token: string }) {
       email={lookup.email}
       role={lookup.role}
       accessUntil={lookup.accessUntil}
+      claims={lookup.claims}
       onGone={() => setLookup({ status: 'invalid' })}
     />
   )
 }
 
-type FormProps = { token: string; email: string; role: Role; accessUntil?: number; onGone: () => void }
+type FormProps = { token: string; email: string; role: Role; accessUntil?: number; claims?: string; onGone: () => void }
 
-function InviteForm({ token, email, role, accessUntil, onGone }: FormProps) {
-  const [name, setName] = useState('')
+function InviteForm({ token, email, role, accessUntil, claims, onGone }: FormProps) {
+  // Taking over a name that came with a Workspace file: it is offered as the name, and can still be changed.
+  const [name, setName] = useState(claims ?? '')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<Errors>({})
   const [formError, setFormError] = useState('')
@@ -128,7 +140,8 @@ function InviteForm({ token, email, role, accessUntil, onGone }: FormProps) {
   }
 
   return (
-    <AccessCard title={`You're invited as ${ROLE_WORD[role]}`} subtitle={email}>
+    <AccessCard title={claims ? `You're taking over ${claims}` : `You're invited as ${ROLE_WORD[role]}`} subtitle={email}>
+      {claims && <p className="q-access__lead">{`You join as ${ROLE_WORD[role]}. Their Changes, To-dos and Comments become yours.`}</p>}
       {role === 'guest' && (
         <p className="q-access__lead">
           {accessUntil != null ? `Read-only access to the team's Board until ${formatShortDate(accessUntil)}.` : "Read-only access to the team's Board."}

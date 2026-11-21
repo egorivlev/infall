@@ -94,7 +94,7 @@ describe('For you', () => {
     expect(tabs.getByRole('link', { name: 'For you, 1 unseen' })).toHaveAttribute('aria-current', 'page')
     expect(tabs.getByRole('link', { name: 'To-dos' })).toHaveAttribute('href', '/todos')
     const items = within(screen.getByRole('list', { name: 'Mentions, newest first' })).getAllByRole('button')
-    expect(items.map((b) => b.querySelector('.qf-item__line')?.textContent)).toEqual(['Ana mentioned you on Card Axions', 'Ana mentioned you on a Card that was removed'])
+    expect(items.map((b) => b.querySelector('.qf-item__line')?.textContent)).toEqual(['Ana mentioned you on the Card “Axions”', 'Ana mentioned you on a Card that was removed'])
     expect(items[0]).toHaveTextContent('New')
     expect(items[1]).not.toHaveTextContent('New')
     fireEvent.click(items[0]!)
@@ -113,12 +113,12 @@ describe('For you', () => {
     act(() => ws.receive(server.forYouFrame()))
     await flush()
     const notice = screen.getByText(/mentioned you on/).closest('.q-notice') as HTMLElement
-    expect(notice).toHaveTextContent('Ana mentioned you on Card Axions.')
+    expect(notice).toHaveTextContent('Ana mentioned you on the Card “Axions”.')
     expect(notice.closest('[role="status"]')).not.toBeNull()
     fireEvent.click(within(notice).getByRole('button', { name: 'Open' }))
     await flush()
     expect(usePagePanel.getState()).toMatchObject({ cardId: 'a', comment: { id: fresh.id } })
-    expect(screen.queryByText(/mentioned you on Card/)).toBeNull()
+    expect(screen.queryByText(/mentioned you on the Card/)).toBeNull()
   })
 
   it('an empty list says what will arrive', async () => {

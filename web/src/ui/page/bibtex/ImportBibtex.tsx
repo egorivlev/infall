@@ -31,7 +31,7 @@ type Props = {
   opener?: HTMLElement | null
 }
 
-/** Larger than any BibTeX file of references a person keeps; probably the wrong file. */
+/** Larger than any BibTeX file a person keeps; probably the wrong file. */
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 type Stage =
@@ -130,7 +130,7 @@ export function ImportBibtex({ target, onClose, opener: openerProp }: Props) {
     setFileError('')
     if (!file) return
     if (file.size > MAX_FILE_BYTES) {
-      setFileError(`“${file.name}” is larger than 10 MB, much more than a file of references usually is. Pick the .bib file itself, or paste the entries below.`)
+      setFileError(`“${file.name}” is larger than 10 MB, much more than a BibTeX file usually is. Pick the .bib file itself, or paste the entries below.`)
       return
     }
     try {

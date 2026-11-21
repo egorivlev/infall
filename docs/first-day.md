@@ -24,7 +24,7 @@ If the Member will use the desktop app, also give them the package for their com
 
 ## The new Member
 
-1. Open the link you were sent. The page says "You're invited as a Member" and shows your email.
+1. Open the link you were sent. The page says "You're invited as a Member" and shows your email. An invite to take over a name that came with a Workspace file says "You're taking over <name>" instead, with that name filled in: its Changes, To-dos and Comments become yours.
 2. Enter your **Name** (the others will see it next to your Changes) and a **Password** of at least 12 characters. Let a password manager make it and keep it.
 3. Press **Join Infall**. You are signed in and see the Board.
 4. Press **+ Card** at the top left of the Board and give the Card a title. Everyone else sees it at once, with your name on the Change.

@@ -137,7 +137,13 @@ function Thread({ card, removed, me }: { card: string; removed: boolean; me: Mem
         )}
       </div>
       {removed && <p className="q-hint qc-note">On a Card that was removed. The thread is kept.</p>}
-      {local && <p className="q-hint qc-note">Notes to yourself: this Workspace has one Member. They go with it if it moves to a Team server.</p>}
+      {local && (
+        <p className="q-hint qc-note">
+          {readOnly
+            ? 'Comments here are for you alone: this Workspace has one Member. They went with it to the Team server.'
+            : 'Comments here are for you alone: this Workspace has one Member. They go with it if it moves to a Team server.'}
+        </p>
+      )}
       {thread.status === 'loading' && count === 0 && <p className="q-hint" role="status">Loading Comments…</p>}
       {thread.status === 'error' && (
         <p className="q-error" role="alert">

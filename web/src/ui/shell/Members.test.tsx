@@ -274,6 +274,14 @@ describe('M18: names that came in a Workspace file', () => {
     expect(screen.getByRole('heading', { name: 'Invite someone' })).toBeInTheDocument()
   })
 
+  it('a pending invite that claims a name says which', async () => {
+    h.people = [ELENA, BEN]
+    h.pending = [{ id: 'i1', email: 'ben@lab.org', role: 'member', expires_at: Date.now() + 86_400_000, created_by: 'e', claims: 'b' }]
+    renderMembers()
+    const row = (await screen.findByText('ben@lab.org')).closest('li')!
+    expect(row).toHaveTextContent('takes over Ben Okafor')
+  })
+
   it('arrives from the first screen with ?claim=<id>, and can go back to an ordinary invite', async () => {
     h.people = [ELENA, BEN]
     window.history.replaceState(null, '', '/members?claim=b')
