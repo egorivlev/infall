@@ -697,15 +697,81 @@ mod tests {
         assert!(js.contains("'__infallUndo'"));
         assert!(js.contains("source.subscribe(queueUndo)"));
         assert!(js.contains("call('undo_state', { undo: undo, redo: redo })"));
-        // The page gets nothing new for it: `qoopDesktop`'s members are those of M13 and
-        // M18's binary save and move (see `the_script_offers_moves_and_binary_saves`).
+        // The page gets nothing new for it: `qoopDesktop`'s members are those of M13, M18's
+        // binary save and move (see `the_script_offers_moves_and_binary_saves`), M19's PDFs
+        // and the fullscreen state (`the_script_tells_the_page_about_fullscreen_and_only_that`).
         assert!(js.contains(
             "version: VERSION,\n      claude: claude,\n      runner: runner,\n      \
              switchWorkspace: switchWorkspace,\n      saveFile: saveFile,\n      \
              saveBinaryFile: saveBinaryFile,\n      moveHandover: moveHandover,\n      \
              moveFile: moveFile,\n      moveDone: moveDone,\n      pickFolder: pickFolder,\n      \
-             readFileIn: readFileIn,\n      openExternally: openExternally\n    }"
+             readFileIn: readFileIn,\n      openExternally: openExternally,\n      \
+             fullscreen: fullscreen\n    }"
         ));
+    }
+
+    #[test]
+    fn the_script_tells_the_page_about_fullscreen_and_only_that() {
+        let js = script("http://localhost:8787", "0.9.0", KEY);
+        // Asked at once, as the script runs (before the page's own scripts), through one
+        // channel the app answers on, the first answer included.
+        assert!(js.contains("(function askFullscreen() {"));
+        assert!(js.contains("call('window_fullscreen', { onChange: '__CHANNEL__:' + id })"));
+        assert_eq!(js.matches("'window_fullscreen'").count(), 1);
+        // The app's packets are taken in order and only as booleans; an older one never wins.
+        assert!(js.contains("packet.index <= fullscreenIndex"));
+        assert!(js.contains("fullscreenSaid(packet.message === true);"));
+        // Listeners hear changes only.
+        assert!(js.contains("if (on === fullscreenOn) return;"));
+        // The member reads and subscribes; nothing in it changes the window.
+        let member = js
+            .split("var fullscreen = Object.freeze({")
+            .nth(1)
+            .and_then(|rest| rest.split("\n  });").next())
+            .unwrap();
+        assert!(member.contains("current: function () {"));
+        assert!(member.contains("subscribe: function (fn) {"));
+        assert!(!member.contains("call("));
+        for power in [
+            "set_fullscreen",
+            "setFullscreen",
+            "core:window",
+            "plugin:window",
+            "toggle",
+        ] {
+            assert!(!js.contains(power), "{power}");
+        }
+        // The question is asked only past the frame and origin checks.
+        let checks = js
+            .find("if (window.location.origin !== ORIGIN) return;")
+            .unwrap();
+        assert!(js.find("(function askFullscreen() {").unwrap() > checks);
+    }
+
+    #[test]
+    fn the_fullscreen_state_is_told_only_to_the_main_windows_page() {
+        // `window_fullscreen` is checked like every bridge command: the main window, on the
+        // open Workspace's origin, with the key. Another window or server learns nothing.
+        let page = url("https://qoop.example.org/board/1");
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
+        for window in ["setup", "runner-settings", "runner-approval-3", "main-2"] {
+            assert!(
+                check_caller(window, Some(&page), Some(ORIGIN), KEY, KEY).is_err(),
+                "{window}"
+            );
+        }
+        for other in [
+            "https://evil.example/",
+            "http://qoop.example.org/",
+            "tauri://localhost/index.html",
+        ] {
+            assert!(
+                check_caller("main", Some(&url(other)), Some(ORIGIN), KEY, KEY).is_err(),
+                "{other}"
+            );
+        }
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), "", KEY).is_err());
+        assert!(check_caller("main", Some(&page), None, KEY, KEY).is_err());
     }
 
     #[test]

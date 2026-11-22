@@ -150,6 +150,16 @@ struct AppState {
     /// The version of Infall downloaded and ready to install, if any (only a build with the
     /// updater ever has one).
     update_ready: Mutex<Option<String>>,
+    /// Where the main window's page hears whether the window is fullscreen
+    /// (`window_fullscreen`), and what it was last told; replaced by the next page's,
+    /// forgotten when the window closes.
+    fullscreen: Mutex<Option<FullscreenWatch>>,
+}
+
+/// The bridge script's channel for the main window's fullscreen state.
+struct FullscreenWatch {
+    channel: Channel<bool>,
+    said: bool,
 }
 
 impl AppState {
@@ -251,6 +261,7 @@ pub fn run() {
             folders: Mutex::default(),
             last_viewer: AtomicU64::new(0),
             update_ready: Mutex::new(None),
+            fullscreen: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             start_view,
@@ -272,6 +283,7 @@ pub fn run() {
             save_file,
             print_page,
             undo_state,
+            window_fullscreen,
             move_handover,
             move_file_chunk,
             move_done,
@@ -551,6 +563,9 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     .permission("allow-print-page")
                     // What the page's Undo and Redo would do, for the Edit menu (M15).
                     .permission("allow-undo-state")
+                    // Whether the window is fullscreen (macOS then hides the traffic lights
+                    // the top bar leaves room for): read only, nothing about the window changes.
+                    .permission("allow-window-fullscreen")
                     // Moving a Local Workspace onto this server: what is being moved, its
                     // file, and that the server has it (M18). Each answers only the page of
                     // a server a move is pending to.
@@ -613,20 +628,29 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                 // not the next page's.
                 *window.state::<AppState>().upload.lock().unwrap() = None;
                 window.state::<AppState>().folders.lock().unwrap().clear();
+                // (The fullscreen channel is not dropped here: the next page's bridge script
+                // asks for its own at once, and its call can arrive before this event does.
+                // Its call replaces the old channel, which only ever says one bool.)
                 window.state::<AppState>().run.cancel();
                 window.state::<RunnerState>().cancel_all();
                 // Its steps went with it.
                 EditMenu::page_said(window.app_handle(), UndoSteps::default());
             }
         });
-    // On macOS the page draws the title bar: its top row (30px) holds the traffic lights,
-    // centred in that row with the first circle 13px in (inset: x = 13 - 1 for the button frame,
-    // y = 30 - 14 for its height); the web UI leaves room for them.
+    // On macOS the page draws the title bar: its top row (36px) holds the traffic lights,
+    // centred in that row (18px down) with the first circle 13px in; the web UI leaves room
+    // for them. x is the close button's left edge: 13 - 1 for the button frame. y is not the
+    // buttons' top: tao (`inset_traffic_lights`) makes the title bar's container 14 + y tall
+    // (the button's height plus y) and moves the buttons sideways only, so they keep the
+    // place AppKit gave them, measured up from the container's bottom: 9pt on macOS 26 (in
+    // its 32pt bar). Their centre is then (14 + y) - 9 - 7 = y - 2 from the top: y = 20.
+    // tao applies this again on every draw of its view, after a title change and after
+    // leaving fullscreen (AppKit puts the buttons back on resize and when fullscreen ends).
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(12.0, 16.0));
+        .traffic_light_position(tauri::LogicalPosition::new(12.0, 20.0));
     // The web inspector exists in debug builds only (the `devtools` feature is off).
     #[cfg(debug_assertions)]
     let builder = builder.devtools(true);
@@ -651,6 +675,14 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
         if let WindowEvent::Focused(focused) = event {
             EditMenu::main_focused(&closed_app, *focused);
         }
+        // Entering or leaving fullscreen resizes the window, however it was asked for (the
+        // green button too): the state is read again then, and the page told if it changed.
+        // On macOS tao sends one last resize after the transition's end
+        // (`windowDidEnterFullScreen:`, `windowDidExitFullScreen:`), so a stale reading
+        // during the animation is put right.
+        if matches!(event, WindowEvent::Resized(_)) {
+            tell_fullscreen(&closed_app);
+        }
         if matches!(
             event,
             WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
@@ -661,6 +693,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
         if matches!(event, WindowEvent::Destroyed) {
             EditMenu::page_said(&closed_app, UndoSteps::default());
             *closed_app.state::<AppState>().upload.lock().unwrap() = None;
+            *closed_app.state::<AppState>().fullscreen.lock().unwrap() = None;
             closed_app
                 .state::<AppState>()
                 .folders
@@ -1535,6 +1568,50 @@ fn undo_state(
     check_bridge_caller(&webview, &state, &key)?;
     EditMenu::page_said(&app, UndoSteps::from_page(undo.as_deref(), redo.as_deref()));
     Ok(())
+}
+
+/// Tells the main window's page through `on_change` whether the window is fullscreen: now,
+/// and again whenever that changes (`tell_fullscreen`). The page can only read this; the
+/// latest call's channel replaces the one before.
+#[tauri::command]
+fn window_fullscreen(
+    webview: Webview,
+    state: State<'_, AppState>,
+    key: String,
+    on_change: Channel<bool>,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    // Held while the state is read and sent, so that a change cannot come in between.
+    let mut watch = state.fullscreen.lock().unwrap();
+    let on = webview.window().is_fullscreen().unwrap_or(false);
+    // Every value goes through the channel, the first one too: its messages are numbered,
+    // so the page never takes an older one for the latest.
+    let _ = on_change.send(on);
+    *watch = Some(FullscreenWatch {
+        channel: on_change,
+        said: on,
+    });
+    Ok(())
+}
+
+/// The main window may have entered or left fullscreen: its page is told, if the state is
+/// not what it was last told.
+fn tell_fullscreen(app: &AppHandle) {
+    let Some(main) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let mut watch = state.fullscreen.lock().unwrap();
+    let Some(watch) = watch.as_mut() else {
+        return;
+    };
+    let Ok(on) = main.is_fullscreen() else {
+        return;
+    };
+    if on != watch.said {
+        watch.said = on;
+        let _ = watch.channel.send(on);
+    }
 }
 
 // ---- moving a Local Workspace onto this server (docs/specs/team-move.md, Contract C) ----
