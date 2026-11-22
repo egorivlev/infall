@@ -505,6 +505,53 @@
     window.addEventListener(type, queueUndo, true);
   });
 
+  // Fullscreen (macOS: the system hides the traffic lights, so the top bar need not leave
+  // room for them). The app is asked at once, from here, before the page's own scripts run,
+  // and tells this script of every change after that through one channel; the page only
+  // reads. `current()` is false until the app has answered.
+  var fullscreenOn = false;
+  var fullscreenIndex = -1; // the app's packets are numbered; an older one never wins
+  var fullscreenListeners = [];
+
+  function fullscreenSaid(on) {
+    if (on === fullscreenOn) return;
+    fullscreenOn = on;
+    fullscreenListeners.slice().forEach(function (entry) {
+      try {
+        entry.fn(on);
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  }
+
+  (function askFullscreen() {
+    var tauri = window.__TAURI_INTERNALS__;
+    if (!tauri || typeof tauri.transformCallback !== 'function') return;
+    var id = tauri.transformCallback(function (packet) {
+      if (!packet || typeof packet.index !== 'number' || packet.index <= fullscreenIndex) return;
+      fullscreenIndex = packet.index;
+      if (packet.end) return;
+      fullscreenSaid(packet.message === true);
+    });
+    call('window_fullscreen', { onChange: '__CHANNEL__:' + id }).catch(function () {});
+  })();
+
+  var fullscreen = Object.freeze({
+    current: function () {
+      return fullscreenOn;
+    },
+    subscribe: function (fn) {
+      if (typeof fn !== 'function') return function () {};
+      var entry = { fn: fn };
+      fullscreenListeners.push(entry);
+      return function () {
+        var at = fullscreenListeners.indexOf(entry);
+        if (at >= 0) fullscreenListeners.splice(at, 1);
+      };
+    }
+  });
+
   Object.defineProperty(window, 'qoopDesktop', {
     value: Object.freeze({
       version: VERSION,
@@ -518,7 +565,8 @@
       moveDone: moveDone,
       pickFolder: pickFolder,
       readFileIn: readFileIn,
-      openExternally: openExternally
+      openExternally: openExternally,
+      fullscreen: fullscreen
     }),
     writable: false,
     configurable: false,

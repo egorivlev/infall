@@ -590,6 +590,29 @@ The main window's bridge grants twenty-one commands: M18's seventeen, `runner_st
 
 What it does not guard against: a file inside the folder replaced by a link between the check and the read (the read opens the canonical path found a moment before); a PDF that exploits the system's viewer — the same file opened from the Finder or Explorer would.
 
+## Bridge — fullscreen (built 2026-11-25)
+
+On macOS the main window has no title bar of its own (`TitleBarStyle::Overlay`): the top bar's first row, 36px tall, is the title bar, and its left 75px are left free for the traffic lights. In fullscreen macOS hides them, so the page is told:
+
+```ts
+fullscreen: {
+  current(): boolean,                                  // synchronous; last known state, false until known
+  subscribe(fn: (on: boolean) => void): () => void,    // called on every change, including the first
+                                                       // answer after load if it differs from false;
+                                                       // returns unsubscribe
+}
+```
+
+- The bridge script asks as it runs, before the page's own scripts: `window_fullscreen({ key, onChange })`, one more bridge command, checked with `bridge::check_caller` like the rest. `onChange` is a channel; the app sends the state at once (`Window::is_fullscreen`) and again whenever it changes, every value through the channel so that they arrive in order. The command returns nothing. A later call (the next page) replaces the channel; it is dropped when the main window closes.
+- Changes: on every `WindowEvent::Resized` of the main window the app reads `is_fullscreen()` again and sends it only when it differs from what the page was last told. Entering and leaving fullscreen resize the window however they were asked for, the green button and the View menu included. On macOS tao marks the window fullscreen when the system says it will enter (`windowWillEnterFullScreen:`, also for the green button) and clears it when it has left (`windowDidExitFullScreen:`), and sends a resize after both transitions end, so the state read then is the final one. While the exit animation runs the page still hears `true`.
+- First frame: the answer is a round trip through the IPC started from the initialization script, so it normally arrives before the web UI first renders, but nothing waits for it. A page that renders first sees `false` for a moment and then hears `true` through `subscribe`. A new main window opens normally out of fullscreen, so this matters mostly after a reload in fullscreen.
+- Linux and Windows: the member is there and tells the truth; nothing uses it.
+- The page can only read. It cannot enter or leave fullscreen or reach anything else about the window.
+
+The main window's bridge grants twenty-two commands: M19's twenty-one and `window_fullscreen`.
+
+The traffic lights are placed with `traffic_light_position(12, 20)`. tao makes the buttons' container 14 + y tall (the button's height plus y) and moves the buttons sideways only; AppKit keeps each button 9pt up from the container's bottom (macOS 26: 14pt buttons, 32pt default bar). The centre is then 14 + y − 9 − 7 = y − 2 = 18px from the top. tao applies it again on every draw of its view, after a title change and after leaving fullscreen.
+
 ## Export… with or without the PDFs
 
 `workspace_export({ id, includeFiles?: boolean })`: `includeFiles` absent means true. `WorkspaceEntry` (local.md, Contract C) gains `files: { count: number, bytes: number } | null`. When a Local Workspace's `files.count` is above 0, **Export…** opens a panel in its row with a checkbox "Include PDFs (N files, X MB)", ticked, and **Export…**; otherwise it exports at once as before. **Export first…** in the remove confirmation and every automatic backup include them.
