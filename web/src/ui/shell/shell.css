@@ -82,6 +82,8 @@
 .q-search__input::placeholder { color: var(--q-ink-3); }
 .q-search__input::-webkit-search-cancel-button { display: none; }
 .q-search:has(.q-search__input:focus-visible) { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+/* On a Branch other than main the bar's top 2px are the Branch stripe: the ring is drawn 1px closer in, so it stays clear of the stripe (by 0.5px) as well as of the row's bottom border. */
+[data-branch]:not([data-branch="main"]) .q-search:has(.q-search__input:focus-visible) { outline-offset: 1px; }
 .q-search__kbd { font: calc(10.5px * var(--q-text, 1))/15px var(--q-mono); border: 1px solid var(--q-line); border-radius: var(--q-r-chip); padding: 0 4px; }
 .q-search__pop { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); padding: var(--q-s1); }
 .q-search__list { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow: auto; }
