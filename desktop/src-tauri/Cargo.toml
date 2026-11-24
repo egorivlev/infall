@@ -52,5 +52,11 @@ getrandom = "0.3"
 base64 = "0.22"
 rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 
+# macOS: moving the traffic lights while the window is open (src/chrome.rs). Tauri's own
+# runtime, the version Tauri uses (the lock file has one): its runtime plugin and the window
+# message Tauri 2.12 has no public setter for.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-runtime-wry = "2.12"
+
 [dev-dependencies]
 tempfile = "3"

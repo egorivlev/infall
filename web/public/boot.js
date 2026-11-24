@@ -26,3 +26,13 @@ try {
   d.style.setProperty('--q-vw', Math.floor(w) + 'px')
   d.style.setProperty('--q-vh', Math.floor(d.clientHeight * k) + 'px')
 } catch {}
+// The desktop app centres the macOS traffic lights in the top bar's first row, as tall as the interface scale makes it:
+// told now, before the app has loaded (ui/settings/apply.ts, useAppliedPrefs, tells it again). Last, so that a bridge
+// that throws spoils nothing above.
+try {
+  var desk = window.qoopDesktop
+  if (s && s.v === 1 && [80, 90, 100, 110, 125, 150].indexOf(s.interfaceScale) >= 0 && desk && typeof desk.chromeScale === 'function') {
+    var sent = desk.chromeScale(s.interfaceScale / 100)
+    if (sent && typeof sent.catch === 'function') sent.catch(function () {})
+  }
+} catch {}

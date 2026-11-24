@@ -356,6 +356,12 @@ export type QoopDesktop = {
    * last known state; `subscribe` is called on every change and returns its unsubscribe. Absent in an older app.
    */
   fullscreen?: { current(): boolean; subscribe(fn: (on: boolean) => void): () => void }
+  /**
+   * 0.9: the interface scale as a factor (1 = 100 %), so that macOS centres the traffic lights in the top bar's first
+   * row. The app clamps it to 0.8–1.5 and refuses a value that is not a finite number; it does nothing on Windows and
+   * Linux. Absent in an older app: check before calling.
+   */
+  chromeScale?: (scale: number) => Promise<void>
 }
 
 export type AiModel = { id: string; name: string; context_length?: number }

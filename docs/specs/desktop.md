@@ -611,7 +611,22 @@ fullscreen: {
 
 The main window's bridge grants twenty-two commands: M19's twenty-one and `window_fullscreen`.
 
-The traffic lights are placed with `traffic_light_position(12, 20)`. tao makes the buttons' container 14 + y tall (the button's height plus y) and moves the buttons sideways only; AppKit keeps each button 9pt up from the container's bottom (macOS 26: 14pt buttons, 32pt default bar). The centre is then 14 + y − 9 − 7 = y − 2 = 18px from the top. tao applies it again on every draw of its view, after a title change and after leaving fullscreen.
+The traffic lights are placed with `traffic_light_position(12, 20)`. tao makes the buttons' container 14 + y tall (the button's height plus y) and moves the buttons sideways only; AppKit keeps each button 9pt up from the container's bottom (macOS 26: 14pt buttons, 32pt default bar). The centre is then 14 + y − 9 − 7 = y − 2 = 18px from the top. tao applies it again on every draw of its view, after a title change and after leaving fullscreen. Since "Bridge — chrome scale" y follows the page's interface scale (20 at 100 %).
+
+## Bridge — chrome scale (built 2026-11-26)
+
+The page's interface scale (Settings → Appearance, 80–150 %) is CSS `zoom`: the top bar's first row is 36px × scale points tall, while the traffic lights do not zoom. So the page tells the app its scale, and the lights' centre is put 18 × scale points from the top:
+
+```ts
+chromeScale(scale: number): Promise<void>   // a factor: 1 = 100 %
+```
+
+- The bridge script refuses anything but a finite number; otherwise it sends `chrome_scale({ key, scale })`, one more bridge command, checked with `bridge::check_caller` like the rest. The app refuses a non-finite number and clamps the rest to 0.8–1.5 (`bridge::chrome_scale`): all a page can do with it is move the lights up or down within what the setting allows. Nothing comes back. Linux and Windows: checked, then nothing.
+- y = 18 × scale + 2 (`bridge::traffic_light_y`; see "Bridge — fullscreen" for why the centre is y − 2). x stays 12. The brand cell's room for the lights is 75px at 100 % and above, and 75 real points below 100 % (DESIGN.md "Top bar, two rows"): at 80 % 75px would be 60 points, short of the lights' right edge at 65.
+- Moving them while the window is open: Tauri 2.12.7 builds a window with `traffic_light_position` but has no setter on its `Window`. Its runtime has one (`WindowDispatch::set_traffic_light_position`, `tauri-runtime` 2.12.4 `src/lib.rs:1025`, sent as `WindowMessage::SetTrafficLightPosition`, handled by `tauri-runtime-wry` 2.12.5 `src/lib.rs:3567–3570` with tao's `set_traffic_light_inset`), but the dispatcher is `pub(crate)` (`tauri` `src/window/mod.rs:998`). The app therefore adds a `tauri-runtime-wry` runtime plugin (`App::wry_plugin`, `chrome::Inset`): `chrome_scale` (async, so off the main thread) stores the y and wakes the event loop with an empty `run_on_main_thread`; the plugin, at that message, finds the main window's runtime id by its label and sends it `SetTrafficLightPosition` and then `SetTitle` with the same title. tao's setter only stores the inset (tao 0.37.3 `platform_impl/macos/window_delegate.rs:1553–1563`); a title change applies it at once (`set_title`, `:594–597`). From then on tao applies the new value on every draw of its view (`view.rs:197–199`) and on leaving fullscreen (`window_delegate.rs:1884–1886`), so a scale changed in fullscreen, where the lights are hidden, holds once the window leaves it.
+- First frame: the scale lives in the page's storage, per origin, which the app cannot read before the page has loaded. The app keeps what each Workspace's page last said in `window.json` in its config directory (`chrome::remember`, written only on a change) and builds the next main window for that Workspace with it (`chrome::remembered`; 100 % when unknown). `public/boot.js` tells the app the saved scale as the page's head loads, and `useAppliedPrefs` again at start and on every change. So the lights jump only the first time a Workspace's window opens with a scale other than 100 % (nothing remembered yet), or when the setting was changed in a browser tab of the same origin since.
+
+The main window's bridge grants twenty-three commands: twenty-two and `chrome_scale`.
 
 ## Export… with or without the PDFs
 
