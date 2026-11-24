@@ -44,6 +44,8 @@ fn main() {
             "undo_state",
             // Whether the main window is fullscreen, for the top bar (desktop.md).
             "window_fullscreen",
+            // The page's interface scale, which the traffic lights follow (macOS; desktop.md).
+            "chrome_scale",
             // Handing a moved Workspace's file to its Team server's page, and saving a file
             // the page made (docs/specs/team-move.md, Contract C; desktop.md, M18).
             "move_handover",

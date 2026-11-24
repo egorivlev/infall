@@ -758,3 +758,10 @@ fullscreen?: {
 - Optional: feature-detect. The UI reads it only through `useDesktopFullscreen()` in `ui/shell/windowChrome.ts` (a `useSyncExternalStore` over it), which is false in a browser, in an app without the member, and when the member is not an object with both functions (or one of them throws). The first render uses `current()`. The lib does not read it.
 - Used for one thing: the macOS top bar stops leaving room for the traffic lights while the window is in fullscreen (DESIGN.md "Top bar, two rows").
 - `testing.ts`: `fakeFullscreen(on?)` is a fake member — `current()`, `subscribe`, `set(on)` (changes it and tells every subscriber), `listeners` (how many are subscribed). Put it on a bridge: `installDesktop({ ...fakeDesktop(), fullscreen: fakeFullscreen(true) })`.
+
+## 0.9 — the interface scale for the desktop window's traffic lights (window chrome)
+
+Types in `types.ts`: `QoopDesktop` gains `chromeScale?: (scale: number) => Promise<void>` — the interface scale as a factor (1 = 100 %). The app clamps it to 0.8–1.5, refuses anything but a finite number, and on macOS centres the traffic lights in the top bar's first row (18 × scale points down); elsewhere it does nothing (docs/specs/desktop.md, "Bridge — chrome scale").
+
+- Optional: feature-detect. The UI calls it only through `tellDesktopChromeScale(percent)` in `ui/shell/windowChrome.ts`, which does nothing in a browser, in an app without the member or when it is not a function, and swallows a throw or a rejection. `useAppliedPrefs` (`ui/settings/apply.ts`) calls it once at start and whenever `interfaceScale` changes (not on other settings); `public/boot.js` calls the member directly with the saved scale before the first paint. The lib does not read it.
+- `testing.ts`: `fakeChromeScale()` is a fake member that records every scale in `said`: `installDesktop({ ...fakeDesktop(), chromeScale: fakeChromeScale() })`.

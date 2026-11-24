@@ -18,8 +18,11 @@
 
 .q-titlebar { height: 36px; flex: none; display: flex; align-items: center; gap: var(--q-s2); padding-right: 10px; --q-logo-cut: color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); background: var(--q-logo-cut); border-bottom: 1px solid var(--q-chrome-line); user-select: none; -webkit-user-select: none; }
 .q-topbar__brand { width: var(--q-rail-w); flex: none; height: 100%; display: flex; align-items: center; gap: var(--q-s2); padding-left: 13px; border-right: 1px solid var(--q-chrome-line); }
-/* macOS desktop app: the traffic lights (three 12px buttons, 8px apart, at x 13) are drawn here. */
-.q-titlebar.is-mac-window .q-topbar__brand { padding-left: 75px; }
+/* macOS desktop app: the traffic lights (three 12pt buttons, 8pt apart, at x 13: up to x 65) are drawn here. They do
+   not zoom with the interface: below 100 % the room is widened so that it stays 75 real points (`--q-mac-lights`);
+   at 100 % and above it is 75px, which zooms with the rest. */
+.q-titlebar.is-mac-window { --q-mac-lights: max(75px, calc(75px * var(--q-ui-unzoom, 1))); }
+.q-titlebar.is-mac-window .q-topbar__brand { padding-left: var(--q-mac-lights); }
 /* In fullscreen macOS hides them: no room kept, the mark back at 13px (no transition: the window jumps anyway). */
 .q-titlebar.is-mac-window.is-fullscreen .q-topbar__brand { padding-left: 13px; }
 .q-topbar__name { font-weight: 600; letter-spacing: .01em; }
@@ -186,7 +189,7 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail__toggle { display: inline-flex; flex: none; align-self: center; margin: 8px 0 2px; color: var(--q-ink-2); }
 :root[data-room="narrow"] .q-topbar__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 :root[data-room="narrow"] .q-topbar__brand { justify-content: center; padding-left: 0; }
-:root[data-room="narrow"] .q-titlebar.is-mac-window .q-topbar__brand { width: auto; padding-left: 75px; padding-right: 13px; }
+:root[data-room="narrow"] .q-titlebar.is-mac-window .q-topbar__brand { width: auto; padding-left: var(--q-mac-lights); padding-right: 13px; }
 :root[data-room="narrow"] .q-titlebar.is-mac-window.is-fullscreen .q-topbar__brand { padding-left: 13px; }
 :root[data-room="narrow"] .q-account__name, :root[data-room="narrow"] .q-presence > .q-caps { display: none; }
 :root[data-room="narrow"] .q-topbar__search { padding: 0 var(--q-s2); }

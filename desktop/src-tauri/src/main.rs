@@ -5,6 +5,7 @@
 
 mod address;
 mod bridge;
+mod chrome;
 mod datadir;
 mod files;
 mod portable;

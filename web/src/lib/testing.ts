@@ -359,6 +359,17 @@ export function fakeFullscreen(on = false) {
 }
 
 /**
+ * A fake `qoopDesktop.chromeScale` (window chrome, 0.9): every scale it is told goes into `said`, in order.
+ */
+export function fakeChromeScale() {
+  const said: number[] = []
+  const fn = async (scale: number): Promise<void> => {
+    said.push(scale)
+  }
+  return Object.assign(fn, { said })
+}
+
+/**
  * A fake `window.qoopDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
  * `emit` / `end` / `fail`; with `script` set, a run plays those events and ends by itself. `cancel` ends the run,
  * as the app does when it has terminated the process. It has a Runner (`runner`, a `fakeRunner()` unless one is

@@ -552,6 +552,17 @@
     }
   });
 
+  // The interface scale (macOS: the traffic lights are centred in the top bar's first row,
+  // which the page's interface scale makes taller or shorter). One number goes to the app,
+  // which clamps it to the setting's range and moves the lights up or down; nothing else
+  // about the window is reachable, and nothing comes back. Elsewhere the app does nothing.
+  function chromeScale(scale) {
+    if (typeof scale !== 'number' || !isFinite(scale)) {
+      return Promise.reject(new Error('The interface scale must be a number.'));
+    }
+    return call('chrome_scale', { scale: scale }).then(function () {});
+  }
+
   Object.defineProperty(window, 'qoopDesktop', {
     value: Object.freeze({
       version: VERSION,
@@ -566,7 +577,8 @@
       pickFolder: pickFolder,
       readFileIn: readFileIn,
       openExternally: openExternally,
-      fullscreen: fullscreen
+      fullscreen: fullscreen,
+      chromeScale: chromeScale
     }),
     writable: false,
     configurable: false,

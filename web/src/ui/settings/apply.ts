@@ -3,12 +3,15 @@
 //
 // - Interface scale: `--q-ui-zoom` → `zoom` on <body> (base.css). The Board's canvas undoes it with `--q-ui-unzoom`
 //   (board.css), so Cards are drawn at the Board's own scale and React Flow's pointer arithmetic sees no zoom at all.
+//   The desktop app is told it too (`qoopDesktop.chromeScale`, by `useAppliedPrefs`): on macOS it centres the traffic
+//   lights in the top bar's first row, whose height the scale changes.
 // - Text size: `--q-text`, a factor every font size in the stylesheets is multiplied by.
 // - Reduce motion: `data-motion="reduce" | "full"`; absent = follow the system (base.css, tutorial.css).
 // - Theme: `data-theme`, as before (../shell/theme.ts).
 // - Room: `data-room`, `--q-vw`, `--q-vh` — the window measured in interface pixels (below).
 import { useEffect, useState } from 'react'
 import { resolveTheme, systemPrefersLight } from '../shell/theme'
+import { tellDesktopChromeScale } from '../shell/windowChrome'
 import { usePrefs } from './prefs'
 import type { Prefs } from './prefs'
 
@@ -54,13 +57,21 @@ export function applyRoom(interfaceScale: number, root: HTMLElement = document.d
   return room
 }
 
-/** Applies the settings whenever they change (the theme's system-following is useThemeEffect's), and the room on resize. */
+/**
+ * Applies the settings whenever they change (the theme's system-following is useThemeEffect's), and the room on resize.
+ * Tells the desktop app the interface scale at the start and whenever it changes.
+ */
 export function useAppliedPrefs(): void {
   useEffect(() => {
-    applyPrefs(usePrefs.getState())
+    const start = usePrefs.getState()
+    applyPrefs(start)
+    tellDesktopChromeScale(start.interfaceScale)
     const onResize = () => applyRoom(usePrefs.getState().interfaceScale)
     window.addEventListener('resize', onResize)
-    const off = usePrefs.subscribe((p) => applyPrefs(p))
+    const off = usePrefs.subscribe((p, prev) => {
+      applyPrefs(p)
+      if (p.interfaceScale !== prev.interfaceScale) tellDesktopChromeScale(p.interfaceScale)
+    })
     return () => {
       off()
       window.removeEventListener('resize', onResize)

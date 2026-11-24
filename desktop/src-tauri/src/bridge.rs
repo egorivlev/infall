@@ -267,6 +267,35 @@ else document.execCommand('STEP'); } catch (e) {} })();";
     )
 }
 
+// ---- The traffic lights and the interface scale (macOS; desktop.md, "Bridge — chrome scale") --
+
+/// The smallest and largest interface scale the web UI's setting allows (80 % and 150 %),
+/// as factors. A page can move the traffic lights only within what these give.
+pub const MIN_CHROME_SCALE: f64 = 0.8;
+pub const MAX_CHROME_SCALE: f64 = 1.5;
+
+/// The interface scale a page says (`qoopDesktop.chromeScale`), as the app takes it: a
+/// finite number, clamped to the setting's range. Anything else is refused.
+pub fn chrome_scale(scale: f64) -> Result<f64, String> {
+    if scale.is_finite() {
+        Ok(scale.clamp(MIN_CHROME_SCALE, MAX_CHROME_SCALE))
+    } else {
+        Err("Not allowed.".into())
+    }
+}
+
+/// x of the traffic lights for tao: the close button's left edge, 12pt in (its circle 13pt),
+/// at every scale: the room the top bar leaves for them never shrinks below that.
+pub const TRAFFIC_LIGHT_X: f64 = 12.0;
+
+/// y of the traffic lights for tao (`traffic_light_position`) at an interface `scale`: their
+/// centre lands at y − 2 from the window's top (see the comment in `shell::open_main`), and
+/// must be the centre of the top bar's first row, 36px × scale tall: 18 × scale. 20 at 100 %.
+/// A scale out of range is taken as `chrome_scale` takes it; an unusable one as 100 %.
+pub fn traffic_light_y(scale: f64) -> f64 {
+    18.0 * chrome_scale(scale).unwrap_or(1.0) + 2.0
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len()
         && !a.is_empty()
@@ -706,8 +735,86 @@ mod tests {
              saveBinaryFile: saveBinaryFile,\n      moveHandover: moveHandover,\n      \
              moveFile: moveFile,\n      moveDone: moveDone,\n      pickFolder: pickFolder,\n      \
              readFileIn: readFileIn,\n      openExternally: openExternally,\n      \
-             fullscreen: fullscreen\n    }"
+             fullscreen: fullscreen,\n      chromeScale: chromeScale\n    }"
         ));
+    }
+
+    #[test]
+    fn the_script_offers_the_interface_scale_and_nothing_else_about_the_window() {
+        let js = script("http://localhost:8787", "0.9.0", KEY);
+        assert!(js.contains("chromeScale: chromeScale"));
+        assert_eq!(js.matches("'chrome_scale'").count(), 1);
+        let member = js
+            .split("function chromeScale(scale) {")
+            .nth(1)
+            .and_then(|rest| rest.split("\n  }").next())
+            .unwrap();
+        // One number goes to the app, and only a finite one; the page gets nothing back.
+        assert!(member.contains("typeof scale !== 'number' || !isFinite(scale)"));
+        assert!(member.contains("call('chrome_scale', { scale: scale }).then(function () {})"));
+        for power in ["set_traffic", "core:window", "plugin:window", "position"] {
+            assert!(!js.contains(power), "{power}");
+        }
+        // Offered only past the frame and origin checks.
+        let checks = js
+            .find("if (window.location.origin !== ORIGIN) return;")
+            .unwrap();
+        assert!(js.find("function chromeScale(scale) {").unwrap() > checks);
+    }
+
+    #[test]
+    fn the_interface_scale_is_taken_only_from_the_main_windows_page() {
+        // `chrome_scale` is checked like every bridge command: the main window, on the open
+        // Workspace's origin, with the key. Another window or server moves nothing.
+        let page = url("https://qoop.example.org/board/1");
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
+        for window in ["setup", "runner-settings", "runner-approval-2", "main-2"] {
+            assert!(check_caller(window, Some(&page), Some(ORIGIN), KEY, KEY).is_err());
+        }
+        for other in ["https://evil.example/", "tauri://localhost/index.html"] {
+            assert!(check_caller("main", Some(&url(other)), Some(ORIGIN), KEY, KEY).is_err());
+        }
+        assert!(check_caller("main", Some(&page), Some(ORIGIN), "", KEY).is_err());
+    }
+
+    #[test]
+    fn the_interface_scale_is_a_finite_number_within_the_settings_range() {
+        for (said, taken) in [
+            (1.0, 1.0),
+            (0.8, 0.8),
+            (0.9, 0.9),
+            (1.25, 1.25),
+            (1.5, 1.5),
+            // Out of range: clamped to the ends.
+            (0.0, MIN_CHROME_SCALE),
+            (-3.0, MIN_CHROME_SCALE),
+            (0.5, MIN_CHROME_SCALE),
+            (1.51, MAX_CHROME_SCALE),
+            (150.0, MAX_CHROME_SCALE),
+            (f64::MAX, MAX_CHROME_SCALE),
+            (f64::MIN_POSITIVE, MIN_CHROME_SCALE),
+        ] {
+            assert_eq!(chrome_scale(said), Ok(taken), "{said}");
+        }
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(chrome_scale(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_traffic_lights_are_centred_in_the_first_row_at_every_scale() {
+        // Centre (y − 2) = 18 × scale: the middle of a 36px row zoomed by the scale.
+        let centre = |scale: f64| traffic_light_y(scale) - 2.0;
+        assert_eq!(traffic_light_y(1.0), 20.0);
+        for scale in [0.8, 0.9, 1.0, 1.1, 1.25, 1.5] {
+            assert!((centre(scale) - 18.0 * scale).abs() < 1e-9, "{scale}");
+        }
+        assert!((traffic_light_y(0.8) - 16.4).abs() < 1e-9);
+        assert_eq!(traffic_light_y(1.5), 29.0);
+        // Never beyond the range, whatever is asked; an unusable value is 100 %.
+        assert_eq!(traffic_light_y(9.0), traffic_light_y(MAX_CHROME_SCALE));
+        assert_eq!(traffic_light_y(0.1), traffic_light_y(MIN_CHROME_SCALE));
+        assert_eq!(traffic_light_y(f64::NAN), 20.0);
     }
 
     #[test]

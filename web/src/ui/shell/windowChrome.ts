@@ -11,6 +11,24 @@ export function macDesktopWindow(): boolean {
   return typeof desktop === 'object' && desktop !== null && /Mac/.test(navigator.platform)
 }
 
+/**
+ * Tells the desktop app the interface scale (a percentage, as in Settings), so that it centres the macOS traffic lights
+ * in the top bar's first row, which the scale makes taller or shorter. Nothing in a browser or in an app without
+ * `chromeScale`; whatever the bridge does (throws, rejects, returns something else) stays here.
+ */
+export function tellDesktopChromeScale(interfaceScale: number): void {
+  const desktop = (globalThis as { qoopDesktop?: { chromeScale?: unknown } }).qoopDesktop
+  if (typeof desktop !== 'object' || desktop === null) return
+  const chromeScale = desktop.chromeScale
+  if (typeof chromeScale !== 'function') return
+  try {
+    const sent: unknown = chromeScale.call(desktop, interfaceScale / 100)
+    if (sent instanceof Promise) sent.catch(() => {})
+  } catch {
+    // an older or broken bridge: the lights stay where they are
+  }
+}
+
 type Fullscreen = NonNullable<QoopDesktop['fullscreen']>
 
 /** `window.qoopDesktop.fullscreen`, when it is there and has both functions. An older app, and every browser, has none. */

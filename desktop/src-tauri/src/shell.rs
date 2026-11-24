@@ -29,6 +29,7 @@ use crate::address::{self, Navigation};
 use crate::bridge::{
     self, EditItem, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest, Step, UndoSteps,
 };
+use crate::chrome;
 use crate::datadir;
 use crate::files;
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
@@ -154,6 +155,10 @@ struct AppState {
     /// (`window_fullscreen`), and what it was last told; replaced by the next page's,
     /// forgotten when the window closes.
     fullscreen: Mutex<Option<FullscreenWatch>>,
+    /// Where the traffic lights should move to, for the runtime plugin that moves them
+    /// (`chrome_scale`, `chrome::Inset`).
+    #[cfg(target_os = "macos")]
+    lights: chrome::Pending,
 }
 
 /// The bridge script's channel for the main window's fullscreen state.
@@ -262,6 +267,8 @@ pub fn run() {
             last_viewer: AtomicU64::new(0),
             update_ready: Mutex::new(None),
             fullscreen: Mutex::new(None),
+            #[cfg(target_os = "macos")]
+            lights: chrome::Pending::default(),
         })
         .invoke_handler(tauri::generate_handler![
             start_view,
@@ -284,6 +291,7 @@ pub fn run() {
             print_page,
             undo_state,
             window_fullscreen,
+            chrome_scale,
             move_handover,
             move_file_chunk,
             move_done,
@@ -308,6 +316,9 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            // Moves the main window's traffic lights when its page's interface scale changes.
+            #[cfg(target_os = "macos")]
+            app.wry_plugin(chrome::Inset(handle.state::<AppState>().lights.clone()));
             // The Runner keeps its settings and the remembered approvals in the app's own
             // config directory, and the list of Workspaces is kept there too; Local
             // Workspaces live in the data directory. Without them there is nowhere safe to
@@ -566,6 +577,9 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                     // Whether the window is fullscreen (macOS then hides the traffic lights
                     // the top bar leaves room for): read only, nothing about the window changes.
                     .permission("allow-window-fullscreen")
+                    // The page's interface scale (macOS): the traffic lights move up or down
+                    // with the row they sit in, within the setting's range; nothing else.
+                    .permission("allow-chrome-scale")
                     // Moving a Local Workspace onto this server: what is being moved, its
                     // file, and that the server has it (M18). Each answers only the page of
                     // a server a move is pending to.
@@ -603,7 +617,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
     let nav_origin = origin.to_owned();
     let new_window_app = app.clone();
     let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(start))
-        .title("Infall")
+        .title(crate::chrome::MAIN_TITLE)
         .inner_size(1280.0, 860.0)
         .min_inner_size(900.0, 600.0)
         // Runs in the main frame only, before the page's own scripts.
@@ -637,20 +651,37 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
                 EditMenu::page_said(window.app_handle(), UndoSteps::default());
             }
         });
-    // On macOS the page draws the title bar: its top row (36px) holds the traffic lights,
-    // centred in that row (18px down) with the first circle 13px in; the web UI leaves room
-    // for them. x is the close button's left edge: 13 - 1 for the button frame. y is not the
-    // buttons' top: tao (`inset_traffic_lights`) makes the title bar's container 14 + y tall
-    // (the button's height plus y) and moves the buttons sideways only, so they keep the
-    // place AppKit gave them, measured up from the container's bottom: 9pt on macOS 26 (in
-    // its 32pt bar). Their centre is then (14 + y) - 9 - 7 = y - 2 from the top: y = 20.
-    // tao applies this again on every draw of its view, after a title change and after
-    // leaving fullscreen (AppKit puts the buttons back on resize and when fullscreen ends).
+    // On macOS the page draws the title bar: its top row (36px at 100 %, 36px × the page's
+    // interface scale in points, since the scale is CSS zoom) holds the traffic lights,
+    // centred in that row (18 × scale down) with the first circle 13pt in; the web UI leaves
+    // room for them. x is the close button's left edge: 13 - 1 for the button frame, at every
+    // scale. y is not the buttons' top: tao (`inset_traffic_lights`) makes the title bar's
+    // container 14 + y tall (the button's height plus y) and moves the buttons sideways only,
+    // so they keep the place AppKit gave them, measured up from the container's bottom: 9pt
+    // on macOS 26 (in its 32pt bar). Their centre is then (14 + y) - 9 - 7 = y - 2 from the
+    // top: y = 18 × scale + 2 (`bridge::traffic_light_y`), 20 at 100 %.
+    // The scale is the page's own setting, in its storage: the window is built with the one
+    // this Workspace's page last said (`chrome::remembered`), and the page says it again as it
+    // starts and whenever it changes (`chrome_scale`), which moves the lights through tao's
+    // stored inset (`chrome::Inset`). tao applies that inset again on every draw of its view,
+    // after a title change and after leaving fullscreen (AppKit puts the buttons back on
+    // resize and when fullscreen ends), always the latest value: a scale changed while
+    // fullscreen holds once the window leaves it.
     #[cfg(target_os = "macos")]
-    let builder = builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(12.0, 20.0));
+    let builder = {
+        let scale = app
+            .path()
+            .app_config_dir()
+            .map(|config| chrome::remembered(&config, &entry.id))
+            .unwrap_or(1.0);
+        builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(
+                bridge::TRAFFIC_LIGHT_X,
+                bridge::traffic_light_y(scale),
+            ))
+    };
     // The web inspector exists in debug builds only (the `devtools` feature is off).
     #[cfg(debug_assertions)]
     let builder = builder.devtools(true);
@@ -1591,6 +1622,36 @@ fn window_fullscreen(
         channel: on_change,
         said: on,
     });
+    Ok(())
+}
+
+/// The page's interface scale (`qoopDesktop.chromeScale`), which the traffic lights follow
+/// (macOS; see `open_main`). Checked and clamped to the setting's range (`bridge::chrome_scale`):
+/// all a page can do with it is move the lights up or down within that. Remembered for this
+/// Workspace's next main window. Elsewhere nothing happens. Async: it runs off the main
+/// thread, so that waking the event loop below reaches the runtime plugin as a message.
+#[tauri::command]
+async fn chrome_scale(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    scale: f64,
+) -> Result<(), String> {
+    check_bridge_caller(&webview, &state, &key)?;
+    let scale = bridge::chrome_scale(scale)?;
+    #[cfg(target_os = "macos")]
+    {
+        state.lights.set(bridge::traffic_light_y(scale));
+        let _ = app.run_on_main_thread(|| {});
+        if let (Some(id), Ok(config)) = (state.open_id(), app.path().app_config_dir()) {
+            let _ =
+                tauri::async_runtime::spawn_blocking(move || chrome::remember(&config, &id, scale))
+                    .await;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, scale);
     Ok(())
 }
 

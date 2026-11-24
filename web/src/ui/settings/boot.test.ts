@@ -38,6 +38,42 @@ describe('before the first paint', () => {
     expect(root.getAttribute('data-room')).toMatch(/^(wide|medium|narrow)$/)
   })
 
+  it('tells the desktop app the saved interface scale, when it has the member', () => {
+    const said: unknown[] = []
+    const page = globalThis as { qoopDesktop?: unknown }
+    try {
+      localStorage.setItem('infall-settings', JSON.stringify({ v: 1, interfaceScale: 150 }))
+      page.qoopDesktop = { chromeScale: (scale: number) => (said.push(scale), Promise.resolve()) }
+      boot()
+      expect(said).toEqual([1.5])
+      // 100 % too: the app may remember another scale.
+      localStorage.setItem('infall-settings', JSON.stringify({ v: 1, interfaceScale: 100 }))
+      boot()
+      expect(said).toEqual([1.5, 1])
+      // Nothing for a scale the app would not apply.
+      localStorage.setItem('infall-settings', JSON.stringify({ v: 1, interfaceScale: 333 }))
+      boot()
+      expect(said).toEqual([1.5, 1])
+      // A member that is not a function, throws or refuses spoils nothing.
+      localStorage.setItem('infall-settings', JSON.stringify({ v: 1, interfaceScale: 80, textSize: 120 }))
+      for (const chromeScale of [
+        0.8,
+        () => {
+          throw new Error('bridge down')
+        },
+        () => Promise.reject(new Error('Not allowed.')),
+      ]) {
+        root.removeAttribute('style')
+        page.qoopDesktop = { chromeScale }
+        expect(() => boot()).not.toThrow()
+        expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('0.8')
+        expect(root.style.getPropertyValue('--q-text')).toBe('1.2')
+      }
+    } finally {
+      delete page.qoopDesktop
+    }
+  })
+
   it('reads the old theme key, and leaves anything unreadable to the app', () => {
     localStorage.setItem('qoop-theme', 'light')
     boot()

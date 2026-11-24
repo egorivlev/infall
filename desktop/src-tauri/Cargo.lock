@@ -3487,6 +3487,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-updater",
+ "tauri-runtime-wry",
  "tempfile",
  "tokio",
  "ureq",
