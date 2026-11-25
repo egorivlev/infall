@@ -56,6 +56,27 @@ pub const NO_USAGE_REPORTS: &[(&str, &str)] = &[
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const ENV_FILE: &str = "qoop-env.json";
 
+/// The character set a Run in another language gets when the Member's environment names no
+/// locale: UTF-8, as the Run's output is read. Without it, R in the "C" locale prints `"α"`
+/// as `"\316\261"`. An app started from the Finder has no `LANG` (Terminal sets it, not the
+/// shell's files), so the login shell's environment often has none either. Only the
+/// character type: messages, numbers and dates stay as the program's default. `C.UTF-8` is
+/// not on every macOS; `en_US.UTF-8` is not on every Linux.
+const UTF8_CTYPE: &str = if cfg!(target_os = "macos") {
+    "en_US.UTF-8"
+} else {
+    "C.UTF-8"
+};
+
+/// The locale variable to add for a Run in another language: none when `LC_ALL`,
+/// `LC_CTYPE` or `LANG` is set (to anything: the Member chose it), and never on Windows.
+pub fn utf8_locale(env: &EnvVars) -> Option<(&'static str, &'static str)> {
+    let chosen = ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .any(|k| python::env_value(env, k).is_some_and(|v| !v.is_empty()));
+    (!cfg!(windows) && !chosen).then_some(("LC_CTYPE", UTF8_CTYPE))
+}
+
 /// One saved figure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Figure {
@@ -373,7 +394,8 @@ impl Exec {
                 command
                     .args(crate::toolchains::arguments(args, &main))
                     .env_clear()
-                    .envs(self.env.iter().map(|(k, v)| (k, v)));
+                    .envs(self.env.iter().map(|(k, v)| (k, v)))
+                    .envs(utf8_locale(&self.env));
                 command
             }
         };
@@ -471,8 +493,15 @@ impl Exec {
             match &ended {
                 None => {
                     if cancel.is_cancelled() {
+                        // What left the group is found while the program is still there
+                        // (once it has ended, its children have another parent).
+                        #[cfg(unix)]
+                        let escaped = crate::monitor::escaped_from(group.id());
                         // The whole group: the program and everything it started.
                         let status = group.terminate(self.kill_grace);
+                        // Then what left it, if the program did not end it on the way out.
+                        #[cfg(unix)]
+                        crate::monitor::kill_escaped(&escaped);
                         stopped = true;
                         ended = Some((status, started.elapsed(), now + Duration::from_millis(300)));
                     } else if group.exited() {
@@ -561,6 +590,25 @@ impl Exec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_in_another_language_gets_utf8_only_when_no_locale_is_chosen() {
+        let env = |pairs: &[(&str, &str)]| -> EnvVars {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).into(), (*v).into()))
+                .collect()
+        };
+        let none = utf8_locale(&env(&[("PATH", "/usr/bin"), ("LANG", "")]));
+        if cfg!(windows) {
+            assert_eq!(none, None);
+            return;
+        }
+        assert_eq!(none, Some(("LC_CTYPE", UTF8_CTYPE)));
+        for chosen in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            assert_eq!(utf8_locale(&env(&[(chosen, "C")])), None, "{chosen}");
+        }
+    }
 
     fn png(extra: usize) -> Vec<u8> {
         let mut data = PNG_SIGNATURE.to_vec();

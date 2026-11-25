@@ -278,6 +278,104 @@ pub fn parse_ps(text: &str, pgid: u32) -> Vec<Process> {
     processes
 }
 
+/// The arguments for `ps` that [`parse_escaped`] reads.
+pub const FAMILY_PS_ARGS: [&str; 7] = ["-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid="];
+
+/// A process the Run started (it, or one of its descendants) that has left the Run's
+/// process group for another: as Julia's `Distributed` starts its workers (`detach`), or
+/// a shell with job control its background jobs. Stopping the group does not reach it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Escaped {
+    pub pid: u32,
+    pub pgid: u32,
+}
+
+/// `pid ppid pgid` lines of `ps` [`FAMILY_PS_ARGS`]; lines not understood are passed over.
+fn family_rows(text: &str) -> Vec<(u32, u32, u32)> {
+    text.lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace().map(|f| f.parse::<u32>().ok());
+            match (fields.next(), fields.next(), fields.next(), fields.next()) {
+                (Some(Some(pid)), Some(Some(ppid)), Some(Some(pgid)), None) => {
+                    Some((pid, ppid, pgid))
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The descendants of `leader` (which leads the Run's group) that are in another group, in
+/// the answer of `ps` [`FAMILY_PS_ARGS`]. One whose parent has already ended is not found:
+/// it is asked while the Run's process is still there.
+pub fn parse_escaped(text: &str, leader: u32) -> Vec<Escaped> {
+    let rows = family_rows(text);
+    let mut family = vec![leader];
+    let mut escaped = Vec::new();
+    let mut next = 0;
+    while next < family.len() {
+        let parent = family[next];
+        next += 1;
+        for &(pid, ppid, pgid) in &rows {
+            if ppid == parent && pid > 1 && !family.contains(&pid) {
+                family.push(pid);
+                if pgid != leader {
+                    escaped.push(Escaped { pid, pgid });
+                }
+            }
+        }
+    }
+    escaped
+}
+
+/// The processes of the Run led by `leader` that left its group, asked of `ps` now (in
+/// well under a second). Empty when `ps` does not answer.
+#[cfg(unix)]
+pub(crate) fn escaped_from(leader: u32) -> Vec<Escaped> {
+    first_file(&["/bin/ps", "/usr/bin/ps"])
+        .and_then(|ps| answer_of(&ps, &FAMILY_PS_ARGS))
+        .map(|text| parse_escaped(&text, leader))
+        .unwrap_or_default()
+}
+
+/// Of `escaped`, those still there as they were (the same id in the same group, so not an
+/// id given to another process since): what [`kill_escaped`] kills. One that leads its own
+/// group is killed with that group, which holds only what it started.
+pub fn still_escaped(text: &str, escaped: &[Escaped]) -> Vec<i32> {
+    let rows = family_rows(text);
+    escaped
+        .iter()
+        .filter(|e| {
+            rows.iter()
+                .any(|&(pid, _, pgid)| (pid, pgid) == (e.pid, e.pgid))
+        })
+        .filter_map(|e| {
+            let pid = i32::try_from(e.pid).ok().filter(|p| *p > 1)?;
+            Some(if e.pid == e.pgid { -pid } else { pid })
+        })
+        .collect()
+}
+
+/// Kills what is left of `escaped`, once the Run's own group is gone.
+#[cfg(unix)]
+pub(crate) fn kill_escaped(escaped: &[Escaped]) {
+    if escaped.is_empty() {
+        return;
+    }
+    let Some(text) =
+        first_file(&["/bin/ps", "/usr/bin/ps"]).and_then(|ps| answer_of(&ps, &FAMILY_PS_ARGS))
+    else {
+        return;
+    };
+    for target in still_escaped(&text, escaped) {
+        // SAFETY: `kill` touches no memory. Each target was checked a moment ago to be the
+        // same process (or group) the Run started; an error (it is gone) is fine to ignore.
+        unsafe {
+            libc::kill(target, libc::SIGKILL);
+        }
+    }
+}
+
 /// Processor time in clock ticks (user and system) from Linux's `/proc/<pid>/stat`, where
 /// `ps` only counts whole seconds. The program's name, in brackets, may contain anything.
 pub fn parse_proc_stat(text: &str) -> Option<u64> {
@@ -1004,6 +1102,61 @@ mod tests {
         ] {
             assert_eq!(cpu_time(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn what_left_the_runs_group_is_found_and_only_that_is_killed() {
+        // `ps -A -o pid= -o ppid= -o pgid=`: a Julia Run (500) with two `Distributed`
+        // workers in groups of their own (510, 511), a worker's child (512), a child in the
+        // Run's group (501) whose own child left it (502), and strangers.
+        let ps = "    1     0     1
+  400     1   400
+  500   400   500
+  501   500   500
+  502   501   502
+  510   500   510
+  511   500   511
+  512   510   510
+  600     1   600
+  601   600   510
+junk line
+  7 8
+";
+        let escaped = parse_escaped(ps, 500);
+        assert_eq!(
+            escaped,
+            [
+                Escaped {
+                    pid: 510,
+                    pgid: 510
+                },
+                Escaped {
+                    pid: 511,
+                    pgid: 511
+                },
+                Escaped {
+                    pid: 502,
+                    pgid: 502
+                },
+                Escaped {
+                    pid: 512,
+                    pgid: 510
+                },
+            ]
+        );
+        assert_eq!(
+            parse_escaped(ps, 600),
+            [Escaped {
+                pid: 601,
+                pgid: 510
+            }]
+        );
+        assert_eq!(parse_escaped(ps, 4242), []);
+        // Later: 511 has ended and its id now belongs to a process in another group; the
+        // rest are as they were. A group leader goes with its group; 512 is in 510's.
+        let later = "  502     1   502\n  510     1   510\n  511     1   999\n  512   510   510\n";
+        assert_eq!(still_escaped(later, &escaped), [-510, -502, 512]);
+        assert_eq!(still_escaped("", &escaped), Vec::<i32>::new());
     }
 
     #[test]

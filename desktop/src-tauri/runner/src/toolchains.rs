@@ -177,28 +177,86 @@ pub fn arguments(args: &[String], file: &Path) -> Vec<OsString> {
 
 /// The first line a program wrote, control characters removed, at most 40 characters.
 pub fn version_line(output: &str) -> Option<String> {
+    first_line(output, MAX_VERSION_CHARS)
+}
+
+/// The first line a program wrote, control characters removed, at most `max` characters.
+fn first_line(output: &str, max: usize) -> Option<String> {
     let line = output.lines().map(str::trim).find(|l| !l.is_empty())?;
-    let clean: String = line
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_VERSION_CHARS)
-        .collect();
+    let clean: String = line.chars().filter(|c| !c.is_control()).take(max).collect();
     let clean = clean.trim().to_owned();
     (!clean.is_empty()).then_some(clean)
 }
 
-/// `<program> --version`, five seconds, both streams: its first line. `None` when it does
-/// not answer; it is still usable then, without a version.
-pub fn ask_version(program: &Path, env: &EnvVars) -> Option<String> {
+/// `<program> --version`, five seconds, both streams (some programs print their version on
+/// standard error). When it ends well (exit code 0): its first line, `None` if it printed
+/// nothing. Otherwise (it crashed, failed, did not answer, could not be started) it gave no
+/// version, whatever it printed: the error is a short plain sentence saying it is not
+/// working, for the settings window. Such a program may still be set up by hand.
+pub fn ask_version(program: &Path, env: &EnvVars) -> Result<Option<String>, String> {
     let mut command = Command::new(program);
     command
         .arg("--version")
         .env_clear()
         .envs(env.iter().map(|(k, v)| (k, v)))
         .current_dir(std::env::temp_dir());
-    // (`capture` starts it in a group of its own, without a console window on Windows.)
-    let (_, out) = python::capture(command, python::VERSION_TIMEOUT, 4096, true, false)?;
-    version_line(&String::from_utf8_lossy(&out))
+    // (`capture_status` starts it in a group of its own, without a console window on
+    // Windows.)
+    match python::capture_status(command, python::VERSION_TIMEOUT, 4096, true, false) {
+        Ok((status, out)) => {
+            let out = String::from_utf8_lossy(&out);
+            if status.success() {
+                Ok(version_line(&out))
+            } else {
+                Err(not_working(
+                    ended(status),
+                    first_line(&out, MAX_SAID_CHARS + 1).as_deref(),
+                ))
+            }
+        }
+        Err(python::NoStatus::TimedOut) => Err(not_working(
+            format!(
+                "It did not answer within {} seconds when asked its version.",
+                python::VERSION_TIMEOUT.as_secs()
+            ),
+            None,
+        )),
+        Err(python::NoStatus::NotStarted) => {
+            Err(not_working("It could not be started.".into(), None))
+        }
+    }
+}
+
+/// At most this many characters say why a program is not working.
+pub const MAX_PROBLEM_CHARS: usize = 160;
+/// Of which at most this many are what it printed.
+const MAX_SAID_CHARS: usize = 60;
+
+/// How a version probe that did not end well ended, as a sentence.
+fn ended(status: std::process::ExitStatus) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return format!("It crashed (signal {signal}) when asked its version.");
+        }
+    }
+    match status.code() {
+        Some(code) => format!("It failed (exit code {code}) when asked its version."),
+        None => "It failed when asked its version.".into(),
+    }
+}
+
+/// `why`, then the start of what the program printed, if anything.
+fn not_working(why: String, said: Option<&str>) -> String {
+    let Some(said) = said else {
+        return why;
+    };
+    let mut cut: String = said.chars().take(MAX_SAID_CHARS).collect();
+    if said.chars().count() > MAX_SAID_CHARS {
+        cut.push('…');
+    }
+    format!("{why} It said: {cut}")
 }
 
 /// Checks a program path the Member typed: an absolute path to an executable file (on
@@ -314,10 +372,15 @@ pub struct FoundProgram {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Set when it is there but not working: asked its version, it crashed, failed or did
+    /// not answer. Why, as a short plain sentence. It has no version then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
 }
 
 /// The programs a preset could use on this device, each once (a link and what it points at
-/// are one), each asked its version: at most four.
+/// are one), each asked its version: at most four. Those that work come first, so that the
+/// first is never a broken one while a working one was found.
 pub fn find_programs(preset: &Preset, env: &EnvVars) -> Vec<FoundProgram> {
     let names = if cfg!(windows) {
         preset.windows
@@ -342,12 +405,19 @@ pub fn find_programs(preset: &Preset, env: &EnvVars) -> Vec<FoundProgram> {
             let Some(path) = candidate.to_str().map(str::to_owned) else {
                 continue;
             };
+            let (version, problem) = match ask_version(&candidate, env) {
+                Ok(version) => (version, None),
+                Err(problem) => (None, Some(problem)),
+            };
             found.push(FoundProgram {
-                version: ask_version(&candidate, env),
                 path,
+                version,
+                problem,
             });
         }
     }
+    // Stable: otherwise in the order they were found.
+    found.sort_by_key(|f| f.problem.is_some());
     found
 }
 
@@ -366,6 +436,7 @@ mod tests {
             args: args.iter().map(|a| (*a).to_owned()).collect(),
             ext: "fk".into(),
             version: None,
+            problem: None,
             off: false,
         }
     }
@@ -494,10 +565,48 @@ mod tests {
             path
         };
         let env: EnvVars = std::env::vars_os().collect();
+        // On standard error, exit code 0: that is its version.
         let talks = script("talks", "echo 'fake 1.2.3' >&2");
-        assert_eq!(ask_version(&talks, &env).as_deref(), Some("fake 1.2.3"));
+        assert_eq!(ask_version(&talks, &env), Ok(Some("fake 1.2.3".into())));
+        let quiet = script("quiet", "exit 0");
+        assert_eq!(ask_version(&quiet, &env), Ok(None));
         let silent = script("silent", "exit 1");
-        assert_eq!(ask_version(&silent, &env), None);
+        assert_eq!(
+            ask_version(&silent, &env),
+            Err("It failed (exit code 1) when asked its version.".into())
+        );
+        // What a program that cannot load its libraries does: says so, and aborts. That text
+        // is not its version.
+        let crashes = script(
+            "crashes",
+            "echo 'dyld[27529]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib' >&2\n\
+             echo '  Referenced from: /opt/homebrew/Cellar/node/25.2.1/bin/node' >&2\n\
+             kill -ABRT $$",
+        );
+        assert_eq!(
+            ask_version(&crashes, &env),
+            Err(
+                "It crashed (signal 6) when asked its version. It said: dyld[27529]: Library \
+                 not loaded: /opt/homebrew/opt/llhttp/li…"
+                    .into()
+            )
+        );
+        let fails = script("fails", "echo 'v1.0 but broken'\nexit 2");
+        assert_eq!(
+            ask_version(&fails, &env),
+            Err("It failed (exit code 2) when asked its version. It said: v1.0 but broken".into())
+        );
+        let gone = dir.path().join("gone");
+        assert_eq!(
+            ask_version(&gone, &env),
+            Err("It could not be started.".into())
+        );
+        for problem in [
+            ask_version(&crashes, &env).unwrap_err(),
+            ask_version(&silent, &env).unwrap_err(),
+        ] {
+            assert!(short_plain(&problem, MAX_PROBLEM_CHARS), "{problem}");
+        }
         assert_eq!(
             check_program(&format!(" {} ", talks.display())),
             Ok(talks.to_str().unwrap().to_owned())
@@ -535,8 +644,70 @@ mod tests {
             ours,
             [&FoundProgram {
                 path: julia.to_str().unwrap().to_owned(),
-                version: Some("julia version 9.9.9".into())
+                version: Some("julia version 9.9.9".into()),
+                problem: None,
             }]
+        );
+    }
+
+    /// A program found that crashes when asked its version is listed as there but not
+    /// working, after the ones that work, and never with what it printed as its version.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_crashes_is_found_but_not_working_and_not_first() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = |dir: &Path, body: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            let path = dir.join("node");
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let broken = program(
+            &dir.path().join("first"),
+            "echo 'dyld[27285]: Library not loaded: /opt/homebrew/opt/llhttp/lib/x.dylib' >&2\n\
+             kill -ABRT $$",
+        );
+        let working = program(&dir.path().join("second"), "echo v25.2.1");
+        let env: EnvVars = vec![
+            (
+                "PATH".into(),
+                std::env::join_paths([broken.parent().unwrap(), working.parent().unwrap()])
+                    .unwrap(),
+            ),
+            ("HOME".into(), dir.path().into()),
+        ];
+        let found = find_programs(preset("javascript").unwrap(), &env);
+        let ours: Vec<_> = found
+            .iter()
+            .filter(|f| f.path.starts_with(dir.path().to_str().unwrap()))
+            .collect();
+        assert_eq!(ours.len(), 2, "{found:?}");
+        assert_eq!(ours[0].path, working.to_str().unwrap());
+        assert_eq!(
+            (ours[0].version.as_deref(), ours[0].problem.as_deref()),
+            (Some("v25.2.1"), None)
+        );
+        assert_eq!(ours[1].path, broken.to_str().unwrap());
+        assert_eq!(ours[1].version, None);
+        let problem = ours[1].problem.as_deref().unwrap();
+        assert!(
+            problem.starts_with("It crashed (signal 6) when asked its version. It said: dyld["),
+            "{problem}"
+        );
+        // Working ones before every broken one, whatever else is on this machine.
+        let first_broken = found.iter().position(|f| f.problem.is_some()).unwrap();
+        assert!(found[first_broken..].iter().all(|f| f.problem.is_some()));
+        // The settings window gets `problem` only when there is one: older readers see a
+        // program without a version, as before.
+        assert_eq!(
+            serde_json::to_value(ours[1]).unwrap(),
+            serde_json::json!({"path": broken.to_str().unwrap(), "problem": problem})
+        );
+        assert_eq!(
+            serde_json::to_value(ours[0]).unwrap(),
+            serde_json::json!({"path": working.to_str().unwrap(), "version": "v25.2.1"})
         );
     }
 }

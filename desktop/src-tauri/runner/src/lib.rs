@@ -172,6 +172,10 @@ pub struct LanguageView {
     pub args: Vec<String>,
     pub ext: String,
     pub version: Option<String>,
+    /// Set when its program, asked its version when it was set up, crashed, failed or did
+    /// not answer: why, as a short plain sentence. Absent when it worked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
     pub enabled: bool,
     /// Its program is still there.
     pub available: bool,
@@ -582,6 +586,7 @@ impl Runner {
                 args: t.args.clone(),
                 ext: t.ext.clone(),
                 version: t.version.clone(),
+                problem: t.problem.clone(),
                 enabled: !t.off,
                 available: qoop_proc::is_executable_file(Path::new(&t.program)),
             })
@@ -714,11 +719,17 @@ impl Runner {
                     args,
                     ext: ext.trim().trim_start_matches('.').to_owned(),
                     version: None,
+                    problem: None,
                     off: false,
                 };
                 toolchains::check_shape(&toolchain)?;
-                // Asked once, when saving; a program that does not answer is still taken.
-                toolchain.version = toolchains::ask_version(Path::new(&toolchain.program), &env);
+                // Asked once, when saving. A program that does not work is still taken (the
+                // Member chose it by hand, and may know better: some programs fail on
+                // `--version` alone), without a version and with why it seems not to work.
+                match toolchains::ask_version(Path::new(&toolchain.program), &env) {
+                    Ok(version) => toolchain.version = version,
+                    Err(problem) => toolchain.problem = Some(problem),
+                }
                 settings.languages.insert(id, toolchain);
             }
             Change::RemoveLanguage { id } => {

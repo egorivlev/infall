@@ -61,6 +61,10 @@ pub struct Toolchain {
     /// What `<program> --version` said when it was saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Set when, asked its version when it was saved, the program crashed, failed or did
+    /// not answer: why, as a short plain sentence. It was set up by hand all the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
     /// Turned off by the Member: kept, but no Run is executed with it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub off: bool,
@@ -141,7 +145,7 @@ pub fn load(dir: &Path) -> Settings {
             if settings.languages.len() == toolchains::MAX_LANGUAGES {
                 break;
             }
-            if let Some(toolchain) = part::<Toolchain>(entry)
+            if let Some(mut toolchain) = part::<Toolchain>(entry)
                 && toolchains::is_command_id(id)
                 && toolchains::check_shape(&toolchain).is_ok()
                 && toolchain
@@ -149,6 +153,10 @@ pub fn load(dir: &Path) -> Settings {
                     .as_deref()
                     .is_none_or(|v| toolchains::short_plain(v, toolchains::MAX_VERSION_CHARS))
             {
+                // Only shown: an implausible one is dropped, the language kept.
+                toolchain.problem = toolchain
+                    .problem
+                    .filter(|p| toolchains::short_plain(p, toolchains::MAX_PROBLEM_CHARS));
                 settings.languages.insert(id.clone(), toolchain);
             }
         }
@@ -183,6 +191,7 @@ mod tests {
             args: vec!["{file}".into()],
             ext: "jl".into(),
             version: Some("julia version 1.11.2".into()),
+            problem: None,
             off: false,
         }
     }
@@ -290,7 +299,11 @@ mod tests {
                     "twice": {"name": "T", "program": "/bin/t", "args": ["{file}", "{file}"], "ext": "t"},
                     "relative": {"name": "R", "program": "bin/r", "args": ["{file}"], "ext": "r"},
                     "badext": {"name": "E", "program": "/bin/e", "args": ["{file}"], "ext": ".e"},
-                    "longversion": {"name": "L", "program": "/bin/l", "args": ["{file}"], "ext": "l", "version": "v".repeat(41)}
+                    "longversion": {"name": "L", "program": "/bin/l", "args": ["{file}"], "ext": "l", "version": "v".repeat(41)},
+                    "broken": {"name": "B", "program": "/bin/b", "args": ["{file}"], "ext": "b",
+                        "problem": "It crashed (signal 6) when asked its version."},
+                    "oddproblem": {"name": "O", "program": "/bin/o", "args": ["{file}"], "ext": "o",
+                        "problem": "a\nb"}
                 }
             })
             .to_string(),
@@ -313,8 +326,14 @@ mod tests {
         );
         assert_eq!(
             loaded.languages.keys().collect::<Vec<_>>(),
-            ["julia"],
+            ["broken", "julia", "oddproblem"],
             "{loaded:?}"
         );
+        // A language not working when it was saved is still one; an odd reason is dropped.
+        assert_eq!(
+            loaded.languages["broken"].problem.as_deref(),
+            Some("It crashed (signal 6) when asked its version.")
+        );
+        assert_eq!(loaded.languages["oddproblem"].problem, None);
     }
 }

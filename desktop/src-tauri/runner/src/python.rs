@@ -7,7 +7,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -33,16 +33,36 @@ const ENV_MARKER: &[u8] = b"\n__QOOP_ENV_BEGIN__\n";
 /// `limit` bytes). `None` if it could not be started or did not end within `timeout`; it
 /// and everything it started are killed either way.
 pub(crate) fn capture(
-    mut command: Command,
+    command: Command,
     timeout: Duration,
     limit: usize,
     with_stderr: bool,
     session: bool,
 ) -> Option<(bool, Vec<u8>)> {
-    let (mut reader, writer) = io::pipe().ok()?;
+    capture_status(command, timeout, limit, with_stderr, session)
+        .ok()
+        .map(|(status, out)| (status.success(), out))
+}
+
+/// Why [`capture_status`] has no exit status to give.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoStatus {
+    NotStarted,
+    TimedOut,
+}
+
+/// As [`capture`], with how the program ended: its exit status, or why there is none.
+pub(crate) fn capture_status(
+    mut command: Command,
+    timeout: Duration,
+    limit: usize,
+    with_stderr: bool,
+    session: bool,
+) -> Result<(ExitStatus, Vec<u8>), NoStatus> {
+    let (mut reader, writer) = io::pipe().map_err(|_| NoStatus::NotStarted)?;
     command.stdin(Stdio::null());
     if with_stderr {
-        command.stderr(writer.try_clone().ok()?);
+        command.stderr(writer.try_clone().map_err(|_| NoStatus::NotStarted)?);
     } else {
         command.stderr(Stdio::null());
     }
@@ -52,7 +72,7 @@ pub(crate) fn capture(
     } else {
         own_process_group(&mut command);
     }
-    let child = command.spawn().ok()?;
+    let child = command.spawn().map_err(|_| NoStatus::NotStarted)?;
     // The command holds the writing ends of the pipe; without this the reader never ends.
     drop(command);
     let mut group = Group::new(child);
@@ -101,11 +121,11 @@ pub(crate) fn capture(
             _ => {}
         }
         if now > deadline {
-            return None;
+            return Err(NoStatus::TimedOut);
         }
     }
-    let status = group.kill_and_reap()?;
-    Some((status.success(), out))
+    let status = group.kill_and_reap().ok_or(NoStatus::NotStarted)?;
+    Ok((status, out))
 }
 
 // ---- the login shell's environment --------------------------------------------------------
