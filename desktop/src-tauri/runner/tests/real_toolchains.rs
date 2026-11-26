@@ -401,6 +401,39 @@ exit 3"#,
 }
 
 #[test]
+fn code_saved_before_the_rename_finds_qoop_run_dir_and_its_old_figure_names_count() {
+    let python = test_python();
+    let tools = tempfile::tempdir().unwrap();
+    // As code written for the Run contract before the rename does it.
+    let program = script(
+        tools.path(),
+        "old-lang",
+        r#"if [ "$1" = --version ]; then echo 'old-lang 1.0'; exit 0; fi
+[ "$QOOP_RUN_DIR" = "$INFALL_RUN_DIR" ] && echo "same dir"
+printf '\211PNG\r\n\032\nold one' > "$QOOP_RUN_DIR/qoop-figure-1.png"
+printf '\211PNG\r\n\032\nnew two' > "$INFALL_RUN_DIR/infall-figure-2.png"
+printf 'not a png' > "$QOOP_RUN_DIR/qoop-figure-3.png"
+exit 0"#,
+    );
+    let bench = bench(python);
+    bench
+        .runner
+        .settings_change(Change::SetLanguage {
+            id: "old".into(),
+            name: "Old".into(),
+            program: program.to_str().unwrap().into(),
+            args: vec!["{file}".into()],
+            ext: "old".into(),
+        })
+        .unwrap();
+    let member = Member::new(&bench.runner);
+    let run = bench.run(&member, Some("old"), None, "anything\n");
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(run.output, "same dir\n");
+    assert_eq!(run.figures, 2);
+}
+
+#[test]
 fn a_command_toolchain_runs_its_program_with_the_file_and_nothing_else() {
     let python = test_python();
     let tools = tempfile::tempdir().unwrap();

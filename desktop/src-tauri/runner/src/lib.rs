@@ -297,9 +297,7 @@ impl Options {
     /// As [`Options::new`], with the interpreter override read from `INFALL_PYTHON_BIN`.
     pub fn from_process_env(config_dir: impl Into<PathBuf>) -> Self {
         let mut options = Self::new(config_dir);
-        options.python_override = std::env::var_os(PYTHON_ENV)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from);
+        options.python_override = infall_proc::env_var_os(PYTHON_ENV).map(PathBuf::from);
         options
     }
 }

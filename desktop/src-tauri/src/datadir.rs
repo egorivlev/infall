@@ -24,7 +24,7 @@ const MOVES_DIR: &str = "moves";
 const WEB_DIR: &str = "web";
 const WEB_MARKER: &str = ".infall-web-digest";
 /// A copy on its way in, beside where it goes.
-const STAGING_SUFFIX: &str = ".moving";
+pub(crate) const STAGING_SUFFIX: &str = ".moving";
 
 /// What moving the Workspaces from `old` to `new` did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -128,7 +128,7 @@ fn folder_names(dir: &Path, dirs: bool) -> Vec<String> {
 /// Copies `src` (a folder or a file) to beside `dest`, checks the copy, moves it into place as
 /// `dest`, then removes `src`. Returns whether `src` could be removed. On an error nothing is
 /// left at `dest` or beside it, and `src` is as it was.
-fn move_one(src: &Path, dest: &Path) -> io::Result<bool> {
+pub(crate) fn move_one(src: &Path, dest: &Path) -> io::Result<bool> {
     let parent = dest
         .parent()
         .ok_or_else(|| io::Error::other("no parent folder"))?;
@@ -237,7 +237,7 @@ fn read_full(file: &mut fs::File, buf: &mut [u8]) -> io::Result<usize> {
     Ok(filled)
 }
 
-fn create_private_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     #[cfg(unix)]
     {

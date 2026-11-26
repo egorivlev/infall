@@ -340,7 +340,7 @@ impl Driver {
 /// `PATH`, so those are checked too).
 pub fn locate() -> Option<PathBuf> {
     locate_in(
-        std::env::var_os(BIN_ENV).as_deref(),
+        infall_proc::env_var_os(BIN_ENV).as_deref(),
         std::env::var_os("PATH").as_deref(),
         // Windows has no `HOME`; the home folder is `USERPROFILE` there.
         std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })

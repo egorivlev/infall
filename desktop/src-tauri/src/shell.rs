@@ -33,6 +33,7 @@ use crate::chrome;
 use crate::datadir;
 use crate::files;
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
+use crate::rename;
 use crate::transfer::{self, Upload};
 use crate::update;
 use crate::webui;
@@ -342,13 +343,38 @@ pub fn run() {
             } else {
                 roaming.clone()
             };
+            // The folders named after the identifier before the rename: what they hold moves
+            // into these, on the first start that finds them (see `rename`). Before anything
+            // reads these folders, and before any web view opens its storage.
+            let identifier = handle.config().identifier.clone();
+            // macOS keeps the web view's own storage (the page's settings) apart.
+            let webkit = cfg!(target_os = "macos")
+                .then(|| handle.path().home_dir().ok())
+                .flatten()
+                .map(|home| home.join("Library").join("WebKit"))
+                .map(|kit| (kit.join(rename::OLD_IDENTIFIER), kit.join(&identifier)));
+            let pairs: Vec<(PathBuf, PathBuf)> = [&config, &roaming, &local]
+                .into_iter()
+                .filter_map(|new| Some((rename::old_folder(new, &identifier)?, new.clone())))
+                .chain(webkit)
+                .collect();
+            let renamed = rename::move_app_folders(&pairs, &config);
+            let mut notice = renamed.notice();
+            // Where a Workspace that could not be moved is used from, after the new folders.
+            let mut older: Vec<PathBuf> = [&roaming, &local]
+                .into_iter()
+                .filter_map(|new| rename::old_folder(new, &identifier))
+                .collect();
+            older.dedup();
             let (data, legacy) = datadir::choose(roaming, local);
             if let Some(old) = &legacy {
                 let moved = datadir::move_workspaces(old, &data);
-                if let Some(notice) = moved.notice(old, &data) {
-                    *handle.state::<AppState>().notice.lock().unwrap() = Some(notice);
-                }
+                notice = notice.or(moved.notice(old, &data));
             }
+            if notice.is_some() {
+                *handle.state::<AppState>().notice.lock().unwrap() = notice;
+            }
+            let legacy: Vec<PathBuf> = legacy.into_iter().chain(older).collect();
             // PDFs handed to the system's viewer are temporary: none outlives a run of the app.
             let cache = handle
                 .path()

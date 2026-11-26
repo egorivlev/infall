@@ -1605,6 +1605,38 @@ print(sorted(name for name in dir(infall) if not name.startswith("_")))
 }
 
 #[test]
+fn code_saved_before_the_rename_still_says_through_qoop_and_finds_qoop_run_dir() {
+    let python = python_or_skip!();
+    let bench = bench(python);
+    // As code a Workspace kept from before the rename may say it: the old module name, the
+    // old variable, a file under the old figure name. The same module under both names.
+    let code = r#"import os, time
+import qoop
+import infall
+qoop.step("old name")
+time.sleep(1.5)
+qoop.progress(2, 4)
+time.sleep(1.5)
+print(qoop is infall, os.environ["QOOP_RUN_DIR"] == os.environ["INFALL_RUN_DIR"])
+try:
+    import qoop as again
+except ImportError:
+    again = None
+print(again is infall)
+"#;
+    let run = bench.run(code);
+    assert_eq!(run.exit, Some(0), "{}", run.output);
+    assert_eq!(run.output, "True True\nTrue\n");
+    assert_eq!(
+        said(&run.stats),
+        [
+            (Some("old name"), None),
+            (Some("old name"), Some((2.0, 4.0))),
+        ]
+    );
+}
+
+#[test]
 fn a_progress_bar_in_the_output_says_how_far_when_infall_was_not_used() {
     let python = python_or_skip!();
     let bench = bench(python);

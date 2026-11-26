@@ -2,11 +2,13 @@
 #
 # Started by the Infall desktop app as
 #     <python> -u -X utf8 runner.py <main.py>
-# with INFALL_RUN_DIR set to the Run's temporary directory. Standard library only; works on
+# with INFALL_RUN_DIR (and, as before the rename, QOOP_RUN_DIR) set to the Run's temporary
+# directory. Standard library only; works on
 # Python 3.8 and newer.
 #
 # It makes a module `infall` importable by the code (infall.step, infall.progress: what the code
 # says it is doing and how far it is, written to infall-progress.json for the app to read),
+# also under its name before the rename, `qoop`, for code saved in a Workspace before it,
 # runs the code as __main__, then saves the matplotlib figures that are still open (only
 # if the code imported matplotlib.pyplot) and writes infall-env.json: the Python version, the
 # versions of the packages the code imports, and the names of the figure files.
@@ -22,6 +24,9 @@ MAX_PACKAGES = 32
 MIN_DPI = 12.0
 ENV_FILE = "infall-env.json"
 SAID_FILE = "infall-progress.json"
+# The names before the rename (docs/specs/desktop.md, "Names before the rename").
+OLD_MODULE = "qoop"
+OLD_RUN_DIR_ENV = "QOOP_RUN_DIR"
 SAID_INTERVAL = 0.2  # seconds between two writes of it: about five a second
 MAX_STEP = 120
 
@@ -507,7 +512,11 @@ def _main():
     import os
 
     main_path = sys.argv[1]
-    run_dir = os.environ.get("INFALL_RUN_DIR") or os.path.dirname(os.path.abspath(main_path))
+    run_dir = (
+        os.environ.get("INFALL_RUN_DIR")
+        or os.environ.get(OLD_RUN_DIR_ENV)
+        or os.path.dirname(os.path.abspath(main_path))
+    )
     try:
         import warnings
 
@@ -519,8 +528,11 @@ def _main():
     flush_said = None
     try:
         sys.modules["infall"], flush_said = _make_infall(run_dir)
+        # The same module under its name before the rename: `import qoop` keeps working.
+        sys.modules[OLD_MODULE] = sys.modules["infall"]
     except BaseException:
         sys.modules.pop("infall", None)
+        sys.modules.pop(OLD_MODULE, None)
 
     source = None
     code = 1

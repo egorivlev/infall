@@ -25,6 +25,10 @@ use crate::exec::read_small_file;
 
 /// The file `infall.step` and `infall.progress` write in the Run's temporary directory.
 pub const SAID_FILE: &str = "infall-progress.json";
+/// Its name before the rename, which code in another language saved before it may still
+/// write: read when the new one is not there (docs/specs/desktop.md, "Names before the
+/// rename").
+pub const OLD_SAID_FILE: &str = "qoop-progress.json";
 /// A step is at most this long. Counted in UTF-16 units, as the kept output is.
 pub const MAX_STEP: usize = 120;
 
@@ -673,6 +677,7 @@ impl Machine {
         let cpu_percent = self.meter.percent(&times, elapsed);
         // The program could have written anything there, or put a link in its place.
         let said = read_small_file(&self.run_dir.join(SAID_FILE), 4096)
+            .or_else(|| read_small_file(&self.run_dir.join(OLD_SAID_FILE), 4096))
             .map(|data| parse_said(&data))
             .unwrap_or_default();
         Some(Usage {
@@ -1442,5 +1447,17 @@ junk line
             .unwrap();
         let usage = machine.sample().expect("a sample");
         assert_eq!((usage.step, usage.progress), (None, None));
+        // The file under its name before the rename is read when the new one is not there.
+        std::fs::remove_file(dir.path().join(SAID_FILE)).unwrap();
+        std::fs::write(
+            dir.path().join(OLD_SAID_FILE),
+            br#"{"step": "old name", "done": 2, "total": 4}"#,
+        )
+        .unwrap();
+        let usage = machine.sample().expect("a sample");
+        assert_eq!(usage.step.as_deref(), Some("old name"));
+        std::fs::write(dir.path().join(SAID_FILE), br#"{"step": "new name"}"#).unwrap();
+        let usage = machine.sample().expect("a sample");
+        assert_eq!(usage.step.as_deref(), Some("new name"));
     }
 }

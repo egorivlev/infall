@@ -56,6 +56,32 @@ pub const NO_USAGE_REPORTS: &[(&str, &str)] = &[
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const ENV_FILE: &str = "infall-env.json";
 
+/// The Run contract's names before the rename (docs/specs/desktop.md, "Names before the
+/// rename"): code saved in a Workspace before it may still use them, so they are honoured
+/// beside the new ones. The variable naming the Run's directory, set under both names.
+pub const RUN_DIR_ENV: &str = "INFALL_RUN_DIR";
+pub const OLD_RUN_DIR_ENV: &str = "QOOP_RUN_DIR";
+/// What a figure file is called, `<prefix>N.png`: the new name first, then the old one.
+const FIGURE_PREFIXES: [&str; 2] = ["infall-figure-", "qoop-figure-"];
+/// The description runner.py writes, under its old name: read when the new one is not there.
+const OLD_ENV_FILE: &str = "qoop-env.json";
+
+/// The figure file numbered `n` the Run left in `dir`: under its new name, else its old one.
+fn figure_file(dir: &Path, n: usize, limit: usize) -> Option<Vec<u8>> {
+    FIGURE_PREFIXES
+        .iter()
+        .find_map(|prefix| read_small_file(&dir.join(format!("{prefix}{n}.png")), limit))
+}
+
+/// Whether `name` is one of the figure files' names (new or old), never a path.
+fn is_figure_name(name: &str) -> bool {
+    (1..=MAX_FIGURES).any(|n| {
+        FIGURE_PREFIXES
+            .iter()
+            .any(|prefix| name == format!("{prefix}{n}.png"))
+    })
+}
+
 /// The character set a Run in another language gets when the Member's environment names no
 /// locale: UTF-8, as the Run's output is read. Without it, R in the "C" locale prints `"α"`
 /// as `"\316\261"`. An app started from the Finder has no `LANG` (Terminal sets it, not the
@@ -263,15 +289,11 @@ fn short_plain(text: &str, max_chars: usize) -> bool {
 }
 
 /// The figures a Run in another language left in its directory: `infall-figure-1.png` to
-/// `-3.png`, real PNG files of at most 120 000 bytes, read without following links.
+/// `-3.png` (or, from code written before the rename, `qoop-figure-1.png` …), real PNG
+/// files of at most 120 000 bytes, read without following links.
 fn collect_figures(dir: &Path) -> Vec<Figure> {
     (1..=MAX_FIGURES)
-        .filter_map(|n| {
-            read_small_file(
-                &dir.join(format!("infall-figure-{n}.png")),
-                MAX_FIGURE_BYTES,
-            )
-        })
+        .filter_map(|n| figure_file(dir, n, MAX_FIGURE_BYTES))
         .filter(|data| data.starts_with(PNG_SIGNATURE))
         .map(|data| Figure {
             png: base64::engine::general_purpose::STANDARD.encode(data),
@@ -289,6 +311,7 @@ fn collect(
     Vec<Figure>,
 ) {
     let Some(info) = read_small_file(&dir.join(ENV_FILE), 64 * 1024)
+        .or_else(|| read_small_file(&dir.join(OLD_ENV_FILE), 64 * 1024))
         .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok())
     else {
         return (None, None, Vec::new());
@@ -322,9 +345,8 @@ fn collect(
             if figures.len() == MAX_FIGURES {
                 break;
             }
-            // Only the names runner.py uses; never a path.
-            let known = (1..=MAX_FIGURES).any(|n| name == format!("infall-figure-{n}.png"));
-            if !known {
+            // Only the names runner.py uses (and used before the rename); never a path.
+            if !is_figure_name(name) {
                 continue;
             }
             if let Some(data) = read_small_file(&dir.join(name), MAX_FIGURE_BYTES)
@@ -410,7 +432,8 @@ impl Exec {
             // Over whatever the login shell says, for every language: a script may start a
             // Python that imports those packages.
             .envs(NO_USAGE_REPORTS.iter().copied())
-            .env("INFALL_RUN_DIR", &dir.path)
+            .env(RUN_DIR_ENV, &dir.path)
+            .env(OLD_RUN_DIR_ENV, &dir.path)
             .stdin(Stdio::null())
             .stdout(writer.try_clone().map_err(|_| NO_FOLDER)?)
             .stderr(writer);
@@ -694,6 +717,43 @@ mod tests {
             .unwrap();
             assert_eq!(collect_figures(d).len(), 1);
         }
+    }
+
+    #[test]
+    fn figures_and_the_description_under_their_names_before_the_rename_are_read_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        // Code saved before the rename writes `qoop-figure-N.png` itself.
+        fs::write(d.join("qoop-figure-1.png"), png(1)).unwrap();
+        fs::write(d.join("infall-figure-2.png"), png(2)).unwrap();
+        fs::write(d.join("qoop-figure-3.png"), png(3)).unwrap();
+        let figures = collect_figures(d);
+        assert_eq!(figures.len(), 3);
+        // Both names for one number: the new one counts, once.
+        fs::write(d.join("infall-figure-1.png"), png(11)).unwrap();
+        let figures = collect_figures(d);
+        assert_eq!(figures.len(), 3);
+        let first = base64::engine::general_purpose::STANDARD
+            .decode(&figures[0].png)
+            .unwrap();
+        assert_eq!(first, png(11));
+
+        // The description under its old name, naming figures by their old names.
+        fs::write(
+            d.join(OLD_ENV_FILE),
+            r#"{"python":"3.11.2","packages":[],"figures":["qoop-figure-1.png","qoop-figure-3.png","qoop-figure-9.png"]}"#,
+        )
+        .unwrap();
+        let (python, _, figures) = collect(d);
+        assert_eq!(python.as_deref(), Some("3.11.2"));
+        assert_eq!(figures.len(), 2);
+        // The new name, when there, is the one read.
+        fs::write(d.join(ENV_FILE), r#"{"python":"3.12.0","figures":[]}"#).unwrap();
+        let (python, _, figures) = collect(d);
+        assert_eq!(python.as_deref(), Some("3.12.0"));
+        assert!(figures.is_empty());
+        assert!(is_figure_name("qoop-figure-2.png") && is_figure_name("infall-figure-2.png"));
+        assert!(!is_figure_name("qoop-figure-4.png") && !is_figure_name("../qoop-figure-1.png"));
     }
 
     #[test]

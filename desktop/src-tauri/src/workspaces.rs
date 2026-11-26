@@ -219,21 +219,22 @@ fn move_to(workspaces: &[Entry], m: &PendingMove) -> bool {
 pub struct Registry {
     config: PathBuf,
     data: PathBuf,
-    /// Where an earlier version kept Local Workspaces' folders, when that is another folder
-    /// (Windows: the roaming one, see `datadir`). A Workspace whose folder could not be moved
-    /// from there is used from there.
-    legacy: Option<PathBuf>,
+    /// Where earlier versions kept Local Workspaces' folders, when those are other folders
+    /// (Windows: the roaming one, see `datadir`; the folders from before the rename, see
+    /// `rename`), in the order they are looked in. A Workspace whose folder could not be
+    /// moved from one is used from there.
+    legacy: Vec<PathBuf>,
 }
 
 impl Registry {
     #[cfg(test)]
     pub fn new(config: PathBuf, data: PathBuf) -> Registry {
-        Registry::with_legacy(config, data, None)
+        Registry::with_legacy(config, data, Vec::new())
     }
 
-    /// As [`Registry::new`], with the data folder of an earlier version: a Local Workspace's
-    /// folder that is there and not in `data` is used from there.
-    pub fn with_legacy(config: PathBuf, data: PathBuf, legacy: Option<PathBuf>) -> Registry {
+    /// As [`Registry::new`], with the data folders of earlier versions: a Local Workspace's
+    /// folder that is in one of them and not in `data` is used from there.
+    pub fn with_legacy(config: PathBuf, data: PathBuf, legacy: Vec<PathBuf>) -> Registry {
         Registry {
             config,
             data,
@@ -657,22 +658,21 @@ impl Registry {
     pub fn local_dir(&self, id: &str) -> PathBuf {
         // Ids are checked when read (`valid_id`), so this stays inside the data directory.
         let here = self.data.join(LOCAL_DIR).join(id);
-        match &self.legacy {
-            Some(old) if !here.exists() => {
-                let there = old.join(LOCAL_DIR).join(id);
-                if there.is_dir() { there } else { here }
-            }
-            _ => here,
+        if here.exists() {
+            return here;
         }
+        self.legacy
+            .iter()
+            .map(|old| old.join(LOCAL_DIR).join(id))
+            .find(|there| there.is_dir())
+            .unwrap_or(here)
     }
 
-    /// Every folder a Local Workspace may have: in the data folder, and in an earlier
-    /// version's (see [`Registry::with_legacy`]).
+    /// Every folder a Local Workspace may have: in the data folder, and in earlier
+    /// versions' (see [`Registry::with_legacy`]).
     fn local_dirs(&self, id: &str) -> Vec<PathBuf> {
         let mut dirs = vec![self.data.join(LOCAL_DIR).join(id)];
-        if let Some(old) = &self.legacy {
-            dirs.push(old.join(LOCAL_DIR).join(id));
-        }
+        dirs.extend(self.legacy.iter().map(|old| old.join(LOCAL_DIR).join(id)));
         dirs
     }
 
@@ -1011,7 +1011,7 @@ mod tests {
         fs::create_dir_all(new_dir.parent().unwrap()).unwrap();
         fs::rename(old.join(LOCAL_DIR).join(&moved.id), &new_dir).unwrap();
 
-        let r = Registry::with_legacy(d.config.clone(), d.data.clone(), Some(old.clone()));
+        let r = Registry::with_legacy(d.config.clone(), d.data.clone(), vec![old.clone()]);
         assert_eq!(r.list().len(), 2, "the list is the same list");
         assert_eq!(
             r.local_dir(&stayed.id),
