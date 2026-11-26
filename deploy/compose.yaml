@@ -3,6 +3,7 @@
 # Settings come from .env next to this file (copy .env.example). Guide: README.md.
 #
 #   docker compose up -d                                   start, or apply a new version
+#   ./update.sh                                            update: deploy files, backup, image
 #   docker compose run --rm server create-admin --email you@example.org --name "Your Name"
 #   docker compose run --rm backup backup                  a Workspace file now
 #   docker compose run --rm backup backup-database         a copy of the whole database now

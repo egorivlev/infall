@@ -22,7 +22,7 @@ Before the server holds anything, do the host checklist in [harden.md](harden.md
 
 ### Steps
 
-1. **Copy this folder onto the host.** You need `compose.yaml`, `.env.example` and `container/Caddyfile`, with the same layout. With git: `git clone YOUR_REPOSITORY_URL infall && cd infall/deploy`. Run every command below from inside this folder.
+1. **Copy this folder onto the host.** You need `compose.yaml`, `.env.example`, `container/Caddyfile` and `update.sh`, with the same layout. With git: `git clone YOUR_REPOSITORY_URL infall && cd infall/deploy`; a git checkout is what lets `update.sh` bring in newer deploy files later. Run every command below from inside this folder. If the image is in a private registry, log Docker in to it once first (for GitHub's: `docker login ghcr.io -u YOUR_GITHUB_NAME`, with a classic token that has `read:packages` as the password).
 
 2. **Write the settings.**
 
@@ -31,7 +31,7 @@ Before the server holds anything, do the host checklist in [harden.md](harden.md
    nano .env
    ```
 
-   Set `INFALL_DOMAIN` to your domain (no `https://`), `INFALL_IMAGE` to the image's name and `INFALL_VERSION` to the version to run. Leave the rest as it is. `.env` is read by `docker compose` only; it holds no password.
+   Set `INFALL_DOMAIN` to your domain (no `https://`) and `INFALL_IMAGE` to the image's name. `INFALL_VERSION=latest` follows the newest release; put a number (`0.9.0`) there instead to stay on one version until you change it. Leave the rest as it is. `.env` is read by `docker compose` only; it holds no password.
 
 3. **Start it.**
 
@@ -151,19 +151,23 @@ Do a test restore of both kinds once now, on your own computer with `INFALL_DOMA
 
 ### Upgrade
 
-1. Make a backup now (`docker compose run --rm backup backup`). The image makes a database copy by itself as well, below.
-2. Set `INFALL_VERSION` in `.env` to the new version.
-3. Start it:
+With `INFALL_VERSION=latest`, one command, from this folder:
 
-   ```sh
-   docker compose pull
-   docker compose up -d
-   docker compose logs server | tail
-   ```
+```sh
+./update.sh
+```
+
+It brings in newer deploy files (`git pull --ff-only`, when this folder is a git checkout; it stops on your own edits to tracked files and never touches `.env`), makes a Workspace file with the version still running, pulls the image, recreates only what changed, and waits until the server is healthy. It prints the version now running at the end. If the server does not come up healthy, it shows the log and stops; go back as below. Without git (a copy of the folder), `./update.sh --no-pull` does the rest.
+
+With a version number in `.env`, set `INFALL_VERSION` to the new number first, then run `./update.sh`.
+
+Run it when a release is announced, while you can look at the result. It is deliberately not on a timer: a new version may migrate the database, and a failed start then needs someone to put it back.
+
+By hand, the same thing is: `docker compose run --rm backup backup`, then `docker compose pull`, `docker compose up -d` and `docker compose logs server | tail`.
 
 Before a different server opens the database, the image makes a database copy into `pre-upgrade/` in the data volume and says so in the log (`copying the database to /data/pre-upgrade/… first`). It keeps the last 3 such copies (`INFALL_UPGRADE_KEEP`). If that copy fails, the server does not start, and nothing has changed.
 
-This one is a database copy on purpose, not a Workspace file: a newer server may migrate the database in place, an older one cannot be relied on to open a migrated file, and an older server also refuses a Workspace file made by a newer one. Only the copy from before the upgrade takes you back. **To go back**, set the old `INFALL_VERSION` again and restore it:
+This one is a database copy on purpose, not a Workspace file: a newer server may migrate the database in place, an older one cannot be relied on to open a migrated file, and an older server also refuses a Workspace file made by a newer one. Only the copy from before the upgrade takes you back. **To go back**, set the old version's number as `INFALL_VERSION` (with `latest`, the copy's name says which version it came from: `…-from-0.9.0-…`) and restore it:
 
 ```sh
 docker compose stop server
@@ -509,7 +513,7 @@ What both routes do:
 - **Invite-only accounts.** There is no sign-up page. Invites work once and expire in 7 days; passwords are stored hashed (Argon2id); repeated wrong logins are rate-limited.
 - **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS, and SSH takes keys only. Caddy is the only way in: on the systemd route Infall listens on `127.0.0.1` only; in the container it is reachable only on the compose network, and only Caddy publishes ports.
 - **Contained service.** Infall runs as an unprivileged user that can write only to its own data folder: in a systemd sandbox, or in a container with a read-only system, no capabilities and `no-new-privileges`.
-- **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves — on the systemd route step 10 and `sudo apt upgrade`; in the container a new `INFALL_VERSION`, and a newer `caddy:2.x` tag in `compose.yaml`).
+- **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves — on the systemd route step 10 and `sudo apt upgrade`; in the container `./update.sh`, which also brings a newer `caddy:2.x` tag once `compose.yaml` names one).
 - **Backups.** On the systemd route encrypted, with the decryption key off the server, plus an off-machine copy if you set one up. In the container a daily Workspace file (the work, no sign-ins), consistent and checked, plus database copies before upgrades and on request; not encrypted, and on the same host until you copy them off.
 - **Few outgoing requests.** The server connects out only for two things, and only when a Member uses them: the AI sidebar's OpenRouter path (once a Member has added a key), and **Look up** in the Source form, which sends one DOI to `api.crossref.org` or one arXiv id to `export.arxiv.org` over HTTPS, with nothing about the Workspace or the person. The firewall of [harden.md](harden.md) allows outgoing connections; if you restrict them, allow HTTPS to those hosts, or those two features say they could not reach them. The full list for Members: [docs/privacy.md](../docs/privacy.md).
 
