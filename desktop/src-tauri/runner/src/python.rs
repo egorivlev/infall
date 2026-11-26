@@ -571,22 +571,32 @@ mod tests {
             "hangs",
             &format!("echo $$ > '{}'; sleep 600 & wait", pid_file.display()),
         );
-        let mut command = Command::new(&hangs);
-        command.arg("--version");
-        let started = Instant::now();
-        let answer = capture(command, Duration::from_millis(400), 4096, true, false);
-        assert!(answer.is_none());
-        assert!(started.elapsed() < Duration::from_secs(5));
-        let pid: i32 = fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        // The script and the `sleep` it started are gone (its group no longer exists).
-        thread::sleep(Duration::from_millis(100));
+        // On a loaded machine the script may not even have written its pid within 400 ms;
+        // then it is tried again with a longer wait, so that the group is always checked.
+        let mut pid = None;
+        for wait in [Duration::from_millis(400), Duration::from_secs(3)] {
+            let mut command = Command::new(&hangs);
+            command.arg("--version");
+            let started = Instant::now();
+            let answer = capture(command, wait, 4096, true, false);
+            assert!(answer.is_none());
+            assert!(started.elapsed() < wait + Duration::from_secs(5));
+            pid = fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|text| text.trim().parse::<i32>().ok());
+            if pid.is_some() {
+                break;
+            }
+        }
+        let pid = pid.expect("the script never started within three seconds");
+        // The script and the `sleep` it started are gone (its group no longer exists). They
+        // were killed; how soon the system has collected them depends on its load.
+        let gone_by = Instant::now() + Duration::from_secs(5);
         // SAFETY: signal 0 only asks whether the group exists.
-        let alive = unsafe { libc::kill(-pid, 0) } == 0;
-        assert!(!alive, "the process group survived");
+        while unsafe { libc::kill(-pid, 0) } == 0 {
+            assert!(Instant::now() < gone_by, "the process group survived");
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]

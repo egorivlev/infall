@@ -64,11 +64,14 @@ def _exit_code(error):
     return 1
 
 
-def _report(error):
+def _report(error, inherited_hook):
     """Prints the traceback of an exception the program did not catch, without this file's
     own frames. Through the program's own excepthook if it set one; otherwise with the
     traceback module, which shows the code's lines from what was really executed (the
-    interpreter's built-in printer would look for a file called main.py instead)."""
+    interpreter's built-in printer would look for a file called main.py instead).
+    `inherited_hook` is the excepthook before the code ran: one the interpreter's start set
+    (Ubuntu's python3 sets apport's in sitecustomize, which hands over to the built-in
+    printer) is not the program's own."""
     tb = error.__traceback__
     while tb is not None and tb.tb_frame.f_code.co_filename == __file__:
         tb = tb.tb_next
@@ -76,7 +79,7 @@ def _report(error):
         error = error.with_traceback(tb)
     except BaseException:
         pass
-    if sys.excepthook is not sys.__excepthook__:
+    if sys.excepthook is not sys.__excepthook__ and sys.excepthook is not inherited_hook:
         try:
             sys.excepthook(type(error), error, tb)
             return
@@ -116,6 +119,7 @@ def _run(main_path):
     # As for any script: the working directory first on the import path, not this file's.
     sys.path[0] = os.getcwd()
 
+    inherited_hook = sys.excepthook
     try:
         code = compile(source, "main.py", "exec", dont_inherit=True)
         exec(code, module.__dict__)
@@ -130,7 +134,7 @@ def _run(main_path):
                     error.text = lines[error.lineno - 1] + "\n"
         except BaseException:
             pass
-        _report(error)
+        _report(error, inherited_hook)
         missing = _missing_package(error)
         if missing is not None:
             _note("This environment has no package %s." % missing)

@@ -286,12 +286,15 @@ pub fn chrome_scale(scale: f64) -> Result<f64, String> {
 
 /// x of the traffic lights for tao: the close button's left edge, 12pt in (its circle 13pt),
 /// at every scale: the room the top bar leaves for them never shrinks below that.
+/// Only macOS has traffic lights; elsewhere these two are used by the tests alone.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const TRAFFIC_LIGHT_X: f64 = 12.0;
 
 /// y of the traffic lights for tao (`traffic_light_position`) at an interface `scale`: their
 /// centre lands at y − 2 from the window's top (see the comment in `shell::open_main`), and
 /// must be the centre of the top bar's first row, 36px × scale tall: 18 × scale. 20 at 100 %.
 /// A scale out of range is taken as `chrome_scale` takes it; an unusable one as 100 %.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn traffic_light_y(scale: f64) -> f64 {
     18.0 * chrome_scale(scale).unwrap_or(1.0) + 2.0
 }
@@ -729,6 +732,9 @@ mod tests {
         // The page gets nothing new for it: `infallDesktop`'s members are those of M13, M18's
         // binary save and move (see `the_script_offers_moves_and_binary_saves`), M19's PDFs
         // and the fullscreen state (`the_script_tells_the_page_about_fullscreen_and_only_that`).
+        // Compared line by line: a checkout with CRLF line endings (Git for Windows'
+        // `core.autocrlf`) puts `\r\n` into bridge.js, and so into `include_str!`.
+        let js = js.replace("\r\n", "\n");
         assert!(js.contains(
             "version: VERSION,\n      claude: claude,\n      runner: runner,\n      \
              switchWorkspace: switchWorkspace,\n      saveFile: saveFile,\n      \
