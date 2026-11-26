@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security problem
+    url: https://github.com/egorivlev/infall/security/advisories/new
+    about: Report it privately here, not as an issue. SECURITY.md says what counts and what happens next.

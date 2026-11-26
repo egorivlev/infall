@@ -1,0 +1,33 @@
+name: An idea for Infall
+description: Something Infall could do that would help your research.
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Infall is built around research work, so the most useful idea starts from a task you have, not from a button you would like. The words Infall uses (Board, Card, Frame, Connection, Page, Source, Run, Branch, Merge, History) are explained in [CONTEXT.md](https://github.com/egorivlev/infall/blob/main/CONTEXT.md). Things already decided for after 1.0, or left out, are in [the plan](https://github.com/egorivlev/infall/blob/main/docs/plans/2026-11-24-road-to-1.0.md).
+  - type: textarea
+    id: task
+    attributes:
+      label: The research task
+      description: What are you trying to do in your research when Infall gets in the way or falls short? Who is doing it (alone, a lab, a class)?
+      placeholder: "I keep a reading list of 200 papers for a review and need to see which ones support a claim on the Board..."
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today
+      description: In Infall, in another tool, or by hand. What is slow or easy to get wrong about it?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: Optional. A sketch of how it could work, if you have one.
+  - type: input
+    id: version
+    attributes:
+      label: Infall version you use
+      placeholder: "0.9.0"

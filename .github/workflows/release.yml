@@ -1,0 +1,134 @@
+# A release, on a tag v<version> (for example v0.9.0):
+#
+#   check      the tag, desktop/src-tauri/Cargo.toml, tauri.conf.json and crates/server/Cargo.toml
+#              name the same version, and CHANGELOG.md has a section for it
+#   packages   the installers for macOS (arm64, x64), Windows (x64) and Ubuntu (amd64, arm64),
+#              built by package.yml exactly as on every push
+#   release    SHA256SUMS of every file, and a draft GitHub Release with the files and notes made
+#              of the CHANGELOG section plus .github/release-notes-unsigned.md
+#
+# The release is left as a draft: a person runs the hand checks of docs/specs/release.md,
+# section 8, and then presses Publish. The container image is built by image.yml on the same tag.
+# Nothing is signed by Apple or Microsoft, and the apps have no updater. Only GITHUB_TOKEN is used.
+# To try again after a failure, re-run the failed jobs of the tag's run (a draft that exists is
+# updated, its files replaced).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Version and changelog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag and the code name the same version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in v[0-9]*) ;; *) echo "::error::$TAG is not a version tag (v1.2.3)"; exit 1 ;; esac
+          version="${TAG#v}"
+          package_version() {
+            awk '/^\[/ { p = ($0 == "[package]") } p && /^version[[:space:]]*=/ { gsub(/[" ]/, ""); sub(/^version=/, ""); print; exit }' "$1"
+          }
+          desktop="$(package_version desktop/src-tauri/Cargo.toml)"
+          server="$(package_version crates/server/Cargo.toml)"
+          conf="$(python3 -c 'import json; print(json.load(open("desktop/src-tauri/tauri.conf.json"))["version"])')"
+          echo "tag $version, desktop $desktop, tauri.conf.json $conf, server $server"
+          for v in "$desktop" "$conf" "$server"; do
+            [ "$v" = "$version" ] || { echo "::error::the tag says $version but the code says $desktop (desktop), $conf (tauri.conf.json), $server (server); bump the version first"; exit 1; }
+          done
+          { echo "tag=$TAG"; echo "version=$version"; } >>"$GITHUB_OUTPUT"
+      - name: CHANGELOG.md has a section for it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v v="$VERSION" -f .github/changelog-section.awk CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::CHANGELOG.md has no '## [$VERSION]' section"; exit 1; }
+          cat notes.md
+
+  packages:
+    name: Packages
+    needs: check
+    uses: ./.github/workflows/package.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Draft the GitHub Release
+    needs: [check, packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          pattern: infall-*
+          merge-multiple: true
+      - name: Checksums
+        working-directory: release
+        run: |
+          ls -l
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+        run: |
+          image="ghcr.io/${OWNER,,}/infall"
+          base="https://github.com/$REPO/blob/$TAG"
+          {
+            # Links in CHANGELOG.md are relative to the repository; in a release they must not be.
+            awk -v v="$VERSION" -f .github/changelog-section.awk CHANGELOG.md \
+              | sed -E -e "s|\]\((#[^)]*)\)|]($base/CHANGELOG.md\1)|g" \
+                       -e "s|\]\(([^)#h][^):]*)\)|]($base/\1)|g"
+            echo
+            sed -e "s|{version}|$VERSION|g" -e "s|{tag}|$TAG|g" -e "s|{image}|$image|g" -e "s|{repo}|$REPO|g" \
+              .github/release-notes-unsigned.md
+            echo
+            echo '```'
+            cat release/SHA256SUMS
+            echo '```'
+          } > notes.md
+          cat notes.md
+      - name: Draft the release (or update the draft)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          # Before 1.0, and for a tag like v1.2.0-rc.1, the release is marked as a pre-release.
+          pre=()
+          case "$VERSION" in 0.* | *-*) pre=(--prerelease) ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+            gh release upload "$TAG" --clobber release/*
+          else
+            gh release create "$TAG" --draft --verify-tag "${pre[@]}" \
+              --title "Infall $VERSION" --notes-file notes.md release/*
+          fi

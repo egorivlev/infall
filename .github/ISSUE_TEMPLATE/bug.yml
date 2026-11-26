@@ -1,0 +1,74 @@
+name: Something does not work
+description: Infall did something wrong, refused something it should do, or would not start.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for writing this down. A security problem (someone could read, change or run something they should not) does not belong here: report it privately, as [SECURITY.md](https://github.com/egorivlev/infall/blob/main/SECURITY.md) says.
+
+        Please leave out anything private: research you have not published, names, server addresses, access tokens, keys.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it happened
+      options:
+        - Desktop app, Local Workspace
+        - Desktop app, Team Workspace
+        - Browser, Team Workspace
+        - Team server (container)
+        - Team server (systemd)
+        - Building from source
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Infall version
+      description: "Desktop app: the version in the app menu (About Infall) or the file name you installed. Team server: the image's version (`INFALL_VERSION` in `deploy/.env`; for `latest`, `docker compose images server`). From source: the commit (`git rev-parse --short HEAD`)."
+      placeholder: "0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The operating system, its version, and the processor; for a browser, which one and its version.
+      placeholder: "macOS 26.1, Apple silicon / Windows 11 24H2, x64 / Ubuntu 24.04, amd64 / Firefox 140"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: The steps, one per line, from a point someone else can start from.
+      placeholder: |
+        1. Open a Local Workspace
+        2. Drag a Card into a Frame
+        3. Press Cmd+Z
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: The exact words of any message are the most useful part. A screenshot helps if nothing private is on it.
+    validations:
+      required: true
+  - type: dropdown
+    id: tutorial
+    attributes:
+      label: Does it happen in a new Tutorial Workspace too?
+      description: In the desktop app, choose Tutorial under Create a workspace on the start screen and try the same steps there. That tells us whether it depends on your content.
+      options:
+        - "Yes, the same in a new Tutorial Workspace"
+        - "No, only in my own Workspace"
+        - "I could not try (browser, Team server, or the app does not start)"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Anything else
+      description: "Output from a terminal if you started Infall from one, the server's log (`docker compose logs server`), or what you already tried."
+      render: text
