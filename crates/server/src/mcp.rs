@@ -12,7 +12,7 @@ use axum::extract::{Request, State};
 use axum::http::header::{ALLOW, CONTENT_TYPE, ORIGIN, WWW_AUTHENTICATE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use qoop_core::{Board, BranchId, MemberId, Workspace};
+use infall_core::{Board, BranchId, MemberId, Workspace};
 use serde_json::{Map, Value, json};
 
 use crate::app::{BODY_LIMIT, Shared, blocking};
@@ -205,7 +205,7 @@ fn initialize(params: Option<&Value>) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "qoop", "version": env!("CARGO_PKG_VERSION") },
+        "serverInfo": { "name": "infall", "version": env!("CARGO_PKG_VERSION") },
         "instructions": INSTRUCTIONS,
     })
 }

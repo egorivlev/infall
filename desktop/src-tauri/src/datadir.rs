@@ -1,8 +1,8 @@
 //! Where Local Workspaces' files live (docs/specs/desktop.md, "Where things are kept").
 //!
 //! On Windows they live, since 0.9.0, in the app's **local** data folder
-//! (`%LOCALAPPDATA%\app.qoop.desktop\`), not the roaming one where earlier versions kept them
-//! (`%APPDATA%\app.qoop.desktop\`): a roaming profile copies its folder to a server at every
+//! (`%LOCALAPPDATA%\app.infall.desktop\`), not the roaming one where earlier versions kept them
+//! (`%APPDATA%\app.infall.desktop\`): a roaming profile copies its folder to a server at every
 //! sign-in and sign-out, which a database of hundreds of megabytes must not go through. The
 //! list of Workspaces and the Runner's settings stay in the config folder, which is the
 //! roaming one, as before. macOS and Linux are unchanged: one data folder, nothing to move.
@@ -274,8 +274,8 @@ mod tests {
 
     fn roots() -> Roots {
         let tmp = tempfile::tempdir().unwrap();
-        let old = tmp.path().join("Roaming").join("app.qoop.desktop");
-        let new = tmp.path().join("Local").join("app.qoop.desktop");
+        let old = tmp.path().join("Roaming").join("app.infall.desktop");
+        let new = tmp.path().join("Local").join("app.infall.desktop");
         fs::create_dir_all(&old).unwrap();
         Roots {
             _tmp: tmp,

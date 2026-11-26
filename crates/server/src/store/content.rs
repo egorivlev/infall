@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use qoop_core::{
+use infall_core::{
     BatchId, Branch, BranchId, BranchParts, Change, ChangeId, Checkpoint, MemberId, Moment, Op,
     Origin, SyncPoint, Workspace,
 };
@@ -530,7 +530,7 @@ fn save_sync_points(conn: &Connection, branch: &str, list: &[SyncPoint]) -> Stor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qoop_core::{Decision, Decisions, EntityId, EntityKind, Fields, Value};
+    use infall_core::{Decision, Decisions, EntityId, EntityKind, Fields, Value};
 
     fn tables() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

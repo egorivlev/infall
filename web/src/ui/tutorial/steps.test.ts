@@ -17,7 +17,7 @@ const ids = (steps: { id: string }[]) => steps.map((s) => s.id)
 
 afterEach(() => {
   aiPanel.close()
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
 })
 
 describe('the steps', () => {
@@ -79,7 +79,7 @@ describe('the steps', () => {
 
   it('knows the desktop app by its bridge', () => {
     expect(inDesktopApp()).toBe(false)
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = {}
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = {}
     expect(inDesktopApp()).toBe(true)
   })
 

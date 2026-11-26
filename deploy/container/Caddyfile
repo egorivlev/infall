@@ -15,7 +15,7 @@
 	header @public Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	# Refuse oversized request bodies here, before they reach the server. These are the
-	# server's own limits: a Workspace file brought onto an empty server (QOOP_MAX_IMPORT_MB,
+	# server's own limits: a Workspace file brought onto an empty server (INFALL_MAX_IMPORT_MB,
 	# 512 by default; compose.yaml passes the same value to both), 2 MiB on the route that
 	# carries the captured result of a Run, 1 MiB everywhere else. ("MiB": Caddy's "MB" is
 	# 1000-based and a little smaller.)

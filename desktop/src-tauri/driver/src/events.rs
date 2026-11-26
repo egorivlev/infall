@@ -14,7 +14,7 @@ use serde_json::Value;
 pub enum AiEvent {
     /// More of the answer.
     Delta { text: String },
-    /// The model is calling a Qoop tool; the bare tool name (`list_cards`, not `mcp__qoop__list_cards`).
+    /// The model is calling a Infall tool; the bare tool name (`list_cards`, not `mcp__infall__list_cards`).
     Tool { name: String },
     /// The run is complete.
     Done {
@@ -35,8 +35,8 @@ impl AiEvent {
     }
 }
 
-/// The prefix Claude Code gives the tools of the MCP server named `qoop`.
-pub const TOOL_PREFIX: &str = "mcp__qoop__";
+/// The prefix Claude Code gives the tools of the MCP server named `infall`.
+pub const TOOL_PREFIX: &str = "mcp__infall__";
 
 const MAX_ERROR_CHARS: usize = 400;
 
@@ -314,9 +314,9 @@ mod tests {
             json!({"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}),
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me "}}}),
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"look."}}}),
-            json!({"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"t1","name":"mcp__qoop__list_cards","input":{}}}}),
+            json!({"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"t1","name":"mcp__infall__list_cards","input":{}}}}),
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}}),
-            json!({"type":"assistant","message":{"model":"claude-x","content":[{"type":"text","text":"Let me look."},{"type":"tool_use","name":"mcp__qoop__list_cards"}]}}),
+            json!({"type":"assistant","message":{"model":"claude-x","content":[{"type":"text","text":"Let me look."},{"type":"tool_use","name":"mcp__infall__list_cards"}]}}),
             json!({"type":"user","message":{"content":[{"type":"tool_result","content":"[]"}]}}),
             json!({"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}),
             json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Nothing yet."}}}),
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn without_partials_complete_messages_are_used() {
         let events = feed_all(&[
-            json!({"type":"assistant","session_id":"s-2","message":{"model":"m","content":[{"type":"text","text":"One."},{"type":"tool_use","name":"mcp__qoop__get_card"}]}}),
+            json!({"type":"assistant","session_id":"s-2","message":{"model":"m","content":[{"type":"text","text":"One."},{"type":"tool_use","name":"mcp__infall__get_card"}]}}),
             json!({"type":"assistant","message":{"content":[{"type":"text","text":"Two."}]}}),
             json!({"type":"result","subtype":"success","result":"Two."}),
         ]);

@@ -429,7 +429,7 @@ function ChangeName({ member }: { member: Member }) {
 }
 
 function desktopVersion(): string | null {
-  const desk = (globalThis as { qoopDesktop?: { version?: unknown } }).qoopDesktop
+  const desk = (globalThis as { infallDesktop?: { version?: unknown } }).infallDesktop
   return typeof desk === 'object' && desk !== null && typeof desk.version === 'string' && desk.version ? desk.version : null
 }
 

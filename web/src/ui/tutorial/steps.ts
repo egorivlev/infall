@@ -25,13 +25,13 @@ export type TourStep = {
 
 /**
  * Who takes the tour, and where. `local`: a Local Workspace, which has no Members screen. `startScreen`: the desktop
- * app can go back to its start screen (`window.qoopDesktop.switchWorkspace`), where a Tutorial Workspace is made.
+ * app can go back to its start screen (`window.infallDesktop.switchWorkspace`), where a Tutorial Workspace is made.
  */
 export type TourAudience = { role: Role; desktop: boolean; local?: boolean; startScreen?: boolean }
 
 /** True inside the desktop app, which is known by the bridge it puts on the page (as in lib/runs and windowChrome). */
 export function inDesktopApp(): boolean {
-  const desktop = (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: unknown }).infallDesktop
   return typeof desktop === 'object' && desktop !== null
 }
 

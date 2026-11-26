@@ -1136,7 +1136,7 @@ mod tests {
         let r = registry(&d);
         let a = r.create_local("tutorial", None).unwrap();
         let b = r.create_local("blank", None).unwrap();
-        let team = r.remember_team("https://qoop.example.org").unwrap();
+        let team = r.remember_team("https://infall.example.org").unwrap();
         let pa = a.port.expect("a port is chosen when the Workspace is made");
         let pb = b.port.unwrap();
         assert_ne!(pa, pb);
@@ -1158,7 +1158,7 @@ mod tests {
             {"id":"first","kind":"local","name":"First","preset":"blank","address":null,"lastOpened":null,"port":25000},
             {"id":"second","kind":"local","name":"Second","preset":"blank","address":null,"lastOpened":null,"port":25000},
             {"id":"low","kind":"local","name":"Low","preset":"blank","address":null,"lastOpened":null,"port":80},
-            {"id":"team","kind":"team","name":"T","preset":null,"address":"https://qoop.example.org","lastOpened":null,"port":26000}
+            {"id":"team","kind":"team","name":"T","preset":null,"address":"https://infall.example.org","lastOpened":null,"port":26000}
         ]}"#;
         fs::write(d.config.join("workspaces.json"), text).unwrap();
         let r = registry(&d);
@@ -1197,24 +1197,24 @@ mod tests {
         let d = dirs();
         let r = registry(&d);
         let local = r.create_local("tutorial", None).unwrap();
-        let team = r.remember_team("https://qoop.example.org").unwrap();
+        let team = r.remember_team("https://infall.example.org").unwrap();
         assert_eq!(local.approvals_key(), format!("local:{}", local.id));
         assert_eq!(local.approvals_name(), "Tutorial (on this computer)");
         // A Team Workspace keeps the key approvals had before: its origin.
-        assert_eq!(team.approvals_key(), "https://qoop.example.org");
-        assert_eq!(team.approvals_name(), "https://qoop.example.org");
+        assert_eq!(team.approvals_key(), "https://infall.example.org");
+        assert_eq!(team.approvals_name(), "https://infall.example.org");
     }
 
     #[test]
     fn team_workspaces_are_remembered_once_by_address() {
         let d = dirs();
         let r = registry(&d);
-        let a = r.remember_team("https://qoop.example.org/").unwrap();
+        let a = r.remember_team("https://infall.example.org/").unwrap();
         assert_eq!(a.kind, Kind::Team);
-        assert_eq!(a.name, "qoop.example.org");
-        assert_eq!(a.address.as_deref(), Some("https://qoop.example.org"));
+        assert_eq!(a.name, "infall.example.org");
+        assert_eq!(a.address.as_deref(), Some("https://infall.example.org"));
         assert_eq!(a.preset, None);
-        let again = r.remember_team("HTTPS://qoop.example.org").unwrap();
+        let again = r.remember_team("HTTPS://infall.example.org").unwrap();
         assert_eq!(again.id, a.id);
         let local = r.remember_team("http://localhost:8787").unwrap();
         assert_eq!(local.name, "localhost:8787");
@@ -1227,7 +1227,7 @@ mod tests {
         let d = dirs();
         let r = registry(&d);
         let local = r.create_local("blank", None).unwrap();
-        let team = r.remember_team("https://qoop.example.org").unwrap();
+        let team = r.remember_team("https://infall.example.org").unwrap();
         assert_eq!(local.last_backup, None);
         r.set_last_backup(&local.id, Some(1_795_532_645_000))
             .unwrap();
@@ -1256,7 +1256,7 @@ mod tests {
             d.config.join("workspaces.json"),
             r#"{"workspaces":[
                 {"id":"a","kind":"local","name":"A","preset":"blank","address":null,"lastOpened":null,"lastBackup":-3},
-                {"id":"b","kind":"team","name":"B","preset":null,"address":"https://qoop.example.org","lastOpened":null,"lastBackup":9},
+                {"id":"b","kind":"team","name":"B","preset":null,"address":"https://infall.example.org","lastOpened":null,"lastBackup":9},
                 {"id":"c","kind":"local","name":"C","preset":"blank","address":null,"lastOpened":null,"lastBackup":"soon"}
             ]}"#,
         )
@@ -1381,7 +1381,7 @@ mod tests {
         }
         // The server keeps its secret key beside the database: inside the directory that
         // removing deletes.
-        let key = qoop_server::local::secret_key_path(&db);
+        let key = infall_server::local::secret_key_path(&db);
         assert_eq!(key.parent(), db.parent());
         fs::write(&key, "x").unwrap();
         // Its backups go with it.
@@ -1405,7 +1405,7 @@ mod tests {
         let d = dirs();
         let r = registry(&d);
         let local = r.create_local("blank", None).unwrap();
-        let team = r.remember_team("https://qoop.example.org").unwrap();
+        let team = r.remember_team("https://infall.example.org").unwrap();
         r.remove(&team.id).unwrap();
         assert_eq!(r.list().len(), 1);
         assert!(r.db_path(&local.id).parent().unwrap().is_dir());
@@ -1437,14 +1437,17 @@ mod tests {
         fs::create_dir_all(&d.config).unwrap();
         fs::write(
             d.config.join("config.json"),
-            r#"{"server":"https://qoop.example.org"}"#,
+            r#"{"server":"https://infall.example.org"}"#,
         )
         .unwrap();
         let list = registry(&d).list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].kind, Kind::Team);
-        assert_eq!(list[0].address.as_deref(), Some("https://qoop.example.org"));
-        assert_eq!(list[0].name, "qoop.example.org");
+        assert_eq!(
+            list[0].address.as_deref(),
+            Some("https://infall.example.org")
+        );
+        assert_eq!(list[0].name, "infall.example.org");
         // Kept: the same id every time, and removing it does not bring it back.
         assert!(d.config.join("workspaces.json").exists());
         let id = list[0].id.clone();
@@ -1477,7 +1480,7 @@ mod tests {
             {"id":"odd-preset","kind":"local","name":"Odd","preset":"chess","address":"https://x.example","lastOpened":-4},
             {"id":"bad-team","kind":"team","name":"Evil","preset":null,"address":"http://evil.example","lastOpened":null},
             {"id":"no-address","kind":"team","name":"None","preset":null,"address":null,"lastOpened":null},
-            {"id":"team","kind":"team","name":"Team","preset":"blank","address":"https://qoop.example.org/","lastOpened":1},
+            {"id":"team","kind":"team","name":"Team","preset":"blank","address":"https://infall.example.org/","lastOpened":1},
             {"id":"strange","kind":"cloud","name":"Cloud"},
             42,
             "text"
@@ -1490,7 +1493,10 @@ mod tests {
         let ids: Vec<_> = list.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, ["good", "team", "odd-preset"]);
         assert_eq!(list[0].name, "Kept");
-        assert_eq!(list[1].address.as_deref(), Some("https://qoop.example.org"));
+        assert_eq!(
+            list[1].address.as_deref(),
+            Some("https://infall.example.org")
+        );
         assert_eq!(list[1].preset, None);
         assert_eq!(list[2].preset, None);
         assert_eq!(list[2].address, None);

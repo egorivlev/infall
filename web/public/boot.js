@@ -30,7 +30,7 @@ try {
 // told now, before the app has loaded (ui/settings/apply.ts, useAppliedPrefs, tells it again). Last, so that a bridge
 // that throws spoils nothing above.
 try {
-  var desk = window.qoopDesktop
+  var desk = window.infallDesktop
   if (s && s.v === 1 && [80, 90, 100, 110, 125, 150].indexOf(s.interfaceScale) >= 0 && desk && typeof desk.chromeScale === 'function') {
     var sent = desk.chromeScale(s.interfaceScale / 100)
     if (sent && typeof sent.catch === 'function') sent.catch(function () {})

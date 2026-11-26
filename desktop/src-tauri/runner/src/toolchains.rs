@@ -285,7 +285,7 @@ pub fn check_program(typed: &str) -> Result<String, String> {
     if path.is_dir() {
         return Err("That is a folder. Enter the path of the program itself.".into());
     }
-    if !qoop_proc::is_executable_file(path) {
+    if !infall_proc::is_executable_file(path) {
         return Err("There is no program at that path.".into());
     }
     Ok(typed.to_owned())
@@ -392,7 +392,7 @@ pub fn find_programs(preset: &Preset, env: &EnvVars) -> Vec<FoundProgram> {
     for dir in search_dirs(env) {
         for name in names {
             let candidate = dir.join(name);
-            if !qoop_proc::is_executable_file(&candidate) || is_wsl_launcher(&candidate, env) {
+            if !infall_proc::is_executable_file(&candidate) || is_wsl_launcher(&candidate, env) {
                 continue;
             }
             let real = candidate

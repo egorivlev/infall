@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 #[test]
 fn create_then_set_changes_one_field() {

@@ -119,7 +119,7 @@ struct World {
 }
 
 async fn world() -> World {
-    let app = TestApp::with_store(Arc::new(qoop_server::store::MemoryStore::new()));
+    let app = TestApp::with_store(Arc::new(infall_server::store::MemoryStore::new()));
     let admin = app.admin().await;
     let bea = app.join(&admin, "bea@example.org", "member", None).await;
     let cal = app.join(&admin, "cal@example.org", "member", None).await;

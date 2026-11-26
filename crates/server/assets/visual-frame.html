@@ -22,7 +22,7 @@
   // source cannot change its text.
   var REPORTER = '<script>(function(){' +
     'var p=window.parent,d=document.documentElement,last=-1;' +
-    'function post(m){m.qoop="visual";p.postMessage(m,"*")}' +
+    'function post(m){m.infall="visual";p.postMessage(m,"*")}' +
     'function height(){var h=Math.ceil(d.getBoundingClientRect().height);' +
     'if(h!==last){last=h;post({type:"height",value:h})}}' +
     'function fail(m){var s;try{s=String(m)}catch(e){s="Error"}' +
@@ -60,7 +60,7 @@
     if (rendered || event.source !== host) return;
     var data = event.data;
     if (!data || typeof data !== "object") return;
-    if (data.qoop !== "visual" || data.type !== "render") return;
+    if (data.infall !== "visual" || data.type !== "render") return;
     if (typeof data.html !== "string") return;
     rendered = true;
     window.removeEventListener("message", onMessage);
@@ -72,7 +72,7 @@
   }
 
   function ready() {
-    host.postMessage({ qoop: "visual", type: "ready" }, "*");
+    host.postMessage({ infall: "visual", type: "ready" }, "*");
   }
 
   window.addEventListener("message", onMessage);

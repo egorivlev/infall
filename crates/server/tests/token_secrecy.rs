@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
 use common::*;
-use qoop_server::store::SqliteStore;
+use infall_server::store::SqliteStore;
 use serde_json::json;
 
 #[derive(Clone, Default)]
@@ -36,7 +36,7 @@ async fn the_secret_never_reaches_the_logs() {
         .init();
 
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let app = TestApp::with_store(Arc::new(SqliteStore::open(&path).unwrap()));
     let admin = app.admin().await;
     let main = app.main_branch(&admin).await;
@@ -45,8 +45,8 @@ async fn the_secret_never_reaches_the_logs() {
         .await;
 
     let secret = app.access_token(&admin, "logged?").await;
-    let tail = secret.strip_prefix("qoop_pat_").unwrap().to_string();
-    let wrong = format!("qoop_pat_{}", "W".repeat(43));
+    let tail = secret.strip_prefix("infall_pat_").unwrap().to_string();
+    let wrong = format!("infall_pat_{}", "W".repeat(43));
 
     // Use it every way there is: well, badly, in the wrong place, and into faults.
     app.rpc(&secret, "initialize", json!({})).await;
@@ -55,7 +55,7 @@ async fn the_secret_never_reaches_the_logs() {
         .await;
     app.mcp_raw(Some(&secret), "{broken".into()).await;
     app.rpc(&wrong, "ping", json!({})).await;
-    app.get("/api/me", Some(&format!("qoop_session={secret}")))
+    app.get("/api/me", Some(&format!("infall_session={secret}")))
         .await;
     for _ in 0..125 {
         app.rpc(&secret, "ping", json!({})).await;
@@ -93,6 +93,6 @@ async fn the_secret_never_reaches_the_logs() {
     assert!(logs.contains("access token created"), "{logs}");
     // ...and no log line holds a secret, sent rightly or wrongly.
     assert!(!logs.contains(&tail), "the secret was logged");
-    assert!(!logs.contains("qoop_pat_"), "a bearer value was logged");
+    assert!(!logs.contains("infall_pat_"), "a bearer value was logged");
     assert!(!logs.contains(&"W".repeat(43)));
 }

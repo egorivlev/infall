@@ -15,9 +15,9 @@ import { fileName } from '../../page/files'
 import type { Saved } from '../../page/files'
 import { toasts } from '../toastStore'
 
-/** Whether this page runs inside the desktop app (which has `window.qoopDesktop`). */
+/** Whether this page runs inside the desktop app (which has `window.infallDesktop`). */
 export function inDesktopApp(): boolean {
-  const d = (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  const d = (globalThis as { infallDesktop?: unknown }).infallDesktop
   return typeof d === 'object' && d !== null
 }
 

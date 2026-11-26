@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use qoop_core::{
+use infall_core::{
     Board, BranchId, Decision, Decisions, EntityId, EntityKind, Fields, MemberId, Op, Value,
     Workspace,
 };
@@ -1481,7 +1481,7 @@ pub async fn measure(
             .post(format!("{origin}/api/branches/{main}/ops"))
             .header(reqwest::header::COOKIE, &cookie)
             .header(reqwest::header::ORIGIN, &origin)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .json(&ops)
             .send()
             .await

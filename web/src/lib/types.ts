@@ -1,4 +1,4 @@
-// Wire types shared with qoop-server. Source of truth: docs/specs/api.md.
+// Wire types shared with infall-server. Source of truth: docs/specs/api.md.
 // `erasableSyntaxOnly` is on: no enums, no parameter properties.
 
 export type Role = 'admin' | 'member' | 'guest'
@@ -318,8 +318,8 @@ export type AiEvent =
   | { type: 'done'; model?: string; session?: string }
   | { type: 'error'; message: string }
 
-/** The bridge the desktop app puts on `window.qoopDesktop` (docs/specs/desktop.md). Absent in a browser. */
-export type QoopDesktop = {
+/** The bridge the desktop app puts on `window.infallDesktop` (docs/specs/desktop.md). Absent in a browser. */
+export type InfallDesktop = {
   version: string
   claude: {
     status(): Promise<{ installed: boolean; version?: string }>
@@ -329,7 +329,7 @@ export type QoopDesktop = {
     ): Promise<void>
     cancel(id: string): Promise<void>
   }
-  runner?: QoopRunner // M8; absent in an older app
+  runner?: InfallRunner // M8; absent in an older app
   /** M12: stops what is running, closes this window and shows the start screen. Absent in an older app: check before calling. */
   switchWorkspace?: () => Promise<void>
   /** M13: the system's save dialog, then the text written as UTF-8 (at most 20 MB); false when cancelled. Absent in an older app. */
@@ -391,7 +391,7 @@ export type AiMessage = {
   at: number
   status: 'done' | 'streaming' | 'error' | 'stopped'
   error?: string // plain sentence when status is 'error'
-  tools?: string[] // names of Qoop tools the AI used in this answer, in order
+  tools?: string[] // names of Infall tools the AI used in this answer, in order
   model?: string // what answered (assistant messages)
   scope?: AiScope // what the Member was looking at when they asked (user messages)
   pinned?: { card: string; cardTitle: string; block: string }[] // where this answer was pinned
@@ -475,11 +475,11 @@ export type RunStats = RunUsage & {
 export type RunnerLanguage = { name: string; version?: string }
 
 /**
- * `window.qoopDesktop.runner` (docs/specs/desktop.md, M8; "Environments and Toolchains — as built"). `start`,
+ * `window.infallDesktop.runner` (docs/specs/desktop.md, M8; "Environments and Toolchains — as built"). `start`,
  * `languages` and `environments` exist only in an app from M19b on; `run` executes Python in the default environment
  * and nothing else.
  */
-export type QoopRunner = {
+export type InfallRunner = {
   status(): Promise<{ python?: { path: string; version: string }; folder?: string; languages?: Record<string, RunnerLanguage>; environments?: string[] }>
   configure(lang?: string): Promise<void>
   run(request: { id: string; code: string; title: string }, onEvent: (event: RunEvent) => void): Promise<void>

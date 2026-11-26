@@ -11,7 +11,7 @@ The Board as an image (the third part of M19) is specified in the plan and built
 1. **One PDF per Source.** A Source may carry one PDF file. Attaching another replaces it (after a confirmation).
 2. **Not versioned.** The file is stored once, by its content (SHA-256). The Source's fields gain `pdf` (the hash) and `pdf_name`, `pdf_size`, `pdf_pages`; those fields are Research Content like any other field — so *which* PDF a Source has is in History, per Branch, merged and undone like a title. The bytes themselves live outside the Change log and are never duplicated: two Branches, or two Sources, pointing at the same hash share one stored file.
 3. **Kept while referenced anywhere in history.** A stored file is removed only when no Change on any Branch — current or past — refers to its hash (so Restore and Undo always find it). In practice: files are kept until the Workspace is removed. A later milestone may add cleaning.
-4. **Limits:** 100 MB per file (server setting `QOOP_MAX_PDF_MB`), PDF only (checked by the file's first bytes, not its name). A Workspace's total is not limited.
+4. **Limits:** 100 MB per file (server setting `INFALL_MAX_PDF_MB`), PDF only (checked by the file's first bytes, not its name). A Workspace's total is not limited.
 5. **Who:** Members attach, replace and remove. Guests may open the PDF of a Source they can see on main.
 6. **In Workspace files:** included, so an export, a backup and a move carry the PDFs. Export… gains a checkbox "Include PDFs (N files, X MB)" on by default; automatic backups always include them.
 7. **Reading:** opens inside Infall in the Page panel's place (a reader with page navigation, zoom, fit width, text selection and copy, find in document, open-in-system-viewer / save a copy). Rendering is done in the web UI with a bundled PDF renderer (pdf.js, shipped locally — no network). No annotation in M19.
@@ -89,7 +89,7 @@ Part 1:
 - **PDFs are stored in the database**, not in a folder beside it: the tables `pdf_files`, `pdf_chunks` (parts of 256 KiB, so a `Range` reads only what it needs) and `pdf_text`, schema version 8. The reason (api.md §20): one consistent snapshot carries them in every export and backup, and one transaction keeps "stored" and "named by a Source" in step. Nothing in them is ever deleted.
 - **Refusal codes**: `415 not_a_pdf`, `413 too_large`, `404 file_missing` (a hash this Workspace does not have), `404 no_text`, `416 range_not_satisfiable`, `502 fetch_failed`. The web library's own local refusal uses the code `not_pdf`.
 - **Text**: `PUT …/text` takes at most 20 MiB and 100 000 pages and answers `{ stored }`; the first write wins.
-- **arXiv** (decision 9): the server asks `https://export.arxiv.org/pdf/<id>` (the base address Look up already uses, `QOOP_ARXIV_URL`), not `arxiv.org`; 30 s to answer and 30 s for each further part; no redirects followed; at most 30 a minute per Member.
+- **arXiv** (decision 9): the server asks `https://export.arxiv.org/pdf/<id>` (the base address Look up already uses, `INFALL_ARXIV_URL`), not `arxiv.org`; 30 s to answer and 30 s for each further part; no redirects followed; at most 30 a minute per Member.
 - **Search** (decision 8): `GET /api/search/pdf?q=` was added (the web UI's search was client-side): a case-insensitive substring over the stored pages, white space matched loosely, 1–200 characters, at most 50 results, one per page, `page` counted from 1, a snippet of up to 200 characters. Guests search only what they may read.
 - **Desktop bridge** (decision 10): `pickFolder(): Promise<{ token, name } | null>` (a token and the folder's name, never its path), `readFileIn(token, path)` (a relative or absolute path, or a whole BibTeX `file` field; only inside the folder once every link is followed), and `openExternally({ suggestedName, bytes })`; not `pickFolder(): string`, `readFileAt(path, under)` and `openFileExternally`.
 - **Export without PDFs** (decision 6): the checkbox is on the desktop start screen's **Export…** of a Local Workspace only, shown when it has PDFs; a Team Workspace's **Export Workspace file…** always includes them. The crate has `export_workspace_with(db, dest, ExportOptions { include_files })`, and `file_stats(db)` for the count.
@@ -97,8 +97,8 @@ Part 1:
 
 Part 2:
 
-- **Environments** are found also on the `PATH`; `QOOP_PYTHON_BIN` overrides every Python Run. An environment is started as its Python, not activated (no `PATH` or `CONDA_PREFIX` change).
+- **Environments** are found also on the `PATH`; `INFALL_PYTHON_BIN` overrides every Python Run. An environment is started as its Python, not activated (no `PATH` or `CONDA_PREFIX` change).
 - **Asking** (decision 2): the Runner settings window opens at the question; the answer is kept in `runner.json` under `names`; closing the window without one fails the Run (`no_environment`).
 - **The record** (decision 3): up to 32 packages; the result also records `env.name`, the environment the Run asked for, and the Run block marks a result whose environment differs from the Run's.
 - **Approvals** (decision 4) are remembered per Workspace, code, **language**, interpreter or program path, and **folder**, not per code and interpreter path alone. Approvals from before ask once more.
-- **A missing package** (decision 5): the line `[qoop] This environment has no package <name>.` is printed into the output by the Runner's `runner.py`, not added by the Run block.
+- **A missing package** (decision 5): the line `[infall] This environment has no package <name>.` is printed into the output by the Runner's `runner.py`, not added by the Run block.

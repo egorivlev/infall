@@ -20,7 +20,7 @@ describe('http.request', () => {
     const [path, init] = fetchMock.mock.calls[0]
     expect(path).toBe('/api/me')
     expect(init.credentials).toBe('same-origin')
-    expect(init.headers['X-Qoop-Request']).toBeUndefined()
+    expect(init.headers['X-Infall-Request']).toBeUndefined()
     expect(init.body).toBeUndefined()
   })
   it('non-GET sends the header and a JSON body', async () => {
@@ -28,11 +28,11 @@ describe('http.request', () => {
     await request('POST', '/api/x', { k: 'v' })
     const init = fetchMock.mock.calls[0][1]
     expect(init.method).toBe('POST')
-    expect(init.headers['X-Qoop-Request']).toBe('1')
+    expect(init.headers['X-Infall-Request']).toBe('1')
     expect(init.headers['Content-Type']).toBe('application/json')
     expect(init.body).toBe('{"k":"v"}')
     await request('DELETE', '/api/x/1')
-    expect(fetchMock.mock.calls[1][1].headers['X-Qoop-Request']).toBe('1')
+    expect(fetchMock.mock.calls[1][1].headers['X-Infall-Request']).toBe('1')
   })
   it('maps the error body to ApiError', async () => {
     fetchMock.mockReturnValue(

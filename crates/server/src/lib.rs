@@ -1,4 +1,4 @@
-//! `qoop-server`: accounts, persistence and live updates around `qoop-core`.
+//! `infall-server`: accounts, persistence and live updates around `infall-core`.
 //!
 //! The contract is `docs/specs/api.md`. `build_app` gives a `Router` that tests can drive
 //! without a socket; `main.rs` adds the CLI and the listener.
@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
-use qoop_core::Workspace;
+use infall_core::Workspace;
 use tokio::sync::{RwLock, Semaphore, watch};
 
 use crate::app::AppState;

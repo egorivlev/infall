@@ -14,8 +14,8 @@ use base64::Engine;
 use common::openrouter::*;
 use common::*;
 use http_body_util::BodyExt;
-use qoop_server::secret::SecretKey;
-use qoop_server::store::{MemoryStore, SqliteStore};
+use infall_server::secret::SecretKey;
+use infall_server::store::{MemoryStore, SqliteStore};
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -46,7 +46,7 @@ async fn the_key_and_the_conversation_never_reach_the_logs_or_a_response() {
     let upstream = Upstream::start().await;
     let elsewhere = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let secret = SecretKey::generate().unwrap();
     let secret_text = secret.to_base64();
     let url = upstream.url.clone();
@@ -88,7 +88,7 @@ async fn the_key_and_the_conversation_never_reach_the_logs_or_a_response() {
         .method(Method::PUT)
         .uri("/api/ai/key")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &admin)
         .body(Body::from(format!("{{\"key\": \"{KEY}")))
@@ -186,7 +186,7 @@ async fn the_key_and_the_conversation_never_reach_the_logs_or_a_response() {
         .method(Method::POST)
         .uri("/api/ai/chat")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &admin)
         .body(Body::from(

@@ -18,7 +18,7 @@ use crate::transfer::{self, Chunk};
 
 const MB: u64 = 1024 * 1024;
 
-/// The largest PDF the bridge reads or opens: the server's own limit (`QOOP_MAX_PDF_MB`,
+/// The largest PDF the bridge reads or opens: the server's own limit (`INFALL_MAX_PDF_MB`,
 /// decision 4).
 pub const MAX_PDF_BYTES: u64 = 100 * MB;
 /// What every PDF starts with. The name of a file says nothing.

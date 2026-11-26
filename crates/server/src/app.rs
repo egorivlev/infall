@@ -11,7 +11,7 @@ use axum::http::header::{
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
-use qoop_core::Workspace;
+use infall_core::Workspace;
 use serde_json::json;
 use tokio::sync::{RwLock, Semaphore, watch};
 use tower::ServiceExt;
@@ -163,7 +163,7 @@ pub fn router(st: Shared) -> Router {
         .route("/ai/chat", post(chat::chat))
         .route("/sources/lookup", post(sources::lookup))
         .route("/sources/fetch-pdf", post(files::fetch_pdf))
-        // A PDF and its text stream in under their own limits (`QOOP_MAX_PDF_MB`, 20 MB).
+        // A PDF and its text stream in under their own limits (`INFALL_MAX_PDF_MB`, 20 MB).
         .route(
             "/files/pdf",
             put(files::put_pdf).layer(DefaultBodyLimit::disable()),
@@ -178,7 +178,7 @@ pub fn router(st: Shared) -> Router {
         .route("/search/pdf", get(files::search))
         .route("/ws", get(live::ws_handler))
         .route("/workspace", get(local::get_workspace))
-        // A Workspace file streams in under its own limit (`QOOP_MAX_IMPORT_MB`).
+        // A Workspace file streams in under its own limit (`INFALL_MAX_IMPORT_MB`).
         .route(
             "/workspace/import",
             post(transfer::import).layer(DefaultBodyLimit::disable()),
@@ -241,7 +241,7 @@ pub fn router(st: Shared) -> Router {
         ))
         // Added after the Origin guard, so that does not wrap it: the tool endpoint is for
         // non-browser clients and has its own rules (bearer token only, no
-        // `X-Qoop-Request`, an `Origin` checked only when present). It is also outside
+        // `X-Infall-Request`, an `Origin` checked only when present). It is also outside
         // `/api`, so the session middleware never runs for it.
         .route("/mcp", post(mcp::post).fallback(mcp::method_not_allowed))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))

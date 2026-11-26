@@ -34,8 +34,8 @@ COPY crates ./crates
 # compiles only what changed, and neither ends up in an image layer.
 RUN --mount=type=cache,id=infall-cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=infall-cargo-target-${TARGETARCH},target=/src/target,sharing=locked \
-    cargo build --release --locked -p qoop-server \
-    && install -m 755 target/release/qoop-server /qoop-server
+    cargo build --release --locked -p infall-server \
+    && install -m 755 target/release/infall-server /infall-server
 
 # ---- runtime ------------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim
@@ -51,14 +51,14 @@ RUN apt-get update \
        --shell /usr/sbin/nologin infall \
     && install -d -o infall -g infall -m 700 /data /backups
 
-COPY --from=server /qoop-server /usr/local/bin/qoop-server
+COPY --from=server /infall-server /usr/local/bin/infall-server
 COPY --from=web /src/web/dist /app/web
 COPY --chmod=755 deploy/container/entrypoint.sh /usr/local/bin/infall
 
-ENV QOOP_ADDR=0.0.0.0:8787 \
-    QOOP_DB=/data/qoop.db \
-    QOOP_WEB_DIR=/app/web \
-    QOOP_PUBLIC_ORIGIN=http://localhost:8787 \
+ENV INFALL_ADDR=0.0.0.0:8787 \
+    INFALL_DB=/data/infall.db \
+    INFALL_WEB_DIR=/app/web \
+    INFALL_PUBLIC_ORIGIN=http://localhost:8787 \
     INFALL_VERSION=${INFALL_VERSION}
 
 LABEL org.opencontainers.image.title="Infall server" \

@@ -5,10 +5,10 @@ export type TourAnswer = 'started' | 'declined'
 
 /** One key per Member: a second person on the same device gets their own offer. */
 export function tourKey(memberId: string): string {
-  return `qoop-tour:${memberId}`
+  return `infall-tour:${memberId}`
 }
 
-const PROBE = 'qoop-tour-probe'
+const PROBE = 'infall-tour-probe'
 
 /**
  * The remembered answer; `null` when this Member was never asked here; `undefined` when storage cannot be read or

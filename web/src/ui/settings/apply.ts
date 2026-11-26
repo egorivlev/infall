@@ -3,7 +3,7 @@
 //
 // - Interface scale: `--q-ui-zoom` → `zoom` on <body> (base.css). The Board's canvas undoes it with `--q-ui-unzoom`
 //   (board.css), so Cards are drawn at the Board's own scale and React Flow's pointer arithmetic sees no zoom at all.
-//   The desktop app is told it too (`qoopDesktop.chromeScale`, by `useAppliedPrefs`): on macOS it centres the traffic
+//   The desktop app is told it too (`infallDesktop.chromeScale`, by `useAppliedPrefs`): on macOS it centres the traffic
 //   lights in the top bar's first row, whose height the scale changes.
 // - Text size: `--q-text`, a factor every font size in the stylesheets is multiplied by.
 // - Reduce motion: `data-motion="reduce" | "full"`; absent = follow the system (base.css, tutorial.css).

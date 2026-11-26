@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::*;
-use qoop_core::{MemberId, Workspace};
-use qoop_server::store::{
+use infall_core::{MemberId, Workspace};
+use infall_server::store::{
     AiKeyRecord, AiSettingsRecord, InviteRecord, MemberRecord, MemoryStore, SqliteStore, Store,
     StoreError, StoreResult,
 };
@@ -879,14 +879,14 @@ async fn a_merge_needs_the_origin_and_request_headers() {
             .header(header::CONTENT_TYPE, "application/json")
     };
     let attempts = [
-        ("no Origin", base().header("x-qoop-request", "1")),
+        ("no Origin", base().header("x-infall-request", "1")),
         (
             "foreign Origin",
             base()
                 .header(header::ORIGIN, "https://evil.example")
-                .header("x-qoop-request", "1"),
+                .header("x-infall-request", "1"),
         ),
-        ("no X-Qoop-Request", base().header(header::ORIGIN, ORIGIN)),
+        ("no X-Infall-Request", base().header(header::ORIGIN, ORIGIN)),
     ];
     for (what, req) in attempts {
         let res = w
@@ -902,7 +902,7 @@ async fn a_merge_needs_the_origin_and_request_headers() {
 #[tokio::test]
 async fn a_merge_survives_a_restart_on_the_same_sqlite_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let (mut w, before, merged) = {
         let app = TestApp::with_store(Arc::new(SqliteStore::open(&path).unwrap()));
         let w = world_on(app).await;
@@ -1022,100 +1022,104 @@ impl Store for BreakableStore {
         self.inner.accept_invite(i, m, n)
     }
 
-    fn todos(&self) -> qoop_server::store::StoreResult<Vec<qoop_server::store::TodoRecord>> {
+    fn todos(&self) -> infall_server::store::StoreResult<Vec<infall_server::store::TodoRecord>> {
         self.inner.todos()
     }
     fn todo(
         &self,
         id: uuid::Uuid,
-    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::TodoRecord>> {
+    ) -> infall_server::store::StoreResult<Option<infall_server::store::TodoRecord>> {
         self.inner.todo(id)
     }
     fn insert_todo(
         &self,
-        t: &qoop_server::store::TodoRecord,
-    ) -> qoop_server::store::StoreResult<bool> {
+        t: &infall_server::store::TodoRecord,
+    ) -> infall_server::store::StoreResult<bool> {
         self.inner.insert_todo(t)
     }
     fn update_todo(
         &self,
-        t: &qoop_server::store::TodoRecord,
-    ) -> qoop_server::store::StoreResult<bool> {
+        t: &infall_server::store::TodoRecord,
+    ) -> infall_server::store::StoreResult<bool> {
         self.inner.update_todo(t)
     }
-    fn delete_todo(&self, id: uuid::Uuid) -> qoop_server::store::StoreResult<bool> {
+    fn delete_todo(&self, id: uuid::Uuid) -> infall_server::store::StoreResult<bool> {
         self.inner.delete_todo(id)
     }
 
     fn access_tokens(
         &self,
-        member: qoop_core::MemberId,
-    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::AccessTokenRecord>> {
+        member: infall_core::MemberId,
+    ) -> infall_server::store::StoreResult<Vec<infall_server::store::AccessTokenRecord>> {
         self.inner.access_tokens(member)
     }
     fn insert_access_token(
         &self,
-        token: &qoop_server::store::AccessTokenRecord,
+        token: &infall_server::store::AccessTokenRecord,
         max: usize,
-    ) -> qoop_server::store::StoreResult<bool> {
+    ) -> infall_server::store::StoreResult<bool> {
         self.inner.insert_access_token(token, max)
     }
     fn delete_access_token(
         &self,
-        member: qoop_core::MemberId,
+        member: infall_core::MemberId,
         id: uuid::Uuid,
-    ) -> qoop_server::store::StoreResult<bool> {
+    ) -> infall_server::store::StoreResult<bool> {
         self.inner.delete_access_token(member, id)
     }
     fn access_token_by_hash(
         &self,
         token_hash: &str,
-    ) -> qoop_server::store::StoreResult<
+    ) -> infall_server::store::StoreResult<
         Option<(
-            qoop_server::store::AccessTokenRecord,
-            qoop_server::store::MemberRecord,
+            infall_server::store::AccessTokenRecord,
+            infall_server::store::MemberRecord,
         )>,
     > {
         self.inner.access_token_by_hash(token_hash)
     }
-    fn touch_access_token(&self, id: uuid::Uuid, now: i64) -> qoop_server::store::StoreResult<()> {
+    fn touch_access_token(
+        &self,
+        id: uuid::Uuid,
+        now: i64,
+    ) -> infall_server::store::StoreResult<()> {
         self.inner.touch_access_token(id, now)
     }
     fn suggestions(
         &self,
-        branch: qoop_core::BranchId,
+        branch: infall_core::BranchId,
         decided_after: i64,
-    ) -> qoop_server::store::StoreResult<Vec<qoop_server::store::SuggestionRecord>> {
+    ) -> infall_server::store::StoreResult<Vec<infall_server::store::SuggestionRecord>> {
         self.inner.suggestions(branch, decided_after)
     }
     fn suggestion(
         &self,
         id: uuid::Uuid,
-    ) -> qoop_server::store::StoreResult<Option<qoop_server::store::SuggestionRecord>> {
+    ) -> infall_server::store::StoreResult<Option<infall_server::store::SuggestionRecord>> {
         self.inner.suggestion(id)
     }
     fn insert_suggestion(
         &self,
-        suggestion: &qoop_server::store::SuggestionRecord,
-    ) -> qoop_server::store::StoreResult<()> {
+        suggestion: &infall_server::store::SuggestionRecord,
+    ) -> infall_server::store::StoreResult<()> {
         self.inner.insert_suggestion(suggestion)
     }
     fn decide_suggestion(
         &self,
         id: uuid::Uuid,
-        from: qoop_server::store::SuggestionState,
-        to: qoop_server::store::SuggestionState,
-        decided: Option<(qoop_core::MemberId, i64)>,
-    ) -> qoop_server::store::StoreResult<bool> {
+        from: infall_server::store::SuggestionState,
+        to: infall_server::store::SuggestionState,
+        decided: Option<(infall_core::MemberId, i64)>,
+    ) -> infall_server::store::StoreResult<bool> {
         self.inner.decide_suggestion(id, from, to, decided)
     }
     fn save_workspace_accepting(
         &self,
         ws: &Workspace,
         suggestion: uuid::Uuid,
-        by: qoop_core::MemberId,
+        by: infall_core::MemberId,
         at: i64,
-    ) -> qoop_server::store::StoreResult<bool> {
+    ) -> infall_server::store::StoreResult<bool> {
         if self.broken.load(Ordering::SeqCst) {
             return Err(StoreError::Backend("disk full at /secret/path".to_string()));
         }

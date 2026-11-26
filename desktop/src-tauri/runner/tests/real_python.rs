@@ -2,7 +2,7 @@
 //! stopping, the monitor. Nothing here is stubbed; the "Member" answers the approval through the same
 //! calls the app's approval window makes.
 //!
-//! Which interpreter: `QOOP_TEST_PYTHON` if set, else the first one the Runner's own lookup
+//! Which interpreter: `INFALL_TEST_PYTHON` if set, else the first one the Runner's own lookup
 //! finds that has matplotlib, else the first it finds. Without any, every test here prints
 //! a SKIPPED line and passes; without matplotlib, the figure tests do.
 #![cfg(unix)]
@@ -18,13 +18,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use qoop_runner::python::{self, EnvVars};
-use qoop_runner::{
+use infall_runner::python::{self, EnvVars};
+use infall_runner::{
     ApprovalView, Cancel, DecideError, Options, Reason, RunEvent, RunRequest, Runner, Ui, Usage,
     Workspace, inspect,
 };
 
-const ORIGIN: &str = "https://qoop.example.org";
+const ORIGIN: &str = "https://infall.example.org";
 
 /// A Team Workspace: approvals are remembered under its origin, which is also what the
 /// approval window shows.
@@ -56,7 +56,7 @@ fn test_python() -> Option<&'static TestPython> {
                     .is_ok_and(|o| o.status.success())
             };
             let mut candidates: Vec<String> = Vec::new();
-            if let Some(path) = std::env::var_os("QOOP_TEST_PYTHON") {
+            if let Some(path) = std::env::var_os("INFALL_TEST_PYTHON") {
                 candidates.push(path.to_string_lossy().into_owned());
             } else {
                 candidates.extend(python::find(&env).into_iter().map(|i| i.path));
@@ -709,7 +709,7 @@ fn settings_accept_only_python_3_and_existing_folders() {
     assert_eq!(runner.status().folder, None);
 
     // The real lookup finds the interpreter the tests use (unless it was named by hand).
-    if std::env::var_os("QOOP_TEST_PYTHON").is_none() {
+    if std::env::var_os("INFALL_TEST_PYTHON").is_none() {
         let view = runner.settings_view(true);
         assert!(
             view.found.iter().any(|i| i.path == python.path),
@@ -772,7 +772,7 @@ fn the_chosen_folder_is_where_the_code_runs() {
         .settings_save(Some(&python.path), folder_path.to_str())
         .unwrap();
 
-    let code = "import os, sys\nimport mymodule\nprint(mymodule.VALUE)\nprint(open('data.txt').read())\nprint(os.getcwd())\nprint(sys.path[0])\nprint(os.path.dirname(__file__) == os.environ['QOOP_RUN_DIR'])\n1/0\n";
+    let code = "import os, sys\nimport mymodule\nprint(mymodule.VALUE)\nprint(open('data.txt').read())\nprint(os.getcwd())\nprint(sys.path[0])\nprint(os.path.dirname(__file__) == os.environ['INFALL_RUN_DIR'])\n1/0\n";
     let member = Member::new(&bench.runner, Answer::Run);
     let run = done(bench.run_as(&member, ORIGIN, code));
     let cwd = folder_path.to_str().unwrap();
@@ -817,7 +817,7 @@ fn the_code_runs_as_main_from_a_private_file() {
     let python = python_or_skip!();
     let bench = bench(python);
     let code = r#"import os, stat, sys
-run_dir = os.environ['QOOP_RUN_DIR']
+run_dir = os.environ['INFALL_RUN_DIR']
 print(__name__)
 print(os.path.basename(__file__), os.path.dirname(__file__) == run_dir)
 print(os.getcwd() == run_dir, sys.path[0] == run_dir)
@@ -871,21 +871,21 @@ fn packages_usage_reports_are_off_in_every_run_whatever_the_shell_says() {
         let env = o.env.get_or_insert_with(Vec::new);
         env.retain(|(k, _)| k != "QDK_PYTHON_TELEMETRY");
         env.push(("QDK_PYTHON_TELEMETRY".into(), "on".into()));
-        env.push(("QOOP_TEST_OWN".into(), "kept".into()));
+        env.push(("INFALL_TEST_OWN".into(), "kept".into()));
     });
     let code = r#"import os
-for name in ['QDK_PYTHON_TELEMETRY', 'QSHARP_PYTHON_TELEMETRY', 'HF_HUB_DISABLE_TELEMETRY', 'MLFLOW_DISABLE_TELEMETRY', 'QOOP_TEST_OWN']:
+for name in ['QDK_PYTHON_TELEMETRY', 'QSHARP_PYTHON_TELEMETRY', 'HF_HUB_DISABLE_TELEMETRY', 'MLFLOW_DISABLE_TELEMETRY', 'INFALL_TEST_OWN']:
     print(name, os.environ.get(name))
 "#;
     let run = bench.run(code);
     assert_eq!(run.exit, Some(0), "{}", run.output);
     assert_eq!(
         run.output,
-        "QDK_PYTHON_TELEMETRY none\nQSHARP_PYTHON_TELEMETRY none\nHF_HUB_DISABLE_TELEMETRY 1\nMLFLOW_DISABLE_TELEMETRY true\nQOOP_TEST_OWN kept\n"
+        "QDK_PYTHON_TELEMETRY none\nQSHARP_PYTHON_TELEMETRY none\nHF_HUB_DISABLE_TELEMETRY 1\nMLFLOW_DISABLE_TELEMETRY true\nINFALL_TEST_OWN kept\n"
     );
     // The list the Runner sets is exactly these.
     assert_eq!(
-        qoop_runner::exec::NO_USAGE_REPORTS,
+        infall_runner::exec::NO_USAGE_REPORTS,
         [
             ("QDK_PYTHON_TELEMETRY", "none"),
             ("QSHARP_PYTHON_TELEMETRY", "none"),
@@ -959,7 +959,7 @@ fn a_process_killed_by_a_signal_has_no_exit_code() {
     assert!(!run.stopped);
     assert_eq!(
         run.output,
-        "about to die\n\n[qoop] The process was ended by signal 9.\n"
+        "about to die\n\n[infall] The process was ended by signal 9.\n"
     );
     assert!(run.figures.is_empty());
 }
@@ -998,7 +998,7 @@ fn tracebacks_name_main_py_with_the_right_lines() {
     );
     // Nothing of the Runner's own shows.
     assert!(
-        !run.output.contains("runner.py") && !run.output.contains("qoop"),
+        !run.output.contains("runner.py") && !run.output.contains("infall"),
         "{}",
         run.output
     );
@@ -1188,7 +1188,7 @@ fn a_weird_program_cannot_hide_its_output_or_exit_code() {
     let python = python_or_skip!();
     let bench = bench(python);
     // Closes its own standard streams, deletes the Run's directory, then exits with 5.
-    let run = bench.run("import os, shutil, sys\nprint('before')\nsys.stdout.close()\nsys.stderr = None\nshutil.rmtree(os.environ['QOOP_RUN_DIR'], ignore_errors=True)\nraise SystemExit(5)\n");
+    let run = bench.run("import os, shutil, sys\nprint('before')\nsys.stdout.close()\nsys.stderr = None\nshutil.rmtree(os.environ['INFALL_RUN_DIR'], ignore_errors=True)\nraise SystemExit(5)\n");
     assert_eq!((run.exit, run.output.as_str()), (Some(5), "before\n"));
     assert!(run.python.as_deref().unwrap().starts_with("3."));
 
@@ -1203,7 +1203,7 @@ fn a_weird_program_cannot_hide_its_output_or_exit_code() {
     let outside = bench.config.path().join("private.png");
     fs::write(&outside, b"\x89PNG\r\n\x1a\nprivate bytes").unwrap();
     let code = format!(
-        "import json, os\nd = os.environ['QOOP_RUN_DIR']\nos.symlink({:?}, os.path.join(d, 'qoop-figure-1.png'))\njson.dump({{'python': '9.9.9', 'packages': [['evil', '1']], 'figures': ['qoop-figure-1.png', '../x.png']}}, open(os.path.join(d, 'qoop-env.json'), 'w'))\nprint('planted', flush=True)\nos._exit(0)\n",
+        "import json, os\nd = os.environ['INFALL_RUN_DIR']\nos.symlink({:?}, os.path.join(d, 'infall-figure-1.png'))\njson.dump({{'python': '9.9.9', 'packages': [['evil', '1']], 'figures': ['infall-figure-1.png', '../x.png']}}, open(os.path.join(d, 'infall-env.json'), 'w'))\nprint('planted', flush=True)\nos._exit(0)\n",
         outside.to_str().unwrap()
     );
     let run = bench.run(&code);
@@ -1570,24 +1570,24 @@ fn a_run_is_measured_about_once_a_second_while_it_executes() {
 }
 
 #[test]
-fn what_the_code_says_through_qoop_arrives_with_the_samples() {
+fn what_the_code_says_through_infall_arrives_with_the_samples() {
     let python = python_or_skip!();
     let bench = bench(python);
     // Each thing is said for a second and a half: long enough to be sampled. The loop says
     // a thousand things at once: the last one is the one that counts.
     let code = r#"import time
-import qoop
-qoop.step("thermalising")
+import infall
+infall.step("thermalising")
 time.sleep(1.5)
-qoop.progress(3, 10)
+infall.progress(3, 10)
 time.sleep(1.5)
-qoop.progress(7, 10, "sweep")
+infall.progress(7, 10, "sweep")
 time.sleep(1.5)
 for n in range(1000):
-    qoop.progress(n, 999)
-qoop.step(text="measuring")
+    infall.progress(n, 999)
+infall.step(text="measuring")
 time.sleep(1.5)
-print(sorted(name for name in dir(qoop) if not name.startswith("_")))
+print(sorted(name for name in dir(infall) if not name.startswith("_")))
 "#;
     let run = bench.run(code);
     assert_eq!(run.exit, Some(0), "{}", run.output);
@@ -1605,7 +1605,7 @@ print(sorted(name for name in dir(qoop) if not name.startswith("_")))
 }
 
 #[test]
-fn a_progress_bar_in_the_output_says_how_far_when_qoop_was_not_used() {
+fn a_progress_bar_in_the_output_says_how_far_when_infall_was_not_used() {
     let python = python_or_skip!();
     let bench = bench(python);
     // What tqdm writes: the bar again and again on one line of standard error.
@@ -1633,7 +1633,7 @@ for n in (15, 45):
     assert_eq!(run.streamed.concat(), run.output);
 
     // What the code says itself goes before what its bar shows.
-    let both = format!("import qoop\nqoop.step('by hand')\n{bars}");
+    let both = format!("import infall\ninfall.step('by hand')\n{bars}");
     let run = bench.run(&both);
     assert_eq!(run.exit, Some(0), "{}", run.output);
     assert_eq!(said(&run.stats), [(Some("by hand"), None)]);
@@ -1667,11 +1667,11 @@ print(subprocess.call([sys.executable, "-c", child]))
 }
 
 #[test]
-fn nonsense_said_through_qoop_is_ignored_and_never_fails_the_code() {
+fn nonsense_said_through_infall_is_ignored_and_never_fails_the_code() {
     let python = python_or_skip!();
     let bench = bench(python);
     let code = r#"import os, shutil, sys, time
-import qoop
+import infall
 
 class Odd:
     def __float__(self):
@@ -1680,40 +1680,40 @@ class Odd:
         raise RuntimeError("no text")
 
 for value in (None, True, b"3", [], {}, Odd(), object(), float("nan"), float("inf"), -float("inf"), 10 ** 400, 1j):
-    qoop.progress(value, 10)
-    qoop.progress(1, value)
-    qoop.progress(value, value, value)
-    qoop.step(value)
-qoop.progress("3", "10")
-qoop.progress(1, 0)
-qoop.progress(1, -5)
-qoop.progress()
-qoop.progress(1)
-qoop.progress(1, 2, 3, 4)
-qoop.progress(1, 2, nonsense=True)
-qoop.step()
-qoop.step("a", "b")
-qoop.step("")
-qoop.step("\ud800 half a character")
-qoop.step("\x00\x1b[2J\n\n")
-qoop.step("x" * 10_000_000)
+    infall.progress(value, 10)
+    infall.progress(1, value)
+    infall.progress(value, value, value)
+    infall.step(value)
+infall.progress("3", "10")
+infall.progress(1, 0)
+infall.progress(1, -5)
+infall.progress()
+infall.progress(1)
+infall.progress(1, 2, 3, 4)
+infall.progress(1, 2, nonsense=True)
+infall.step()
+infall.step("a", "b")
+infall.step("")
+infall.step("\ud800 half a character")
+infall.step("\x00\x1b[2J\n\n")
+infall.step("x" * 10_000_000)
 time.sleep(1.3)
 # Something in the file's place, then no directory at all.
-said = os.path.join(os.environ["QOOP_RUN_DIR"], "qoop-progress.json")
+said = os.path.join(os.environ["INFALL_RUN_DIR"], "infall-progress.json")
 if os.path.exists(said):
     os.remove(said)
 os.mkdir(said)
-qoop.progress(1, 2)
+infall.progress(1, 2)
 time.sleep(0.3)
-qoop.progress(2, 2, "still fine")
-shutil.rmtree(os.environ["QOOP_RUN_DIR"], ignore_errors=True)
-qoop.step("into nothing")
+infall.progress(2, 2, "still fine")
+shutil.rmtree(os.environ["INFALL_RUN_DIR"], ignore_errors=True)
+infall.step("into nothing")
 time.sleep(0.3)
-qoop.progress(1, 3)
+infall.progress(1, 3)
 sys.modules["os"] = sys.modules["json"] = sys.modules["time"] = None
-qoop.step("without modules")
+infall.step("without modules")
 time.sleep(0.3)
-qoop.progress(2, 3)
+infall.progress(2, 3)
 print("fine")
 "#;
     let run = bench.run(code);
@@ -1741,14 +1741,14 @@ fn cancel_is_as_prompt_while_the_run_is_measured() {
     // Busy, with a child, and saying how far it is all the time; ready after the first
     // samples were taken.
     let code = r#"import subprocess, time
-import qoop
+import infall
 child = subprocess.Popen(["sleep", "600"])
 begun = time.time()
 ready = False
 n = 0
 while True:
     n += 1
-    qoop.progress(n % 1000, 1000, "spinning")
+    infall.progress(n % 1000, 1000, "spinning")
     if not ready and time.time() - begun > 2.2:
         ready = True
         print("ready", flush=True)
@@ -1847,14 +1847,14 @@ fn only_the_first_three_figures_are_kept() {
     assert_eq!(widths, [200, 300, 400]);
     assert_eq!(
         run.output,
-        "five figures\n[qoop] 2 more figures were left out: a Run keeps the first three.\n"
+        "five figures\n[infall] 2 more figures were left out: a Run keeps the first three.\n"
     );
 
     let run = bench.run("import matplotlib.pyplot as plt\nfor n in range(4):\n    plt.figure()\n");
     assert_eq!(run.figures.len(), 3);
     assert_eq!(
         run.output,
-        "[qoop] 1 more figure was left out: a Run keeps the first three.\n"
+        "[infall] 1 more figure was left out: a Run keeps the first three.\n"
     );
 }
 
@@ -1896,7 +1896,7 @@ fn a_figure_too_large_is_saved_smaller_or_left_out() {
     assert_eq!(run.exit, Some(0), "{}", run.output);
     assert_eq!(
         run.output,
-        "huge\n[qoop] Figure 1 was left out: it is too large to keep, even at a low resolution.\n"
+        "huge\n[infall] Figure 1 was left out: it is too large to keep, even at a low resolution.\n"
     );
     assert_eq!(run.figures.len(), 1);
     assert_eq!(png_size(&run.figures[0]), (300, 200));
@@ -1943,7 +1943,7 @@ fn the_packages_the_code_imports_are_reported_with_what_they_require() {
     ] {
         assert!(!packages.contains_key(absent), "{absent}");
     }
-    assert!(packages.len() <= qoop_runner::exec::MAX_PACKAGES);
+    assert!(packages.len() <= infall_runner::exec::MAX_PACKAGES);
     assert_eq!(
         run.python.as_deref().map(|v| v.starts_with("3.")),
         Some(true)
@@ -1989,8 +1989,9 @@ fn a_missing_package_is_named_in_one_line() {
     assert_eq!(run.exit, Some(1));
     assert!(run.output.contains("ModuleNotFoundError"), "{}", run.output);
     assert!(
-        run.output
-            .ends_with("\n[qoop] This environment has no package a_package_that_does_not_exist.\n"),
+        run.output.ends_with(
+            "\n[infall] This environment has no package a_package_that_does_not_exist.\n"
+        ),
         "{}",
         run.output
     );

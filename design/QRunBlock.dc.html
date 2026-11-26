@@ -7,7 +7,7 @@
 </head>
 <body>
 <x-dc>
-<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./qoop-theme.css"></helmet>
+<helmet><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"><link rel="stylesheet" href="./infall-theme.css"></helmet>
 <div style="border:1px solid var(--q-line);border-radius:6px;background:var(--q-surface);overflow:hidden;font-family:'IBM Plex Sans',sans-serif;color:var(--q-ink);">
   <div style="display:flex;align-items:center;gap:10px;padding:8px 10px 8px 12px;border-bottom:1px solid var(--q-line-soft);">
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--q-ink-2)" stroke-width="1.2" stroke-linejoin="round"><path d="M3.5 2.3 L9.6 6 L3.5 9.7 Z"></path></svg>
@@ -60,7 +60,7 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:680,&quot;height&quot;:640},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;browser&quot;,&quot;review&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 const RUN_CODE = [
-  ['import pennylane as qml', ''], ['from qoop_rl import CartPole, reinforce, plot_rewards', ''], ['', ''],
+  ['import pennylane as qml', ''], ['from infall_rl import CartPole, reinforce, plot_rewards', ''], ['', ''],
   ['dev = qml.device("default.qubit", wires=4)', ''], ['', ''],
   ['@qml.qnode(dev, interface="torch")', ''], ['def policy(s, lam, theta):', ''],
   ['    for l in range(3):', '                     # L = 3 re-uploading layers'],

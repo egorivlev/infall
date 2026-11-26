@@ -10,9 +10,9 @@ use axum::http::{Method, StatusCode};
 use base64::Engine;
 use common::openrouter::*;
 use common::*;
-use qoop_core::MemberId;
-use qoop_server::secret::SecretKey;
-use qoop_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
+use infall_core::MemberId;
+use infall_server::secret::SecretKey;
+use infall_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
 use serde_json::{Value, json};
 
 fn stores() -> Vec<Arc<dyn Store>> {
@@ -319,7 +319,7 @@ async fn keys_and_model_ids_are_checked_and_a_bad_key_is_never_repeated() {
 async fn the_key_is_sealed_in_the_database_file() {
     let upstream = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let app = TestApp::with_ai(Arc::new(SqliteStore::open(&path).unwrap()), &upstream.url);
     let admin = app.admin().await;
     app.ai_ready(&admin).await;
@@ -363,7 +363,7 @@ async fn the_key_is_sealed_in_the_database_file() {
 async fn a_restart_keeps_the_key_readable_and_another_secret_key_does_not() {
     let upstream = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let secret = SecretKey::generate().unwrap();
     let open = || -> Arc<dyn Store> { Arc::new(SqliteStore::open(&path).unwrap()) };
     {
@@ -427,7 +427,7 @@ async fn a_restart_keeps_the_key_readable_and_another_secret_key_does_not() {
 async fn a_tampered_or_moved_ciphertext_is_unusable_and_nothing_panics() {
     let upstream = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let app = TestApp::with_ai(Arc::new(SqliteStore::open(&path).unwrap()), &upstream.url);
     let admin = app.admin().await;
     let bea = app.join(&admin, "bea@example.org", "member", None).await;
@@ -484,7 +484,7 @@ async fn a_tampered_or_moved_ciphertext_is_unusable_and_nothing_panics() {
 async fn removing_a_member_deletes_their_ai_settings() {
     let upstream = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let file: Arc<dyn Store> = Arc::new(SqliteStore::open(&path).unwrap());
     for (store, on_disk) in [
         (Arc::new(MemoryStore::new()) as Arc<dyn Store>, false),
@@ -710,16 +710,16 @@ PRAGMA user_version = 3;
 async fn a_database_file_from_before_m7_upgrades_in_place_and_keeps_its_data() {
     let upstream = Upstream::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
 
     // An M6 file with an account, an access token, a To-do and a Board holding one Card.
     let scratch = MemoryStore::new();
     let ada =
-        qoop_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
+        infall_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
             .unwrap();
-    let (mut ws, main) = qoop_core::Workspace::new();
+    let (mut ws, main) = infall_core::Workspace::new();
     let card = new_id();
-    let ops: Vec<qoop_core::Op> =
+    let ops: Vec<infall_core::Op> =
         serde_json::from_value(json!([create_card(&card, "From M6")])).unwrap();
     ws.record_all(main, ada.id, START, ops).unwrap();
     let todo_id = new_id();
@@ -823,12 +823,12 @@ async fn a_database_file_from_before_m7_upgrades_in_place_and_keeps_its_data() {
 // ---------------------------------------------------------------- the command line
 
 fn server() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_qoop-server"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_infall-server"));
     for name in [
-        "QOOP_SECRET_KEY",
-        "QOOP_OPENROUTER_URL",
-        "QOOP_ADDR",
-        "QOOP_DB",
+        "INFALL_SECRET_KEY",
+        "INFALL_OPENROUTER_URL",
+        "INFALL_ADDR",
+        "INFALL_DB",
     ] {
         cmd.env_remove(name);
     }
@@ -860,7 +860,7 @@ fn gen_secret_key_prints_a_fresh_32_byte_key() {
     // It works even while the configured key is the thing that is wrong.
     let out = server()
         .arg("gen-secret-key")
-        .env("QOOP_SECRET_KEY", "wrong")
+        .env("INFALL_SECRET_KEY", "wrong")
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -873,29 +873,29 @@ fn a_secret_key_of_the_wrong_length_stops_the_server_at_startup() {
     for (bad, says) in [(short.as_str(), "32 bytes"), ("not/base64!!", "base64")] {
         let out = server()
             .arg("serve")
-            .env("QOOP_SECRET_KEY", bad)
-            .env("QOOP_ADDR", "127.0.0.1:0")
-            .env("QOOP_DB", dir.path().join("qoop.db"))
+            .env("INFALL_SECRET_KEY", bad)
+            .env("INFALL_ADDR", "127.0.0.1:0")
+            .env("INFALL_DB", dir.path().join("infall.db"))
             .output()
             .unwrap();
         assert!(!out.status.success());
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("QOOP_SECRET_KEY"), "{err}");
+        assert!(err.contains("INFALL_SECRET_KEY"), "{err}");
         assert!(err.contains(says), "{err}");
         assert!(err.contains("gen-secret-key"), "{err}");
         assert!(!err.contains(bad), "the value was printed: {err}");
         assert!(
-            !dir.path().join("qoop.db").exists(),
+            !dir.path().join("infall.db").exists(),
             "it got as far as the database"
         );
     }
     let out = server()
         .arg("serve")
-        .env("QOOP_OPENROUTER_URL", "openrouter.ai/api/v1")
-        .env("QOOP_ADDR", "127.0.0.1:0")
-        .env("QOOP_DB", dir.path().join("qoop.db"))
+        .env("INFALL_OPENROUTER_URL", "openrouter.ai/api/v1")
+        .env("INFALL_ADDR", "127.0.0.1:0")
+        .env("INFALL_DB", dir.path().join("infall.db"))
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("QOOP_OPENROUTER_URL"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("INFALL_OPENROUTER_URL"));
 }

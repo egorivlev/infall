@@ -1,26 +1,26 @@
-// The Infall desktop bridge: puts `window.qoopDesktop` (docs/specs/desktop.md,
+// The Infall desktop bridge: puts `window.infallDesktop` (docs/specs/desktop.md,
 // docs/specs/local.md) on the pages of the open Workspace's origin, in the top frame only. The app injects this as an
 // initialization script that the webview runs in the main frame only; the checks below hold
 // even if it ever ran somewhere else.
 //
-// __QOOP_ORIGIN__, __QOOP_VERSION__ and __QOOP_KEY__ are replaced by JSON string literals,
-// __QOOP_OWN_PRINT__ by `true` or `false`, __QOOP_MAX_BINARY_BYTES__,
-// __QOOP_MAX_MOVE_BYTES__ and __QOOP_MAX_PDF_BYTES__ by the app's limits (numbers).
+// __INFALL_ORIGIN__, __INFALL_VERSION__ and __INFALL_KEY__ are replaced by JSON string literals,
+// __INFALL_OWN_PRINT__ by `true` or `false`, __INFALL_MAX_BINARY_BYTES__,
+// __INFALL_MAX_MOVE_BYTES__ and __INFALL_MAX_PDF_BYTES__ by the app's limits (numbers).
 (function () {
   'use strict';
-  var ORIGIN = __QOOP_ORIGIN__;
-  var VERSION = __QOOP_VERSION__;
+  var ORIGIN = __INFALL_ORIGIN__;
+  var VERSION = __INFALL_VERSION__;
   // Sent with every call; the app refuses calls without it. It lives only in this closure,
   // so a frame (which never runs this script) cannot learn it.
-  var KEY = __QOOP_KEY__;
+  var KEY = __INFALL_KEY__;
   // Whether `window.print()` is the app's to do (macOS: the webview ignores it).
-  var OWN_PRINT = __QOOP_OWN_PRINT__;
+  var OWN_PRINT = __INFALL_OWN_PRINT__;
   // `saveFile` takes at most this much text (UTF-8 bytes; the app checks it again).
   var MAX_SAVE_BYTES = 20971520;
 
   if (window.top !== window) return;
   if (window.location.origin !== ORIGIN) return;
-  if (Object.prototype.hasOwnProperty.call(window, 'qoopDesktop')) return;
+  if (Object.prototype.hasOwnProperty.call(window, 'infallDesktop')) return;
 
   function call(command, args) {
     var tauri = window.__TAURI_INTERNALS__;
@@ -250,8 +250,8 @@
 
   // Bytes across the bridge (M18) travel as base64 text in pieces: this page may not reach
   // the app's binary channel (see transfer.rs in the app).
-  var MAX_BINARY_BYTES = __QOOP_MAX_BINARY_BYTES__;
-  var MAX_MOVE_BYTES = __QOOP_MAX_MOVE_BYTES__;
+  var MAX_BINARY_BYTES = __INFALL_MAX_BINARY_BYTES__;
+  var MAX_MOVE_BYTES = __INFALL_MAX_MOVE_BYTES__;
   var SAVE_CHUNK_BYTES = 3145728; // 3 MB of bytes, 4 MB of text, per call
   var TOO_LARGE = 'The file is too large to save (at most ' + Math.round(MAX_BINARY_BYTES / 1048576) + ' MB).';
 
@@ -343,7 +343,7 @@
   // PDFs (M19; docs/specs/pdf-sources.md, decision 10). A folder the person picks in the
   // system's dialog: the page gets a token and the folder's name, never its path; the token
   // dies with this page.
-  var MAX_PDF_BYTES = __QOOP_MAX_PDF_BYTES__;
+  var MAX_PDF_BYTES = __INFALL_MAX_PDF_BYTES__;
   var PDF_TOO_LARGE = 'The file is too large to open (at most ' + Math.round(MAX_PDF_BYTES / 1048576) + ' MB).';
 
   function pickFolder() {
@@ -563,7 +563,7 @@
     return call('chrome_scale', { scale: scale }).then(function () {});
   }
 
-  Object.defineProperty(window, 'qoopDesktop', {
+  Object.defineProperty(window, 'infallDesktop', {
     value: Object.freeze({
       version: VERSION,
       claude: claude,

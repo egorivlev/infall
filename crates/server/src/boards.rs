@@ -6,7 +6,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
-use qoop_core::{
+use infall_core::{
     Board, Branch, BranchId, Change, MemberId, Moment, Op, Value as FieldValue, Workspace, WsError,
 };
 use serde::{Deserialize, Serialize};
@@ -95,7 +95,7 @@ pub struct BranchInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     parent: Option<Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    created_by: Option<qoop_core::MemberId>,
+    created_by: Option<infall_core::MemberId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<i64>,
     /// How many Checkpoints the Branch has.

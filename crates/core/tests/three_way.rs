@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 fn delete(entity: EntityId) -> Op {
     Op::Delete { entity }

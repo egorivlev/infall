@@ -30,7 +30,7 @@ A zone touches no file outside what it owns. The repository has a large uncommit
 
 ## Contract A — the server crate, for the desktop shell
 
-In `qoop_server::local`:
+In `infall_server::local`:
 
 ```rust
 /// Writes a Workspace file for the database at `db` to `dest` (which must not exist).
@@ -96,7 +96,7 @@ The shell also makes the backups of decision 2.
 
 ## Contract D — the bridge, for the web UI
 
-Added to `window.qoopDesktop`:
+Added to `window.infallDesktop`:
 
 ```ts
 saveFile(file: { suggestedName: string; text: string }): Promise<boolean>

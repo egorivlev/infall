@@ -23,9 +23,9 @@ describe('tokens', () => {
   it('creates a token and hands out its secret once', async () => {
     const made = await tokens.create('  Claude on my laptop ')
     expect(made).toEqual({ token: { id: 'k0', name: 'Claude on my laptop', created_at: 100 }, secret: server.secrets[0] })
-    expect(made.secret).toMatch(/^qoop_pat_[A-Za-z0-9_-]{43}$/)
+    expect(made.secret).toMatch(/^infall_pat_[A-Za-z0-9_-]{43}$/)
     expect(calls()).toEqual([{ method: 'POST', path: '/api/tokens', body: { name: 'Claude on my laptop' } }])
-    expect(JSON.stringify(await tokens.list())).not.toContain('qoop_pat_')
+    expect(JSON.stringify(await tokens.list())).not.toContain('infall_pat_')
   })
   it('lists the Member\'s own tokens, oldest first', async () => {
     expect(await tokens.list()).toEqual([])

@@ -11,7 +11,7 @@ async fn unknown_api_routes_are_json_404_never_the_ui() {
         let res = app.get(path, None).await;
         assert_eq!(res.status, StatusCode::NOT_FOUND, "{path}");
         assert_eq!(res.code(), "not_found", "{path}");
-        assert!(!res.text.contains("Qoop UI"), "{path}");
+        assert!(!res.text.contains("Infall UI"), "{path}");
     }
     // A wrong method on a known API route is also JSON.
     let res = app.get("/api/auth/login", None).await;
@@ -24,7 +24,7 @@ async fn ui_paths_serve_index_html_and_files_serve_themselves() {
     for path in ["/", "/some/ui/path", "/invite/abc"] {
         let res = app.get(path, None).await;
         assert_eq!(res.status, StatusCode::OK, "{path}");
-        assert!(res.text.contains("Qoop UI"), "{path}");
+        assert!(res.text.contains("Infall UI"), "{path}");
         assert!(
             res.headers["content-type"]
                 .to_str()
@@ -52,7 +52,7 @@ async fn ui_paths_serve_index_html_and_files_serve_themselves() {
 async fn path_traversal_does_not_escape_the_web_dir() {
     let app = TestApp::new();
     // A secret right next to the web dir.
-    let secret = app.web.path().parent().unwrap().join("qoop-secret.txt");
+    let secret = app.web.path().parent().unwrap().join("infall-secret.txt");
     std::fs::write(&secret, "TOP SECRET RESEARCH").unwrap();
     let name = secret.file_name().unwrap().to_str().unwrap();
     for path in [

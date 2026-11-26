@@ -25,7 +25,7 @@ use axum::http::header::{
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use futures_util::{Stream, StreamExt};
-use qoop_core::{EntityKind, Op, Value as FieldValue};
+use infall_core::{EntityKind, Op, Value as FieldValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

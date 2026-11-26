@@ -1,8 +1,6 @@
 # Infall UI — build brief for M1
 
-> The product is called **Infall** in everything a person reads (the code, packages and design file names still say qoop).
-
-The design source is in [/design](../../../design) (`.dc.html` mock-ups: markup with `{{ holes }}` and a script block of sample data). Read the relevant file before building a screen and match it: `Qoop Design System`, `Qoop Board`, `QBoardCanvas`, `QTopBar`, `QRail`, `Qoop Access`. Tokens are already in `src/styles/tokens.css` (dark is default; `[data-theme="light"]`; any `[data-branch]` other than `main` tints the chrome).
+The design source is in [/design](../../../design) (`.dc.html` mock-ups: markup with `{{ holes }}` and a script block of sample data). Read the relevant file before building a screen and match it: `Infall Design System`, `Infall Board`, `QBoardCanvas`, `QTopBar`, `QRail`, `Infall Access`. Tokens are already in `src/styles/tokens.css` (dark is default; `[data-theme="light"]`; any `[data-branch]` other than `main` tints the chrome).
 
 Audience: physicists. Dense, calm, precise — a scientific instrument, not a playful whiteboard. No gradients, glass, emoji, or decorative animation.
 
@@ -35,7 +33,7 @@ Dead-end Cards look deliberately kept, not like errors: 135° hatch at ~9% mix, 
 - Rail (see `QRail`): nav item "Board" (active) and, for Admins, "Members"; a "Frames" section listing each Frame with its Card count — click jumps the Board to that Frame; "+" adds a Frame; footer shows sync state from `useBoard().status`: "Synced" (green dot) / "Reconnecting…" (amber) / "Offline" and the host name.
 - Do **not** show History, Checkpoint, To-dos, Suggestions, Sources or AI controls — they do not exist yet.
 
-## Board (see `QBoardCanvas`, `Qoop Board` 1a/1b)
+## Board (see `QBoardCanvas`, `Infall Board` 1a/1b)
 - Pan: drag empty space or two-finger scroll. Zoom: wheel/pinch, 10–200%, plus a small HUD bottom-right with −, %, +, "Fit". Dot grid 24px in `--q-grid`.
 - Semantic zoom: ≥55% full Card; 30–55% compact (title + status glyph/short word, no summary); <30% tile (status-tinted block with glyph only; Connection labels hidden). Frame titles scale up as you zoom out so they stay legible.
 - **Card** 224×132, radius 5, `--q-raised`, 1px `--q-line`; padding 9/11/8. Top row: status glyph + status word (mono 9.5px caps). Title 13/600/1.3 (2-line clamp). Summary 11.5/1.38 (2-line clamp), `--q-ink-2`. Selected: accent border + 2px `--q-accent-soft` ring.
@@ -56,7 +54,7 @@ Dead-end Cards look deliberately kept, not like errors: 135° hatch at ~9% mix, 
 - Empty Board: centred, quiet prompt — serif "Nothing on this Board yet", one line "Double-click anywhere to add the first Card.", and a "+ Card" button. No illustration.
 - Loading: nothing for the first 150 ms, then a plain "Loading Board…" in `--q-ink-3`; no spinner art.
 
-## Access screens (see `Qoop Access`)
+## Access screens (see `Infall Access`)
 - Login: centred 380px card on `--q-sunken`: logo, serif "Sign in to Infall", Email, Password, "Sign in". Under it: "Forgot your password? Ask your Admin." Errors appear inline under the form, in plain words ("That email and password don't match." / "Too many attempts. Try again in a few minutes."). No sign-up link — accounts are by invite only.
 - Accept invite (`/invite/<token>`): looks up the invite; shows "You're invited as a Member/Guest — <email>"; fields Name, Password (min 12, with the rule stated up front, not only on error), "Join Infall". Expired/used invite → a calm full-card message "This invite is no longer valid. Ask your Admin for a new one."
 - Members (Admin only; see 11c): table of Members (avatar, name, email, role; "Remove" with a confirm dialog that names the person; you cannot remove yourself), pending invites with "Revoke", and an invite form (Email, Role Member/Guest, "Access until" date shown only for Guest) — on success show the invite URL in a read-only field with a "Copy" button and the line "This is shown once. It expires in 7 days."
@@ -65,7 +63,7 @@ Dead-end Cards look deliberately kept, not like errors: 135° hatch at ~9% mix, 
 
 # M2 — Branches, Checkpoints, History, Restore
 
-Design source: `design/QTopBar.dc.html` (Branch switcher, Checkpoint and History buttons), `design/Qoop Team.dc.html` screens **7a History timeline** and **8a Branches**, `design/Qoop Board.dc.html` screen **2a** (chrome on a non-main Branch). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M2". Everything in "Foundations" above still applies. Not in M2 (do not show): Compare, Merge, "vs main" numbers, the divergence graph, To-dos, AI.
+Design source: `design/QTopBar.dc.html` (Branch switcher, Checkpoint and History buttons), `design/Infall Team.dc.html` screens **7a History timeline** and **8a Branches**, `design/Infall Board.dc.html` screen **2a** (chrome on a non-main Branch). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M2". Everything in "Foundations" above still applies. Not in M2 (do not show): Compare, Merge, "vs main" numbers, the divergence graph, To-dos, AI.
 
 Vocabulary: Branch, Checkpoint, History, Activity, Change, Restore. Never "commit", "version", "snapshot", "revert", "save".
 
@@ -106,7 +104,7 @@ Two columns: list (fluid) and a 340px "New Branch" panel on the right.
 
 # M3 — Merge review
 
-Design source: `design/Qoop Merge.dc.html` (screen 9a — match it), and `design/Qoop Team.dc.html` 8a for the entry points. Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M3" (`useMerge`, `merge`, `mergeOptions`). Vocabulary: Merge, Conflict, Branch, Checkpoint, Change, Restore. Never "pull request", "commit", "rebase", "resolve" as a noun, "ours/theirs".
+Design source: `design/Infall Merge.dc.html` (screen 9a — match it), and `design/Infall Team.dc.html` 8a for the entry points. Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M3" (`useMerge`, `merge`, `mergeOptions`). Vocabulary: Merge, Conflict, Branch, Checkpoint, Change, Restore. Never "pull request", "commit", "rebase", "resolve" as a noun, "ours/theirs".
 
 ## Entry points (Branches screen)
 - Since M15b these are on each Branch's label on the Branch Graph.
@@ -130,7 +128,7 @@ Design source: `design/Qoop Merge.dc.html` (screen 9a — match it), and `design
 
 # M4 — Pages, Sources, To-dos
 
-Design source: `design/QPage.dc.html` (the Page — match its typography and spacing), `design/Qoop Page.dc.html` screens 3a (Page as a side panel over the live Board) and 3c (soft lock), `design/Qoop Team.dc.html` screen 6a (To-dos). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M4". Vocabulary: Page, block, Source, To-do, Card. Never "article", "document", "note", "link", "reference", "citation", "task", "ticket".
+Design source: `design/QPage.dc.html` (the Page — match its typography and spacing), `design/Infall Page.dc.html` screens 3a (Page as a side panel over the live Board) and 3c (soft lock), `design/Infall Team.dc.html` screen 6a (To-dos). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M4". Vocabulary: Page, block, Source, To-do, Card. Never "article", "document", "note", "link", "reference", "citation", "task", "ticket".
 Not in M4 (do not show): Visual and Run blocks, image blocks, AI-generated/pinned blocks, "Ask to hand over", fetching Source details from the web.
 
 ## Opening a Page (Board)
@@ -165,7 +163,7 @@ Not in M4 (do not show): Visual and Run blocks, image blocks, AI-generated/pinne
 
 # M5 — Suggestions and AI access
 
-Design source: `design/Qoop Board.dc.html` screen **5a Suggestions inbox** (match it; the list markup starts a little above the `<span>{{ s.target }}</span>` line, sample data in the script block), `design/QBoardCanvas.dc.html` (how a suggested Connection is drawn: dashed, accent, label "Suggested · …"), `design/QRail.dc.html` (rail item with count), `design/Qoop Access.dc.html` (settings look). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M5". Vocabulary: Suggestion, Source, Connection, Member; "AI" is fine. Never "recommendation", "proposal", "bot", "assistant" as a noun for the feature, "API key" for the access token (say "access token").
+Design source: `design/Infall Board.dc.html` screen **5a Suggestions inbox** (match it; the list markup starts a little above the `<span>{{ s.target }}</span>` line, sample data in the script block), `design/QBoardCanvas.dc.html` (how a suggested Connection is drawn: dashed, accent, label "Suggested · …"), `design/QRail.dc.html` (rail item with count), `design/Infall Access.dc.html` (settings look). Data layer: [CONTRACT.md](../lib/CONTRACT.md) "M5". Vocabulary: Suggestion, Source, Connection, Member; "AI" is fine. Never "recommendation", "proposal", "bot", "assistant" as a noun for the feature, "API key" for the access token (say "access token").
 Not in M5 (do not show): the AI sidebar, Conversations, Pin, model pickers, OpenRouter keys.
 
 ## Suggestions panel (5a) — inside the Board area
@@ -181,10 +179,10 @@ Not in M5 (do not show): the AI sidebar, Conversations, Pin, model pickers, Open
 - Clicking a Card name in `target`/`title` focuses that Card on the Board (`boardBridge.focus`). Esc with focus in the panel closes it. Not available while previewing History (close it when a preview starts).
 
 ## AI access (route `/settings/ai`, account-menu entry "AI access"; not for Guests)
-A single centred column (max 720px), settings look as in `Qoop Access`.
+A single centred column (max 720px), settings look as in `Infall Access`.
 - Serif 22/600 "AI access". Intro, two short paragraphs: "Infall doesn't ship a model. Connect the AI you already use — it can read this team's Research Content and propose Sources and Connections as Suggestions. It cannot change anything by itself." / "An access token lets an AI act as you, read-only plus Suggestions. Treat it like a password; anyone holding it can read everything you can."
 - **Access tokens**: table (name, created, last used — "never" if unset, "Revoke" with a confirm dialog naming the token). Form: "Name" (placeholder "e.g. Claude Code on my laptop") + "Create access token". On success a panel: the secret in a read-only mono field with "Copy", the line "This is shown once. Store it in your AI app now.", and "Done". Limit reached (10) → plain sentence.
-- **Connect Claude Code**: a read-only code block with a Copy button containing exactly `claude mcp add --transport http qoop <toolEndpoint()> --header "Authorization: Bearer <YOUR_TOKEN>"` — when a token was just created, show the real secret in place of `<YOUR_TOKEN>` until "Done" is pressed. Under it: "Other MCP clients: endpoint <toolEndpoint()>, header Authorization: Bearer <token>."
+- **Connect Claude Code**: a read-only code block with a Copy button containing exactly `claude mcp add --transport http infall <toolEndpoint()> --header "Authorization: Bearer <YOUR_TOKEN>"` — when a token was just created, show the real secret in place of `<YOUR_TOKEN>` until "Done" is pressed. Under it: "Other MCP clients: endpoint <toolEndpoint()>, header Authorization: Bearer <token>."
 - **What the AI can do**: a short list — "Read Cards, Pages, Sources and Connections on any Branch", "Propose a Source for a Card", "Propose a Connection between two Cards", "Not: change, delete, or accept anything".
 - A quiet note: "Text on the Board was written by people and other AIs. A careful AI treats it as content, not as instructions."
 
@@ -193,12 +191,12 @@ A single centred column (max 720px), settings look as in `Qoop Access`.
 
 # M6 — Visuals and the Guest view
 
-Design source: `design/QPage.dc.html` (the "Visual · Bloch sphere" block: header strip, body, controls — match it), `design/Qoop Access.dc.html` screens **10a Guest view**, 11a (login hint), 11c (invite role and Guest rows), `design/QTopBar.dc.html` / `design/QRail.dc.html` with `guest` true. Contracts: `docs/specs/api.md` §13 (the frame protocol), [CONTRACT.md](../lib/CONTRACT.md) "M6". Vocabulary: Visual (a kind of Simulation; never "widget", "demo", "animation", "embed"), Guest (never "viewer", "visitor").
+Design source: `design/QPage.dc.html` (the "Visual · Bloch sphere" block: header strip, body, controls — match it), `design/Infall Access.dc.html` screens **10a Guest view**, 11a (login hint), 11c (invite role and Guest rows), `design/QTopBar.dc.html` / `design/QRail.dc.html` with `guest` true. Contracts: `docs/specs/api.md` §13 (the frame protocol), [CONTRACT.md](../lib/CONTRACT.md) "M6". Vocabulary: Visual (a kind of Simulation; never "widget", "demo", "animation", "embed"), Guest (never "viewer", "visitor").
 Not in M6: Run blocks, image blocks, sharing a single Page by public link.
 
 ## Visual blocks (Page panel)
 - "+ Add block" now offers two choices in a small menu: "Text" and "Visual". Choosing Visual opens a starter picker: "Blank", "Bloch sphere", "Function plot" (each a complete, self-contained source kept in `ui/page/visuals/templates`; they must work under the frame's rules: no network, no external scripts, inline `<script>`/`<style>`, `<canvas>` or SVG, colours from the `--q-*` variables so they follow the theme). The block is created with the template's source and title and opens in the editor.
-- **Reading**: a framed block (1px `--q-line`, radius 8). Header strip (mono 10.5 caps for the labels): a small orbit glyph, "VISUAL", the title in sans 13/600 (not upper-cased), spacer, "interactive · runs everywhere" in `--q-ink-3`. Body: the sandboxed iframe exactly as api.md §13 says (`sandbox="allow-scripts"`, `src={VISUAL_FRAME_PATH}`, `title="Visual: <title>"`, no border, width 100%), height from the frame's `height` messages clamped to 80–900px (default 240 until the first message; taller content scrolls inside the frame). Send `render` on `ready` with the block's source and the current theme (read the `--q-*` custom properties the templates need from the document — at least ink, ink-2, ink-3, line, line-soft, accent, accent-soft, surface, raised, the five status colours — plus `color-scheme`); reload the frame when the source or the app theme changes. Accept messages only when `event.source` is that iframe's `contentWindow` and `data.qoop === "visual"`.
+- **Reading**: a framed block (1px `--q-line`, radius 8). Header strip (mono 10.5 caps for the labels): a small orbit glyph, "VISUAL", the title in sans 13/600 (not upper-cased), spacer, "interactive · runs everywhere" in `--q-ink-3`. Body: the sandboxed iframe exactly as api.md §13 says (`sandbox="allow-scripts"`, `src={VISUAL_FRAME_PATH}`, `title="Visual: <title>"`, no border, width 100%), height from the frame's `height` messages clamped to 80–900px (default 240 until the first message; taller content scrolls inside the frame). Send `render` on `ready` with the block's source and the current theme (read the `--q-*` custom properties the templates need from the document — at least ink, ink-2, ink-3, line, line-soft, accent, accent-soft, surface, raised, the five status colours — plus `color-scheme`); reload the frame when the source or the app theme changes. Accept messages only when `event.source` is that iframe's `contentWindow` and `data.infall === "visual"`.
 - An `error` message shows a quiet strip under the body: "This Visual reported an error: <message>" (`--q-st-question` tint, mono 11.5); it never breaks the Page.
 - Frames are created lazily: only when the block scrolls near the viewport (IntersectionObserver), so a long Page does not start dozens at once.
 - **Editing** (Members, not under soft lock): an "Edit" button in the header strip (and Enter when the block is focused) opens: a "Title" field, a source `<textarea>` (mono 12.5, at least 14 rows, Tab inserts two spaces, no spell-check), a "Run" button that re-renders a live preview frame below the editor from the draft, and "Done" (commits changed title/source in one batch) / "Cancel". ⌘/Ctrl+Enter runs; Esc cancels (confirm nothing — the draft is discarded, as with text blocks). One hint line: "HTML, CSS and JavaScript. Runs in a sandbox: no network, no access to Infall. Use the --q-* colour variables to follow the theme." Soft-lock claim and StrictMode rules as for text blocks. Move up/down/delete controls as for text blocks.
@@ -221,7 +219,7 @@ A Guest sees: the Board of `main` (read-only, pan/zoom/select), Frames in the ra
 
 # M7 — the AI sidebar, Pin, and AI settings
 
-Design source: `design/Qoop Board.dc.html` screens **4a AI sidebar conversation** and **4b AI sidebar empty** (match them: 376px column, header, privacy line, messages, scope chip, composer), `design/QPage.dc.html` (the "AI-GENERATED" pinned block), `design/Qoop Access.dc.html` screen 11b (the AI part of Member settings), `design/QTopBar.dc.html` with `ai` true (the top-bar button). Contracts: [CONTRACT.md](../lib/CONTRACT.md) "M7", `docs/specs/desktop.md`. Vocabulary: Conversation (never "chat", "thread", "session"), Pin, AI; "Claude Code" and "OpenRouter" are product names.
+Design source: `design/Infall Board.dc.html` screens **4a AI sidebar conversation** and **4b AI sidebar empty** (match them: 376px column, header, privacy line, messages, scope chip, composer), `design/QPage.dc.html` (the "AI-GENERATED" pinned block), `design/Infall Access.dc.html` screen 11b (the AI part of Member settings), `design/QTopBar.dc.html` with `ai` true (the top-bar button). Contracts: [CONTRACT.md](../lib/CONTRACT.md) "M7", `docs/specs/desktop.md`. Vocabulary: Conversation (never "chat", "thread", "session"), Pin, AI; "Claude Code" and "OpenRouter" are product names.
 
 ## Top bar and layout
 - A top-bar button "AI" (spark icon, `aria-pressed`) toggles `aiPanel` (`ui/bridge`); not for Guests. When open, the shell grid gains a 376px right column for the sidebar on **every** screen (Board, To-dos, Branches…); the work area shrinks. Below 1100px window width the sidebar overlays the work area instead of shrinking it.
@@ -300,7 +298,7 @@ A control in the top bar that exists only while `useRuns().live` is non-null (a 
   - **Processor**: "182 % · 1.8 of 10 cores" with a meter scaled to all cores;
   - **Memory**: "1.2 GB of 24 GB" with a meter, and "peak 1.4 GB";
   - **Graphics**: "76 % · whole computer" (+ name when given); when absent: "Not reported on this computer";
-  - **Running**: the time; **Left**: the estimate, or "No estimate — the code reports no progress" with one quiet line showing `qoop.progress(done, total)`;
+  - **Running**: the time; **Left**: the estimate, or "No estimate — the code reports no progress" with one quiet line showing `infall.progress(done, total)`;
   - **Stop** (the same action as the Run block's Stop).
   - No `stats` yet: the three usage rows say "Measuring…"; after 10 s of running without one (an M8 app, or a first sample that is late) they say "No numbers yet" in the same rows, so nothing moves; a sample that arrives later fills them.
 - Meters are `role="meter"` with a text value; numbers never rely on colour alone; a meter turns to the warning colour at ≥ 90 % of memory. Values update about once a second and must not move the layout (tabular figures, fixed row heights). Not announced to screen readers on every tick.
@@ -312,8 +310,8 @@ A control in the top bar that exists only while `useRuns().live` is non-null (a 
 # Top bar, two rows (design update, Nov 2026)
 
 `design/QTopBar.dc.html`. Replaces the single 44px bar.
-- **Row 1, 36px — the window's title bar** (`q-titlebar`, background `--q-chrome` mixed 68% with `--q-sunken`): 224px brand cell (Infall mark 18px: a black hole in its ring, the disc crossing in front + "Infall"), the search field centred (24px high, max 380px, so 6px above and below; its focus ring is 2px at a 2px offset, 1px on a Branch other than main, where the top 2px of the bar are the Branch stripe), then presence ("On <branch>" + 20px avatars), a divider, the theme toggle (24px) and the account button (24px, 18px avatar + name), all centred in the row. In the macOS desktop app the window has no title bar of its own (Tauri `TitleBarStyle::Overlay`): the traffic lights sit at the left of this row, the brand cell leaves 75px for them, and the row is a `data-tauri-drag-region="deep"` (empty parts move the window; a double click zooms). The lights are centred in the row at every interface scale: the page tells the app its scale (`qoopDesktop.chromeScale`, from `useAppliedPrefs` and `public/boot.js`), and the app puts their centre 18 × scale points down (the row is 36px × scale tall). They do not zoom or move sideways (x 13–65 in points), so below 100 % the brand cell leaves 75 real points instead of 75px (`--q-mac-lights`: `max(75px, 75px × --q-ui-unzoom)`; 93.75px at 80 %); at 100 % and above it stays 75px.
-- **Fullscreen (macOS desktop app)**: macOS hides the traffic lights, so the brand cell drops the 75px and the mark sits at 13px as in a browser (`is-fullscreen` on `q-titlebar`, from `useDesktopFullscreen()` in `ui/shell/windowChrome.ts`, which follows `qoopDesktop.fullscreen`; the first render already reads it, so a window opened in fullscreen never shows the gap). No transition on the change. An app without `fullscreen` keeps the 75px always.
+- **Row 1, 36px — the window's title bar** (`q-titlebar`, background `--q-chrome` mixed 68% with `--q-sunken`): 224px brand cell (Infall mark 18px: a black hole in its ring, the disc crossing in front + "Infall"), the search field centred (24px high, max 380px, so 6px above and below; its focus ring is 2px at a 2px offset, 1px on a Branch other than main, where the top 2px of the bar are the Branch stripe), then presence ("On <branch>" + 20px avatars), a divider, the theme toggle (24px) and the account button (24px, 18px avatar + name), all centred in the row. In the macOS desktop app the window has no title bar of its own (Tauri `TitleBarStyle::Overlay`): the traffic lights sit at the left of this row, the brand cell leaves 75px for them, and the row is a `data-tauri-drag-region="deep"` (empty parts move the window; a double click zooms). The lights are centred in the row at every interface scale: the page tells the app its scale (`infallDesktop.chromeScale`, from `useAppliedPrefs` and `public/boot.js`), and the app puts their centre 18 × scale points down (the row is 36px × scale tall). They do not zoom or move sideways (x 13–65 in points), so below 100 % the brand cell leaves 75 real points instead of 75px (`--q-mac-lights`: `max(75px, 75px × --q-ui-unzoom)`; 93.75px at 80 %); at 100 % and above it stays 75px.
+- **Fullscreen (macOS desktop app)**: macOS hides the traffic lights, so the brand cell drops the 75px and the mark sits at 13px as in a browser (`is-fullscreen` on `q-titlebar`, from `useDesktopFullscreen()` in `ui/shell/windowChrome.ts`, which follows `infallDesktop.fullscreen`; the first render already reads it, so a window opened in fullscreen never shows the gap). No transition on the change. An app without `fullscreen` keeps the 75px always.
 - **Row 2, 36px — the Branch toolbar** (`q-toolbar`, `--q-chrome`): Branch switcher, divider, Checkpoint, History; on the right the Runner monitor (while a Run is in flight), a divider and AI. Guests: the plain "main · read-only" label and the Guest badge on the right. Toolbar buttons are 26px with a transparent border until hovered or pressed.
 - Not taken from the mock-up: Undo/Redo in the top bar (since M15 they are on the Board's toolbar and in the Page header: see "M15 — Undo" below), "All changes saved" (the rail already says "Synced"; never "saved"), the team name next to the logo (no such data), and the Windows menu bar + caption buttons (Windows keeps its native title bar).
 

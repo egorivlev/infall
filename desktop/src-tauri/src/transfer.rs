@@ -21,7 +21,7 @@ use serde::Serialize;
 const MB: u64 = 1024 * 1024;
 
 /// The largest Workspace file a move hands over: what a Team server takes in by default
-/// (`QOOP_MAX_IMPORT_MB`, docs/specs/team-move.md, Contract B).
+/// (`INFALL_MAX_IMPORT_MB`, docs/specs/team-move.md, Contract B).
 pub const MAX_MOVE_BYTES: u64 = 512 * MB;
 /// The file bytes in one `moveFile` chunk (about 5.6 MB of text).
 pub const MOVE_CHUNK_BYTES: usize = 4 * 1024 * 1024;

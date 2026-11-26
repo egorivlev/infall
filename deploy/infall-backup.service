@@ -1,21 +1,21 @@
-# /etc/systemd/system/qoop-backup.service
+# /etc/systemd/system/infall-backup.service
 [Unit]
 Description=Infall encrypted database backup
 After=network-online.target
 
 [Service]
 Type=oneshot
-User=qoop
-Group=qoop
-EnvironmentFile=/etc/qoop/qoop.env
-ExecStart=/opt/qoop/backup.sh
+User=infall
+Group=infall
+EnvironmentFile=/etc/infall/infall.env
+ExecStart=/opt/infall/backup.sh
 UMask=0077
 
 # Needs to read the database and write its -wal/-shm files, and write backups.
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 ProtectSystem=strict
-ReadWritePaths=/var/lib/qoop /var/backups/qoop
+ReadWritePaths=/var/lib/infall /var/backups/infall
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

@@ -10,9 +10,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use qoop_claude_driver::{AiEvent, Cancel, Driver, Outcome, RunRequest, Secret, Status};
+use infall_claude_driver::{AiEvent, Cancel, Driver, Outcome, RunRequest, Secret, Status};
 
-const TOKEN: &str = "qoop_pat_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG";
+const TOKEN: &str = "infall_pat_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG";
 
 struct Stub {
     driver: Driver,
@@ -37,8 +37,8 @@ fn stub(mode: &str) -> Stub {
     driver.exit_grace = Duration::from_secs(5);
     driver.kill_grace = Duration::from_secs(5);
     driver.env = vec![
-        (OsString::from("QOOP_STUB_DIR"), record.clone().into()),
-        (OsString::from("QOOP_STUB_MODE"), mode.into()),
+        (OsString::from("INFALL_STUB_DIR"), record.clone().into()),
+        (OsString::from("INFALL_STUB_MODE"), mode.into()),
     ];
     Stub {
         driver,
@@ -51,7 +51,7 @@ fn request() -> RunRequest {
     RunRequest {
         prompt: "What is on the board?\nSecond line — with ünïcode and 'quotes' and $(echo no)."
             .into(),
-        system: "You are inside Qoop.\nBranch: main; `rm -rf` is just text.".into(),
+        system: "You are inside Infall.\nBranch: main; `rm -rf` is just text.".into(),
         resume: None,
         tools_url: "http://localhost:8787/mcp".into(),
         tools_token: Secret::new(TOKEN),
@@ -167,7 +167,7 @@ fn the_token_is_in_the_owner_only_file_and_nowhere_on_the_command_line() {
     assert!(
         !args
             .iter()
-            .any(|a| a.contains(TOKEN) || a.contains("qoop_pat_")),
+            .any(|a| a.contains(TOKEN) || a.contains("infall_pat_")),
         "the token is in the arguments"
     );
 
@@ -175,7 +175,7 @@ fn the_token_is_in_the_owner_only_file_and_nowhere_on_the_command_line() {
     let config: serde_json::Value = serde_json::from_str(&recorded(&stub, "mcp-config")).unwrap();
     assert_eq!(
         config,
-        serde_json::json!({ "mcpServers": { "qoop": {
+        serde_json::json!({ "mcpServers": { "infall": {
             "type": "http",
             "url": "http://localhost:8787/mcp",
             "headers": { "Authorization": format!("Bearer {TOKEN}") }
@@ -205,7 +205,7 @@ fn the_token_is_in_the_owner_only_file_and_nowhere_on_the_command_line() {
 }
 
 #[test]
-fn started_with_no_built_in_tools_only_the_qoop_tools_and_no_user_settings() {
+fn started_with_no_built_in_tools_only_the_infall_tools_and_no_user_settings() {
     let stub = stub("answer");
     run(&stub, &request());
     let args = argv(&stub);
@@ -224,20 +224,20 @@ fn started_with_no_built_in_tools_only_the_qoop_tools_and_no_user_settings() {
     assert_eq!(value_of("--input-format"), "text");
     // Every built-in tool off.
     assert_eq!(value_of("--tools"), "");
-    // Exactly the eight Qoop tools allowed.
+    // Exactly the eight Infall tools allowed.
     let mut allowed: Vec<&str> = value_of("--allowedTools").split(',').collect();
     allowed.sort_unstable();
     assert_eq!(
         allowed,
         vec![
-            "mcp__qoop__get_card",
-            "mcp__qoop__list_branches",
-            "mcp__qoop__list_cards",
-            "mcp__qoop__list_connections",
-            "mcp__qoop__list_sources",
-            "mcp__qoop__list_suggestions",
-            "mcp__qoop__suggest_connection",
-            "mcp__qoop__suggest_source",
+            "mcp__infall__get_card",
+            "mcp__infall__list_branches",
+            "mcp__infall__list_cards",
+            "mcp__infall__list_connections",
+            "mcp__infall__list_sources",
+            "mcp__infall__list_suggestions",
+            "mcp__infall__suggest_connection",
+            "mcp__infall__suggest_source",
         ]
     );
     // Nothing may be approved by a prompt, and nothing bypasses permissions.
@@ -513,7 +513,7 @@ fn the_default_silence_timeout_is_120_seconds() {
         Duration::from_secs(120)
     );
     assert_eq!(
-        qoop_claude_driver::SILENCE_TIMEOUT,
+        infall_claude_driver::SILENCE_TIMEOUT,
         Duration::from_secs(120)
     );
 }

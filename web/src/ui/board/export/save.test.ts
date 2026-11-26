@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toasts } from '../toastStore'
 import { boardFileName, fileMoment, savePng, saveSvg } from './save'
 
-const g = globalThis as { qoopDesktop?: unknown }
+const g = globalThis as { infallDesktop?: unknown }
 
 describe('boardFileName', () => {
   it('names the Branch, the moment History shows, and the visible area', () => {
@@ -28,13 +28,13 @@ describe('saving', () => {
     vi.spyOn(toasts, 'show')
   })
   afterEach(() => {
-    delete g.qoopDesktop
+    delete g.infallDesktop
     vi.restoreAllMocks()
   })
 
   it('saves the SVG through the desktop app’s save dialog when it has one', async () => {
     const saveFile = vi.fn().mockResolvedValue(true)
-    g.qoopDesktop = { saveFile }
+    g.infallDesktop = { saveFile }
     expect(await saveSvg('Board of main.svg', '<svg/>')).toBe('saved')
     expect(saveFile).toHaveBeenCalledWith({ suggestedName: 'Board of main.svg', text: '<svg/>' })
     expect(clicks).toEqual([])
@@ -50,7 +50,7 @@ describe('saving', () => {
     const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })
     expect(await savePng('Board of main.png', png)).toBe('downloaded')
     expect(clicks).toEqual([{ href: 'blob:x', download: 'Board of main.png' }])
-    g.qoopDesktop = { saveFile: vi.fn() }
+    g.infallDesktop = { saveFile: vi.fn() }
     expect(await savePng('Board of main.png', png)).toBe('offered')
     expect(vi.mocked(toasts.show).mock.calls.at(-1)![0].message).toMatch(/may not keep it/)
   })
@@ -58,7 +58,7 @@ describe('saving', () => {
   it('M18: writes the PNG’s bytes through the app’s binary save when it has one — no download, no warning', async () => {
     const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })
     const saveBinaryFile = vi.fn().mockResolvedValue(true)
-    g.qoopDesktop = { saveFile: vi.fn(), saveBinaryFile }
+    g.infallDesktop = { saveFile: vi.fn(), saveBinaryFile }
     expect(await savePng('Board of main.png', png)).toBe('saved')
     expect(saveBinaryFile).toHaveBeenCalledWith({ suggestedName: 'Board of main.png', bytes: new Uint8Array([137, 80, 78, 71]) })
     expect(clicks).toEqual([])

@@ -147,20 +147,20 @@ struct World {
 }
 
 async fn world() -> World {
-    let (mut ws, main) = qoop_core::Workspace::new();
+    let (mut ws, main) = infall_core::Workspace::new();
     let side = ws
         .fork(
             "side",
-            qoop_core::Moment {
+            infall_core::Moment {
                 branch: main,
                 seq: 0,
             },
-            qoop_core::MemberId::new(),
+            infall_core::MemberId::new(),
             1,
         )
         .unwrap();
-    let store = qoop_server::store::MemoryStore::new();
-    qoop_server::store::Store::save_workspace(&store, &ws).unwrap();
+    let store = infall_server::store::MemoryStore::new();
+    infall_server::store::Store::save_workspace(&store, &ws).unwrap();
     let app = TestApp::with_store(Arc::new(store));
     let admin = app.admin().await;
     let bea = app.join(&admin, "bea@example.org", "member", None).await;

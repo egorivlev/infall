@@ -4,8 +4,8 @@
 //! Julia, R), and Q# through a Python that has `qdk`. The "Member" answers the settings and
 //! approval windows through the same calls those windows make.
 //!
-//! Which Python: `QOOP_TEST_PYTHON`, else the first the Runner's own lookup finds. Which
-//! Python for Q#: `QOOP_TEST_QSHARP_PYTHON`, else that same Python if it has `qdk` (or a
+//! Which Python: `INFALL_TEST_PYTHON`, else the first the Runner's own lookup finds. Which
+//! Python for Q#: `INFALL_TEST_QSHARP_PYTHON`, else that same Python if it has `qdk` (or a
 //! `qsharp` of 1.28 or earlier). Anything missing prints a SKIPPED line and passes.
 #![cfg(unix)]
 
@@ -18,14 +18,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use qoop_runner::exec::Env;
-use qoop_runner::python::{self, EnvVars};
-use qoop_runner::toolchains;
-use qoop_runner::{
+use infall_runner::exec::Env;
+use infall_runner::python::{self, EnvVars};
+use infall_runner::toolchains;
+use infall_runner::{
     ApprovalView, Ask, Cancel, Change, Options, Reason, RunEvent, RunRequest, Runner, Ui, Workspace,
 };
 
-const ORIGIN: &str = "https://qoop.example.org";
+const ORIGIN: &str = "https://infall.example.org";
 
 fn login_env() -> &'static EnvVars {
     static ENV: OnceLock<EnvVars> = OnceLock::new();
@@ -36,7 +36,7 @@ fn test_python() -> Option<&'static str> {
     static FOUND: OnceLock<Option<String>> = OnceLock::new();
     FOUND
         .get_or_init(|| {
-            if let Some(path) = std::env::var_os("QOOP_TEST_PYTHON") {
+            if let Some(path) = std::env::var_os("INFALL_TEST_PYTHON") {
                 return Some(path.to_string_lossy().into_owned());
             }
             python::find(login_env()).into_iter().next().map(|i| i.path)
@@ -61,7 +61,7 @@ fn qsharp_python() -> Option<&'static (String, String, String)> {
     static FOUND: OnceLock<Option<(String, String, String)>> = OnceLock::new();
     FOUND
         .get_or_init(|| {
-            let path = std::env::var_os("QOOP_TEST_QSHARP_PYTHON")
+            let path = std::env::var_os("INFALL_TEST_QSHARP_PYTHON")
                 .map(|p| p.to_string_lossy().into_owned())
                 .or_else(|| test_python().map(str::to_owned))?;
             let q = python::qsharp_probe(Path::new(&path), login_env()).ok()?;
@@ -388,13 +388,13 @@ fn fake_language(dir: &Path) -> PathBuf {
 echo "args: $#"
 for a in "$@"; do echo "arg: $a"; done
 echo "cwd: $(pwd)"
-echo "run dir: $QOOP_RUN_DIR"
+echo "run dir: $INFALL_RUN_DIR"
 echo "code: $(cat "$2")"
 echo "mpl: ${MPLBACKEND:-unset} py: ${PYTHONUNBUFFERED:-unset}"
 echo "telemetry: $QDK_PYTHON_TELEMETRY $HF_HUB_DISABLE_TELEMETRY"
 echo "err line" >&2
-printf '\211PNG\r\n\032\nfigure bytes' > "$QOOP_RUN_DIR/qoop-figure-1.png"
-printf 'not a png' > "$QOOP_RUN_DIR/qoop-figure-2.png"
+printf '\211PNG\r\n\032\nfigure bytes' > "$INFALL_RUN_DIR/infall-figure-1.png"
+printf 'not a png' > "$INFALL_RUN_DIR/infall-figure-2.png"
 case "$(cat "$2")" in *forever*) echo "pid $$"; sleep 600;; esac
 exit 3"#,
     )
@@ -838,7 +838,7 @@ cat("never printed\n")
             run.output
         );
         assert!(!run.output.contains("never printed"), "{id}");
-        assert!(!run.output.contains("[qoop]"), "{id}: {}", run.output);
+        assert!(!run.output.contains("[infall]"), "{id}: {}", run.output);
         if id == "julia" {
             // `ERROR: LoadError: DomainError with -0.1:` then the message and a stacktrace.
             assert!(
@@ -959,7 +959,7 @@ append!(z, be32(adler32(raw)))
 png = vcat(UInt8[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
            chunk("IHDR", vcat(be32(w), be32(h), UInt8[8, 2, 0, 0, 0])),
            chunk("IDAT", z), chunk("IEND", UInt8[]))
-write(joinpath(ENV["QOOP_RUN_DIR"], "qoop-figure-1.png"), png)
+write(joinpath(ENV["INFALL_RUN_DIR"], "infall-figure-1.png"), png)
 println("figure: ", length(png), " bytes")
 "#;
 
@@ -967,7 +967,7 @@ println("figure: ", length(png), " bytes")
 /// R's own default bitmap device (Quartz on a Mac).
 const R_PNG: &str = r#"
 x <- seq(0, 2 * pi, length.out = 200)
-f <- file.path(Sys.getenv("QOOP_RUN_DIR"), "qoop-figure-1.png")
+f <- file.path(Sys.getenv("INFALL_RUN_DIR"), "infall-figure-1.png")
 png(f, width = 640, height = 480,
     type = if (capabilities("cairo")) "cairo" else getOption("bitmapType"))
 plot(x, sin(x), type = "l", col = "steelblue", lwd = 2, main = "sin(x)", xlab = "x", ylab = "y")
@@ -1175,7 +1175,7 @@ fn julia_and_r_get_the_runs_file_and_run_in_the_runs_folder_or_the_chosen_one() 
     let julia = r#"
 println("file: ", abspath(PROGRAM_FILE))
 println("cwd: ", pwd())
-println("run dir: ", ENV["QOOP_RUN_DIR"])
+println("run dir: ", ENV["INFALL_RUN_DIR"])
 println("args: ", length(ARGS))
 open("results.csv", "w") do io
     println(io, "sample,value")
@@ -1187,7 +1187,7 @@ println("wrote: ", isfile(joinpath(pwd(), "results.csv")))
 file <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
 cat("file: ", normalizePath(file), "\n", sep = "")
 cat("cwd: ", getwd(), "\n", sep = "")
-cat("run dir: ", Sys.getenv("QOOP_RUN_DIR"), "\n", sep = "")
+cat("run dir: ", Sys.getenv("INFALL_RUN_DIR"), "\n", sep = "")
 cat("args: ", length(commandArgs(trailingOnly = TRUE)), "\n", sep = "")
 write.csv(data.frame(sample = "A", value = 1.5), "results.csv", row.names = FALSE)
 cat("wrote: ", file.exists(file.path(getwd(), "results.csv")), "\n", sep = "")
@@ -1501,7 +1501,7 @@ fn q_sharp_cannot_be_turned_on_for_a_python_without_it() {
     let fake = script(
         tools.path(),
         "python3",
-        "case \"$*\" in *--version*) echo 'Python 3.12.0';; *) echo 'QOOP 3.12';; esac",
+        "case \"$*\" in *--version*) echo 'Python 3.12.0';; *) echo 'INFALL 3.12';; esac",
     );
     let bench = bench(Some(fake.to_str().unwrap()));
     let refused = bench
@@ -1515,7 +1515,7 @@ fn q_sharp_cannot_be_turned_on_for_a_python_without_it() {
     let old = script(
         tools.path(),
         "python-old",
-        "case \"$*\" in *--version*) echo 'Python 3.9.6';; *) echo 'QOOP 3.9';; esac",
+        "case \"$*\" in *--version*) echo 'Python 3.9.6';; *) echo 'INFALL 3.9';; esac",
     );
     bench
         .runner

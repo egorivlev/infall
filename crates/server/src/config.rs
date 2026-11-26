@@ -6,20 +6,20 @@ use std::time::Duration;
 
 use crate::secret::SecretKey;
 
-/// Where OpenRouter is unless `QOOP_OPENROUTER_URL` says otherwise.
+/// Where OpenRouter is unless `INFALL_OPENROUTER_URL` says otherwise.
 pub const DEFAULT_OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
 /// How long an AI turn may go without progress from upstream (contract §14).
 pub const AI_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
-/// Where Crossref is unless `QOOP_CROSSREF_URL` says otherwise (contract §17).
+/// Where Crossref is unless `INFALL_CROSSREF_URL` says otherwise (contract §17).
 pub const DEFAULT_CROSSREF_URL: &str = "https://api.crossref.org";
-/// Where arXiv's export API is unless `QOOP_ARXIV_URL` says otherwise (contract §17).
+/// Where arXiv's export API is unless `INFALL_ARXIV_URL` says otherwise (contract §17).
 pub const DEFAULT_ARXIV_URL: &str = "https://export.arxiv.org";
 /// How long a Source lookup may take in all (contract §17).
 pub const LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long arXiv may take to answer, and to send each next part, when the server fetches a
 /// PDF from it (M19, api.md §20).
 pub const PDF_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
-/// `QOOP_MAX_PDF_MB` unless set: the largest PDF the server stores (M19, decision 4).
+/// `INFALL_MAX_PDF_MB` unless set: the largest PDF the server stores (M19, decision 4).
 pub const DEFAULT_MAX_PDF_MB: u64 = 100;
 
 /// Everything the server needs to know about where it runs.
@@ -27,7 +27,7 @@ pub const DEFAULT_MAX_PDF_MB: u64 = 100;
 pub struct Config {
     pub addr: SocketAddr,
     pub db: PathBuf,
-    /// The origin people use, without a trailing slash, e.g. `https://qoop.example.org`.
+    /// The origin people use, without a trailing slash, e.g. `https://infall.example.org`.
     pub public_origin: String,
     /// One extra Origin allowed for local UI development.
     pub dev_origin: Option<String>,
@@ -47,85 +47,89 @@ pub struct Config {
     /// `LOOKUP_TIMEOUT`, except in tests.
     pub lookup_timeout: Duration,
     /// The largest Workspace file `POST /api/workspace/import` takes, in bytes
-    /// (`QOOP_MAX_IMPORT_MB`, default 512 MiB).
+    /// (`INFALL_MAX_IMPORT_MB`, default 512 MiB).
     pub max_import_bytes: u64,
-    /// The largest PDF stored, in bytes (`QOOP_MAX_PDF_MB`, default 100 MiB; M19).
+    /// The largest PDF stored, in bytes (`INFALL_MAX_PDF_MB`, default 100 MiB; M19).
     pub max_pdf_bytes: u64,
     /// How long arXiv may take to answer, and to send each next part, when a PDF is fetched
     /// from it. Not read from the environment: always `PDF_FETCH_TIMEOUT`, except in tests.
     pub pdf_fetch_timeout: Duration,
 }
 
-/// `QOOP_MAX_IMPORT_MB` unless set.
+/// `INFALL_MAX_IMPORT_MB` unless set.
 pub const DEFAULT_MAX_IMPORT_MB: u64 = 512;
 
 impl Config {
-    /// Reads `QOOP_*` variables, falling back to the contract's defaults.
+    /// Reads `INFALL_*` variables, falling back to the contract's defaults.
     pub fn from_env() -> Result<Config, String> {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
-        let addr = var("QOOP_ADDR").unwrap_or_else(|| "127.0.0.1:8787".to_string());
+        let addr = var("INFALL_ADDR").unwrap_or_else(|| "127.0.0.1:8787".to_string());
         let addr = addr
             .parse()
-            .map_err(|_| format!("QOOP_ADDR is not a socket address: {addr:?}"))?;
+            .map_err(|_| format!("INFALL_ADDR is not a socket address: {addr:?}"))?;
         let public_origin = normalize_origin(
-            &var("QOOP_PUBLIC_ORIGIN").unwrap_or_else(|| "http://localhost:8787".to_string()),
+            &var("INFALL_PUBLIC_ORIGIN").unwrap_or_else(|| "http://localhost:8787".to_string()),
         )
-        .ok_or("QOOP_PUBLIC_ORIGIN must start with http:// or https://")?;
-        let dev_origin = match var("QOOP_DEV_ORIGIN") {
+        .ok_or("INFALL_PUBLIC_ORIGIN must start with http:// or https://")?;
+        let dev_origin = match var("INFALL_DEV_ORIGIN") {
             Some(o) => Some(
                 normalize_origin(&o)
-                    .ok_or("QOOP_DEV_ORIGIN must start with http:// or https://")?,
+                    .ok_or("INFALL_DEV_ORIGIN must start with http:// or https://")?,
             ),
             None => None,
         };
-        let secret_key = match var("QOOP_SECRET_KEY") {
+        let secret_key = match var("INFALL_SECRET_KEY") {
             Some(raw) => Some(SecretKey::from_base64(&raw).map_err(|why| {
-                format!("QOOP_SECRET_KEY {why}; `qoop-server gen-secret-key` prints a valid one")
+                format!(
+                    "INFALL_SECRET_KEY {why}; `infall-server gen-secret-key` prints a valid one"
+                )
             })?),
             None => None,
         };
         let openrouter_url = normalize_base_url(
-            &var("QOOP_OPENROUTER_URL").unwrap_or_else(|| DEFAULT_OPENROUTER_URL.to_string()),
+            &var("INFALL_OPENROUTER_URL").unwrap_or_else(|| DEFAULT_OPENROUTER_URL.to_string()),
         )
         .ok_or(
-            "QOOP_OPENROUTER_URL must be an http:// or https:// URL without a query, fragment or credentials",
+            "INFALL_OPENROUTER_URL must be an http:// or https:// URL without a query, fragment or credentials",
         )?;
         let crossref_url = normalize_base_url(
-            &var("QOOP_CROSSREF_URL").unwrap_or_else(|| DEFAULT_CROSSREF_URL.to_string()),
+            &var("INFALL_CROSSREF_URL").unwrap_or_else(|| DEFAULT_CROSSREF_URL.to_string()),
         )
         .ok_or(
-            "QOOP_CROSSREF_URL must be an http:// or https:// URL without a query, fragment or credentials",
+            "INFALL_CROSSREF_URL must be an http:// or https:// URL without a query, fragment or credentials",
         )?;
         let arxiv_url = normalize_base_url(
-            &var("QOOP_ARXIV_URL").unwrap_or_else(|| DEFAULT_ARXIV_URL.to_string()),
+            &var("INFALL_ARXIV_URL").unwrap_or_else(|| DEFAULT_ARXIV_URL.to_string()),
         )
         .ok_or(
-            "QOOP_ARXIV_URL must be an http:// or https:// URL without a query, fragment or credentials",
+            "INFALL_ARXIV_URL must be an http:// or https:// URL without a query, fragment or credentials",
         )?;
-        let max_import_mb = match var("QOOP_MAX_IMPORT_MB") {
+        let max_import_mb = match var("INFALL_MAX_IMPORT_MB") {
             Some(raw) => raw
                 .trim()
                 .parse::<u64>()
                 .ok()
                 .filter(|n| (1..=1024 * 1024).contains(n))
-                .ok_or("QOOP_MAX_IMPORT_MB must be a whole number of megabytes, at least 1")?,
+                .ok_or("INFALL_MAX_IMPORT_MB must be a whole number of megabytes, at least 1")?,
             None => DEFAULT_MAX_IMPORT_MB,
         };
-        let max_pdf_mb = match var("QOOP_MAX_PDF_MB") {
+        let max_pdf_mb = match var("INFALL_MAX_PDF_MB") {
             Some(raw) => raw
                 .trim()
                 .parse::<u64>()
                 .ok()
                 .filter(|n| (1..=1024 * 1024).contains(n))
-                .ok_or("QOOP_MAX_PDF_MB must be a whole number of megabytes, at least 1")?,
+                .ok_or("INFALL_MAX_PDF_MB must be a whole number of megabytes, at least 1")?,
             None => DEFAULT_MAX_PDF_MB,
         };
         Ok(Config {
             addr,
-            db: PathBuf::from(var("QOOP_DB").unwrap_or_else(|| "./qoop.db".to_string())),
+            db: PathBuf::from(var("INFALL_DB").unwrap_or_else(|| "./infall.db".to_string())),
             public_origin,
             dev_origin,
-            web_dir: PathBuf::from(var("QOOP_WEB_DIR").unwrap_or_else(|| "./web/dist".to_string())),
+            web_dir: PathBuf::from(
+                var("INFALL_WEB_DIR").unwrap_or_else(|| "./web/dist".to_string()),
+            ),
             secret_key,
             openrouter_url,
             ai_idle_timeout: AI_IDLE_TIMEOUT,
@@ -228,10 +232,10 @@ mod tests {
     #[test]
     fn origins_are_normalized_and_compared_exactly() {
         assert_eq!(
-            normalize_origin(" https://Qoop.example.org/ ").as_deref(),
-            Some("https://qoop.example.org")
+            normalize_origin(" https://Infall.example.org/ ").as_deref(),
+            Some("https://infall.example.org")
         );
-        assert_eq!(normalize_origin("qoop.example.org"), None);
+        assert_eq!(normalize_origin("infall.example.org"), None);
         assert_eq!(normalize_origin("https://a.org/path"), None);
         let mut c = Config::for_tests(".");
         c.dev_origin = Some("http://localhost:5173".to_string());

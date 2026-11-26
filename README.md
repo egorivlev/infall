@@ -1,7 +1,5 @@
 # Infall
 
-The product is called **Infall**; code, packages and paths still say `qoop` (`qoop-server`, `QOOP_*`, `/etc/qoop`), from its first name.
-
 A self-hosted shared workspace where a small research team maps, extends, and tracks the state of a research project. Vocabulary: [CONTEXT.md](CONTEXT.md). Decisions: [docs/adr](docs/adr). Rules: [docs/specs](docs/specs).
 
 ## Two ways in
@@ -48,7 +46,7 @@ Needs Rust (1.96+) and Node (22+).
 sh scripts/dev-server.sh
 ```
 
-That creates `.dev/qoop.db` with an Admin `admin@qoop.test` on first run (the generated password is in `.dev/admin-password`, git-ignored) and serves the API on http://localhost:8787.
+That creates `.dev/infall.db` with an Admin `admin@infall.test` on first run (the generated password is in `.dev/admin-password`, git-ignored) and serves the API on http://localhost:8787.
 
 ```bash
 npm --prefix web install
@@ -63,7 +61,7 @@ Open http://localhost:5173. To serve the built UI from the server itself instead
 ### The AI sidebar while developing
 
 - In a browser the sidebar needs the OpenRouter path. Put a secret into `.dev/server.env` (git-ignored; read by `scripts/dev-server.sh`):
-  `printf 'QOOP_SECRET_KEY=%s\n' "$(cargo run -q -p qoop-server -- gen-secret-key)" > .dev/server.env`, restart the server, then add your key under **AI access**.
+  `printf 'INFALL_SECRET_KEY=%s\n' "$(cargo run -q -p infall-server -- gen-secret-key)" > .dev/server.env`, restart the server, then add your key under **AI access**.
 - The desktop app (which runs the sidebar on your own Claude Code) lives in [desktop/](desktop/README.md). It carries the built web UI, so build that first: `npm --prefix web run build`, then `cd desktop/src-tauri && cargo run`. On its start screen, create a Local Workspace, or enter `http://localhost:8787` under **Sign in to a Team Workspace** to use the development server.
 
 ## Check everything

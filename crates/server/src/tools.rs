@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qoop_core::{Board, Entity, EntityId, EntityKind, MemberId, Value as FieldValue, Workspace};
+use infall_core::{Board, Entity, EntityId, EntityKind, MemberId, Value as FieldValue, Workspace};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -591,7 +591,7 @@ pub fn list_suggestions(board: &Board, pending: &[SuggestionRecord]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qoop_core::{Fields, Op};
+    use infall_core::{Fields, Op};
 
     fn id() -> EntityId {
         EntityId(Uuid::new_v4())
@@ -979,7 +979,7 @@ mod tests {
     #[test]
     fn branches_are_listed_with_their_parent_and_number_of_changes() {
         let (mut ws, main) = Workspace::new();
-        let me = qoop_core::MemberId(Uuid::new_v4());
+        let me = infall_core::MemberId(Uuid::new_v4());
         let entity = id();
         ws.record(
             main,

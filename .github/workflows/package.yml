@@ -163,7 +163,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Instead of the script's Docker volume, a folder this cache keeps between runs:
-      # downloaded crates, npm's cache and cargo's build output (QOOP_PACKAGE_CACHE below).
+      # downloaded crates, npm's cache and cargo's build output (INFALL_PACKAGE_CACHE below).
       - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/package-linux-cache
@@ -172,8 +172,8 @@ jobs:
             package-linux-${{ matrix.arch }}-rust${{ env.RUST_TOOLCHAIN }}-
       - name: Package and check
         env:
-          QOOP_PACKAGE_CACHE: ${{ runner.temp }}/package-linux-cache
-          QOOP_PACKAGE_RUST: ${{ env.RUST_TOOLCHAIN }}
+          INFALL_PACKAGE_CACHE: ${{ runner.temp }}/package-linux-cache
+          INFALL_PACKAGE_RUST: ${{ env.RUST_TOOLCHAIN }}
         run: scripts/package-linux.sh ${{ matrix.arch }}
       # The build runs as root in its container; the cache is saved by this runner's user.
       - name: Hand the cache back to the runner's user

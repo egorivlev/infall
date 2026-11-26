@@ -24,7 +24,7 @@ use axum::http::header::{CACHE_CONTROL, LOCATION, SET_COOKIE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
-use qoop_core::{MemberId, Workspace};
+use infall_core::{MemberId, Workspace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::value::RawValue;
@@ -50,7 +50,7 @@ pub const PRESET_SETTING: &str = "preset";
 /// `LocalMode::cookie_name`).
 pub const COOKIE_SETTING: &str = "session_cookie";
 /// The session cookie of a Local Workspace is called this, followed by its own id.
-pub const LOCAL_COOKIE_PREFIX: &str = "qoop_session_";
+pub const LOCAL_COOKIE_PREFIX: &str = "infall_session_";
 /// How many characters the id in a Local Workspace's cookie name has.
 const COOKIE_ID_CHARS: usize = 16;
 /// The setting that holds the Tutorial's progress, as the web UI sent it.
@@ -139,7 +139,7 @@ pub struct LocalMode {
 }
 
 impl LocalMode {
-    /// `qoop_session_<id>`, where the id is made at random the first time the Workspace's
+    /// `infall_session_<id>`, where the id is made at random the first time the Workspace's
     /// database is opened and kept in it (`COOKIE_SETTING`). Every Local Workspace is served
     /// from `127.0.0.1`, and a browser keeps cookies apart by host, not by port: under one
     /// name, opening one Workspace would replace the sign-in of another, and the cookie of

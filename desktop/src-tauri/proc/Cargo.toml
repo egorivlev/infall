@@ -1,7 +1,7 @@
 # What the Claude Code driver and the Runner share: a child process that leads its own
 # process group, and owner-only directories. No Tauri types.
 [package]
-name = "qoop-proc"
+name = "infall-proc"
 version = "0.1.0"
 license = "Apache-2.0"
 edition = "2024"

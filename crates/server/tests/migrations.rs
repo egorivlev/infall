@@ -27,9 +27,9 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use qoop_core::{Origin, Workspace};
-use qoop_server::local::{LocalOptions, Preset, export_workspace, import_workspace, start_local};
-use qoop_server::store::{SCHEMA_VERSION, SqliteStore, Store, migration_copy_path};
+use infall_core::{Origin, Workspace};
+use infall_server::local::{LocalOptions, Preset, export_workspace, import_workspace, start_local};
+use infall_server::store::{SCHEMA_VERSION, SqliteStore, Store, migration_copy_path};
 use rusqlite::types::Value as Cell;
 use serde_json::{Value, json};
 
@@ -226,8 +226,8 @@ fn a_file_of_every_released_schema_version_upgrades_and_keeps_everything() {
         assert_eq!(store.comment_total().unwrap(), usize::from(old == 7));
         assert!(store.pdf_file(&"0".repeat(64)).unwrap().is_none());
         assert_eq!(
-            qoop_server::local::file_stats(&db).unwrap(),
-            qoop_server::local::FileStats::default()
+            infall_server::local::file_stats(&db).unwrap(),
+            infall_server::local::FileStats::default()
         );
         if old >= 2 {
             let todos = store.todos().unwrap();
@@ -342,7 +342,7 @@ struct Client {
 }
 
 impl Client {
-    async fn enter(server: &qoop_server::local::LocalServer) -> Client {
+    async fn enter(server: &infall_server::local::LocalServer) -> Client {
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -368,7 +368,7 @@ impl Client {
             .request(method.clone(), format!("{}{path}", self.origin))
             .header(reqwest::header::COOKIE, &self.cookie)
             .header(reqwest::header::ORIGIN, &self.origin)
-            .header("x-qoop-request", "1");
+            .header("x-infall-request", "1");
         if let Some(body) = body {
             req = req.json(&body);
         }
@@ -388,7 +388,7 @@ impl Client {
     }
 }
 
-async fn start(db: &Path, web: &Path) -> qoop_server::local::LocalServer {
+async fn start(db: &Path, web: &Path) -> infall_server::local::LocalServer {
     start_local(LocalOptions {
         db: db.to_path_buf(),
         web_dir: web.to_path_buf(),
@@ -543,6 +543,6 @@ fn a_file_of_the_new_layout_exports_and_imports_from_its_tables() {
         .unwrap();
     assert_eq!(
         import_workspace(&broken, &dir.path().join("x").join("workspace.db")),
-        Err(qoop_server::local::PortError::NotAWorkspaceFile)
+        Err(infall_server::local::PortError::NotAWorkspaceFile)
     );
 }

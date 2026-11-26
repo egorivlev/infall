@@ -12,9 +12,9 @@
 
 use std::time::Duration;
 
-use qoop_core::{EntityKind, Op, Value, Workspace};
-use qoop_server::scale::{Size, generate, measure};
-use qoop_server::store::{SqliteStore, Store};
+use infall_core::{EntityKind, Op, Value, Workspace};
+use infall_server::scale::{Size, generate, measure};
+use infall_server::store::{SqliteStore, Store};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_large_workspace_opens_edits_and_travels_quickly() {

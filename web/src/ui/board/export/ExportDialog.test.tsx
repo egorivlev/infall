@@ -7,11 +7,11 @@ import { GLYPH } from './look'
 import { ExportDialog } from './ExportDialog'
 import type { BoardContent } from './svg'
 
-const g = globalThis as { qoopDesktop?: unknown }
+const g = globalThis as { infallDesktop?: unknown }
 
 afterEach(() => {
   cleanup()
-  delete g.qoopDesktop
+  delete g.infallDesktop
   vi.restoreAllMocks()
 })
 
@@ -53,7 +53,7 @@ describe('ExportDialog', () => {
 
   it('makes the SVG from the Board’s data and hands it to the desktop app’s save dialog', async () => {
     const saveFile = vi.fn().mockResolvedValue(true)
-    g.qoopDesktop = { saveFile }
+    g.infallDesktop = { saveFile }
     const onClose = vi.fn()
     render(<ExportDialog format="svg" content={content} branch="main" visibleArea={null} onClose={onClose} />)
     fireEvent.click(screen.getByRole('button', { name: 'Export SVG' }))
@@ -68,13 +68,13 @@ describe('ExportDialog', () => {
   })
 
   it('says in the desktop app that a PNG is offered as a download', () => {
-    g.qoopDesktop = { saveFile: vi.fn() }
+    g.infallDesktop = { saveFile: vi.fn() }
     render(<ExportDialog format="png" content={content} branch="main" visibleArea={null} onClose={vi.fn()} />)
     expect(screen.getByRole('note')).toHaveTextContent(/saves text files only/)
   })
 
   it('M18: says nothing about downloads when the app can save bytes', () => {
-    g.qoopDesktop = { saveFile: vi.fn(), saveBinaryFile: vi.fn() }
+    g.infallDesktop = { saveFile: vi.fn(), saveBinaryFile: vi.fn() }
     render(<ExportDialog format="png" content={content} branch="main" visibleArea={null} onClose={vi.fn()} />)
     expect(screen.queryByRole('note')).toBeNull()
   })

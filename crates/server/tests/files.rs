@@ -13,8 +13,8 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use common::{ORIGIN, Res, START, TestApp, create, new_id};
-use qoop_server::files::{FETCHES_PER_MINUTE, MAX_SEARCH_RESULTS, hash_of};
-use qoop_server::store::{CHUNK_BYTES, MemoryStore, SqliteStore, Store};
+use infall_server::files::{FETCHES_PER_MINUTE, MAX_SEARCH_RESULTS, hash_of};
+use infall_server::store::{CHUNK_BYTES, MemoryStore, SqliteStore, Store};
 use serde_json::{Value, json};
 
 /// A small PDF-looking file: the server checks only that it starts as a PDF.
@@ -41,7 +41,7 @@ async fn put_bytes(app: &TestApp, path: &str, cookie: Option<&str>, bytes: Vec<u
         .method(Method::PUT)
         .uri(path)
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/pdf");
     if let Some(c) = cookie {
         b = b.header(header::COOKIE, c);
@@ -58,7 +58,7 @@ async fn put_stream(app: &TestApp, cookie: &str, bytes: Vec<u8>) -> Res {
         .method(Method::PUT)
         .uri("/api/files/pdf")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::COOKIE, cookie)
         .body(body)
         .unwrap();
@@ -210,7 +210,7 @@ async fn only_a_pdf_is_taken_and_only_up_to_the_limit() {
         .method(Method::PUT)
         .uri("/api/files/pdf")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::COOKIE, &admin)
         .header(header::CONTENT_TYPE, "text/html")
         .body(Body::from(pdf("typed as html")))
@@ -826,7 +826,7 @@ async fn a_pdf_is_fetched_from_arxiv_only_when_asked_and_only_by_its_id() {
             headers["user-agent"]
                 .to_str()
                 .unwrap()
-                .starts_with("qoop-server/")
+                .starts_with("infall-server/")
         );
         let all = format!("{headers:?}");
         assert!(!all.contains("admin@example.org") && !all.contains("Ada"));

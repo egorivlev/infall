@@ -6,7 +6,7 @@
 #                                and reads or makes the secret key
 #   infall health                exit 0 when this container's server answers /api/health
 #   infall backup                a Workspace file (infall-<time>.infall.gz) into $INFALL_BACKUP_DIR,
-#                                made by `qoop-server export-workspace` (safe while it runs)
+#                                made by `infall-server export-workspace` (safe while it runs)
 #   infall backup-database       a copy of the whole database (infall-<time>.db.gz), sign-ins
 #                                and all, into $INFALL_BACKUP_DIR
 #   infall backup-daemon         a Workspace file now if none is younger than a day, then one
@@ -20,9 +20,9 @@
 #                                Refuses a Workspace file: that goes onto an empty server with
 #                                import-workspace
 #   infall import-workspace <file>|- --admin-email <e>
-#                                qoop-server import-workspace; a bare name is looked up in
+#                                infall-server import-workspace; a bare name is looked up in
 #                                $INFALL_BACKUP_DIR, "-" reads the file from standard input
-#   anything else                passed to qoop-server (create-admin, reset-password,
+#   anything else                passed to infall-server (create-admin, reset-password,
 #                                export-workspace, gen-secret-key, …), after the same
 #                                pre-upgrade copy
 #
@@ -32,7 +32,7 @@
 set -euo pipefail
 umask 077
 
-DB="${QOOP_DB:-/data/qoop.db}"
+DB="${INFALL_DB:-/data/infall.db}"
 DATA_DIR="$(dirname "$DB")"
 BACKUP_DIR="${INFALL_BACKUP_DIR:-/backups}"
 BACKUP_KEEP="${INFALL_BACKUP_KEEP:-14}"
@@ -42,7 +42,7 @@ UPGRADE_DIR="$DATA_DIR/pre-upgrade"
 UPGRADE_KEEP="${INFALL_UPGRADE_KEEP:-3}"
 MARKER="$DATA_DIR/.infall-server"
 SECRET_FILE="$DATA_DIR/secret-key"
-SERVER_BIN=/usr/local/bin/qoop-server
+SERVER_BIN=/usr/local/bin/infall-server
 # PRAGMA application_id of a Workspace file ("Infa"; crates/server/src/local/port.rs).
 WORKSPACE_FILE_ID=1231971937
 
@@ -95,35 +95,35 @@ guard_upgrade() {
     [ "$before" = "$now" ] && return 0
     uv="$(sqlite3 "$DB" 'PRAGMA user_version;' 2>/dev/null || echo '?')"
     mkdir -p "$UPGRADE_DIR"
-    dest="$UPGRADE_DIR/qoop-$(stamp)-from-${before#* }-schema$uv.db"
+    dest="$UPGRADE_DIR/infall-$(stamp)-from-${before#* }-schema$uv.db"
     say "a different server (${now#* }) than last time (${before#* }): copying the database to $dest first"
     copy_db "$DB" "$dest" || die "could not copy the database before the upgrade; not starting (nothing was changed)"
     whole_number "$UPGRADE_KEEP" || die "INFALL_UPGRADE_KEEP must be a whole number"
-    prune "$UPGRADE_DIR" "$UPGRADE_KEEP" 'qoop-*.db'
+    prune "$UPGRADE_DIR" "$UPGRADE_KEEP" 'infall-*.db'
     printf '%s\n' "$now" >"$MARKER"
 }
 
 load_secret_key() {
-    if [ -n "${QOOP_SECRET_KEY:-}" ]; then
+    if [ -n "${INFALL_SECRET_KEY:-}" ]; then
         return 0
     fi
-    if [ -n "${QOOP_SECRET_KEY_FILE:-}" ]; then
-        [ -r "$QOOP_SECRET_KEY_FILE" ] || die "QOOP_SECRET_KEY_FILE $QOOP_SECRET_KEY_FILE cannot be read"
-        QOOP_SECRET_KEY="$(cat "$QOOP_SECRET_KEY_FILE")"
+    if [ -n "${INFALL_SECRET_KEY_FILE:-}" ]; then
+        [ -r "$INFALL_SECRET_KEY_FILE" ] || die "INFALL_SECRET_KEY_FILE $INFALL_SECRET_KEY_FILE cannot be read"
+        INFALL_SECRET_KEY="$(cat "$INFALL_SECRET_KEY_FILE")"
     else
         if [ ! -s "$SECRET_FILE" ]; then
             "$SERVER_BIN" gen-secret-key >"$SECRET_FILE.tmp"
             mv "$SECRET_FILE.tmp" "$SECRET_FILE"
             say "made a new secret key in $SECRET_FILE (it seals Members' OpenRouter keys; backups leave it out, so keep a copy of it: deploy/README.md)"
         fi
-        QOOP_SECRET_KEY="$(cat "$SECRET_FILE")"
+        INFALL_SECRET_KEY="$(cat "$SECRET_FILE")"
     fi
-    export QOOP_SECRET_KEY
+    export INFALL_SECRET_KEY
 }
 
 # GET /api/health over plain TCP (bash's /dev/tcp): no curl in the image.
 health() { # [host] [port]
-    local host="${1:-127.0.0.1}" port="${2:-${QOOP_ADDR##*:}}" reply
+    local host="${1:-127.0.0.1}" port="${2:-${INFALL_ADDR##*:}}" reply
     exec 3<>"/dev/tcp/$host/$port" || return 1
     printf 'GET /api/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
     reply="$(timeout 4 cat <&3)" || true
@@ -150,7 +150,7 @@ backup() {
     out="$BACKUP_DIR/infall-$(stamp).infall.gz"
     if ! "$SERVER_BIN" export-workspace "$tmp/w.infall" >/dev/null; then
         rm -rf "$tmp"
-        die "backup failed (qoop-server export-workspace); nothing was written"
+        die "backup failed (infall-server export-workspace); nothing was written"
     fi
     check="$(sqlite3 "$tmp/w.infall" 'PRAGMA integrity_check;' 2>&1)" || check="not a database"
     if [ "$check" != "ok" ]; then
@@ -171,12 +171,12 @@ backup_database() {
     local tmp out
     tmp="$(mktemp -d "$BACKUP_DIR/.tmp.XXXXXX")"
     out="$BACKUP_DIR/infall-$(stamp).db.gz"
-    if ! copy_db "$DB" "$tmp/qoop.db"; then
+    if ! copy_db "$DB" "$tmp/infall.db"; then
         rm -rf "$tmp"
         die "database copy failed; nothing was written"
     fi
-    gzip -9 "$tmp/qoop.db"
-    mv "$tmp/qoop.db.gz" "$out"
+    gzip -9 "$tmp/infall.db"
+    mv "$tmp/infall.db.gz" "$out"
     rm -rf "$tmp"
     say "wrote the database copy $out ($(du -h "$out" | cut -f1))"
     prune "$BACKUP_DIR" "$BACKUP_KEEP" 'infall-*.db.gz'
@@ -231,7 +231,7 @@ list_backups() {
     done
 }
 
-# qoop-server import-workspace, taking a bare name from the backups folder, "-" from
+# infall-server import-workspace, taking a bare name from the backups folder, "-" from
 # standard input (so a file from outside Docker needs no mount), and a gzip-compressed
 # Workspace file (the backup job's .infall.gz) as well as a plain one.
 import_workspace() { # <file>|- [options]

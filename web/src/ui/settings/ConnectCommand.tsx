@@ -5,7 +5,7 @@ const PLACEHOLDER = '<YOUR_TOKEN>'
 
 /** The exact command; the real secret stands in for the placeholder only while it is on show. */
 function connectCommand(endpoint: string, secret: string | null): string {
-  return `claude mcp add --transport http qoop ${endpoint} --header "Authorization: Bearer ${secret ?? PLACEHOLDER}"`
+  return `claude mcp add --transport http infall ${endpoint} --header "Authorization: Bearer ${secret ?? PLACEHOLDER}"`
 }
 
 function selectContents(node: HTMLElement | null) {

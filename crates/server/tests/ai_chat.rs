@@ -11,8 +11,8 @@ use axum::http::{Method, Request, StatusCode, header};
 use common::openrouter::*;
 use common::*;
 use http_body_util::BodyExt;
-use qoop_server::secret::SecretKey;
-use qoop_server::store::MemoryStore;
+use infall_server::secret::SecretKey;
+use infall_server::store::MemoryStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -42,7 +42,7 @@ struct Setup {
     other: String,
 }
 
-async fn setup_with(tweak: impl FnOnce(&mut qoop_server::config::Config)) -> Setup {
+async fn setup_with(tweak: impl FnOnce(&mut infall_server::config::Config)) -> Setup {
     let upstream = Upstream::start().await;
     let url = upstream.url.clone();
     let app = TestApp::with_config(Arc::new(MemoryStore::new()), move |c| {
@@ -273,7 +273,7 @@ async fn only_user_and_assistant_messages_within_the_limits_are_taken() {
         .method(Method::POST)
         .uri("/api/ai/chat")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &s.admin)
         .body(Body::from("{broken"))
@@ -954,7 +954,7 @@ async fn a_client_that_disconnects_cancels_the_upstream_request() {
         .method(Method::POST)
         .uri("/api/ai/chat")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::COOKIE, &s.admin)
         .body(Body::from(json!({ "messages": [user("hi")] }).to_string()))

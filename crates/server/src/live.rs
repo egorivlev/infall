@@ -16,7 +16,7 @@ use axum::extract::ws::{
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
-use qoop_core::{BranchId, Change, Checkpoint, MemberId};
+use infall_core::{BranchId, Change, Checkpoint, MemberId};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -889,7 +889,7 @@ impl Connection {
 mod tests {
     use std::sync::Arc;
 
-    use qoop_core::{EntityId, EntityKind, Fields, Op, Value as FieldValue, Workspace};
+    use infall_core::{EntityId, EntityKind, Fields, Op, Value as FieldValue, Workspace};
     use tokio::sync::{RwLock, Semaphore, watch};
 
     use super::*;

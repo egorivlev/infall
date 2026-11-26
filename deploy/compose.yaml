@@ -15,10 +15,10 @@ services:
     image: ${INFALL_IMAGE:?set INFALL_IMAGE in .env}:${INFALL_VERSION:?set INFALL_VERSION in .env}
     restart: unless-stopped
     environment:
-      QOOP_PUBLIC_ORIGIN: ${INFALL_PUBLIC_ORIGIN:-https://${INFALL_DOMAIN:?set INFALL_DOMAIN in .env}}
-      QOOP_MAX_IMPORT_MB: ${INFALL_MAX_IMPORT_MB:-512}
+      INFALL_PUBLIC_ORIGIN: ${INFALL_PUBLIC_ORIGIN:-https://${INFALL_DOMAIN:?set INFALL_DOMAIN in .env}}
+      INFALL_MAX_IMPORT_MB: ${INFALL_MAX_IMPORT_MB:-512}
       # Empty: the entrypoint makes one in the data volume on first start (data/secret-key).
-      QOOP_SECRET_KEY: ${QOOP_SECRET_KEY:-}
+      INFALL_SECRET_KEY: ${INFALL_SECRET_KEY:-}
       INFALL_UPGRADE_KEEP: ${INFALL_UPGRADE_KEEP:-3}
       RUST_LOG: ${RUST_LOG:-info}
       NO_COLOR: "1"

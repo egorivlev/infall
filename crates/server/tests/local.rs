@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use axum::http::{Method, StatusCode, header};
 use common::{ORIGIN, START, TestApp, new_id, web_dir};
-use qoop_server::Clock;
-use qoop_server::local::{
+use infall_server::Clock;
+use infall_server::local::{
     LOCAL_EMAIL, LocalOptions, Preset, build_local_app, local_config, secret_key_path, start_local,
 };
-use qoop_server::store::{MemoryStore, SqliteStore, Store, SuggestionState};
+use infall_server::store::{MemoryStore, SqliteStore, Store, SuggestionState};
 use serde_json::{Value, json};
 
 /// A Local Workspace driven without a socket. Writes are sent the way `TestApp` sends them,
@@ -125,7 +125,7 @@ async fn a_local_workspace_has_a_session_cookie_name_of_its_own() {
     let cookie = w.enter().await;
     let (name, token) = cookie.split_once('=').unwrap();
     assert!(
-        name.starts_with("qoop_session_") && name.len() > "qoop_session_".len(),
+        name.starts_with("infall_session_") && name.len() > "infall_session_".len(),
         "{name}"
     );
     // Kept: every entry uses the same name.
@@ -152,8 +152,8 @@ async fn a_stale_cookie_under_the_old_name_is_ignored_in_a_local_workspace() {
     let (_, token) = cookie.split_once('=').unwrap();
     // Beside the right one: no error, still signed in.
     for both in [
-        format!("qoop_session=stale; {cookie}"),
-        format!("{cookie}; qoop_session=stale"),
+        format!("infall_session=stale; {cookie}"),
+        format!("{cookie}; infall_session=stale"),
     ] {
         let res = w.app.get("/api/me", Some(&both)).await;
         assert_eq!(res.status, StatusCode::OK, "{both}: {}", res.text);
@@ -161,8 +161,8 @@ async fn a_stale_cookie_under_the_old_name_is_ignored_in_a_local_workspace() {
     }
     // Alone it signs no one in, whatever it carries — even this Workspace's own token.
     for stale in [
-        "qoop_session=stale".to_string(),
-        format!("qoop_session={token}"),
+        "infall_session=stale".to_string(),
+        format!("infall_session={token}"),
     ] {
         let res = w.app.get("/api/me", Some(&stale)).await;
         assert_eq!(res.status, StatusCode::UNAUTHORIZED, "{stale}");
@@ -171,11 +171,11 @@ async fn a_stale_cookie_under_the_old_name_is_ignored_in_a_local_workspace() {
 }
 
 #[tokio::test]
-async fn a_team_workspace_keeps_the_cookie_name_qoop_session() {
+async fn a_team_workspace_keeps_the_cookie_name_infall_session() {
     let app = TestApp::new();
     let admin = app.admin().await;
     let (name, token) = admin.split_once('=').unwrap();
-    assert_eq!(name, "qoop_session");
+    assert_eq!(name, "infall_session");
     assert_eq!(
         app.get("/api/me", Some(&admin)).await.status,
         StatusCode::OK
@@ -184,7 +184,7 @@ async fn a_team_workspace_keeps_the_cookie_name_qoop_session() {
     let res = app
         .get(
             "/api/me",
-            Some(&format!("qoop_session_abcdefghijklmnop={token}")),
+            Some(&format!("infall_session_abcdefghijklmnop={token}")),
         )
         .await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
@@ -1124,7 +1124,7 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
         .unwrap()
         .to_string();
     let cookie_name = cookie.split('=').next().unwrap().to_string();
-    assert!(cookie_name.starts_with("qoop_session_"), "{cookie_name}");
+    assert!(cookie_name.starts_with("infall_session_"), "{cookie_name}");
 
     let me: Value = client
         .get(format!("{origin}/api/me"))
@@ -1156,7 +1156,7 @@ async fn start_local_serves_on_127_0_0_1_until_stopped() {
             .patch(format!("{origin}/api/local/member"))
             .header(reqwest::header::COOKIE, &cookie)
             .header(reqwest::header::ORIGIN, from)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .json(&json!({ "name": "Bea" }))
             .send()
     };
@@ -1300,7 +1300,7 @@ async fn start_named(
     dir: &std::path::Path,
     name: &str,
     web: &std::path::Path,
-) -> qoop_server::local::LocalServer {
+) -> infall_server::local::LocalServer {
     start_local(LocalOptions {
         db: dir.join(name).join("workspace.db"),
         web_dir: web.to_path_buf(),
@@ -1327,7 +1327,7 @@ async fn two_local_workspaces_at_once_keep_their_own_sign_in() {
         .unwrap();
     let jar = Jar::default();
     // A stale cookie under the name of before, from some earlier version.
-    jar.put("qoop_session", "left-over-from-before");
+    jar.put("infall_session", "left-over-from-before");
 
     // Ada's Workspace is entered, then Bea's: the second does not replace the first.
     let mut entered: Vec<(String, String)> = Vec::new();
@@ -1341,7 +1341,7 @@ async fn two_local_workspaces_at_once_keep_their_own_sign_in() {
     }
     let names = jar.names();
     assert_eq!(names.len(), 3, "{names:?}");
-    let local_names: Vec<&String> = names.iter().filter(|n| *n != "qoop_session").collect();
+    let local_names: Vec<&String> = names.iter().filter(|n| *n != "infall_session").collect();
     assert_eq!(local_names.len(), 2);
     assert_ne!(local_names[0], local_names[1]);
 
@@ -1402,7 +1402,11 @@ async fn two_local_workspaces_at_once_keep_their_own_sign_in() {
     }
     // A Workspace's own token under the name of before is not read either, and is no error.
     for (server, token) in [(&a, &token_a), (&b, &token_b)] {
-        let (status, body) = me(server.origin().to_string(), format!("qoop_session={token}")).await;
+        let (status, body) = me(
+            server.origin().to_string(),
+            format!("infall_session={token}"),
+        )
+        .await;
         assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
         assert_eq!(body["error"]["code"], "not_signed_in");
     }

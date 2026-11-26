@@ -4,13 +4,13 @@ What the Admin and a new Member do by hand, in order, on the day someone joins a
 
 Trying Infall on your own, without a team? You need neither a server nor this page: install the desktop app ([desktop/README.md](../desktop/README.md)) and press **Tutorial** under **Create a workspace** on its start screen.
 
-`https://qoop.example.org` stands for your server's address.
+`https://infall.example.org` stands for your server's address.
 
 When this page is done, the next thing to read, for the Admin and the new Member alike, is [the tutorial](tutorial.md): fifteen minutes through each part of Infall, once.
 
 ## The Admin
 
-1. Open `https://qoop.example.org` and sign in ("Sign in to Infall": Email, Password).
+1. Open `https://infall.example.org` and sign in ("Sign in to Infall": Email, Password).
 2. Open **Members** (left rail, or **Settings → Workspace**; Settings is in the menu under your name). Only an Admin has it.
 3. Under **Invite someone**, enter the person's email, leave the role on **Member**, and press **Create invite**.
    For an outside reader choose **Guest** and a date under **Access until**: a Guest can read the Board and Pages of the main Branch until that date, and nothing else.
@@ -49,7 +49,7 @@ If the Admin's invite was for a name that came with a Workspace file, opening it
 
 **Comments**, in a Card's Page below its Sources and To-dos, are for talking about the Card: a question, a remark, `@Name` to ask someone, who finds it under **For you** ([the tutorial](tutorial.md#15-comments-and-for-you), part 15). They are outside History: the same on every Branch, never merged or restored, and not taken back by Undo. So a decision, a result, or anything the team should still find in a year belongs in the Card's Page, as Research Content; say in the thread where you put it, and **Resolve** the thread. Edit or delete only your own Comments; an Admin can delete any.
 
-From then on, sign in at `https://qoop.example.org` with your email and that password. The link does not work a second time: it says "This invite is no longer valid."
+From then on, sign in at `https://infall.example.org` with your email and that password. The link does not work a second time: it says "This invite is no longer valid."
 
 Forgot the password? Nobody can read it, and the Admin has no button for it: they set a new one on the server (deploy guide, "Forgot a password").
 
@@ -59,7 +59,7 @@ The browser is enough to read and edit everything. The desktop app adds the Runn
 
 1. Install the package the Admin gave you: [macOS](../desktop/README.md#installing-it-for-a-member), [Ubuntu](../desktop/README.md#installing-it-on-ubuntu-for-a-member), [Windows](../desktop/README.md#installing-it-on-windows-for-a-member).
 2. On a Mac the first start is stopped by macOS once; the same page says what the warning means and how to allow Infall: ["The first start"](../desktop/README.md#the-first-start-allowing-infall-once). Windows shows a warning of its own the first time; its section says what to do.
-3. The app opens with its start screen. Under **Sign in to a Team Workspace**, enter `https://qoop.example.org` as the **Server address** and press **Sign in**; then sign in as in the browser. Next time the team's Workspace is listed under **Your workspaces**: click its name.
+3. The app opens with its start screen. Under **Sign in to a Team Workspace**, enter `https://infall.example.org` as the **Server address** and press **Sign in**; then sign in as in the browser. Next time the team's Workspace is listed under **Your workspaces**: click its name.
 
 ## Bringing your papers in, taking work out
 

@@ -1,18 +1,18 @@
 //! Large Workspaces for measuring Infall at size (docs/specs/scale.md).
 //!
 //! ```text
-//! cargo run --release -p qoop-server --example big_workspace -- generate --out big.db --file big.infall
-//! cargo run --release -p qoop-server --example big_workspace -- serve --db big.db --web web/dist
-//! cargo run --release -p qoop-server --example big_workspace -- measure --db big.db --web web/dist
+//! cargo run --release -p infall-server --example big_workspace -- generate --out big.db --file big.infall
+//! cargo run --release -p infall-server --example big_workspace -- serve --db big.db --web web/dist
+//! cargo run --release -p infall-server --example big_workspace -- measure --db big.db --web web/dist
 //! ```
 
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use qoop_core::BranchId;
-use qoop_server::local::{LocalOptions, Preset, export_workspace, start_local};
-use qoop_server::scale::{Size, generate, measure};
-use qoop_server::store::{SqliteStore, Store};
+use infall_core::BranchId;
+use infall_server::local::{LocalOptions, Preset, export_workspace, start_local};
+use infall_server::scale::{Size, generate, measure};
+use infall_server::store::{SqliteStore, Store};
 
 #[derive(Parser)]
 struct Cli {

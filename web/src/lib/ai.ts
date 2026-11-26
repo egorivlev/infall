@@ -13,7 +13,7 @@ import { newId, ops } from './ops'
 import { orderBetween } from './order'
 import { undoFor } from './undo-store'
 import { sessionStore } from './session-store'
-import type { AiConversation, AiEvent, AiOpenRouter, AiMessage, AiModel, AiScope, AiSetup, AiSnapshot, Member, QoopDesktop, SessionSnapshot } from './types'
+import type { AiConversation, AiEvent, AiOpenRouter, AiMessage, AiModel, AiScope, AiSetup, AiSnapshot, Member, InfallDesktop, SessionSnapshot } from './types'
 
 export const MAX_PROMPT = 20_000
 const MAX_TITLE = 60
@@ -25,8 +25,8 @@ type AiStatus = AiOpenRouter
 type Summary = AiSnapshot['conversations'][number]
 
 export type AiOptions = {
-  /** The desktop bridge, when inside the desktop app. Default: `window.qoopDesktop`. */
-  desktop?: () => QoopDesktop | undefined
+  /** The desktop bridge, when inside the desktop app. Default: `window.infallDesktop`. */
+  desktop?: () => InfallDesktop | undefined
   /** Where Conversations are kept. Default: `localStorage`. */
   storage?: () => StorageLike | undefined
   /** The provider for a setup; default: the desktop bridge for `claude-code`, the server for `openrouter`. */
@@ -58,10 +58,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
-function defaultDesktop(): QoopDesktop | undefined {
-  const d = (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+function defaultDesktop(): InfallDesktop | undefined {
+  const d = (globalThis as { infallDesktop?: unknown }).infallDesktop
   return isRecord(d) && isRecord(d.claude) && typeof d.claude.status === 'function' && typeof d.claude.send === 'function'
-    ? (d as QoopDesktop)
+    ? (d as InfallDesktop)
     : undefined
 }
 

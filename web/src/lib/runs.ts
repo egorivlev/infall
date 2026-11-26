@@ -14,7 +14,7 @@ import { sessionStore } from './session-store'
 import type {
   BlockVM,
   Member,
-  QoopRunner,
+  InfallRunner,
   RunErrorReason,
   RunEvent,
   RunLive,
@@ -37,7 +37,7 @@ export const GRACE_MS = 300
 export const ETA_AFTER_MS = 3000
 
 export type RunsOptions = {
-  /** `window.qoopDesktop`, whatever it holds. Default: read from the page. */
+  /** `window.infallDesktop`, whatever it holds. Default: read from the page. */
   desktop?: () => unknown
   /** The Board that Runs are read from and results are recorded on. */
   board?: Pick<BoardSync, 'submit' | 'store' | 'internal'>
@@ -78,7 +78,7 @@ type Execution = {
   branch: string
   branchName: string
   member: string
-  runner: QoopRunner
+  runner: InfallRunner
   asked: string | undefined // the environment the request named through `start`; recorded as `env.name`
   choosing: boolean // its Runner window asks which environment the name means here, before the approval
   state: RunLive['state']
@@ -98,7 +98,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function defaultDesktop(): unknown {
-  return (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  return (globalThis as { infallDesktop?: unknown }).infallDesktop
 }
 
 function defaultRequestFrame(fn: () => void): unknown {
@@ -112,7 +112,7 @@ function defaultCancelFrame(handle: unknown): void {
 
 // Whether the app can be asked for a Run that names a language or an environment (M19b): only through `start`. An
 // app without it drops `lang` from `run` and would execute anything as Python.
-function canStart(runner: QoopRunner): boolean {
+function canStart(runner: InfallRunner): boolean {
   return typeof (runner as { start?: unknown }).start === 'function'
 }
 
@@ -122,11 +122,11 @@ function refusedAsNew(e: unknown): boolean {
 }
 
 // The Runner of a bridge, or null for an app from before M8 (a bridge without a usable `runner`).
-function runnerOf(bridge: unknown): QoopRunner | null {
+function runnerOf(bridge: unknown): InfallRunner | null {
   if (!isRecord(bridge)) return null
   const r = bridge.runner
   const complete = isRecord(r) && ['status', 'configure', 'run', 'cancel'].every((name) => typeof r[name] === 'function')
-  return complete ? (r as QoopRunner) : null
+  return complete ? (r as InfallRunner) : null
 }
 
 // What `status()` said. `languages` (and `environments` with it) only from an app that has `start`: without it a Run
@@ -521,7 +521,7 @@ export function createRuns(options: RunsOptions = {}) {
    * which an older app would execute as Python. A Python Run naming an environment uses `start` when it can, else
    * `run` (the name is only a wish); one naming none uses `run`, exactly as before.
    */
-  function howToAsk(block: BlockVM, bridge: QoopRunner): { via: 'run' | 'start'; request: { lang?: string; env?: string } } {
+  function howToAsk(block: BlockVM, bridge: InfallRunner): { via: 'run' | 'start'; request: { lang?: string; env?: string } } {
     const lang = runLang(block)
     if (!isLangId(lang)) throw new ApiError(400, 'bad_lang', 'This Run names a language that cannot be read. Choose its language again.')
     const env = runEnv(block)

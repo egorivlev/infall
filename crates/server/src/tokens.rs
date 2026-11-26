@@ -21,7 +21,7 @@ use crate::error::{ApiError, ApiJson};
 use crate::store::{AccessTokenRecord, MemberRecord, Role};
 
 /// Every secret starts with this, so one found in a log or a paste is recognisable.
-pub const SECRET_PREFIX: &str = "qoop_pat_";
+pub const SECRET_PREFIX: &str = "infall_pat_";
 /// The most access tokens one Member may have.
 pub const MAX_TOKENS_PER_MEMBER: usize = 10;
 const MAX_NAME_CHARS: usize = 60;

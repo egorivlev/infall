@@ -2,7 +2,7 @@
   "v": 1,
   "mode": "omelette",
   "root": "project/",
-  "title": "Qoop Design System Overview",
+  "title": "Infall Design System Overview",
   "entry": "QRunBlock.dc.html",
   "pages": [
     {
@@ -11,43 +11,43 @@
       "kind": "component"
     },
     {
-      "path": "Qoop Page.html",
+      "path": "Infall Page.html",
       "title": "Bundled Page",
       "kind": "plain"
     },
     {
-      "path": "Qoop Page standalone.dc.html",
-      "title": "Qoop Page standalone",
+      "path": "Infall Page standalone.dc.html",
+      "title": "Infall Page standalone",
       "kind": "page"
     },
     {
-      "path": "Qoop Design System.dc.html",
-      "title": "Qoop Design System",
+      "path": "Infall Design System.dc.html",
+      "title": "Infall Design System",
       "kind": "page"
     },
     {
-      "path": "Qoop Access.dc.html",
-      "title": "Qoop Access",
+      "path": "Infall Access.dc.html",
+      "title": "Infall Access",
       "kind": "page"
     },
     {
-      "path": "Qoop Merge.dc.html",
-      "title": "Qoop Merge",
+      "path": "Infall Merge.dc.html",
+      "title": "Infall Merge",
       "kind": "page"
     },
     {
-      "path": "Qoop Team.dc.html",
-      "title": "Qoop Team",
+      "path": "Infall Team.dc.html",
+      "title": "Infall Team",
       "kind": "page"
     },
     {
-      "path": "Qoop Page.dc.html",
-      "title": "Qoop Page",
+      "path": "Infall Page.dc.html",
+      "title": "Infall Page",
       "kind": "page"
     },
     {
-      "path": "Qoop Board.dc.html",
-      "title": "Qoop Board",
+      "path": "Infall Board.dc.html",
+      "title": "Infall Board",
       "kind": "page"
     },
     {

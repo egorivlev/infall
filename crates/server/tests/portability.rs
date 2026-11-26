@@ -8,13 +8,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use common::{create_card, new_id, web_dir};
-use qoop_server::auth::token_hash;
-use qoop_server::local::{
+use infall_server::auth::token_hash;
+use infall_server::local::{
     APPLICATION_ID, LocalOptions, LocalServer, PortError, Preset, export_workspace,
     import_workspace, secret_key_path, start_local,
 };
-use qoop_server::store::{SCHEMA_VERSION, SqliteStore, Store};
-use qoop_server::{Clock, create_admin};
+use infall_server::store::{SCHEMA_VERSION, SqliteStore, Store};
+use infall_server::{Clock, create_admin};
 use serde_json::{Value, json};
 
 const KEY: &str = "sk-or-v1-0f1e2d3c4b5a69788796a5b4c3d2e1f0-PORTABLE-TAIL";
@@ -44,7 +44,7 @@ impl Client {
             .unwrap()
             .to_string();
         let (name, session) = cookie.split_once('=').unwrap();
-        assert!(name.starts_with("qoop_session_"), "{name}");
+        assert!(name.starts_with("infall_session_"), "{name}");
         let session = session.to_string();
         Client {
             http,
@@ -72,7 +72,7 @@ impl Client {
             .request(method, format!("{}{path}", self.origin))
             .header(reqwest::header::COOKIE, &self.cookie)
             .header(reqwest::header::ORIGIN, &self.origin)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .json(&body)
             .send()
             .await
@@ -586,8 +586,8 @@ async fn what_is_not_a_workspace_file_is_refused() {
             2,
         )
         .unwrap();
-        let (_router, _shutdown) = qoop_server::build_app_with(
-            qoop_server::config::Config::for_tests(web.path()),
+        let (_router, _shutdown) = infall_server::build_app_with(
+            infall_server::config::Config::for_tests(web.path()),
             std::sync::Arc::new(store),
             Clock::manual(0),
         )
@@ -600,7 +600,7 @@ async fn what_is_not_a_workspace_file_is_refused() {
     let from_team = dir.path().join("from-team").join("workspace.db");
     assert_eq!(
         import_workspace(&team_file, &from_team),
-        Ok(qoop_server::local::Imported {
+        Ok(infall_server::local::Imported {
             preset: Some(Preset::Blank),
             from_team: true
         })
@@ -824,7 +824,7 @@ async fn a_database_copied_by_hand_after_the_app_quit_imports_without_its_secret
     let imported = dir.path().join("new").join("workspace.sqlite");
     assert_eq!(
         import_workspace(&copy, &imported),
-        Ok(qoop_server::local::Imported {
+        Ok(infall_server::local::Imported {
             preset: Some(Preset::Tutorial),
             from_team: false,
         })
@@ -920,8 +920,8 @@ async fn a_team_database_copied_by_hand_is_refused() {
                 )
                 .unwrap();
             }
-            let (_router, _shutdown) = qoop_server::build_app_with(
-                qoop_server::config::Config::for_tests(web.path()),
+            let (_router, _shutdown) = infall_server::build_app_with(
+                infall_server::config::Config::for_tests(web.path()),
                 std::sync::Arc::new(store),
                 Clock::manual(0),
             )

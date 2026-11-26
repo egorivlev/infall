@@ -44,8 +44,8 @@ async fn the_frame_is_served_to_anyone_with_exactly_its_own_headers() {
     assert!(!csp[0].contains("connect-src"));
     // It is the host page, not the UI.
     assert!(res.text.starts_with("<!doctype html>"));
-    assert!(res.text.contains(r#"qoop: "visual""#));
-    assert!(!res.text.contains("Qoop UI"));
+    assert!(res.text.contains(r#"infall: "visual""#));
+    assert!(!res.text.contains("Infall UI"));
 
     // The same for someone signed in, and with a query string.
     let admin = app.admin().await;
@@ -99,7 +99,7 @@ async fn the_page_carries_the_protocol_and_touches_nothing_else() {
         r#"type: "ready""#,
         r#"data.type !== "render""#,
         "event.source !== host",
-        r#"data.qoop !== "visual""#,
+        r#"data.infall !== "visual""#,
         "/^--q-[a-z0-9-]+$/",
         "/[;{}<]/",
         r#"type:"height""#,
@@ -172,7 +172,7 @@ async fn every_other_page_keeps_the_app_policy() {
     ] {
         let res = app.get(path, None).await;
         assert_eq!(res.status, StatusCode::OK, "{path}");
-        assert!(res.text.contains("Qoop UI"), "{path}");
+        assert!(res.text.contains("Infall UI"), "{path}");
         let csp = header_values(&res, header::CONTENT_SECURITY_POLICY);
         assert_eq!(csp.len(), 1, "{path}");
         assert!(csp[0].starts_with("default-src 'self';"), "{path}");

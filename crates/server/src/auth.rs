@@ -14,7 +14,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use qoop_core::MemberId;
+use infall_core::MemberId;
 use rand::TryRng;
 use rand::rngs::SysRng;
 use serde::Deserialize;
@@ -26,7 +26,7 @@ use crate::error::{ApiError, ApiJson};
 use crate::people::MemberView;
 use crate::store::{MemberRecord, Role};
 
-pub const SESSION_COOKIE: &str = "qoop_session";
+pub const SESSION_COOKIE: &str = "infall_session";
 /// Sessions last 30 days from their last use.
 pub const SESSION_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// A session is extended (and its cookie re-sent) at most this often.
@@ -108,7 +108,7 @@ pub async fn hashing<T: Send + 'static>(
 
 // ---------------------------------------------------------------- cookie
 
-/// The name of the session cookie this server sets and reads: `qoop_session` on a Team
+/// The name of the session cookie this server sets and reads: `infall_session` on a Team
 /// Workspace; on a Local Workspace a name of its own (`local::LocalMode::cookie_name`), since
 /// every Local Workspace is served from `127.0.0.1` and cookies are not kept apart by port.
 pub fn cookie_name(st: &AppState) -> &str {
@@ -303,14 +303,14 @@ pub fn origin_allowed(st: &Shared, headers: &HeaderMap) -> bool {
         .is_some_and(|o| st.config.allows_origin(o))
 }
 
-/// Refuses every non-GET/HEAD request without `X-Qoop-Request: 1` and an allowed `Origin`,
+/// Refuses every non-GET/HEAD request without `X-Infall-Request: 1` and an allowed `Origin`,
 /// before any handler runs.
 pub async fn origin_guard(State(st): State<Shared>, req: Request, next: Next) -> Response {
     let safe = req.method() == Method::GET || req.method() == Method::HEAD;
     if !safe {
         let marked = req
             .headers()
-            .get("x-qoop-request")
+            .get("x-infall-request")
             .is_some_and(|v| v.as_bytes() == b"1");
         if !marked || !origin_allowed(&st, req.headers()) {
             return ApiError::ForbiddenOrigin.into_response();
@@ -461,11 +461,11 @@ mod tests {
         let mut h = HeaderMap::new();
         h.append(
             COOKIE,
-            HeaderValue::from_static("a=1; qoop_session=tok; b=2"),
+            HeaderValue::from_static("a=1; infall_session=tok; b=2"),
         );
         assert_eq!(cookie_token(&h, SESSION_COOKIE).as_deref(), Some("tok"));
         let mut h = HeaderMap::new();
-        h.append(COOKIE, HeaderValue::from_static("qoop_session="));
+        h.append(COOKIE, HeaderValue::from_static("infall_session="));
         assert_eq!(cookie_token(&h, SESSION_COOKIE), None);
     }
 
@@ -474,12 +474,17 @@ mod tests {
         let mut h = HeaderMap::new();
         h.append(
             COOKIE,
-            HeaderValue::from_static("qoop_session=team; qoop_session_abc=a; qoop_session_abcd=b"),
+            HeaderValue::from_static(
+                "infall_session=team; infall_session_abc=a; infall_session_abcd=b",
+            ),
         );
-        assert_eq!(cookie_token(&h, "qoop_session_abc").as_deref(), Some("a"));
-        assert_eq!(cookie_token(&h, "qoop_session_abcd").as_deref(), Some("b"));
+        assert_eq!(cookie_token(&h, "infall_session_abc").as_deref(), Some("a"));
+        assert_eq!(
+            cookie_token(&h, "infall_session_abcd").as_deref(),
+            Some("b")
+        );
         assert_eq!(cookie_token(&h, SESSION_COOKIE).as_deref(), Some("team"));
-        assert_eq!(cookie_token(&h, "qoop_session_x"), None);
+        assert_eq!(cookie_token(&h, "infall_session_x"), None);
     }
 
     #[test]

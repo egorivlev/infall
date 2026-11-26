@@ -8,9 +8,9 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use http_body_util::BodyExt;
-use qoop_server::config::Config;
-use qoop_server::store::{MemoryStore, Store};
-use qoop_server::{Clock, build_app_with, create_admin};
+use infall_server::config::Config;
+use infall_server::store::{MemoryStore, Store};
+use infall_server::{Clock, build_app_with, create_admin};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -34,14 +34,14 @@ pub struct Res {
 
 impl Res {
     /// `<name>=<token>` from the response's Set-Cookie, ready for a Cookie header: the
-    /// session cookie, `qoop_session` on a Team Workspace, `qoop_session_<id>` on a Local one.
+    /// session cookie, `infall_session` on a Team Workspace, `infall_session_<id>` on a Local one.
     pub fn cookie(&self) -> String {
         let set = self
             .headers
             .get_all(header::SET_COOKIE)
             .iter()
             .map(|v| v.to_str().unwrap().to_string())
-            .find(|v| v.starts_with("qoop_session=") || v.starts_with("qoop_session_"))
+            .find(|v| v.starts_with("infall_session=") || v.starts_with("infall_session_"))
             .expect("a session cookie");
         set.split(';').next().unwrap().to_string()
     }
@@ -61,11 +61,11 @@ pub fn web_dir() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("index.html"),
-        "<!doctype html><title>Qoop UI</title>",
+        "<!doctype html><title>Infall UI</title>",
     )
     .unwrap();
     std::fs::create_dir(dir.path().join("assets")).unwrap();
-    std::fs::write(dir.path().join("assets/app.js"), "console.log('qoop')").unwrap();
+    std::fs::write(dir.path().join("assets/app.js"), "console.log('infall')").unwrap();
     dir
 }
 
@@ -115,7 +115,7 @@ impl TestApp {
         self.send(b.body(Body::empty()).unwrap()).await
     }
 
-    /// A write the way the UI sends it: Origin and X-Qoop-Request set.
+    /// A write the way the UI sends it: Origin and X-Infall-Request set.
     pub async fn write(
         &self,
         method: Method,
@@ -127,7 +127,7 @@ impl TestApp {
             .method(method)
             .uri(path)
             .header(header::ORIGIN, ORIGIN)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .header(header::CONTENT_TYPE, "application/json");
         if let Some(c) = cookie {
             b = b.header(header::COOKIE, c);
@@ -142,7 +142,7 @@ impl TestApp {
             .method(method)
             .uri(path)
             .header(header::ORIGIN, ORIGIN)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::COOKIE, cookie)
             .body(Body::from(body))

@@ -46,8 +46,8 @@ describe('loadAi / saveAi', () => {
     const list = [conversation('a', 1), { ...conversation('b', 2), session: 'sess' }]
     expect(saveAi(storage, 'me', { conversations: list, current: 'b' })).toBe(true)
     expect([...storage.data.keys()]).toEqual([storageKey('me')])
-    expect(storageKey('me')).toBe('qoop.ai.me')
-    expect(JSON.parse(storage.data.get('qoop.ai.me')!)).toMatchObject({ v: 1, current: 'b' })
+    expect(storageKey('me')).toBe('infall.ai.me')
+    expect(JSON.parse(storage.data.get('infall.ai.me')!)).toMatchObject({ v: 1, current: 'b' })
     const back = loadAi(storage, 'me')
     expect(back.current).toBe('b')
     expect(back.conversations).toEqual([list[1], list[0]])

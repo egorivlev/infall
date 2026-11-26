@@ -143,7 +143,7 @@
     }
     if (!mainTouched) folder.value = typeof v.folder === 'string' ? v.folder : '';
     if (typeof v.overridden === 'string') {
-      show($('override'), 'QOOP_PYTHON_BIN is set, so Runs use ' + v.overridden + ' whatever is chosen here.');
+      show($('override'), 'INFALL_PYTHON_BIN is set, so Runs use ' + v.overridden + ' whatever is chosen here.');
     }
   }
 

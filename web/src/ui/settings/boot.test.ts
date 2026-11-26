@@ -40,10 +40,10 @@ describe('before the first paint', () => {
 
   it('tells the desktop app the saved interface scale, when it has the member', () => {
     const said: unknown[] = []
-    const page = globalThis as { qoopDesktop?: unknown }
+    const page = globalThis as { infallDesktop?: unknown }
     try {
       localStorage.setItem('infall-settings', JSON.stringify({ v: 1, interfaceScale: 150 }))
-      page.qoopDesktop = { chromeScale: (scale: number) => (said.push(scale), Promise.resolve()) }
+      page.infallDesktop = { chromeScale: (scale: number) => (said.push(scale), Promise.resolve()) }
       boot()
       expect(said).toEqual([1.5])
       // 100 % too: the app may remember another scale.
@@ -64,13 +64,13 @@ describe('before the first paint', () => {
         () => Promise.reject(new Error('Not allowed.')),
       ]) {
         root.removeAttribute('style')
-        page.qoopDesktop = { chromeScale }
+        page.infallDesktop = { chromeScale }
         expect(() => boot()).not.toThrow()
         expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('0.8')
         expect(root.style.getPropertyValue('--q-text')).toBe('1.2')
       }
     } finally {
-      delete page.qoopDesktop
+      delete page.infallDesktop
     }
   })
 

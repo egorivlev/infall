@@ -1,7 +1,7 @@
 # /etc/caddy/Caddyfile
-# Replace qoop.example.org with your domain. Caddy gets and renews the HTTPS
+# Replace infall.example.org with your domain. Caddy gets and renews the HTTPS
 # certificate by itself; ports 80 and 443 must be reachable for that.
-qoop.example.org {
+infall.example.org {
 	# WebSockets (live updates) work through reverse_proxy with no extra
 	# settings; the Origin header is passed through for the server's own check.
 	reverse_proxy 127.0.0.1:8787
@@ -14,7 +14,7 @@ qoop.example.org {
 
 	# Refuse oversized request bodies here, before they reach the server.
 	# These are the server's own limits: 512 MiB for a Workspace file brought
-	# onto an empty server (QOOP_MAX_IMPORT_MB; change both together), 2 MiB on
+	# onto an empty server (INFALL_MAX_IMPORT_MB; change both together), 2 MiB on
 	# the one route that carries the captured result of a Run, 1 MiB everywhere
 	# else. Keep them equal to the server's: a smaller limit here would refuse
 	# what the server accepts. (Write "MiB": Caddy's "MB" is 1000-based and a

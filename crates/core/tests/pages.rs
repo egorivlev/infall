@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 fn op_create(kind: EntityKind, fields: &[(&str, Value)]) -> (EntityId, Op) {
     let id = EntityId::new();

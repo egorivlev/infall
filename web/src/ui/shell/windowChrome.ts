@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { QoopDesktop } from '../../lib'
+import type { InfallDesktop } from '../../lib'
 
 /**
  * True in the macOS desktop app, whose window has no title bar of its own: the traffic lights are drawn over the left
@@ -7,7 +7,7 @@ import type { QoopDesktop } from '../../lib'
  */
 export function macDesktopWindow(): boolean {
   if (typeof navigator === 'undefined') return false
-  const desktop = (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: unknown }).infallDesktop
   return typeof desktop === 'object' && desktop !== null && /Mac/.test(navigator.platform)
 }
 
@@ -17,7 +17,7 @@ export function macDesktopWindow(): boolean {
  * `chromeScale`; whatever the bridge does (throws, rejects, returns something else) stays here.
  */
 export function tellDesktopChromeScale(interfaceScale: number): void {
-  const desktop = (globalThis as { qoopDesktop?: { chromeScale?: unknown } }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: { chromeScale?: unknown } }).infallDesktop
   if (typeof desktop !== 'object' || desktop === null) return
   const chromeScale = desktop.chromeScale
   if (typeof chromeScale !== 'function') return
@@ -29,11 +29,11 @@ export function tellDesktopChromeScale(interfaceScale: number): void {
   }
 }
 
-type Fullscreen = NonNullable<QoopDesktop['fullscreen']>
+type Fullscreen = NonNullable<InfallDesktop['fullscreen']>
 
-/** `window.qoopDesktop.fullscreen`, when it is there and has both functions. An older app, and every browser, has none. */
+/** `window.infallDesktop.fullscreen`, when it is there and has both functions. An older app, and every browser, has none. */
 function desktopFullscreen(): Fullscreen | null {
-  const desktop = (globalThis as { qoopDesktop?: { fullscreen?: unknown } }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: { fullscreen?: unknown } }).infallDesktop
   if (typeof desktop !== 'object' || desktop === null) return null
   const fs = desktop.fullscreen as Partial<Fullscreen> | null | undefined
   if (typeof fs !== 'object' || fs === null) return null

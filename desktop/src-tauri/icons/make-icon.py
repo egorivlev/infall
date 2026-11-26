@@ -7,7 +7,7 @@ Needs Pillow:  python3 make-icon.py
 
 The mark is the one of web/src/ui/shell/Logo.tsx (24-unit grid, turned by 12 degrees: a black
 hole inside its bright ring, the near side of the accretion disc crossing in front), on a tile
-in the dark theme's colours of design/qoop-theme.css, laid out on
+in the dark theme's colours of design/infall-theme.css, laid out on
 Apple's macOS icon grid (824 pt tile in a 1024 pt canvas, transparent margin).
 After changing it, also refresh the 256 px copy Tauri embeds:
     sips -z 256 256 icon-1024.png --out icon.png

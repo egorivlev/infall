@@ -1,7 +1,7 @@
 //! Getting work out of the app and back in (docs/specs/portability.md): file names that are
 //! safe on every system, writing a file whole or not at all, and the automatic backups of a
 //! Local Workspace (decision 2). No Tauri types, and no server: the copy itself is made by
-//! whatever the caller passes in (`qoop_server::local::export_workspace` in the app).
+//! whatever the caller passes in (`infall_server::local::export_workspace` in the app).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -592,7 +592,7 @@ mod tests {
     /// runs, and a new Workspace made from that backup that the server opens.
     #[test]
     fn a_backup_of_a_running_workspace_imports_as_a_new_one() {
-        use qoop_server::local::{
+        use infall_server::local::{
             LocalOptions, Preset, export_workspace, import_workspace, start_local,
         };
 

@@ -70,7 +70,7 @@ function queryParam(query: string, name: string): string {
   return ''
 }
 
-const NAV_EVENT = 'qoop:navigate'
+const NAV_EVENT = 'infall:navigate'
 
 /** Takes the path with its query (`/merge?from=…&into=…`); a hash is ignored. */
 export function parseRoute(pathname: string): Route {

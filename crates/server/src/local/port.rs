@@ -18,7 +18,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
-use qoop_core::{BranchId, MemberId};
+use infall_core::{BranchId, MemberId};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use super::{LOCAL_EMAIL, PRESET_SETTING, Preset, TUTORIAL_SETTING};

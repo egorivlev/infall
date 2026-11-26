@@ -204,7 +204,7 @@ What to know:
 
 - **Approved code is not fenced in.** It runs with your own rights: it can read, change and delete your files and use the network. The approval window is the only barrier.
 - Infall remembers an approval for that exact code, in that Workspace, run by that Python in that folder, and does not ask again until one of them changes. **Runner settings…** (under **⋯** on a Run) can forget all approvals (**Forget them**).
-- Infall installs nothing. When the code needs a package your Python does not have, the output shows Python's own error and one more line: "[qoop] This environment has no package <name>."
+- Infall installs nothing. When the code needs a package your Python does not have, the output shows Python's own error and one more line: "[infall] This environment has no package <name>."
 - **One Run at a time** on a computer. While one is going, the others say "Another Run is in progress". There is no time limit.
 - After the code is edited, the old output stays, marked "code changed since", until someone runs it again.
 - Figures drawn with matplotlib are captured and shown above the output: the ones still open when the code ends, at most three. `plt.show()` does nothing in a Run.
@@ -260,9 +260,9 @@ Each Local Workspace's row on the start screen has a **⋯** menu with **Rename*
 
 **Where it is.** Each Local Workspace is a folder on your computer. In its row's **⋯** menu, choose **Show in folder** to open that folder in the Finder (Explorer on Windows, the file manager on Ubuntu). It holds the Workspace's database, a key file beside it, and the folder `backups/`. The folders are under:
 
-- macOS: `~/Library/Application Support/app.qoop.desktop/workspaces/`
-- Ubuntu: `~/.local/share/app.qoop.desktop/workspaces/`
-- Windows: `%LOCALAPPDATA%\app.qoop.desktop\workspaces\` (before 0.9.0 they were under `%APPDATA%`; the first start of 0.9.0 moves them)
+- macOS: `~/Library/Application Support/app.infall.desktop/workspaces/`
+- Ubuntu: `~/.local/share/app.infall.desktop/workspaces/`
+- Windows: `%LOCALAPPDATA%\app.infall.desktop\workspaces\` (before 0.9.0 they were under `%APPDATA%`; the first start of 0.9.0 moves them)
 
 Do not copy the database file to keep a copy: use **Export…**.
 
@@ -324,7 +324,7 @@ The same first screen, in a browser, offers **Bring in a Workspace file…** and
 
 The file brings every Branch, its history, Checkpoints, To-dos, Comments and PDFs. Whoever made the file (a Local Workspace's one Member, or the Admin who exported it from a server) becomes you. Everyone else in the file arrives as a name only, listed under **Names that came with the file**, each "— not signed in yet", with **Invite**. Emails never travel in a file, so you type each person's email in the invite; whoever accepts it takes over that name with everything under it (The first day, ["Taking over a name"](first-day.md#taking-over-a-name)).
 
-The Admin of a server can also do this on the server's command line, with `qoop-server import-workspace <file> --admin-email <email>` ([deploy guide](../deploy/README.md)).
+The Admin of a server can also do this on the server's command line, with `infall-server import-workspace <file> --admin-email <email>` ([deploy guide](../deploy/README.md)).
 
 ### Leaving a server
 

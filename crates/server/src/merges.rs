@@ -2,7 +2,7 @@
 
 use axum::Json;
 use axum::extract::State;
-use qoop_core::{
+use infall_core::{
     BranchId, Change, ConflictKey, Decision, Decisions, MergeError, MergePlan, WsError,
 };
 use serde::Deserialize;

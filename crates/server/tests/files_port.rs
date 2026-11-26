@@ -12,13 +12,13 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::{ORIGIN, PASSWORD, Res, START, TestApp, create, new_id, web_dir};
 use http_body_util::BodyExt;
-use qoop_server::Clock;
-use qoop_server::files::hash_of;
-use qoop_server::local::{
+use infall_server::Clock;
+use infall_server::files::hash_of;
+use infall_server::local::{
     ExportOptions, FileStats, Preset, build_local_app_with, export_for_move, export_workspace,
     export_workspace_with, file_stats, import_workspace, local_config,
 };
-use qoop_server::store::{SqliteStore, Store};
+use infall_server::store::{SqliteStore, Store};
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -48,7 +48,7 @@ async fn send_bytes(
         .method(method)
         .uri(path)
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::COOKIE, cookie)
         .body(Body::from(body))
         .unwrap();
@@ -148,7 +148,7 @@ fn team(dir: &Path, name: &str) -> TestApp {
 }
 
 async fn admin_of(app: &TestApp, email: &str) -> String {
-    qoop_server::create_admin(&*app.store, email, "Ada Admin", PASSWORD, START).unwrap();
+    infall_server::create_admin(&*app.store, email, "Ada Admin", PASSWORD, START).unwrap();
     let res = app.login(email, PASSWORD).await;
     assert_eq!(res.status, StatusCode::OK, "{}", res.text);
     res.cookie()
@@ -377,7 +377,7 @@ async fn a_local_workspace_moved_onto_a_team_server_brings_its_pdfs() {
 
 #[tokio::test]
 async fn the_command_line_exports_and_imports_the_pdfs() {
-    const BIN: &str = env!("CARGO_BIN_EXE_qoop-server");
+    const BIN: &str = env!("CARGO_BIN_EXE_infall-server");
     let dir = tempfile::tempdir().unwrap();
     let a = team(dir.path(), "a");
     let a_admin = admin_of(&a, "ada@example.org").await;
@@ -386,7 +386,7 @@ async fn the_command_line_exports_and_imports_the_pdfs() {
     let out = std::process::Command::new(BIN)
         .arg("export-workspace")
         .arg(&file)
-        .env("QOOP_DB", dir.path().join("a.db"))
+        .env("INFALL_DB", dir.path().join("a.db"))
         .env("RUST_LOG", "warn")
         .output()
         .unwrap();
@@ -400,13 +400,13 @@ async fn the_command_line_exports_and_imports_the_pdfs() {
     let c_db = dir.path().join("c.db");
     {
         let store = SqliteStore::open(&c_db).unwrap();
-        qoop_server::create_admin(&store, "cy@example.org", "Cy", PASSWORD, START).unwrap();
+        infall_server::create_admin(&store, "cy@example.org", "Cy", PASSWORD, START).unwrap();
     }
     let out = std::process::Command::new(BIN)
         .arg("import-workspace")
         .arg(&file)
         .args(["--admin-email", "cy@example.org"])
-        .env("QOOP_DB", &c_db)
+        .env("INFALL_DB", &c_db)
         .env("RUST_LOG", "warn")
         .output()
         .unwrap();

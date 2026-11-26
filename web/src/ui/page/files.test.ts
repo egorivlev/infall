@@ -12,7 +12,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -20,26 +20,26 @@ afterEach(() => {
 describe('saveTextFile', () => {
   it('uses the desktop app’s save dialog when it has one', async () => {
     const saveFile = vi.fn(async () => true)
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', saveFile }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', saveFile }
     await expect(saveTextFile('Page.md', '# Hi\n', 'text/markdown')).resolves.toBe('saved')
     expect(saveFile).toHaveBeenCalledWith({ suggestedName: 'Page.md', text: '# Hi\n' })
     expect(clicked).toEqual([])
   })
 
   it('says when the person cancelled the dialog', async () => {
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', saveFile: async () => false }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', saveFile: async () => false }
     await expect(saveTextFile('Page.md', 'x', 'text/markdown')).resolves.toBe('cancelled')
     expect(clicked).toEqual([])
   })
 
   it('passes a failure of the app on', async () => {
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', saveFile: async () => Promise.reject(new Error('The disk is full.')) }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', saveFile: async () => Promise.reject(new Error('The disk is full.')) }
     await expect(saveTextFile('Page.md', 'x', 'text/markdown')).rejects.toThrow('The disk is full.')
   })
 
   it('downloads in a browser, and in an app from before M13', async () => {
     await expect(saveTextFile('Sources.bib', '@misc{x}', 'application/x-bibtex')).resolves.toBe('downloaded')
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '0.9', switchWorkspace: async () => {} }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '0.9', switchWorkspace: async () => {} }
     await expect(saveTextFile('Sources.bib', '@misc{x}', 'application/x-bibtex')).resolves.toBe('downloaded')
     expect(clicked).toEqual([
       { href: 'blob:fake', download: 'Sources.bib' },
@@ -50,7 +50,7 @@ describe('saveTextFile', () => {
 
   it('downloads what is larger than the app takes', async () => {
     const saveFile = vi.fn(async () => true)
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', saveFile }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', saveFile }
     await expect(saveTextFile('big.md', 'x'.repeat(DESKTOP_LIMIT + 1), 'text/markdown')).resolves.toBe('downloaded')
     expect(saveFile).not.toHaveBeenCalled()
   })

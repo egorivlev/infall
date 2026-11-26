@@ -1,6 +1,6 @@
 //! Runs the Member's own `claude` (Claude Code) for one AI sidebar turn, as
 //! docs/specs/desktop.md describes: print mode, in an empty temporary directory, with only the
-//! Qoop tools, the access token in an owner-only file, and the output mapped to [`AiEvent`]s.
+//! Infall tools, the access token in an owner-only file, and the output mapped to [`AiEvent`]s.
 //!
 //! There are no Tauri types here. The app is a thin adapter over [`Driver`].
 //!
@@ -23,13 +23,13 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 pub use args::{
-    CHILD_ENV, MCP_SERVER_NAME, QOOP_TOOLS, allowed_tools, build_args, mcp_config_json,
+    CHILD_ENV, INFALL_TOOLS, MCP_SERVER_NAME, allowed_tools, build_args, mcp_config_json,
 };
 pub use events::{AiEvent, StreamParser, TOOL_PREFIX};
-use qoop_proc::{Group, is_executable_file, make_private_dir, own_process_group};
+use infall_proc::{Group, is_executable_file, make_private_dir, own_process_group};
 
 /// The environment variable that overrides where `claude` is (used by tests with a stub).
-pub const BIN_ENV: &str = "QOOP_CLAUDE_BIN";
+pub const BIN_ENV: &str = "INFALL_CLAUDE_BIN";
 
 /// A run with no output for this long is stopped with an `error`.
 pub const SILENCE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -335,7 +335,7 @@ impl Driver {
     }
 }
 
-/// Where `claude` is: the `QOOP_CLAUDE_BIN` override if set, else the first `claude` found
+/// Where `claude` is: the `INFALL_CLAUDE_BIN` override if set, else the first `claude` found
 /// on `PATH` or in the usual install places (an app started from the Finder gets a short
 /// `PATH`, so those are checked too).
 pub fn locate() -> Option<PathBuf> {
@@ -450,7 +450,7 @@ fn default_work_root() -> PathBuf {
     let who = unsafe { libc::geteuid() }.to_string();
     #[cfg(not(unix))]
     let who = String::from("user");
-    std::env::temp_dir().join(format!("qoop-desktop-claude-{who}"))
+    std::env::temp_dir().join(format!("infall-desktop-claude-{who}"))
 }
 
 /// Makes sure `root` is a real directory that belongs to this user and nobody else can enter.
@@ -564,7 +564,7 @@ mod tests {
             system: "s".into(),
             resume: None,
             tools_url: "http://localhost:8787/mcp".into(),
-            tools_token: Secret::new("qoop_pat_TOPSECRET"),
+            tools_token: Secret::new("infall_pat_TOPSECRET"),
         };
         let printed = format!("{request:?} {:#?}", request.tools_token);
         assert!(!printed.contains("TOPSECRET"));

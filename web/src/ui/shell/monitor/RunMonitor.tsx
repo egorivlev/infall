@@ -268,7 +268,7 @@ function Monitor({ live }: { live: RunLive }) {
                   <>
                     <span className="q-mon__text q-mon__text--wrap">{NO_ESTIMATE}</span>
                     <span className="q-mon__hint">
-                      To get one, the code can call <code>qoop.progress(done, total)</code>
+                      To get one, the code can call <code>infall.progress(done, total)</code>
                     </span>
                   </>
                 )}

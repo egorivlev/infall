@@ -67,7 +67,7 @@ function sentTo(f: HTMLIFrameElement): string {
   const w = f.contentWindow as Window
   const post = vi.spyOn(w, 'postMessage').mockImplementation(() => {})
   act(() => {
-    window.dispatchEvent(new MessageEvent('message', { data: { qoop: 'visual', type: 'ready' }, source: w }))
+    window.dispatchEvent(new MessageEvent('message', { data: { infall: 'visual', type: 'ready' }, source: w }))
   })
   expect(post).toHaveBeenCalledTimes(1)
   const message = post.mock.calls[0]![0] as { html: string }

@@ -449,7 +449,7 @@ mod tests {
     use super::*;
     use std::thread;
 
-    const ORIGIN: &str = "https://qoop.example.org";
+    const ORIGIN: &str = "https://infall.example.org";
     const OTHER: &str = "https://other.example.org";
 
     fn gate(dir: &Path) -> Gate {
@@ -774,7 +774,7 @@ mod tests {
             "not json",
             "[]",
             r#"{"v":1,"approved":"all"}"#,
-            r#"{"v":1,"approved":[{"origin":"https://qoop.example.org","sha256":"*","at":0}]}"#,
+            r#"{"v":1,"approved":[{"origin":"https://infall.example.org","sha256":"*","at":0}]}"#,
             r#"{"v":1,"approved":[{"origin":"","sha256":"","at":0}]}"#,
         ] {
             fs::write(config.join(FILE), text).unwrap();
@@ -890,7 +890,7 @@ mod tests {
         store.remember(OTHER, &sha).unwrap();
         let text = fs::read_to_string(dir.path().join(FILE)).unwrap();
         assert!(
-            text.contains(r#""origin":"https://qoop.example.org""#),
+            text.contains(r#""origin":"https://infall.example.org""#),
             "{text}"
         );
         // But what it remembered names no interpreter: the Gate asks once more.
