@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use qoop_core::{Board, EntityId, EntityKind, MemberId, Op, Value as FieldValue};
+use infall_core::{Board, EntityId, EntityKind, MemberId, Op, Value as FieldValue};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn a_run_blocks_lang_and_env_are_checked() {
-        use qoop_core::{Fields, Op, Value as V};
+        use infall_core::{Fields, Op, Value as V};
         let set = |field: &str, v: V| Op::Set {
             entity: EntityId::new(),
             field: field.to_string(),

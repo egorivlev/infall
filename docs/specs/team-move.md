@@ -13,7 +13,7 @@ Append-only storage of Changes (found in M15's measurement) lands just before M1
 1. **Where a Local Workspace can go:** only onto an **empty** Team server. Empty means: `main` is the only Branch and has no Changes, no Checkpoints, no To-dos, no Comments. Members and invites may already exist.
 2. **Who owns the work after a move:** the local Member's Changes, Checkpoints, To-dos, Pins and Comments become the importing Admin's. History reads continuously under the Admin's server name.
 3. **The laptop copy after a move made from the desktop app:** it stays, marked **Moved to <server address>**, and opens read-only. Its start-screen row offers **Open on the server**. Nothing is deleted; Remove stays manual.
-4. **How the file gets there:** (a) in the server's own web page — an empty server greets its Admin with **Start empty** or **Bring in a Workspace file…**; from the desktop app, **Move to a Team server…** opens the server, and after the Admin signs in, hands the file over by itself; from a browser, the Admin picks the file. (b) On the server's command line: `qoop-server import-workspace <file> --admin-email <e>`, documented beside `create-admin`.
+4. **How the file gets there:** (a) in the server's own web page — an empty server greets its Admin with **Start empty** or **Bring in a Workspace file…**; from the desktop app, **Move to a Team server…** opens the server, and after the Admin signs in, hands the file over by itself; from a browser, the Admin picks the file. (b) On the server's command line: `infall-server import-workspace <file> --admin-email <e>`, documented beside `create-admin`.
 5. **Leaving a server:** an Admin can export the Team Workspace as a Workspace file (Settings → Workspace → **Export Workspace file…**). It holds every Branch, the history, Checkpoints, To-dos and Comments, and the Members as **names only** — no emails, passwords, sessions, invites, access tokens or AI keys. It can go onto another empty Team server (decision 4), or be opened by the desktop app as a Local Workspace.
 6. **Team file → Local Workspace:** the Member who exported the file becomes the Local Workspace's one Member (named after the computer's user, as usual). Every other Member stays as a name: their Changes keep their names in History; their open To-dos keep their owner and can be reassigned.
 7. **Team file → another Team server:** the Member who exported the file becomes the importing Admin. Every other Member arrives as a name that cannot sign in (**not signed in yet**). The Members screen offers **Invite** for each; the person who accepts that invite takes over that name and everything under it. Emails never travel in a file, so the Admin types them.
@@ -37,7 +37,7 @@ Zone 1 starts after the append-only storage work is on main. Zones 2–6 code ag
 
 ## Contract A — server crate, for the desktop shell
 
-`qoop_server::local`:
+`infall_server::local`:
 
 - `LocalOptions` gains `pub read_only: bool`. When true, every request that would change anything answers `403` with code `moved` and the sentence "This Workspace was moved to a Team server; open it there to make changes." Reading, search, History, export to Markdown/BibTeX/image keep working. `start_local` callers pass `false` except for a moved Workspace.
 - `import_workspace(file, db)` also accepts a Team export (decision 6): the exporting Member becomes the one Member who can sign in; the others are kept as names only. `Imported` gains `pub from_team: bool`.
@@ -49,9 +49,9 @@ Documented in `docs/specs/api.md` (new section). All refusals use the usual erro
 
 **Workspace**
 - `GET /api/workspace` adds `"empty": bool` (Team; always `false` in Local) and `"read_only": bool`.
-- `POST /api/workspace/import` — Admin, Team, only while empty. Body: the Workspace file, `application/octet-stream`, at most 512 MiB (configurable `QOOP_MAX_IMPORT_MB`). Answers `200 {"members":[{"id","name","claimed":bool}], "you_were": "<name>"}`. `409 not_empty`, `400 not_a_workspace_file`, `413`, `422 newer_version`. Local file → decision 2; Team file → decision 7. One transaction: nothing changes on failure. The live connection then tells everyone the Board changed.
+- `POST /api/workspace/import` — Admin, Team, only while empty. Body: the Workspace file, `application/octet-stream`, at most 512 MiB (configurable `INFALL_MAX_IMPORT_MB`). Answers `200 {"members":[{"id","name","claimed":bool}], "you_were": "<name>"}`. `409 not_empty`, `400 not_a_workspace_file`, `413`, `422 newer_version`. Local file → decision 2; Team file → decision 7. One transaction: nothing changes on failure. The live connection then tells everyone the Board changed.
 - `GET /api/workspace/export` — Admin, Team. Answers the Workspace file (`Content-Disposition: attachment; filename="<name>.infall"`), made as decision 5 says, recording which Member exported it.
-- Command line: `qoop-server import-workspace <file> --admin-email <e>` — same rules; the named existing Admin plays the importing Admin; refuses if the Workspace is not empty or the Admin does not exist.
+- Command line: `infall-server import-workspace <file> --admin-email <e>` — same rules; the named existing Admin plays the importing Admin; refuses if the Workspace is not empty or the Admin does not exist.
 
 **Members**
 - Members list items gain `"claimed": bool`. An unclaimed Member has no email and cannot sign in.
@@ -80,7 +80,7 @@ workspace_move({ id: string, address: string }): void
 
 `WorkspaceEntry` gains `movedTo: string | null` (the Team origin; local only). A moved entry opens read-only (`read_only: true`), and its row shows **Moved to <host>** with **Open on the server** (calls `workspace_connect` with that origin) in place of Open; Export…, Show in folder and Remove… stay.
 
-Bridge (`window.qoopDesktop`, main window, only on the origin of a pending move):
+Bridge (`window.infallDesktop`, main window, only on the origin of a pending move):
 
 ```ts
 moveHandover(): Promise<{ name: string; size: number } | null>
@@ -125,7 +125,7 @@ The decisions above stand. Where the code on `main` differs from this file, or s
 - **`moved_to`.** `LocalOptions` has `moved_to: Option<String>` beside `read_only`, and `build_local_app_with` takes both. In a moved Local Workspace `GET /api/workspace` gives `moved_to` (the Team origin), which Contract B did not have; the UI names the host from it, and says "a Team server" without it.
 - **Read-only** refuses every `/api` request that is not `GET` or `HEAD`, before any handler, except `POST /api/sources/lookup` (it only reads). An `editing` claim over the WebSocket gets an error frame with code `moved`; the tool layer refuses `suggest_*` with the same sentence.
 - **Team files leave Guests out** (with their For you entries), and every setting; decision 5 did not name Guests. Each Member and Admin keeps id, name, role, colour and `created_at`.
-- **Who exported**: a file records `file_kind` (`local` or `team`) and `exported_by`. Over HTTP that is the Admin who pressed the button. **Command-line exports record the oldest Admin** (by `created_at`, then id): `qoop-server export-workspace <dest>`, which this file did not have, and `export_workspace` of a Team database.
+- **Who exported**: a file records `file_kind` (`local` or `team`) and `exported_by`. Over HTTP that is the Admin who pressed the button. **Command-line exports record the oldest Admin** (by `created_at`, then id): `infall-server export-workspace <dest>`, which this file did not have, and `export_workspace` of a Team database.
 - **Team file into a Local Workspace** (decision 6): the exporter becomes the one Member who can sign in, as an Admin with the email `me@local.invalid`; the others stay names with role `member`. The Workspace is then treated as a Blank one, and its Member is renamed after the computer's user at the first start.
 - **Import onto a Team server**: the file's `main` takes the server's `main` id, so open windows stay on it; a Member of the file whose id is already on the server keeps their account; the owner's id is replaced everywhere, inside Change ops too (a Pin's `ai_pinned_by` and `ai_reviewed_by`, a Run result's `by`). The body may have any `Content-Type`; over the limit is `413 too_large`.
 - **`content_epoch`**: after `import-workspace`, a server that was running on the same database refuses to write until it is restarted, so it cannot write its empty Workspace over the one brought in.

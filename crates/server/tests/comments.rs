@@ -10,8 +10,8 @@ use std::time::Duration;
 use axum::http::{Method, StatusCode};
 use common::*;
 use futures_util::{SinkExt, StreamExt};
-use qoop_server::local::{Preset, build_local_app, local_config};
-use qoop_server::store::{MemoryStore, SqliteStore, Store};
+use infall_server::local::{Preset, build_local_app, local_config};
+use infall_server::store::{MemoryStore, SqliteStore, Store};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -539,7 +539,7 @@ async fn comments_work_in_a_local_workspace_as_notes_to_oneself() {
     let mut config = local_config(([127, 0, 0, 1], 4321).into(), web.path().to_path_buf());
     config.dev_origin = Some(ORIGIN.to_string());
     let store = Arc::new(MemoryStore::new());
-    let clock = qoop_server::Clock::manual(START);
+    let clock = infall_server::Clock::manual(START);
     let built =
         build_local_app(config, store.clone(), clock.clone(), Preset::Blank, "Ada").unwrap();
     let app = TestApp {

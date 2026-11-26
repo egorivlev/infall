@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::*;
-use qoop_server::store::SqliteStore;
+use infall_server::store::SqliteStore;
 use serde_json::{Value, json};
 
 /// An app with an Admin and three Changes on main: create A, create B, retitle A.
@@ -591,14 +591,14 @@ async fn the_new_posts_need_the_origin_and_request_headers() {
                 .header(header::CONTENT_TYPE, "application/json")
         };
         let attempts = [
-            ("no Origin", base().header("x-qoop-request", "1")),
+            ("no Origin", base().header("x-infall-request", "1")),
             (
                 "foreign Origin",
                 base()
                     .header(header::ORIGIN, "https://evil.example")
-                    .header("x-qoop-request", "1"),
+                    .header("x-infall-request", "1"),
             ),
-            ("no X-Qoop-Request", base().header(header::ORIGIN, ORIGIN)),
+            ("no X-Infall-Request", base().header(header::ORIGIN, ORIGIN)),
         ];
         for (what, req) in attempts {
             let res = app
@@ -617,7 +617,7 @@ async fn the_new_posts_need_the_origin_and_request_headers() {
 #[tokio::test]
 async fn history_survives_a_restart_on_the_same_sqlite_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let (a, b) = (new_id(), new_id());
     let (main, side, before) = {
         let app = TestApp::with_store(Arc::new(SqliteStore::open(&path).unwrap()));

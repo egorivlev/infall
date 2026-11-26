@@ -1,4 +1,4 @@
-//! The `qoop-server` command line: `serve` (default), `create-admin`, `reset-password`,
+//! The `infall-server` command line: `serve` (default), `create-admin`, `reset-password`,
 //! `gen-secret-key`, `import-workspace`, `export-workspace`.
 
 use std::path::PathBuf;
@@ -7,17 +7,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use qoop_server::config::Config;
-use qoop_server::secret::SecretKey;
-use qoop_server::store::{SqliteStore, Store};
-use qoop_server::{Clock, build_app_with, create_admin, reset_password, serve_until};
+use infall_server::config::Config;
+use infall_server::secret::SecretKey;
+use infall_server::store::{SqliteStore, Store};
+use infall_server::{Clock, build_app_with, create_admin, reset_password, serve_until};
 use tracing_subscriber::EnvFilter;
 
 /// How long `serve` waits for in-flight requests after a shutdown signal.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
-#[command(name = "qoop-server", about = "The Infall research workspace server")]
+#[command(name = "infall-server", about = "The Infall research workspace server")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -27,7 +27,7 @@ struct Cli {
 enum Command {
     /// Run the HTTP server (the default).
     Serve,
-    /// Create an Admin. The password comes from QOOP_ADMIN_PASSWORD or a prompt.
+    /// Create an Admin. The password comes from INFALL_ADMIN_PASSWORD or a prompt.
     CreateAdmin {
         #[arg(long)]
         email: String,
@@ -39,7 +39,7 @@ enum Command {
         #[arg(long)]
         email: String,
     },
-    /// Print a fresh value for QOOP_SECRET_KEY (32 random bytes, base64).
+    /// Print a fresh value for INFALL_SECRET_KEY (32 random bytes, base64).
     GenSecretKey,
     /// Bring a Workspace file into this server's empty Workspace; the Admin with that email
     /// takes over the work of whoever it belonged to. Restart a running server afterwards.
@@ -86,7 +86,7 @@ fn main() -> ExitCode {
                 Ok(())
             }),
             Command::ImportWorkspace { file, admin_email } => {
-                qoop_server::transfer::import_from_command_line(&config.db, &file, &admin_email)
+                infall_server::transfer::import_from_command_line(&config.db, &file, &admin_email)
                     .map(|done| {
                         let waiting: Vec<&str> = done
                             .members
@@ -110,7 +110,7 @@ fn main() -> ExitCode {
                     })
             }
             Command::ExportWorkspace { dest } => {
-                qoop_server::transfer::export_from_command_line(&config.db, &dest)
+                infall_server::transfer::export_from_command_line(&config.db, &dest)
                     .map(|()| println!("Wrote {}.", dest.display()))
             }
             Command::ResetPassword { email } => open(&config).and_then(|store| {
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("qoop-server: {message}");
+            eprintln!("infall-server: {message}");
             ExitCode::FAILURE
         }
     }
@@ -138,9 +138,9 @@ fn open(config: &Config) -> Result<SqliteStore, String> {
         .map_err(|e| format!("cannot open database {}: {e}", config.db.display()))
 }
 
-/// `QOOP_ADMIN_PASSWORD` if set, otherwise a no-echo prompt (asked twice).
+/// `INFALL_ADMIN_PASSWORD` if set, otherwise a no-echo prompt (asked twice).
 fn read_password() -> Result<String, String> {
-    if let Ok(p) = std::env::var("QOOP_ADMIN_PASSWORD") {
+    if let Some(p) = infall_server::config::env_var("INFALL_ADMIN_PASSWORD") {
         return Ok(p);
     }
     let first = rpassword::prompt_password("Password (at least 12 characters): ")
@@ -164,7 +164,7 @@ fn serve(config: Config) -> Result<(), String> {
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .map_err(|e| format!("cannot listen on {addr}: {e}"))?;
-        tracing::info!(%addr, origin = %config.public_origin, "qoop-server listening");
+        tracing::info!(%addr, origin = %config.public_origin, "infall-server listening");
 
         let stop = async {
             wait_for_signal().await;

@@ -130,7 +130,7 @@ describe('the dialog', () => {
   afterEach(() => {
     cleanup()
     board.close()
-    delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+    delete (globalThis as { infallDesktop?: unknown }).infallDesktop
     act(() => sessionStore.setState({ status: 'signed_out' }, true))
     vi.unstubAllGlobals()
   })
@@ -162,7 +162,7 @@ describe('the dialog', () => {
       if (!f) throw new Error('No such file in the folder.')
       return f
     })
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', pickFolder, readFileIn }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', pickFolder, readFileIn }
     render(
       <>
         <ImportBibtex target={{ kind: 'card', cardId: 'c1' }} onClose={() => {}} />
@@ -195,7 +195,7 @@ describe('the dialog', () => {
     ws.open()
     ws.receive({ type: 'subscribed', branch: 'main-id', seq: server.seq })
     await act(async () => settle())
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = {
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = {
       version: '1',
       pickFolder: async () => ({ token: 't', name: 'F' }),
       readFileIn: async () => tinyPdf('new'),

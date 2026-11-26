@@ -48,19 +48,19 @@
 #     emulate, the checks are skipped and the script says so;
 #   - prints the SHA-256.
 #
-# What it creates in Docker, all named qoop-package-linux…, and nothing else is touched:
-#   images      qoop-package-linux:22.04-<arch>   (one per package architecture)
-#               qoop-package-linux-verify:<arch>-<release>   (the snapshot of step 1;
+# What it creates in Docker, all named infall-package-linux…, and nothing else is touched:
+#   images      infall-package-linux:22.04-<arch>   (one per package architecture)
+#               infall-package-linux-verify:<arch>-<release>   (the snapshot of step 1;
 #               removed when the script ends)
-#   volume      qoop-package-linux-cargo          (downloaded crates, npm's cache, build output)
-#   containers  qoop-package-linux-build-<arch>, qoop-package-linux-verify-<arch>-<release>,
-#               qoop-package-linux-offline-<arch>-<release>   (removed when the script ends)
+#   volume      infall-package-linux-cargo          (downloaded crates, npm's cache, build output)
+#   containers  infall-package-linux-build-<arch>, infall-package-linux-verify-<arch>-<release>,
+#               infall-package-linux-offline-<arch>-<release>   (removed when the script ends)
 # It pulls ubuntu:22.04 and ubuntu:24.04 if this Docker does not have them and leaves them.
 #
-# Environment: QOOP_PACKAGE_RUST (Rust version in the image, default 1.96.0),
-# QOOP_PACKAGE_NODE (Node.js version in the image, default 22.23.5),
-# QOOP_PACKAGE_MAINTAINER (the control file's Maintainer field),
-# QOOP_PACKAGE_CACHE (a folder on this computer to keep downloaded crates, npm's cache and the
+# Environment: INFALL_PACKAGE_RUST (Rust version in the image, default 1.96.0),
+# INFALL_PACKAGE_NODE (Node.js version in the image, default 22.23.5),
+# INFALL_PACKAGE_MAINTAINER (the control file's Maintainer field),
+# INFALL_PACKAGE_CACHE (a folder on this computer to keep downloaded crates, npm's cache and the
 # build output in, instead of the volume: what the continuous build caches between runs, and a
 # way to keep a few GB out of a Docker machine whose own disk is small. The build runs as root,
 # so what it writes there belongs to root on Linux).
@@ -75,19 +75,30 @@
 #   program as an AppImage.
 set -euo pipefail
 
+# A variable still set under its name from before the rename (QOOP_PACKAGE_RUST for
+# INFALL_PACKAGE_RUST) is read when the new one is not set, with one warning.
+for name in PACKAGE_RUST PACKAGE_NODE PACKAGE_MAINTAINER PACKAGE_CACHE; do
+    new="INFALL_$name" old="QOOP_$name"
+    if [ -z "${!new:-}" ] && [ -n "${!old:-}" ]; then
+        echo "package-linux: $old is read as $new, its name since the rename: rename it" >&2
+        export "$new=${!old}"
+    fi
+done
+unset name new old
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_src="$root/desktop/src-tauri"
 conf="$app_src/tauri.conf.json"
 icon_src="$app_src/icons/icon-1024.png"
 dist="$root/dist"
 
-prefix="qoop-package-linux"
+prefix="infall-package-linux"
 volume="$prefix-cargo"
 base_release="22.04"
 verify_releases="22.04 24.04"
-rust="${QOOP_PACKAGE_RUST:-1.96.0}"
-node="${QOOP_PACKAGE_NODE:-22.23.5}"
-maintainer="${QOOP_PACKAGE_MAINTAINER:-Infall <nobody@example.invalid>}"
+rust="${INFALL_PACKAGE_RUST:-1.96.0}"
+node="${INFALL_PACKAGE_NODE:-22.23.5}"
+maintainer="${INFALL_PACKAGE_MAINTAINER:-Infall <nobody@example.invalid>}"
 # How long the started program must stay up, in seconds.
 stay_up=10
 # The keys that create a Tutorial Workspace on a fresh start screen, for xdotool (see
@@ -178,19 +189,19 @@ esac
 
 # A full Docker disk does not say so: apt in the image build reports "At least one invalid
 # signature was encountered" for every source instead. So look first. The image takes about
-# 3 GB, each check's snapshot about 1 GB; the volume, unless QOOP_PACKAGE_CACHE moves it out,
+# 3 GB, each check's snapshot about 1 GB; the volume, unless INFALL_PACKAGE_CACHE moves it out,
 # grows to about 4 GB per architecture.
 need_gb=2
 for arch in "${archs[@]}"; do
     docker image inspect "$prefix:$base_release-$arch" >/dev/null 2>&1 || need_gb=$((need_gb + 3))
 done
-if [ -z "${QOOP_PACKAGE_CACHE:-}" ] && ! docker volume inspect "$volume" >/dev/null 2>&1; then
+if [ -z "${INFALL_PACKAGE_CACHE:-}" ] && ! docker volume inspect "$volume" >/dev/null 2>&1; then
     need_gb=$((need_gb + 4 * ${#archs[@]}))
 fi
 free_kb="$(docker run --rm --quiet --platform "linux/$native" "ubuntu:$base_release" df -Pk / 2>/dev/null |
     awk 'NR == 2 { print $4 }')"
 if [ -n "$free_kb" ] && [ "$free_kb" -lt $((need_gb * 1024 * 1024)) ]; then
-    die "Docker's own disk has $((free_kb / 1024 / 1024)) GB free and this needs about $need_gb GB (docker system df shows what uses it; QOOP_PACKAGE_CACHE keeps the build output outside it)"
+    die "Docker's own disk has $((free_kb / 1024 / 1024)) GB free and this needs about $need_gb GB (docker system df shows what uses it; INFALL_PACKAGE_CACHE keeps the build output outside it)"
 fi
 
 triple_of() {
@@ -217,10 +228,10 @@ trap 'exit 130' INT TERM
 
 mkdir -p "$dist"
 # What is mounted at /cargo in the build container: the volume, or the folder named by
-# QOOP_PACKAGE_CACHE.
-if [ -n "${QOOP_PACKAGE_CACHE:-}" ]; then
-    mkdir -p "$QOOP_PACKAGE_CACHE" || die "QOOP_PACKAGE_CACHE: cannot make $QOOP_PACKAGE_CACHE"
-    cache="$(cd "$QOOP_PACKAGE_CACHE" && pwd)"
+# INFALL_PACKAGE_CACHE.
+if [ -n "${INFALL_PACKAGE_CACHE:-}" ]; then
+    mkdir -p "$INFALL_PACKAGE_CACHE" || die "INFALL_PACKAGE_CACHE: cannot make $INFALL_PACKAGE_CACHE"
+    cache="$(cd "$INFALL_PACKAGE_CACHE" && pwd)"
 else
     cache="$volume"
     docker volume create "$volume" >/dev/null

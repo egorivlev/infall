@@ -10,11 +10,11 @@ use serde_json::json;
 
 use crate::RunRequest;
 
-/// The name the Qoop tool endpoint gets in the MCP config; tools become `mcp__qoop__<tool>`.
-pub const MCP_SERVER_NAME: &str = "qoop";
+/// The name the Infall tool endpoint gets in the MCP config; tools become `mcp__infall__<tool>`.
+pub const MCP_SERVER_NAME: &str = "infall";
 
 /// The eight tools of docs/specs/api.md §12 — the only tools a run may use.
-pub const QOOP_TOOLS: [&str; 8] = [
+pub const INFALL_TOOLS: [&str; 8] = [
     "list_branches",
     "list_cards",
     "get_card",
@@ -33,9 +33,9 @@ pub const CHILD_ENV: [(&str, &str); 2] = [
     ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
 ];
 
-/// `mcp__qoop__list_branches,mcp__qoop__list_cards,…`
+/// `mcp__infall__list_branches,mcp__infall__list_cards,…`
 pub fn allowed_tools() -> String {
-    QOOP_TOOLS
+    INFALL_TOOLS
         .iter()
         .map(|tool| format!("mcp__{MCP_SERVER_NAME}__{tool}"))
         .collect::<Vec<_>>()
@@ -70,7 +70,7 @@ pub fn build_args(request: &RunRequest, mcp_config: &Path) -> Vec<OsString> {
             // No built-in tools at all: no shell, no files, no web, no sub-agents.
             "--tools",
             "",
-            // The eight Qoop tools may run without asking…
+            // The eight Infall tools may run without asking…
             "--allowedTools",
         ]
         .map(OsString::from),
@@ -102,7 +102,7 @@ pub fn build_args(request: &RunRequest, mcp_config: &Path) -> Vec<OsString> {
     args
 }
 
-/// The MCP config file: one HTTP server, the Qoop tool endpoint, with the access token.
+/// The MCP config file: one HTTP server, the Infall tool endpoint, with the access token.
 pub fn mcp_config_json(request: &RunRequest) -> String {
     json!({
         "mcpServers": {
@@ -127,7 +127,7 @@ mod tests {
             system: "--dangerously-skip-permissions\nBe brief.".into(),
             resume: resume.map(str::to_owned),
             tools_url: "http://localhost:8787/mcp".into(),
-            tools_token: Secret::new("qoop_pat_SECRETSECRET"),
+            tools_token: Secret::new("infall_pat_SECRETSECRET"),
         }
     }
 
@@ -159,7 +159,7 @@ mod tests {
                 "--tools",
                 "",
                 "--allowedTools",
-                "mcp__qoop__list_branches,mcp__qoop__list_cards,mcp__qoop__get_card,mcp__qoop__list_connections,mcp__qoop__list_sources,mcp__qoop__list_suggestions,mcp__qoop__suggest_source,mcp__qoop__suggest_connection",
+                "mcp__infall__list_branches,mcp__infall__list_cards,mcp__infall__get_card,mcp__infall__list_connections,mcp__infall__list_sources,mcp__infall__list_suggestions,mcp__infall__suggest_source,mcp__infall__suggest_connection",
                 "--permission-mode",
                 "dontAsk",
                 "--permission-prompts",
@@ -195,11 +195,11 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&mcp_config_json(&request(None))).unwrap();
         let servers = v["mcpServers"].as_object().unwrap();
         assert_eq!(servers.len(), 1);
-        assert_eq!(servers["qoop"]["type"], "http");
-        assert_eq!(servers["qoop"]["url"], "http://localhost:8787/mcp");
+        assert_eq!(servers["infall"]["type"], "http");
+        assert_eq!(servers["infall"]["url"], "http://localhost:8787/mcp");
         assert_eq!(
-            servers["qoop"]["headers"]["Authorization"],
-            "Bearer qoop_pat_SECRETSECRET"
+            servers["infall"]["headers"]["Authorization"],
+            "Bearer infall_pat_SECRETSECRET"
         );
     }
 }

@@ -9,7 +9,7 @@ export const MAX_ERROR_LENGTH = 300
 
 export type FrameMessage = { type: 'ready' } | { type: 'height'; value: number } | { type: 'error'; message: string }
 
-export type RenderMessage = { qoop: 'visual'; type: 'render'; html: string; theme: Record<string, string> }
+export type RenderMessage = { infall: 'visual'; type: 'render'; html: string; theme: Record<string, string> }
 
 /** 80–900 whole pixels; anything that is not a finite number gives the default. */
 export function clampHeight(value: unknown): number {
@@ -31,13 +31,13 @@ export function cleanError(message: string): string {
 
 /**
  * What a message from the frame says, or null when it is not one of ours: not an object, not
- * tagged `qoop: "visual"`, an unknown type, a `height` that is not a finite number, an `error`
+ * tagged `infall: "visual"`, an unknown type, a `height` that is not a finite number, an `error`
  * whose message is not a string. The caller has already checked where it came from.
  */
 export function parseFrameMessage(data: unknown): FrameMessage | null {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return null
   const m = data as Record<string, unknown>
-  if (m.qoop !== 'visual') return null
+  if (m.infall !== 'visual') return null
   switch (m.type) {
     case 'ready':
       return { type: 'ready' }
@@ -95,5 +95,5 @@ export function readTheme(root: HTMLElement = document.documentElement): Record<
 }
 
 export function renderMessage(html: string, theme: Record<string, string>): RenderMessage {
-  return { qoop: 'visual', type: 'render', html, theme }
+  return { infall: 'visual', type: 'render', html, theme }
 }

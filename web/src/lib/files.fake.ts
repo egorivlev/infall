@@ -57,7 +57,7 @@ export class FakePdfStore {
   arxiv: Record<string, Uint8Array> = {}
   /** The ids `fetch-pdf` was asked for, in order. */
   fetched: string[] = []
-  /** The server's limit (`QOOP_MAX_PDF_MB`), in bytes. */
+  /** The server's limit (`INFALL_MAX_PDF_MB`), in bytes. */
   maxBytes = 100 * 1024 * 1024
   /** One scripted failure for the next upload or fetch, e.g. `{ status: 413, code: 'too_large', message: '…' }`. */
   fail: { status: number; code: string; message: string } | null = null

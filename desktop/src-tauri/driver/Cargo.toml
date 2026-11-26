@@ -1,7 +1,7 @@
 # Drives the Member's own `claude` command for one AI sidebar run.
 # No Tauri types here: tested with plain `cargo test` against a stub `claude`.
 [package]
-name = "qoop-claude-driver"
+name = "infall-claude-driver"
 version = "0.1.0"
 license = "Apache-2.0"
 edition = "2024"
@@ -9,7 +9,7 @@ rust-version = "1.90"
 publish = false
 
 [dependencies]
-qoop-proc = { path = "../proc" }
+infall-proc = { path = "../proc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

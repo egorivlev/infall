@@ -12,8 +12,8 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use http_body_util::BodyExt;
-use qoop_server::secret::SecretKey;
-use qoop_server::store::{MemoryStore, Store};
+use infall_server::secret::SecretKey;
+use infall_server::store::{MemoryStore, Store};
 use serde_json::{Value, json};
 
 use super::{Res, TestApp};

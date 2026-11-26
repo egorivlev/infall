@@ -61,7 +61,7 @@ pub enum ApiError {
     /// A Member who started more AI turns than a minute allows.
     #[error("too many AI turns")]
     TooManyTurns,
-    /// The OpenRouter path is off: the server has no `QOOP_SECRET_KEY`.
+    /// The OpenRouter path is off: the server has no `INFALL_SECRET_KEY`.
     #[error("AI not configured")]
     AiNotConfigured,
     /// The Member has no OpenRouter key, or the stored one can no longer be read; the

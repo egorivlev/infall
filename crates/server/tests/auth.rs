@@ -5,9 +5,9 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::*;
-use qoop_server::auth::token_hash;
-use qoop_server::store::MemoryStore;
-use qoop_server::{AccountError, create_admin, reset_password};
+use infall_server::auth::token_hash;
+use infall_server::store::MemoryStore;
+use infall_server::{AccountError, create_admin, reset_password};
 use serde_json::json;
 
 #[tokio::test]
@@ -53,7 +53,7 @@ async fn me_without_a_session_is_not_signed_in() {
     let res = app.get("/api/me", None).await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
     assert_eq!(res.code(), "not_signed_in");
-    let res = app.get("/api/me", Some("qoop_session=made-up")).await;
+    let res = app.get("/api/me", Some("infall_session=made-up")).await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
 }
 
@@ -112,7 +112,7 @@ async fn writes_need_the_request_header_and_an_allowed_origin() {
             b = b.header(header::ORIGIN, o);
         }
         if marker {
-            b = b.header("x-qoop-request", "1");
+            b = b.header("x-infall-request", "1");
         }
         b.body(Body::from(body.clone())).unwrap()
     };
@@ -155,7 +155,7 @@ async fn the_dev_origin_is_allowed_when_configured() {
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::ORIGIN, "http://localhost:5173")
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "email": "admin@example.org", "password": PASSWORD }).to_string(),
@@ -170,10 +170,13 @@ async fn the_session_cookie_has_exactly_the_contract_attributes() {
     app.admin().await;
     let res = app.login("admin@example.org", PASSWORD).await;
     let set = res.set_cookie().unwrap();
-    let token = res.cookie().trim_start_matches("qoop_session=").to_string();
+    let token = res
+        .cookie()
+        .trim_start_matches("infall_session=")
+        .to_string();
     assert_eq!(
         set,
-        format!("qoop_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000")
+        format!("infall_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000")
     );
     // 32 bytes, URL-safe base64 without padding.
     assert_eq!(token.len(), 43);
@@ -195,14 +198,14 @@ async fn the_session_cookie_has_exactly_the_contract_attributes() {
 #[tokio::test]
 async fn the_cookie_is_secure_when_the_public_origin_is_https() {
     let app = TestApp::with_config(Arc::new(MemoryStore::new()), |c| {
-        c.public_origin = "https://qoop.example.org".to_string();
+        c.public_origin = "https://infall.example.org".to_string();
     });
     create_admin(&*app.store, "admin@example.org", "Ada", PASSWORD, START).unwrap();
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/login")
-        .header(header::ORIGIN, "https://qoop.example.org")
-        .header("x-qoop-request", "1")
+        .header(header::ORIGIN, "https://infall.example.org")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "email": "admin@example.org", "password": PASSWORD }).to_string(),
@@ -224,7 +227,7 @@ async fn logout_deletes_the_server_side_session_and_clears_the_cookie() {
     assert_eq!(res.body, json!({}));
     let set = res.set_cookie().unwrap();
     assert!(
-        set.starts_with("qoop_session=;") && set.contains("Max-Age=0"),
+        set.starts_with("infall_session=;") && set.contains("Max-Age=0"),
         "{set}"
     );
     // Replaying the old cookie no longer works.
@@ -264,7 +267,7 @@ async fn malformed_json_is_a_400_in_the_contract_shape() {
         .method(Method::POST)
         .uri("/api/auth/login")
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from("{ not json"))
         .unwrap();
@@ -296,7 +299,7 @@ async fn bodies_over_one_megabyte_are_refused() {
 
 #[tokio::test]
 async fn sql_metacharacters_in_input_are_just_data() {
-    let store = Arc::new(qoop_server::store::SqliteStore::open_in_memory().unwrap());
+    let store = Arc::new(infall_server::store::SqliteStore::open_in_memory().unwrap());
     let app = TestApp::with_store(store);
     app.admin().await;
     let res = app.login("' OR '1'='1", "' OR '1'='1' --").await;

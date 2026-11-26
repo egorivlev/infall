@@ -9,6 +9,7 @@ mod chrome;
 mod datadir;
 mod files;
 mod portable;
+mod rename;
 mod shell;
 mod transfer;
 mod update;

@@ -2174,6 +2174,96 @@ dependencies = [
 ]
 
 [[package]]
+name = "infall-claude-driver"
+version = "0.1.0"
+dependencies = [
+ "infall-proc",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "infall-core"
+version = "0.9.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "infall-desktop"
+version = "0.9.0"
+dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.3.4",
+ "infall-claude-driver",
+ "infall-runner",
+ "infall-server",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tauri-plugin-updater",
+ "tauri-runtime-wry",
+ "tempfile",
+ "tokio",
+ "ureq",
+ "url",
+]
+
+[[package]]
+name = "infall-proc"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "infall-runner"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "infall-proc",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+]
+
+[[package]]
+name = "infall-server"
+version = "0.9.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "base64 0.23.1",
+ "chacha20poly1305",
+ "clap",
+ "futures-util",
+ "infall-core",
+ "rand 0.10.4",
+ "reqwest",
+ "rpassword",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "infer"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3449,96 +3539,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "qoop-claude-driver"
-version = "0.1.0"
-dependencies = [
- "libc",
- "qoop-proc",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "qoop-core"
-version = "0.9.0"
-dependencies = [
- "serde",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "qoop-desktop"
-version = "0.9.0"
-dependencies = [
- "base64 0.22.1",
- "getrandom 0.3.4",
- "qoop-claude-driver",
- "qoop-runner",
- "qoop-server",
- "rfd",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-updater",
- "tauri-runtime-wry",
- "tempfile",
- "tokio",
- "ureq",
- "url",
-]
-
-[[package]]
-name = "qoop-proc"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "qoop-runner"
-version = "0.1.0"
-dependencies = [
- "base64 0.21.7",
- "libc",
- "qoop-proc",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
-]
-
-[[package]]
-name = "qoop-server"
-version = "0.9.0"
-dependencies = [
- "argon2",
- "axum",
- "base64 0.23.1",
- "chacha20poly1305",
- "clap",
- "futures-util",
- "qoop-core",
- "rand 0.10.4",
- "reqwest",
- "rpassword",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "thiserror 2.0.21",
- "tokio",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

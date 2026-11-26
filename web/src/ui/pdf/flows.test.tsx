@@ -416,14 +416,14 @@ describe('the reader', () => {
 
   it('Save a copy in a browser; Open in the system viewer in the desktop app', async () => {
     const openExternally = vi.fn(async () => {})
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', openExternally }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', openExternally }
     try {
       await openReader(2)
       fireEvent.click(screen.getByRole('button', { name: 'Open in the system viewer' }))
       await flush()
       expect(openExternally).toHaveBeenCalledWith({ suggestedName: 'long.pdf', bytes: expect.any(Uint8Array) })
     } finally {
-      delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+      delete (globalThis as { infallDesktop?: unknown }).infallDesktop
     }
   })
 

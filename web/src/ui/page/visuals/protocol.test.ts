@@ -3,12 +3,12 @@ import { DEFAULT_HEIGHT, THEME_KEYS, clampHeight, cleanError, collectTheme, pars
 
 describe('Visual protocol: messages from the frame', () => {
   it('reads the three messages of the protocol', () => {
-    expect(parseFrameMessage({ qoop: 'visual', type: 'ready' })).toEqual({ type: 'ready' })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'height', value: 312 })).toEqual({ type: 'height', value: 312 })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'error', message: 'x is not defined' })).toEqual({ type: 'error', message: 'x is not defined' })
+    expect(parseFrameMessage({ infall: 'visual', type: 'ready' })).toEqual({ type: 'ready' })
+    expect(parseFrameMessage({ infall: 'visual', type: 'height', value: 312 })).toEqual({ type: 'height', value: 312 })
+    expect(parseFrameMessage({ infall: 'visual', type: 'error', message: 'x is not defined' })).toEqual({ type: 'error', message: 'x is not defined' })
   })
 
-  it('ignores anything that is not tagged qoop: "visual"', () => {
+  it('ignores anything that is not tagged infall: "visual"', () => {
     for (const data of [
       null,
       undefined,
@@ -16,44 +16,44 @@ describe('Visual protocol: messages from the frame', () => {
       42,
       true,
       [],
-      [{ qoop: 'visual', type: 'ready' }],
+      [{ infall: 'visual', type: 'ready' }],
       {},
       { type: 'ready' },
-      { qoop: 'Visual', type: 'ready' },
-      { qoop: true, type: 'ready' },
-      { qoop: 'board', type: 'ready' },
-      '{"qoop":"visual","type":"ready"}',
+      { infall: 'Visual', type: 'ready' },
+      { infall: true, type: 'ready' },
+      { infall: 'board', type: 'ready' },
+      '{"infall":"visual","type":"ready"}',
     ]) {
       expect(parseFrameMessage(data), JSON.stringify(data)).toBeNull()
     }
   })
 
   it('ignores unknown types — also the parent’s own render message', () => {
-    expect(parseFrameMessage({ qoop: 'visual' })).toBeNull()
-    expect(parseFrameMessage({ qoop: 'visual', type: 'render', html: '<p>', theme: {} })).toBeNull()
-    expect(parseFrameMessage({ qoop: 'visual', type: 'navigate', url: 'https://example.org' })).toBeNull()
-    expect(parseFrameMessage({ qoop: 'visual', type: ['ready'] })).toBeNull()
+    expect(parseFrameMessage({ infall: 'visual' })).toBeNull()
+    expect(parseFrameMessage({ infall: 'visual', type: 'render', html: '<p>', theme: {} })).toBeNull()
+    expect(parseFrameMessage({ infall: 'visual', type: 'navigate', url: 'https://example.org' })).toBeNull()
+    expect(parseFrameMessage({ infall: 'visual', type: ['ready'] })).toBeNull()
   })
 
   it('takes a height only as a finite number, and clamps it', () => {
-    expect(parseFrameMessage({ qoop: 'visual', type: 'height', value: 12 })).toEqual({ type: 'height', value: 80 })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'height', value: 1e9 })).toEqual({ type: 'height', value: 900 })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'height', value: -40 })).toEqual({ type: 'height', value: 80 })
+    expect(parseFrameMessage({ infall: 'visual', type: 'height', value: 12 })).toEqual({ type: 'height', value: 80 })
+    expect(parseFrameMessage({ infall: 'visual', type: 'height', value: 1e9 })).toEqual({ type: 'height', value: 900 })
+    expect(parseFrameMessage({ infall: 'visual', type: 'height', value: -40 })).toEqual({ type: 'height', value: 80 })
     for (const value of [NaN, Infinity, -Infinity, '300', null, undefined, {}, [300], true]) {
-      expect(parseFrameMessage({ qoop: 'visual', type: 'height', value }), String(value)).toBeNull()
+      expect(parseFrameMessage({ infall: 'visual', type: 'height', value }), String(value)).toBeNull()
     }
   })
 
   it('takes an error only as a string, cut to 300 characters on one line', () => {
-    const long = parseFrameMessage({ qoop: 'visual', type: 'error', message: 'e'.repeat(5000) })
+    const long = parseFrameMessage({ infall: 'visual', type: 'error', message: 'e'.repeat(5000) })
     expect(long).toEqual({ type: 'error', message: 'e'.repeat(300) })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'error', message: 'line one\n\tline two\u0000 end' })).toEqual({
+    expect(parseFrameMessage({ infall: 'visual', type: 'error', message: 'line one\n\tline two\u0000 end' })).toEqual({
       type: 'error',
       message: 'line one line two end',
     })
-    expect(parseFrameMessage({ qoop: 'visual', type: 'error', message: '   ' })).toEqual({ type: 'error', message: 'Unknown error' })
+    expect(parseFrameMessage({ infall: 'visual', type: 'error', message: '   ' })).toEqual({ type: 'error', message: 'Unknown error' })
     for (const message of [undefined, null, 5, { toString: () => 'x' }, ['x']]) {
-      expect(parseFrameMessage({ qoop: 'visual', type: 'error', message })).toBeNull()
+      expect(parseFrameMessage({ infall: 'visual', type: 'error', message })).toBeNull()
     }
   })
 })
@@ -138,7 +138,7 @@ describe('Visual protocol: theme', () => {
 
   it('builds the one message the parent sends', () => {
     expect(renderMessage('<p>hi</p>', { 'color-scheme': 'dark' })).toEqual({
-      qoop: 'visual',
+      infall: 'visual',
       type: 'render',
       html: '<p>hi</p>',
       theme: { 'color-scheme': 'dark' },

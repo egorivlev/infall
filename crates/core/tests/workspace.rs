@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 fn title_at(ws: &Workspace, moment: Moment, id: EntityId) -> Option<Value> {
     ws.board_at(moment)

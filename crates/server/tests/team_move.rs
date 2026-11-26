@@ -12,21 +12,21 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use common::{ORIGIN, PASSWORD, START, TestApp, create, create_card, new_id, web_dir};
 use http_body_util::BodyExt;
-use qoop_server::Clock;
-use qoop_server::auth::token_hash;
-use qoop_server::local::{
+use infall_server::Clock;
+use infall_server::auth::token_hash;
+use infall_server::local::{
     LocalOptions, Preset, build_local_app_with, export_workspace, import_workspace, local_config,
     start_local,
 };
-use qoop_server::secret::SecretKey;
-use qoop_server::store::{SCHEMA_VERSION, SqliteStore, Store};
+use infall_server::secret::SecretKey;
+use infall_server::store::{SCHEMA_VERSION, SqliteStore, Store};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 // ---------------------------------------------------------------- harness
 
 /// A Team Workspace on a database file (an import needs one), whose `config.db` is that file.
-fn team(dir: &Path, name: &str, tweak: impl FnOnce(&mut qoop_server::config::Config)) -> TestApp {
+fn team(dir: &Path, name: &str, tweak: impl FnOnce(&mut infall_server::config::Config)) -> TestApp {
     let db = dir.join(format!("{name}.db"));
     let store: Arc<dyn Store> = Arc::new(SqliteStore::open(&db).unwrap());
     TestApp::with_config(store, |c| {
@@ -37,7 +37,7 @@ fn team(dir: &Path, name: &str, tweak: impl FnOnce(&mut qoop_server::config::Con
 
 /// An Admin of `email` on `app`, signed in.
 async fn admin_as(app: &TestApp, email: &str, name: &str) -> String {
-    qoop_server::create_admin(&*app.store, email, name, PASSWORD, START).unwrap();
+    infall_server::create_admin(&*app.store, email, name, PASSWORD, START).unwrap();
     let res = app.login(email, PASSWORD).await;
     assert_eq!(res.status, StatusCode::OK, "{}", res.text);
     res.cookie()
@@ -62,7 +62,7 @@ async fn bytes(
         .method(method)
         .uri(path)
         .header(header::ORIGIN, ORIGIN)
-        .header("x-qoop-request", "1")
+        .header("x-infall-request", "1")
         .header(header::CONTENT_TYPE, "application/octet-stream");
     if let Some(c) = cookie {
         b = b.header(header::COOKIE, c);
@@ -833,7 +833,7 @@ async fn a_team_file_opens_as_a_local_workspace_whose_member_is_who_exported_it(
     let imported = import_workspace(&file, &db).unwrap();
     assert_eq!(
         imported,
-        qoop_server::local::Imported {
+        infall_server::local::Imported {
             preset: Some(Preset::Blank),
             from_team: true
         }
@@ -1239,13 +1239,13 @@ async fn everyone_connected_catches_up_after_an_import() {
 
 // ---------------------------------------------------------------- the command line
 
-const BIN: &str = env!("CARGO_BIN_EXE_qoop-server");
+const BIN: &str = env!("CARGO_BIN_EXE_infall-server");
 
 fn cli(db: &Path, args: &[&str]) -> std::process::Output {
     std::process::Command::new(BIN)
         .args(args)
-        .env("QOOP_DB", db)
-        .env("QOOP_ADMIN_PASSWORD", PASSWORD)
+        .env("INFALL_DB", db)
+        .env("INFALL_ADMIN_PASSWORD", PASSWORD)
         .env("RUST_LOG", "warn")
         .output()
         .unwrap()
@@ -1261,7 +1261,7 @@ fn ok(out: std::process::Output) -> String {
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
-/// A `qoop-server serve` process on `db`; killed when dropped.
+/// A `infall-server serve` process on `db`; killed when dropped.
 struct Served {
     child: std::process::Child,
     origin: String,
@@ -1284,10 +1284,10 @@ async fn serve(db: &Path, web: &Path) -> Served {
     let origin = format!("http://127.0.0.1:{port}");
     let child = std::process::Command::new(BIN)
         .arg("serve")
-        .env("QOOP_DB", db)
-        .env("QOOP_ADDR", format!("127.0.0.1:{port}"))
-        .env("QOOP_PUBLIC_ORIGIN", &origin)
-        .env("QOOP_WEB_DIR", web)
+        .env("INFALL_DB", db)
+        .env("INFALL_ADDR", format!("127.0.0.1:{port}"))
+        .env("INFALL_PUBLIC_ORIGIN", &origin)
+        .env("INFALL_WEB_DIR", web)
         .env("RUST_LOG", "warn")
         .spawn()
         .unwrap();
@@ -1317,7 +1317,7 @@ impl Http {
         let res = http
             .post(format!("{origin}/api/auth/login"))
             .header("origin", origin)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .json(&json!({ "email": email, "password": PASSWORD }))
             .send()
             .await
@@ -1354,7 +1354,7 @@ impl Http {
             .post(format!("{}{path}", self.origin))
             .header("cookie", &self.cookie)
             .header("origin", &self.origin)
-            .header("x-qoop-request", "1")
+            .header("x-infall-request", "1")
             .json(&body)
             .send()
             .await

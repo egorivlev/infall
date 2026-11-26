@@ -16,7 +16,7 @@ export type AiMemory = { conversations: StoredConversation[]; current: string | 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem'>
 
 export function storageKey(memberId: string): string {
-  return `qoop.ai.${memberId}`
+  return `infall.ai.${memberId}`
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

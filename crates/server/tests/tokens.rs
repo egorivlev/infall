@@ -5,8 +5,8 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::*;
-use qoop_server::reset_password;
-use qoop_server::store::{MemoryStore, SqliteStore, Store};
+use infall_server::reset_password;
+use infall_server::store::{MemoryStore, SqliteStore, Store};
 use serde_json::{Value, json};
 
 fn stores() -> Vec<Arc<dyn Store>> {
@@ -62,8 +62,8 @@ async fn a_token_is_created_listed_and_deleted_by_its_owner_only() {
             res.body["token"],
             json!({ "id": id, "name": "Claude desktop", "created_at": START })
         );
-        // `qoop_pat_` + 43 url-safe base64 characters (32 random bytes).
-        let tail = secret.strip_prefix("qoop_pat_").expect("the prefix");
+        // `infall_pat_` + 43 url-safe base64 characters (32 random bytes).
+        let tail = secret.strip_prefix("infall_pat_").expect("the prefix");
         assert_eq!(tail.len(), 43);
         assert!(
             tail.chars()
@@ -213,7 +213,7 @@ async fn guests_and_strangers_cannot_touch_tokens() {
         assert_eq!((list.status, list.code()), (status, code));
         let made = app.post("/api/tokens", who, json!({ "name": "x" })).await;
         assert_eq!((made.status, made.code()), (status, code));
-        assert!(!made.text.contains("qoop_pat_"));
+        assert!(!made.text.contains("infall_pat_"));
         let gone = app.delete(&format!("/api/tokens/{id}"), who).await;
         assert_eq!((gone.status, gone.code()), (status, code));
     }
@@ -240,7 +240,7 @@ async fn a_session_cookie_alone_gets_401_on_the_tool_endpoint() {
     let admin = app.admin().await;
     app.access_token(&admin, "exists").await;
     let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" }).to_string();
-    let session = admin.strip_prefix("qoop_session=").unwrap().to_string();
+    let session = admin.strip_prefix("infall_session=").unwrap().to_string();
 
     let with = |headers: Vec<(header::HeaderName, String)>| {
         let mut b = Request::builder()
@@ -261,17 +261,20 @@ async fn a_session_cookie_alone_gets_401_on_the_tool_endpoint() {
             (header::COOKIE, admin.clone()),
             (header::ORIGIN, ORIGIN.to_string()),
             (
-                header::HeaderName::from_static("x-qoop-request"),
+                header::HeaderName::from_static("x-infall-request"),
                 "1".to_string(),
             ),
         ],
         // The session token dressed up as a bearer token.
         vec![(header::AUTHORIZATION, format!("Bearer {session}"))],
-        vec![(header::AUTHORIZATION, format!("Bearer qoop_pat_{session}"))],
+        vec![(
+            header::AUTHORIZATION,
+            format!("Bearer infall_pat_{session}"),
+        )],
         // Unknown and malformed credentials.
         vec![(
             header::AUTHORIZATION,
-            format!("Bearer qoop_pat_{}", "A".repeat(43)),
+            format!("Bearer infall_pat_{}", "A".repeat(43)),
         )],
         vec![(header::AUTHORIZATION, "Bearer".to_string())],
         vec![(header::AUTHORIZATION, "Bearer ".to_string())],
@@ -409,13 +412,13 @@ async fn a_bearer_token_gets_401_on_every_api_route() {
         // legitimate UI request carries.
         for credential in [
             (header::AUTHORIZATION, format!("Bearer {secret}")),
-            (header::COOKIE, format!("qoop_session={secret}")),
+            (header::COOKIE, format!("infall_session={secret}")),
         ] {
             let req = Request::builder()
                 .method(method.clone())
                 .uri(&path)
                 .header(header::ORIGIN, ORIGIN)
-                .header("x-qoop-request", "1")
+                .header("x-infall-request", "1")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(credential.0.clone(), credential.1)
                 .body(Body::from(body.to_string()))
@@ -535,13 +538,13 @@ async fn a_guests_expiry_or_a_token_row_for_a_guest_never_authenticates() {
         .join(&admin, "gus@example.org", "guest", Some(START + 1_000_000))
         .await;
     let guest_id = member_id(&app, &guest).await;
-    let secret = format!("qoop_pat_{}", "g".repeat(43));
+    let secret = format!("infall_pat_{}", "g".repeat(43));
     let stored = app
         .store
         .insert_access_token(
-            &qoop_server::store::AccessTokenRecord {
+            &infall_server::store::AccessTokenRecord {
                 id: uuid::Uuid::new_v4(),
-                member: qoop_core::MemberId(guest_id.parse().unwrap()),
+                member: infall_core::MemberId(guest_id.parse().unwrap()),
                 name: "forged".into(),
                 token_hash: sha256_hex(&secret),
                 created_at: START,
@@ -552,6 +555,58 @@ async fn a_guests_expiry_or_a_token_row_for_a_guest_never_authenticates() {
         .unwrap();
     assert!(stored);
     assert_eq!(ping(&app, &secret).await.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_token_issued_before_the_rename_still_works_and_new_ones_get_the_new_prefix() {
+    for store in stores() {
+        let app = TestApp::with_store(store);
+        let admin = app.admin().await;
+        let admin_id = member_id(&app, &admin).await;
+        // As a 0.9.0 build before the rename made it: `qoop_pat_`, its hash stored.
+        let old = format!("qoop_pat_{}", "o".repeat(43));
+        let stored = app
+            .store
+            .insert_access_token(
+                &infall_server::store::AccessTokenRecord {
+                    id: uuid::Uuid::new_v4(),
+                    member: infall_core::MemberId(admin_id.parse().unwrap()),
+                    name: "Claude desktop".into(),
+                    token_hash: sha256_hex(&old),
+                    created_at: START,
+                    last_used_at: None,
+                },
+                10,
+            )
+            .unwrap();
+        assert!(stored);
+        assert_eq!(ping(&app, &old).await.status, StatusCode::OK);
+        // Any other prefix is refused, even with a stored hash.
+        let other = format!("other_pat_{}", "o".repeat(43));
+        app.store
+            .insert_access_token(
+                &infall_server::store::AccessTokenRecord {
+                    id: uuid::Uuid::new_v4(),
+                    member: infall_core::MemberId(admin_id.parse().unwrap()),
+                    name: "forged".into(),
+                    token_hash: sha256_hex(&other),
+                    created_at: START,
+                    last_used_at: None,
+                },
+                10,
+            )
+            .unwrap();
+        assert_eq!(ping(&app, &other).await.status, StatusCode::UNAUTHORIZED);
+        let made = app
+            .post("/api/tokens", Some(&admin), json!({ "name": "New" }))
+            .await;
+        assert!(
+            made.body["secret"]
+                .as_str()
+                .unwrap()
+                .starts_with("infall_pat_")
+        );
+    }
 }
 
 // ---------------------------------------------------------------- the secret stays secret
@@ -565,7 +620,7 @@ async fn the_secret_appears_only_in_the_response_that_created_it() {
         let main = app.main_branch(&admin).await;
         let secret = app.access_token(&admin, "mine").await;
         let hash = sha256_hex(&secret);
-        let tail = secret.strip_prefix("qoop_pat_").unwrap();
+        let tail = secret.strip_prefix("infall_pat_").unwrap();
         // Only the hash is stored.
         let (stored, _) = app.store.access_token_by_hash(&hash).unwrap().unwrap();
         assert_eq!(stored.token_hash, hash);
@@ -635,7 +690,7 @@ async fn the_tool_endpoint_checks_an_origin_only_when_one_is_sent() {
         app.send(b.body(Body::from(body)).unwrap())
     };
 
-    // No Origin (a non-browser client), and no `X-Qoop-Request` either: works.
+    // No Origin (a non-browser client), and no `X-Infall-Request` either: works.
     let res = send(None, true).await;
     assert_eq!(res.status, StatusCode::OK, "{}", res.text);
     assert_eq!(res.body, json!({ "jsonrpc": "2.0", "id": 1, "result": {} }));
@@ -719,7 +774,7 @@ async fn a_token_gets_120_requests_a_minute() {
     assert_eq!(ping(&app, &other).await.status, StatusCode::OK);
     // An unknown token is 401, never 429.
     assert_eq!(
-        ping(&app, "qoop_pat_nope").await.status,
+        ping(&app, "infall_pat_nope").await.status,
         StatusCode::UNAUTHORIZED
     );
 

@@ -33,8 +33,8 @@ const item = () => screen.getByRole('menuitem', { name: 'Tour of Infall' })
 
 beforeEach(() => {
   window.localStorage.clear()
-  window.localStorage.setItem('qoop-tour:m', 'declined') // asked before: only the menu is left
-  window.localStorage.setItem('qoop-tour:g', 'declined')
+  window.localStorage.setItem('infall-tour:m', 'declined') // asked before: only the menu is left
+  window.localStorage.setItem('infall-tour:g', 'declined')
   window.history.replaceState(null, '', '/')
   setWidth(1440)
 })

@@ -6,7 +6,7 @@
 #             macOS and Windows: the app's platform code compiles and its tests pass on each.
 #
 # Rust is the version the Ubuntu package is built with (scripts/package-linux.sh,
-# QOOP_PACKAGE_RUST); Node.js the major the packages are built with.
+# INFALL_PACKAGE_RUST); Node.js the major the packages are built with.
 name: CI
 
 on:

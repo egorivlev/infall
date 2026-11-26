@@ -871,7 +871,7 @@ describe('keeping Conversations on this device', () => {
     expect(storage.sets).toBe(0)
     expect(timers.pending).toHaveLength(1)
     timers.fireNext()
-    expect([...storage.data.keys()]).toEqual(['qoop.ai.me'])
+    expect([...storage.data.keys()]).toEqual(['infall.ai.me'])
     const current = snap(a).current!
     expect(stored()).toEqual({ v: 1, current: current.id, conversations: [{ ...current, session: 'sess-1' }] })
     expect(storage.sets).toBe(1)
@@ -930,7 +930,7 @@ describe('keeping Conversations on this device', () => {
       JSON.stringify({ v: 1, conversations: [null, 7, { id: 'x' }, { ...good, messages: 'none' }, { ...good, messages: [] }] }),
     ]
     for (const raw of unreadable) {
-      storage.data.set('qoop.ai.me', raw)
+      storage.data.set('infall.ai.me', raw)
       const a = make()
       expect(snap(a)).toMatchObject({ current: null, conversations: [] })
     }
@@ -958,7 +958,7 @@ describe('keeping Conversations on this device', () => {
         { id: 'c1', title: 'Same id again', createdAt: 1, updatedAt: 2, messages: [{ id: 'm9', role: 'user', text: 'Q', at: 1, status: 'done' }] },
       ],
     }
-    storage.data.set('qoop.ai.me', JSON.stringify(value))
+    storage.data.set('infall.ai.me', JSON.stringify(value))
     const a = make()
     expect(snap(a).conversations).toEqual([{ id: 'c1', title: 'T', updatedAt: 2 }])
     expect(snap(a).current).toEqual({
@@ -1021,7 +1021,7 @@ describe('keeping Conversations on this device', () => {
     a.flush()
     expect(stored(OTHER.id).conversations.map((c: { title: string }) => c.title)).toEqual(['Theirs'])
     expect(stored(ME.id).conversations.map((c: { title: string }) => c.title)).toEqual(['Mine, private'])
-    expect(storage.data.get('qoop.ai.other')).not.toContain('Mine, private')
+    expect(storage.data.get('infall.ai.other')).not.toContain('Mine, private')
     sessionStore.setState({ status: 'signed_in', member: ME }, true)
     expect(snap(a).conversations.map((c) => c.title)).toEqual(['Mine, private'])
     expect(snap(a).current!.title).toBe('Mine, private')
@@ -1047,7 +1047,7 @@ describe('keeping Conversations on this device', () => {
     ])
   })
   it('a Guest has no Conversations and nothing is stored for one', async () => {
-    storage.data.set('qoop.ai.guest', JSON.stringify({ v: 1, current: null, conversations: [{ id: 'c', title: 'T', createdAt: 1, updatedAt: 1, messages: [{ id: 'm', role: 'user', text: 'Q', at: 1, status: 'done' }] }] }))
+    storage.data.set('infall.ai.guest', JSON.stringify({ v: 1, current: null, conversations: [{ id: 'c', title: 'T', createdAt: 1, updatedAt: 1, messages: [{ id: 'm', role: 'user', text: 'Q', at: 1, status: 'done' }] }] }))
     sessionStore.setState({ status: 'signed_in', member: GUEST }, true)
     const a = make()
     expect(snap(a).conversations).toEqual([])
@@ -1084,7 +1084,7 @@ describe('keeping Conversations on this device', () => {
     expect(snap(a).conversations).toHaveLength(5)
   })
   it('starts empty and goes on in memory when storage cannot be read or reached', async () => {
-    storage.data.set('qoop.ai.me', JSON.stringify({ v: 1, current: null, conversations: [] }))
+    storage.data.set('infall.ai.me', JSON.stringify({ v: 1, current: null, conversations: [] }))
     storage.failGet = true
     const a = await ready()
     expect(snap(a).conversations).toEqual([])
@@ -1105,7 +1105,7 @@ describe('keeping Conversations on this device', () => {
     const a = await ready({ storage: undefined })
     await exchange(a, 'Q', 'A')
     a.flush()
-    expect(JSON.parse(globalThis.localStorage.getItem('qoop.ai.me')!)).toMatchObject({ v: 1, conversations: [{ title: 'Q' }] })
+    expect(JSON.parse(globalThis.localStorage.getItem('infall.ai.me')!)).toMatchObject({ v: 1, conversations: [{ title: 'Q' }] })
     a.dispose()
     globalThis.localStorage.clear()
     vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
@@ -1155,10 +1155,10 @@ describe('a turn on Claude Code, end to end', () => {
     a.flush()
     expect(setItem).toHaveBeenCalled()
     expect(JSON.stringify(setItem.mock.calls)).not.toContain(secret)
-    expect(JSON.stringify(setItem.mock.calls)).not.toContain('qoop_pat_')
+    expect(JSON.stringify(setItem.mock.calls)).not.toContain('infall_pat_')
     expect(globalThis.sessionStorage).toHaveLength(0)
     expect(JSON.stringify(snap(a))).not.toContain(secret)
-    expect(Object.keys(globalThis.localStorage).map((k) => globalThis.localStorage.getItem(k)).join()).not.toContain('qoop_pat_')
+    expect(Object.keys(globalThis.localStorage).map((k) => globalThis.localStorage.getItem(k)).join()).not.toContain('infall_pat_')
     globalThis.localStorage.clear()
   })
   it('a turn on OpenRouter runs through the server', async () => {

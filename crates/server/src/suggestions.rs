@@ -5,7 +5,7 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
-use qoop_core::{Board, BranchId, Change, EntityId, EntityKind, MemberId, Op, Workspace};
+use infall_core::{Board, BranchId, Change, EntityId, EntityKind, MemberId, Op, Workspace};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -432,7 +432,7 @@ pub async fn reopen(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qoop_core::{Fields, Value as FieldValue};
+    use infall_core::{Fields, Value as FieldValue};
 
     fn card(board: &mut Board, title: &str) -> String {
         let entity = EntityId(Uuid::new_v4());

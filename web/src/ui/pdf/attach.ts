@@ -66,7 +66,7 @@ export function attachFailure(e: unknown): string {
 
 /**
  * "801 KB", "1.4 MB", "12 bytes": in powers of 1024, as every size in the UI is (shell/moved.ts `formatSize`) and as
- * the server counts its limits (`QOOP_MAX_PDF_MB`: "A PDF may be at most 100 MB here").
+ * the server counts its limits (`INFALL_MAX_PDF_MB`: "A PDF may be at most 100 MB here").
  */
 export function sizeText(bytes: number): string {
   return formatSize(bytes)

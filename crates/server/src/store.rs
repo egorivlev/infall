@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use qoop_core::{BranchId, MemberId, Workspace};
+use infall_core::{BranchId, MemberId, Workspace};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -810,7 +810,7 @@ impl SqliteStore {
     }
 
     /// Refuses to write the Workspace when the Research Content was replaced since it was
-    /// read: by `qoop-server import-workspace` run while this server was running. Writing
+    /// read: by `infall-server import-workspace` run while this server was running. Writing
     /// then would put the old Workspace over the one brought in.
     fn check_epoch(&self, conn: &Connection) -> StoreResult<()> {
         let now = setting_on(conn, CONTENT_EPOCH_SETTING)?;

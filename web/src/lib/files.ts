@@ -21,7 +21,7 @@ export type SourcePdf = { hash: string; name: string; size: number; pages: numbe
 
 /** The server takes at most this much text per PDF (`PUT …/text`). */
 export const MAX_PDF_TEXT_BYTES = 20 * 1024 * 1024
-/** The server's default limit per file (`QOOP_MAX_PDF_MB`); the server's own answer (413) is what counts. */
+/** The server's default limit per file (`INFALL_MAX_PDF_MB`); the server's own answer (413) is what counts. */
 export const DEFAULT_MAX_PDF_BYTES = 100 * 1024 * 1024
 
 const HASH = /^[0-9a-f]{64}$/
@@ -102,7 +102,7 @@ function put(body: Blob, total: number, onProgress?: UploadProgress, signal?: Ab
   if (typeof XMLHttpRequest === 'undefined') {
     return fetch(path, {
       method: 'PUT',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/pdf', 'X-Qoop-Request': '1' },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/pdf', 'X-Infall-Request': '1' },
       body,
       credentials: 'same-origin',
       signal,
@@ -123,7 +123,7 @@ function put(body: Blob, total: number, onProgress?: UploadProgress, signal?: Ab
     xhr.withCredentials = true
     xhr.setRequestHeader('Accept', 'application/json')
     xhr.setRequestHeader('Content-Type', 'application/pdf')
-    xhr.setRequestHeader('X-Qoop-Request', '1')
+    xhr.setRequestHeader('X-Infall-Request', '1')
     if (onProgress && xhr.upload) {
       xhr.upload.onprogress = (e: ProgressEvent) => onProgress(e.loaded, e.lengthComputable ? e.total : total)
     }

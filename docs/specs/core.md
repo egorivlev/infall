@@ -1,6 +1,6 @@
 # Infall core — versioning rules
 
-The rules the `qoop-core` crate must implement. Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md); the reasoning is in [ADR 0001](../adr/0001-change-log-instead-of-commits-or-crdt.md). The core is pure logic: no clock, no storage, no network.
+The rules the `infall-core` crate must implement. Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md); the reasoning is in [ADR 0001](../adr/0001-change-log-instead-of-commits-or-crdt.md). The core is pure logic: no clock, no storage, no network.
 
 ## 1. Entities and fields
 

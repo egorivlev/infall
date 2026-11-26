@@ -1,8 +1,8 @@
 //! The rules of the bridge, without Tauri types: the script that defines
-//! `window.qoopDesktop`, who may call the commands behind it, and what a `send` request may
+//! `window.infallDesktop`, who may call the commands behind it, and what a `send` request may
 //! contain.
 
-use qoop_claude_driver::{RunRequest, Secret};
+use infall_claude_driver::{RunRequest, Secret};
 use serde::Deserialize;
 use url::Url;
 
@@ -19,7 +19,7 @@ const BRIDGE_JS: &str = include_str!("bridge.js");
 /// webview's own `window.print()` opens the system's print dialog.
 pub const OWN_PRINT: bool = cfg!(target_os = "macos");
 
-/// The initialization script for the main window: defines `window.qoopDesktop` on pages of
+/// The initialization script for the main window: defines `window.infallDesktop` on pages of
 /// `origin`, in the top frame.
 pub fn script(origin: &str, version: &str, key: &str) -> String {
     script_with(origin, version, key, OWN_PRINT)
@@ -33,23 +33,23 @@ fn script_with(origin: &str, version: &str, key: &str, own_print: bool) -> Strin
             .replace('<', "\\u003c")
     };
     BRIDGE_JS
-        .replace("__QOOP_ORIGIN__;", &format!("{};", literal(origin)))
-        .replace("__QOOP_VERSION__;", &format!("{};", literal(version)))
-        .replace("__QOOP_KEY__;", &format!("{};", literal(key)))
+        .replace("__INFALL_ORIGIN__;", &format!("{};", literal(origin)))
+        .replace("__INFALL_VERSION__;", &format!("{};", literal(version)))
+        .replace("__INFALL_KEY__;", &format!("{};", literal(key)))
         .replace(
-            "__QOOP_OWN_PRINT__;",
+            "__INFALL_OWN_PRINT__;",
             if own_print { "true;" } else { "false;" },
         )
         .replace(
-            "__QOOP_MAX_BINARY_BYTES__;",
+            "__INFALL_MAX_BINARY_BYTES__;",
             &format!("{};", crate::transfer::MAX_BINARY_SAVE_BYTES),
         )
         .replace(
-            "__QOOP_MAX_MOVE_BYTES__;",
+            "__INFALL_MAX_MOVE_BYTES__;",
             &format!("{};", crate::transfer::MAX_MOVE_BYTES),
         )
         .replace(
-            "__QOOP_MAX_PDF_BYTES__;",
+            "__INFALL_MAX_PDF_BYTES__;",
             &format!("{};", crate::files::MAX_PDF_BYTES),
         )
 }
@@ -274,7 +274,7 @@ else document.execCommand('STEP'); } catch (e) {} })();";
 pub const MIN_CHROME_SCALE: f64 = 0.8;
 pub const MAX_CHROME_SCALE: f64 = 1.5;
 
-/// The interface scale a page says (`qoopDesktop.chromeScale`), as the app takes it: a
+/// The interface scale a page says (`infallDesktop.chromeScale`), as the app takes it: a
 /// finite number, clamped to the setting's range. Anything else is refused.
 pub fn chrome_scale(scale: f64) -> Result<f64, String> {
     if scale.is_finite() {
@@ -302,7 +302,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// The `request` argument of `qoopDesktop.claude.send`. Deliberately not `Debug`: it holds
+/// The `request` argument of `infallDesktop.claude.send`. Deliberately not `Debug`: it holds
 /// the access token.
 #[derive(Deserialize)]
 pub struct SendRequest {
@@ -383,7 +383,7 @@ pub fn validate(request: SendRequest, origin: &str) -> Result<(String, RunReques
 mod tests {
     use super::*;
 
-    const ORIGIN: &str = "https://qoop.example.org";
+    const ORIGIN: &str = "https://infall.example.org";
     const KEY: &str = "0123456789abcdef0123456789abcdef";
 
     fn url(s: &str) -> Url {
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn only_the_main_window_on_the_configured_origin_with_the_key_may_call() {
-        let page = url("https://qoop.example.org/board/1");
+        let page = url("https://infall.example.org/board/1");
         assert_eq!(
             check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY),
             Ok(())
@@ -417,13 +417,13 @@ mod tests {
         // The main window showing anything else.
         for other in [
             "https://evil.example/",
-            "http://qoop.example.org/",
-            "https://qoop.example.org:8443/",
-            "https://qoop.example.org.evil.example/",
-            "https://qoop.example.org@evil.example/",
+            "http://infall.example.org/",
+            "https://infall.example.org:8443/",
+            "https://infall.example.org.evil.example/",
+            "https://infall.example.org@evil.example/",
             "about:blank",
             "data:text/html,x",
-            "blob:https://qoop.example.org/1",
+            "blob:https://infall.example.org/1",
             "tauri://localhost/",
         ] {
             assert_eq!(
@@ -490,8 +490,8 @@ mod tests {
 
         // The main window — the server's pages — whatever it shows.
         for page in [
-            "https://qoop.example.org/board/1",
-            "https://qoop.example.org/approval.html",
+            "https://infall.example.org/board/1",
+            "https://infall.example.org/approval.html",
             "tauri://localhost/approval.html",
             "tauri://localhost/runner.html",
         ] {
@@ -543,7 +543,7 @@ mod tests {
         }
         // The right window showing anything but the app's own page for it.
         for page in [
-            "https://qoop.example.org/approval.html",
+            "https://infall.example.org/approval.html",
             "https://evil.example/approval.html",
             "http://localhost/approval.html",
             "http://tauri.localhost.evil.example/approval.html",
@@ -567,7 +567,7 @@ mod tests {
             );
         }
         for page in [
-            "https://qoop.example.org/runner.html",
+            "https://infall.example.org/runner.html",
             "tauri://localhost/approval.html",
             "tauri://localhost/index.html",
             "about:blank",
@@ -605,7 +605,7 @@ mod tests {
             Ok(())
         );
         for page in [
-            "https://qoop.example.org/index.html",
+            "https://infall.example.org/index.html",
             "http://127.0.0.1:53124/index.html",
             "tauri://localhost/runner.html",
             "tauri://localhost/approval.html",
@@ -685,7 +685,7 @@ mod tests {
         let native = script_with("http://localhost:8787", "0.1.0", KEY, false);
         assert!(own.contains("var OWN_PRINT = true;"));
         assert!(native.contains("var OWN_PRINT = false;"));
-        assert!(!own.contains("__QOOP_OWN_PRINT__;"));
+        assert!(!own.contains("__INFALL_OWN_PRINT__;"));
         assert_eq!(
             script("http://localhost:8787", "0.1.0", KEY).contains("var OWN_PRINT = true;"),
             cfg!(target_os = "macos")
@@ -698,7 +698,7 @@ mod tests {
         assert!(js.contains(r#"var ORIGIN = "http://localhost:8787";"#));
         assert!(js.contains(r#"var VERSION = "0.1.0";"#));
         assert!(js.contains(&format!(r#"var KEY = "{KEY}";"#)));
-        assert!(!js.contains("__QOOP_ORIGIN__;") && !js.contains("__QOOP_KEY__;"));
+        assert!(!js.contains("__INFALL_ORIGIN__;") && !js.contains("__INFALL_KEY__;"));
         // The limit the page is told is the app's own.
         assert!(js.contains(&format!(
             "var MAX_SAVE_BYTES = {};",
@@ -726,7 +726,7 @@ mod tests {
         assert!(js.contains("'__infallUndo'"));
         assert!(js.contains("source.subscribe(queueUndo)"));
         assert!(js.contains("call('undo_state', { undo: undo, redo: redo })"));
-        // The page gets nothing new for it: `qoopDesktop`'s members are those of M13, M18's
+        // The page gets nothing new for it: `infallDesktop`'s members are those of M13, M18's
         // binary save and move (see `the_script_offers_moves_and_binary_saves`), M19's PDFs
         // and the fullscreen state (`the_script_tells_the_page_about_fullscreen_and_only_that`).
         assert!(js.contains(
@@ -766,7 +766,7 @@ mod tests {
     fn the_interface_scale_is_taken_only_from_the_main_windows_page() {
         // `chrome_scale` is checked like every bridge command: the main window, on the open
         // Workspace's origin, with the key. Another window or server moves nothing.
-        let page = url("https://qoop.example.org/board/1");
+        let page = url("https://infall.example.org/board/1");
         assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
         for window in ["setup", "runner-settings", "runner-approval-2", "main-2"] {
             assert!(check_caller(window, Some(&page), Some(ORIGIN), KEY, KEY).is_err());
@@ -859,7 +859,7 @@ mod tests {
     fn the_fullscreen_state_is_told_only_to_the_main_windows_page() {
         // `window_fullscreen` is checked like every bridge command: the main window, on the
         // open Workspace's origin, with the key. Another window or server learns nothing.
-        let page = url("https://qoop.example.org/board/1");
+        let page = url("https://infall.example.org/board/1");
         assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
         for window in ["setup", "runner-settings", "runner-approval-3", "main-2"] {
             assert!(
@@ -869,7 +869,7 @@ mod tests {
         }
         for other in [
             "https://evil.example/",
-            "http://qoop.example.org/",
+            "http://infall.example.org/",
             "tauri://localhost/index.html",
         ] {
             assert!(
@@ -892,7 +892,7 @@ mod tests {
             "var MAX_PDF_BYTES = {};",
             crate::files::MAX_PDF_BYTES
         )));
-        assert!(!js.contains("__QOOP_MAX_PDF_BYTES__;"));
+        assert!(!js.contains("__INFALL_MAX_PDF_BYTES__;"));
         // A picked folder reaches the page as a token and a name, nothing else.
         assert!(js.contains("return { token: picked.token, name: picked.name };"));
         // The bytes for the viewer go the way a binary save's do, and only a PDF is sent.
@@ -925,7 +925,8 @@ mod tests {
             crate::transfer::MAX_MOVE_BYTES
         )));
         assert!(
-            !js.contains("__QOOP_MAX_BINARY_BYTES__;") && !js.contains("__QOOP_MAX_MOVE_BYTES__;")
+            !js.contains("__INFALL_MAX_BINARY_BYTES__;")
+                && !js.contains("__INFALL_MAX_MOVE_BYTES__;")
         );
         // Pieces of 3 MB of bytes: their text stays under what one piece may carry.
         assert!(js.contains("var SAVE_CHUNK_BYTES = 3145728;"));
@@ -971,7 +972,7 @@ mod tests {
     fn the_undo_state_is_taken_only_from_the_main_windows_page() {
         // `undo_state` is checked like every bridge command: the main window, on the open
         // Workspace's origin, with the key. Never the app's own windows.
-        let page = url("https://qoop.example.org/board/1");
+        let page = url("https://infall.example.org/board/1");
         assert!(check_caller("main", Some(&page), Some(ORIGIN), KEY, KEY).is_ok());
         for window in [
             "setup",
@@ -1152,11 +1153,11 @@ mod tests {
         SendRequest {
             id: "turn-1".into(),
             prompt: "What is here?".into(),
-            system: "You are in Qoop.".into(),
+            system: "You are in Infall.".into(),
             resume: None,
             tools: Tools {
                 url: format!("{ORIGIN}/mcp"),
-                token: "qoop_pat_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG".into(),
+                token: "infall_pat_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG".into(),
             },
         }
     }
@@ -1184,22 +1185,22 @@ mod tests {
         let (id, run) = validate(r, ORIGIN).ok().unwrap();
         assert_eq!(id, "turn-1");
         assert_eq!(run.prompt, "What is here?");
-        assert_eq!(run.system, "You are in Qoop.");
+        assert_eq!(run.system, "You are in Infall.");
         assert_eq!(
             run.resume.as_deref(),
             Some("0b9f6c1e-1111-4222-8333-444455556666")
         );
-        assert_eq!(run.tools_url, "https://qoop.example.org/mcp");
+        assert_eq!(run.tools_url, "https://infall.example.org/mcp");
         assert_eq!(
             run.tools_token.expose(),
-            "qoop_pat_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+            "infall_pat_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
         );
     }
 
     #[test]
     fn the_request_json_of_the_web_ui_deserialises() {
         let r: SendRequest = serde_json::from_str(
-            r#"{"id":"a","prompt":"p","system":"s","tools":{"url":"https://qoop.example.org/mcp","token":"t"}}"#,
+            r#"{"id":"a","prompt":"p","system":"s","tools":{"url":"https://infall.example.org/mcp","token":"t"}}"#,
         )
         .unwrap();
         assert!(r.resume.is_none());
@@ -1210,12 +1211,12 @@ mod tests {
     fn the_tool_endpoint_must_be_the_configured_servers() {
         for other in [
             "https://evil.example/mcp",
-            "http://qoop.example.org/mcp",
-            "https://qoop.example.org/mcp/",
-            "https://qoop.example.org/mcp?x=1",
-            "https://qoop.example.org/other",
-            "https://qoop.example.org@evil.example/mcp",
-            "https://qoop.example.org",
+            "http://infall.example.org/mcp",
+            "https://infall.example.org/mcp/",
+            "https://infall.example.org/mcp?x=1",
+            "https://infall.example.org/other",
+            "https://infall.example.org@evil.example/mcp",
+            "https://infall.example.org",
             "",
         ] {
             rejects(|r| r.tools.url = other.into());

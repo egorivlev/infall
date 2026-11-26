@@ -1,10 +1,10 @@
-// M19's calls into the desktop app (window.qoopDesktop), feature-detected: a browser and an older app have none,
+// M19's calls into the desktop app (window.infallDesktop), feature-detected: a browser and an older app have none,
 // and then nothing may offer them.
 
 type OpenExternally = (file: { suggestedName: string; bytes: Uint8Array }) => Promise<void>
 
 function bridge(): Record<string, unknown> | null {
-  const d = (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  const d = (globalThis as { infallDesktop?: unknown }).infallDesktop
   return typeof d === 'object' && d !== null ? (d as Record<string, unknown>) : null
 }
 

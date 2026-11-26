@@ -58,7 +58,7 @@ afterEach(() => {
   tour.end()
   act(() => sessionStore.setState({ status: 'signed_out' }, true))
   vi.unstubAllGlobals()
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
 })
 
 describe('a Team Workspace', () => {
@@ -101,7 +101,7 @@ describe('a Local Workspace', () => {
 
   it('offers “Switch workspace…” in the menu and in Settings when the desktop app can', async () => {
     const switchWorkspace = vi.fn(async () => {})
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { switchWorkspace }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { switchWorkspace }
     await signIn('local', 'blank')
     render(<Screen settings />)
     await userEvent.click(screen.getByRole('button', { name: 'Switch workspace…' }))

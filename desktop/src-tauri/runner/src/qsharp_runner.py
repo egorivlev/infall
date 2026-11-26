@@ -3,7 +3,7 @@
 #
 # Started by the Infall desktop app as
 #     <python> -u -X utf8 qsharp_runner.py <main.qs>
-# with QOOP_RUN_DIR set to the Run's temporary directory. Standard library and the qdk
+# with INFALL_RUN_DIR set to the Run's temporary directory. Standard library and the qdk
 # package (or, from before qdk, the qsharp package) only.
 #
 # The whole text is evaluated with one qsharp.eval. Message and DumpMachine output goes to
@@ -11,7 +11,7 @@
 # value in an interpolated string. Then the entry point (the callable marked @EntryPoint(),
 # else the one named Main, in any namespace) is evaluated, unless the text calls it itself.
 # Errors print the compiler's own text and nothing of Python's. Exit code 0 when the code
-# ran, 1 when it did not compile, failed, or Q# is not installed. At exit, qoop-env.json:
+# ran, 1 when it did not compile, failed, or Q# is not installed. At exit, infall-env.json:
 # the Python version and the distribution that ran the code, with its version.
 
 import os
@@ -23,7 +23,7 @@ import sys
 os.environ["QDK_PYTHON_TELEMETRY"] = "none"
 os.environ["QSHARP_PYTHON_TELEMETRY"] = "none"
 
-ENV_FILE = "qoop-env.json"
+ENV_FILE = "infall-env.json"
 NOT_INSTALLED = (
     "Q# is not installed for this Python. Install it with: pip install qdk "
     "(it needs Python 3.10 or newer)."
@@ -146,7 +146,7 @@ def called_in_text(text, short):
 
 
 def write_env(dist):
-    """qoop-env.json, as runner.py writes it: the Python, and the distribution that ran the
+    """infall-env.json, as runner.py writes it: the Python, and the distribution that ran the
     code with its version as installed now."""
     try:
         import json
@@ -159,7 +159,7 @@ def write_env(dist):
                 info["packages"] = [[dist, importlib.metadata.version(dist)]]
             except Exception:
                 pass
-        run_dir = os.environ.get("QOOP_RUN_DIR") or os.path.dirname(os.path.abspath(sys.argv[1]))
+        run_dir = os.environ.get("INFALL_RUN_DIR") or os.path.dirname(os.path.abspath(sys.argv[1]))
         temporary = os.path.join(run_dir, ENV_FILE + ".tmp")
         with open(temporary, "w", encoding="utf-8") as handle:
             json.dump(info, handle)

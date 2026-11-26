@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 fn at(branch: BranchId, seq: u64) -> Moment {
     Moment { branch, seq }

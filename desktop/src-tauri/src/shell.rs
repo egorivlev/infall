@@ -1,6 +1,6 @@
 //! The Tauri layer: windows, the menu, and the commands. Everything with a rule in it lives
-//! in `address`, `bridge`, `portable`, `webui`, `workspaces` and the `qoop-claude-driver`,
-//! `qoop-runner` and `qoop-server` crates; this file only connects them to Tauri.
+//! in `address`, `bridge`, `portable`, `webui`, `workspaces` and the `infall-claude-driver`,
+//! `infall-runner` and `infall-server` crates; this file only connects them to Tauri.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use qoop_claude_driver::{AiEvent, Cancel, Driver, Status};
-use qoop_runner::{ApprovalView, DecideError, Runner, SettingsView};
-use qoop_server::local::{
+use infall_claude_driver::{AiEvent, Cancel, Driver, Status};
+use infall_runner::{ApprovalView, DecideError, Runner, SettingsView};
+use infall_server::local::{
     LocalOptions, LocalServer, PortError, Preset, export_workspace, import_workspace, start_local,
 };
 use tauri::async_runtime::JoinHandle;
@@ -33,6 +33,7 @@ use crate::chrome;
 use crate::datadir;
 use crate::files;
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
+use crate::rename;
 use crate::transfer::{self, Upload};
 use crate::update;
 use crate::webui;
@@ -64,7 +65,7 @@ impl SettingsWindow {
     }
 
     /// Returns when the window is closed, or when `cancel` is set.
-    fn wait_closed(&self, cancel: Option<&qoop_runner::Cancel>) {
+    fn wait_closed(&self, cancel: Option<&infall_runner::Cancel>) {
         let mut open = self.open.lock().unwrap();
         while *open && !cancel.is_some_and(|c| c.is_cancelled()) {
             open = self
@@ -108,7 +109,7 @@ struct OpenWorkspace {
     /// shows when its last event comes in late.
     generation: u64,
     /// What its Run approvals are remembered under, and how the approval window names it.
-    approvals: qoop_runner::Workspace,
+    approvals: infall_runner::Workspace,
 }
 
 /// The server of the open Local Workspace, and the one still stopping, if any.
@@ -342,13 +343,38 @@ pub fn run() {
             } else {
                 roaming.clone()
             };
+            // The folders named after the identifier before the rename: what they hold moves
+            // into these, on the first start that finds them (see `rename`). Before anything
+            // reads these folders, and before any web view opens its storage.
+            let identifier = handle.config().identifier.clone();
+            // macOS keeps the web view's own storage (the page's settings) apart.
+            let webkit = cfg!(target_os = "macos")
+                .then(|| handle.path().home_dir().ok())
+                .flatten()
+                .map(|home| home.join("Library").join("WebKit"))
+                .map(|kit| (kit.join(rename::OLD_IDENTIFIER), kit.join(&identifier)));
+            let pairs: Vec<(PathBuf, PathBuf)> = [&config, &roaming, &local]
+                .into_iter()
+                .filter_map(|new| Some((rename::old_folder(new, &identifier)?, new.clone())))
+                .chain(webkit)
+                .collect();
+            let renamed = rename::move_app_folders(&pairs, &config);
+            let mut notice = renamed.notice();
+            // Where a Workspace that could not be moved is used from, after the new folders.
+            let mut older: Vec<PathBuf> = [&roaming, &local]
+                .into_iter()
+                .filter_map(|new| rename::old_folder(new, &identifier))
+                .collect();
+            older.dedup();
             let (data, legacy) = datadir::choose(roaming, local);
             if let Some(old) = &legacy {
                 let moved = datadir::move_workspaces(old, &data);
-                if let Some(notice) = moved.notice(old, &data) {
-                    *handle.state::<AppState>().notice.lock().unwrap() = Some(notice);
-                }
+                notice = notice.or(moved.notice(old, &data));
             }
+            if notice.is_some() {
+                *handle.state::<AppState>().notice.lock().unwrap() = notice;
+            }
+            let legacy: Vec<PathBuf> = legacy.into_iter().chain(older).collect();
             // PDFs handed to the system's viewer are temporary: none outlives a run of the app.
             let cache = handle
                 .path()
@@ -356,7 +382,7 @@ pub fn run() {
                 .unwrap_or_else(|_| data.join("cache"));
             files::clear_viewer_files(&cache);
             app.manage::<RunnerState>(Arc::new(Runner::new(
-                qoop_runner::Options::from_process_env(config.clone()),
+                infall_runner::Options::from_process_env(config.clone()),
             )));
             #[cfg(infall_updater)]
             updating::at_start(&handle, config.clone());
@@ -552,7 +578,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
             // window, ask for a Run, cancel it. The commands that choose an interpreter or
             // approve code are not in this list.
             app.add_capability(
-                CapabilityBuilder::new("qoop-bridge")
+                CapabilityBuilder::new("infall-bridge")
                     .remote(format!("{origin}/*"))
                     .window(MAIN_WINDOW)
                     .permission("allow-claude-status")
@@ -693,7 +719,7 @@ fn open_main(app: &AppHandle, entry: &Entry, origin: &str, start: &str) -> tauri
     *state.open.lock().unwrap() = Some(OpenWorkspace {
         id: entry.id.clone(),
         generation,
-        approvals: qoop_runner::Workspace {
+        approvals: infall_runner::Workspace {
             key: entry.approvals_key(),
             name: entry.approvals_name(),
         },
@@ -787,8 +813,8 @@ fn open_runner_settings(app: &AppHandle) -> tauri::Result<()> {
 /// The app's two Runner windows, as the Runner asks for them (from its own thread).
 struct RunnerWindows(AppHandle);
 
-impl qoop_runner::Ui for RunnerWindows {
-    fn configure(&self, cancel: &qoop_runner::Cancel) {
+impl infall_runner::Ui for RunnerWindows {
+    fn configure(&self, cancel: &infall_runner::Cancel) {
         if open_runner_settings(&self.0).is_ok() {
             self.0
                 .state::<AppState>()
@@ -848,7 +874,7 @@ fn open_externally(app: &AppHandle, url: &Url, throttle: bool) {
     let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
 }
 
-/// "Switch Workspace…" (and `qoopDesktop.switchWorkspace`): stops what is running, closes
+/// "Switch Workspace…" (and `infallDesktop.switchWorkspace`): stops what is running, closes
 /// the main window, shows the start screen.
 fn leave_workspace(app: &AppHandle) {
     if open_setup(app, None).is_err() {
@@ -1013,7 +1039,7 @@ fn local_options(entry: &Entry, db: PathBuf, web_dir: PathBuf, port: Option<u16>
 /// Team server. The same as `export_workspace` by the contract, under its own name so that a
 /// later difference has a place.
 fn export_for_move(db: &Path, dest: &Path) -> Result<(), PortError> {
-    qoop_server::local::export_for_move(db, dest)
+    infall_server::local::export_for_move(db, dest)
 }
 
 // ---- backups (docs/specs/portability.md, decision 2) --------------------------------------
@@ -1183,7 +1209,7 @@ fn start_view(
 /// How many PDFs a Local Workspace keeps with its database, and their size (`WorkspaceEntry
 /// .files`): when it has some, Export… asks whether to include them.
 fn stored_files(db: &Path) -> Option<FilesSummary> {
-    let stats = qoop_server::local::file_stats(db).ok()?;
+    let stats = infall_server::local::file_stats(db).ok()?;
     Some(FilesSummary {
         count: stats.count,
         bytes: stats.bytes,
@@ -1194,10 +1220,10 @@ fn stored_files(db: &Path) -> Option<FilesSummary> {
 /// without them (docs/specs/pdf-sources.md, decision 6; Export… asks, backups always include
 /// them).
 fn export_with_files(db: &Path, dest: &Path, include_files: bool) -> Result<(), PortError> {
-    qoop_server::local::export_workspace_with(
+    infall_server::local::export_workspace_with(
         db,
         dest,
-        qoop_server::local::ExportOptions { include_files },
+        infall_server::local::ExportOptions { include_files },
     )
 }
 
@@ -1507,7 +1533,7 @@ async fn workspace_move(
     open_workspace(&app, team).await
 }
 
-// ---- commands behind `window.qoopDesktop` ----------------------------------------------
+// ---- commands behind `window.infallDesktop` ----------------------------------------------
 
 fn check_bridge_caller(webview: &Webview, state: &AppState, key: &str) -> Result<String, String> {
     let origin = state.granted.lock().unwrap().clone();
@@ -1625,7 +1651,7 @@ fn window_fullscreen(
     Ok(())
 }
 
-/// The page's interface scale (`qoopDesktop.chromeScale`), which the traffic lights follow
+/// The page's interface scale (`infallDesktop.chromeScale`), which the traffic lights follow
 /// (macOS; see `open_main`). Checked and clamped to the setting's range (`bridge::chrome_scale`):
 /// all a page can do with it is move the lights up or down within that. Remembered for this
 /// Workspace's next main window. Elsewhere nothing happens. Async: it runs off the main
@@ -2364,7 +2390,7 @@ async fn claude_status(
         version: None,
     };
     let status = tauri::async_runtime::spawn_blocking(|| {
-        qoop_claude_driver::locate().map(|bin| Driver::new(bin).status())
+        infall_claude_driver::locate().map(|bin| Driver::new(bin).status())
     })
     .await;
     Ok(status.ok().flatten().unwrap_or(missing))
@@ -2391,7 +2417,7 @@ async fn claude_send(
         Ok(valid) => valid,
         Err(message) => return fail(&message),
     };
-    let Some(bin) = qoop_claude_driver::locate() else {
+    let Some(bin) = infall_claude_driver::locate() else {
         return fail("Claude Code is not installed on this computer.");
     };
     let cancel = Cancel::new();
@@ -2446,7 +2472,7 @@ async fn runner_status(
     app: AppHandle,
     state: State<'_, AppState>,
     key: String,
-) -> Result<qoop_runner::Status, String> {
+) -> Result<infall_runner::Status, String> {
     check_bridge_caller(&webview, &state, &key)?;
     let runner = runner(&app);
     tauri::async_runtime::spawn_blocking(move || runner.status())
@@ -2469,17 +2495,17 @@ async fn runner_configure(
     let runner = runner(&app);
     // Only when nothing else (a Run) is asking already.
     let asks = lang
-        .filter(|l| qoop_runner::toolchains::valid_id(l))
+        .filter(|l| infall_runner::toolchains::valid_id(l))
         .filter(|_| runner.asking().is_none());
     if let Some(lang) = &asks {
-        runner.set_asking(Some(qoop_runner::Ask::Lang(lang.clone())));
+        runner.set_asking(Some(infall_runner::Ask::Lang(lang.clone())));
     }
     let opened = open_runner_settings(&app);
     if opened.is_ok() {
         let open = state.runner_settings.clone();
         let _ = tauri::async_runtime::spawn_blocking(move || open.wait_closed(None)).await;
     }
-    if asks.is_some() && matches!(runner.asking(), Some(qoop_runner::Ask::Lang(_))) {
+    if asks.is_some() && matches!(runner.asking(), Some(infall_runner::Ask::Lang(_))) {
         runner.set_asking(None);
     }
     opened.map_err(|_| "The window could not be opened.".to_owned())
@@ -2490,8 +2516,8 @@ async fn runner_configure(
 async fn start_run(
     app: AppHandle,
     state: State<'_, AppState>,
-    request: qoop_runner::RunRequest,
-    on_event: Channel<qoop_runner::RunEvent>,
+    request: infall_runner::RunRequest,
+    on_event: Channel<infall_runner::RunEvent>,
 ) -> Result<(), String> {
     // The Workspace approvals are remembered for is the one the app opened, not anything
     // the page says about itself.
@@ -2502,8 +2528,8 @@ async fn start_run(
         .as_ref()
         .map(|open| open.approvals.clone());
     let Some(workspace) = workspace else {
-        let _ = on_event.send(qoop_runner::RunEvent::Error {
-            reason: qoop_runner::Reason::Failed,
+        let _ = on_event.send(infall_runner::RunEvent::Error {
+            reason: infall_runner::Reason::Failed,
             message: "The Run could not be carried out.".to_owned(),
         });
         return Ok(());
@@ -2518,8 +2544,8 @@ async fn start_run(
     })
     .await;
     if finished.is_err() {
-        let _ = on_event.send(qoop_runner::RunEvent::Error {
-            reason: qoop_runner::Reason::Failed,
+        let _ = on_event.send(infall_runner::RunEvent::Error {
+            reason: infall_runner::Reason::Failed,
             message: "The Run could not be carried out.".to_owned(),
         });
     }
@@ -2528,7 +2554,7 @@ async fn start_run(
 
 /// A Run of Python code in the default environment: `runner.run`, exactly as in M8. The
 /// code is executed only if the Member approves it in the app's own window (or approved the
-/// same code in this Workspace before): see `qoop_runner`. A request naming another language
+/// same code in this Workspace before): see `infall_runner`. A request naming another language
 /// is refused here, never run as Python: such a Run is asked for with `runner_start`.
 #[tauri::command]
 async fn runner_run(
@@ -2536,17 +2562,17 @@ async fn runner_run(
     app: AppHandle,
     state: State<'_, AppState>,
     key: String,
-    mut request: qoop_runner::RunRequest,
-    on_event: Channel<qoop_runner::RunEvent>,
+    mut request: infall_runner::RunRequest,
+    on_event: Channel<infall_runner::RunEvent>,
 ) -> Result<(), String> {
     check_bridge_caller(&webview, &state, &key)?;
     if request
         .lang
         .as_deref()
-        .is_some_and(|lang| lang != qoop_runner::toolchains::PYTHON)
+        .is_some_and(|lang| lang != infall_runner::toolchains::PYTHON)
     {
-        let _ = on_event.send(qoop_runner::RunEvent::Error {
-            reason: qoop_runner::Reason::Failed,
+        let _ = on_event.send(infall_runner::RunEvent::Error {
+            reason: infall_runner::Reason::Failed,
             message: "This Run is not in Python, and was not asked for as such.".to_owned(),
         });
         return Ok(());
@@ -2565,8 +2591,8 @@ async fn runner_start(
     app: AppHandle,
     state: State<'_, AppState>,
     key: String,
-    request: qoop_runner::RunRequest,
-    on_event: Channel<qoop_runner::RunEvent>,
+    request: infall_runner::RunRequest,
+    on_event: Channel<infall_runner::RunEvent>,
 ) -> Result<(), String> {
     check_bridge_caller(&webview, &state, &key)?;
     start_run(app, state, request, on_event).await
@@ -2653,7 +2679,7 @@ async fn runner_settings_view(
 async fn runner_settings_change(
     webview: Webview,
     app: AppHandle,
-    change: qoop_runner::Change,
+    change: infall_runner::Change,
 ) -> Result<(), String> {
     check_settings_caller(&webview)?;
     let runner = runner(&app);

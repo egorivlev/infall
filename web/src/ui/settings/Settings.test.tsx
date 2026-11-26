@@ -42,7 +42,7 @@ vi.mock('../../lib', () => ({
   branches: { reload: async () => {}, create: async () => ({}) },
   history: { open: async () => {}, close: () => {}, preview: () => {}, restore: async () => {}, createCheckpoint: async () => ({}) },
   tokens: { list: async () => [], create: async () => ({}), remove: async () => {} },
-  toolEndpoint: () => 'https://qoop.test/mcp',
+  toolEndpoint: () => 'https://infall.test/mcp',
 }))
 vi.mock('../board', () => ({ BoardView: () => <div data-testid="board" /> }))
 vi.mock('../todos', () => ({ Todos: () => <div data-testid="todos" /> }))
@@ -61,9 +61,9 @@ const root = document.documentElement
 
 beforeEach(() => {
   window.localStorage.clear()
-  window.localStorage.setItem('qoop-tour:m', 'declined')
-  window.localStorage.setItem('qoop-tour:a', 'declined')
-  window.localStorage.setItem('qoop-tour:g', 'declined')
+  window.localStorage.setItem('infall-tour:m', 'declined')
+  window.localStorage.setItem('infall-tour:a', 'declined')
+  window.localStorage.setItem('infall-tour:g', 'declined')
   prefs.reload()
   h.kind = 'team'
   h.preset = null
@@ -75,7 +75,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
   root.removeAttribute('data-motion')
   root.removeAttribute('style')
 })
@@ -279,7 +279,7 @@ describe('Workspace and About', () => {
 
   it('M18: an Admin exports the Workspace file through the app’s binary save when it has one', async () => {
     const saveBinaryFile = vi.fn(async () => true)
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '0.13.0', saveBinaryFile }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '0.13.0', saveBinaryFile }
     signedIn(ADMIN)
     go('/settings/workspace')
     render(<App />)
@@ -288,7 +288,7 @@ describe('Workspace and About', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Export Workspace file…' }))
     await waitFor(() => expect(within(card).getByRole('status')).toHaveTextContent('Exported “Physics group.infall”.'))
     expect(saveBinaryFile).toHaveBeenCalledWith({ suggestedName: 'Physics group.infall', bytes: new Uint8Array([1, 2, 3]) })
-    delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+    delete (globalThis as { infallDesktop?: unknown }).infallDesktop
   })
 
   it('M18: in a browser the Workspace file is downloaded; a failure says so in plain words', async () => {
@@ -320,7 +320,7 @@ describe('Workspace and About', () => {
   })
 
   it('About: the desktop app\'s version when there is one, the Tour, and the font licences', () => {
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '0.12.0' }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '0.12.0' }
     go('/settings/about')
     render(<App />)
     expect(screen.getByText('0.12.0')).toBeInTheDocument()

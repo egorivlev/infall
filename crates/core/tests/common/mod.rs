@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use qoop_core::*;
+use infall_core::*;
 
 pub fn text(s: &str) -> Value {
     Value::Text(s.to_string())

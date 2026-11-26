@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use common::*;
-use qoop_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
+use infall_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
 use serde_json::{Value, json};
 
 const WEEK: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -784,7 +784,7 @@ async fn removing_a_member_keeps_the_suggestions_their_ai_made() {
 #[tokio::test]
 async fn tokens_and_suggestions_survive_a_restart() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let (token, a, main, pending, accepted, rejected, list, tokens) = {
         let w = world_on(Arc::new(SqliteStore::open(&path).unwrap())).await;
         let pending = w.suggest_source("10.1/pending").await;
@@ -909,16 +909,16 @@ PRAGMA user_version = 2;
 #[tokio::test]
 async fn a_database_file_from_before_m5_upgrades_in_place_and_keeps_its_data() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
 
     // An M4 file with an account, a To-do and a Board holding one Card.
     let scratch = MemoryStore::new();
     let ada =
-        qoop_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
+        infall_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
             .unwrap();
-    let (mut ws, main) = qoop_core::Workspace::new();
+    let (mut ws, main) = infall_core::Workspace::new();
     let card = new_id();
-    let ops: Vec<qoop_core::Op> =
+    let ops: Vec<infall_core::Op> =
         serde_json::from_value(json!([create_card(&card, "From M4")])).unwrap();
     ws.record_all(main, ada.id, START, ops).unwrap();
     let todo_id = new_id();
@@ -1040,12 +1040,12 @@ async fn accepting_is_one_transaction_with_the_workspace() {
         let w = world_on(store).await;
         let id = w.suggest_source("10.1/x").await;
         let uuid: uuid::Uuid = id.parse().unwrap();
-        let by = qoop_core::MemberId(w.bea_id.parse().unwrap());
+        let by = infall_core::MemberId(w.bea_id.parse().unwrap());
         let before = w.app.workspace_bytes();
         let mut next = w.app.store.load_workspace().unwrap().unwrap();
-        let ops: Vec<qoop_core::Op> =
+        let ops: Vec<infall_core::Op> =
             serde_json::from_value(json!([create_card(&new_id(), "Extra")])).unwrap();
-        let main = qoop_core::BranchId(w.main.parse().unwrap());
+        let main = infall_core::BranchId(w.main.parse().unwrap());
         next.record_all(main, by, START, ops).unwrap();
 
         // Not pending (here: unknown, then rejected): nothing is written.

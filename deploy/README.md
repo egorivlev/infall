@@ -73,7 +73,7 @@ Set `INFALL_DOMAIN=localhost` in `.env` and follow the same steps. Caddy then us
 | `caddy` | HTTPS on ports 80 and 443, certificates, the request size limits |
 | `backup` | a Workspace file every day at `INFALL_BACKUP_TIME` (UTC), and one when it starts if none is younger than a day ([Back up and restore](#back-up-and-restore)) |
 
-Docker keeps the data in named volumes: `infall_data` (the database `qoop.db`, the secret key `secret-key`, and the copies made before upgrades in `pre-upgrade/`), `infall_backups` (the daily Workspace files, and the database copies made with `backup-database`), and `infall_caddy-data` (certificates). `docker compose down` keeps them; only `docker compose down -v` or `docker volume rm` deletes them.
+Docker keeps the data in named volumes: `infall_data` (the database `infall.db`, the secret key `secret-key`, and the copies made before upgrades in `pre-upgrade/`), `infall_backups` (the daily Workspace files, and the database copies made with `backup-database`), and `infall_caddy-data` (certificates). `docker compose down` keeps them; only `docker compose down -v` or `docker volume rm` deletes them.
 
 #### The secret key
 
@@ -83,7 +83,7 @@ The server seals Members' OpenRouter keys (for the AI sidebar in a browser) with
 docker compose run --rm --no-deps --entrypoint cat server /data/secret-key
 ```
 
-Without it, a restored Workspace works fully, and each Member types their OpenRouter key again. To keep the key outside the volume instead, put it in `.env` as `QOOP_SECRET_KEY=`.
+Without it, a restored Workspace works fully, and each Member types their OpenRouter key again. To keep the key outside the volume instead, put it in `.env` as `INFALL_SECRET_KEY=`.
 
 ### Back up and restore
 
@@ -98,7 +98,7 @@ There are two kinds of backup. They answer different questions, so know which on
 | Afterwards | the importing Admin owns the work of whoever was Admin; every other person is "not signed in yet" until you **Invite** them again from Members and they take their name back (other Admins come back as Members) | everyone signs in as before |
 | Use it for | the work itself: a new host, a new server, a damaged database, opening the Workspace in the desktop app | putting **this** server back as it was: a failed upgrade, a mistake an hour ago, a disaster where re-inviting everyone is not wanted |
 
-The daily Workspace file is the one to rely on: it is made by the server's own export (`qoop-server export-workspace`), from a consistent snapshot, safe while the server runs; checked with `PRAGMA integrity_check`, compressed, and the newest `INFALL_BACKUP_KEEP` (14) are kept. One is made when the service starts if none is younger than a day. It is also what an Admin's **Settings → Workspace → Export Workspace file…** gives (compressed), so it opens in the desktop app too after `gunzip`.
+The daily Workspace file is the one to rely on: it is made by the server's own export (`infall-server export-workspace`), from a consistent snapshot, safe while the server runs; checked with `PRAGMA integrity_check`, compressed, and the newest `INFALL_BACKUP_KEEP` (14) are kept. One is made when the service starts if none is younger than a day. It is also what an Admin's **Settings → Workspace → Export Workspace file…** gives (compressed), so it opens in the desktop app too after `gunzip`.
 
 ```sh
 docker compose run --rm backup backup            # a Workspace file now
@@ -139,13 +139,13 @@ docker compose run --rm --no-deps backup restore infall-20260101T033000Z.db.gz
 docker compose up -d
 ```
 
-`restore` refuses while the server is running, and refuses a Workspace file (that would leave nobody able to sign in). It keeps the database it replaces as `qoop.db.before-restore-<time>` in the data volume; delete it once you are sure. To restore a file from outside Docker, give `-` and send it on standard input:
+`restore` refuses while the server is running, and refuses a Workspace file (that would leave nobody able to sign in). It keeps the database it replaces as `infall.db.before-restore-<time>` in the data volume; delete it once you are sure. To restore a file from outside Docker, give `-` and send it on standard input:
 
 ```sh
 docker compose run --rm -T --no-deps backup restore - < infall-20260101T033000Z.db.gz
 ```
 
-The sealed OpenRouter keys in a database copy open only with the same secret key: on a new host set `QOOP_SECRET_KEY` to the old one, or Members type their keys again.
+The sealed OpenRouter keys in a database copy open only with the same secret key: on a new host set `INFALL_SECRET_KEY` to the old one, or Members type their keys again.
 
 Do a test restore of both kinds once now, on your own computer with `INFALL_DOMAIN=localhost`, and then every few months. A backup you have never restored is a hope.
 
@@ -168,7 +168,7 @@ This one is a database copy on purpose, not a Workspace file: a newer server may
 ```sh
 docker compose stop server
 docker compose run --rm --no-deps --entrypoint ls server /data/pre-upgrade
-docker compose run --rm --no-deps backup restore /data/pre-upgrade/qoop-<time>-from-<version>-schema<n>.db
+docker compose run --rm --no-deps backup restore /data/pre-upgrade/infall-<time>-from-<version>-schema<n>.db
 docker compose up -d
 ```
 
@@ -178,7 +178,7 @@ To another host, or from this one to a fresh setup. Two ways, as for backups:
 
 - **Everything, sign-ins included (a database copy).**
   1. On the old host: `docker compose stop server`, then `docker compose run --rm --no-deps backup backup-database` (`--no-deps` keeps the server stopped), then copy that file out (`docker compose cp …`, above) along with the secret key.
-  2. On the new host: steps 1 and 2 of [Steps](#steps), with `QOOP_SECRET_KEY` set in `.env` to the old key. Skip creating an Admin: the Admins come with the data.
+  2. On the new host: steps 1 and 2 of [Steps](#steps), with `INFALL_SECRET_KEY` set in `.env` to the old key. Skip creating an Admin: the Admins come with the data.
   3. On the new host, before the first start:
 
      ```sh
@@ -191,7 +191,7 @@ To another host, or from this one to a fresh setup. Two ways, as for backups:
 
 Then point the domain's DNS at the new host. If the domain changes, change `INFALL_DOMAIN`: invite links already sent still name the old one.
 
-From the systemd route, the database copy way works with the database file itself: copy `/var/lib/qoop/qoop.db` with `sqlite3 /var/lib/qoop/qoop.db ".backup /tmp/qoop.db"` and restore that file with `restore -` (a plain database file is taken as it is).
+From the systemd route, the database copy way works with the database file itself: copy `/var/lib/infall/infall.db` with `sqlite3 /var/lib/infall/infall.db ".backup /tmp/infall.db"` and restore that file with `restore -` (a plain database file is taken as it is).
 
 **A Local Workspace onto this server** comes as a Workspace file, onto an empty server only. The desktop app's **Move to a Team server…** does it in one press after you sign in; from a browser, the Admin's first screen offers **Bring in a Workspace file…**; on the command line:
 
@@ -222,7 +222,7 @@ Then set `INFALL_IMAGE=infall` and `INFALL_VERSION=local` in `.env`. The image i
 
 ### Troubleshooting
 
-- **`server` is not `(healthy)`:** `docker compose logs server`. A line starting `infall:` says what the image did or refused (for example a data folder it cannot write). A line `qoop-server: …` is the server's own reason.
+- **`server` is not `(healthy)`:** `docker compose logs server`. A line starting `infall:` says what the image did or refused (for example a data folder it cannot write). A line `infall-server: …` is the server's own reason.
 - **The browser cannot connect, or warns about the certificate on a real domain:** `docker compose logs caddy`. Nearly always DNS not pointing at the host yet, or port 80 or 443 closed or taken (`sudo ss -tlnp | grep -E ':(80|443) '`). Caddy retries by itself; `docker compose restart caddy` retries now.
 - **Sign-in fails with "This request did not come from the Infall app":** the address in the browser is not exactly `https://` + `INFALL_DOMAIN`. With other ports, set `INFALL_PUBLIC_ORIGIN` with the port.
 - **`restore` says the server is still running:** `docker compose stop server` first.
@@ -234,16 +234,16 @@ Then set `INFALL_IMAGE=infall` and `INFALL_VERSION=local` in `.env`. The image i
 
 ## The systemd route
 
-Infall is one binary (`qoop-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This route takes a fresh Debian or Ubuntu VPS to a working server without Docker, and its backups are encrypted. It needs about an hour.
+Infall is one binary (`infall-server`), a folder of static web files, and one SQLite file. Caddy sits in front and provides HTTPS. This route takes a fresh Debian or Ubuntu VPS to a working server without Docker, and its backups are encrypted. It needs about an hour.
 
 This guide has been followed, command by command, on a clean Debian 12 in a container: `scripts/rehearse-deploy.sh` does that again whenever you want, including a backup and a restore, and never touches a real server. What a container cannot show is listed at the end of its output: a real certificate, real DNS, and the steps of [harden.md](harden.md).
 
-On this route, placeholders: replace `qoop.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
+On this route, placeholders: replace `infall.example.org` with your domain and `YOUR_AGE_PUBLIC_KEY` with your backup public key everywhere they appear. Commands starting with `sudo` run on the VPS unless stated otherwise. All files named below are in this `deploy/` folder, and steps 4, 6 and 9 are run from inside a copy of it on the VPS (step 3 puts it there).
 
 ### 1. Prerequisites
 
 1. A small VPS running a current Debian or Ubuntu LTS, with 1 GB RAM or more (2 GB if you build on it), and SSH access with a sudo-capable user.
-2. A domain name with an `A` record (and `AAAA` if the VPS has IPv6) pointing at the VPS. Caddy cannot get a certificate until this resolves: check with `dig +short qoop.example.org`.
+2. A domain name with an `A` record (and `AAAA` if the VPS has IPv6) pointing at the VPS. Caddy cannot get a certificate until this resolves: check with `dig +short infall.example.org`.
 3. Do the checklist in [harden.md](harden.md) now (firewall, key-only SSH, automatic updates), before the server holds anything. The safe setup is the one done first.
 
 ### 2. Create the service user and directories
@@ -251,18 +251,18 @@ On this route, placeholders: replace `qoop.example.org` with your domain and `YO
 A dedicated user with no login means a bug in Infall cannot touch anything else on the machine.
 
 ```sh
-sudo adduser --system --group --no-create-home --home /nonexistent qoop
-sudo install -d -o root -g root -m 755 /opt/qoop /opt/qoop/web
-sudo install -d -o qoop -g qoop -m 700 /var/lib/qoop
-sudo install -d -o qoop -g qoop -m 700 /var/backups/qoop
-sudo install -d -o root -g qoop -m 750 /etc/qoop
+sudo adduser --system --group --no-create-home --home /nonexistent infall
+sudo install -d -o root -g root -m 755 /opt/infall /opt/infall/web
+sudo install -d -o infall -g infall -m 700 /var/lib/infall
+sudo install -d -o infall -g infall -m 700 /var/backups/infall
+sudo install -d -o root -g infall -m 750 /etc/infall
 ```
 
 (`adduser` warns that the home directory `/nonexistent` cannot be accessed. That is intended: the account has no home.)
 
-- `/opt/qoop` is owned by root, so the running server cannot rewrite its own program or UI files.
-- `/var/lib/qoop` (the database) is mode 700: nobody but `qoop` and root can read it.
-- `/etc/qoop` holds the config file, readable by `qoop` only.
+- `/opt/infall` is owned by root, so the running server cannot rewrite its own program or UI files.
+- `/var/lib/infall` (the database) is mode 700: nobody but `infall` and root can read it.
+- `/etc/infall` holds the config file, readable by `infall` only.
 
 ### 3. Get the program onto the server
 
@@ -279,23 +279,23 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept defaul
 Install Node.js 22 or newer (the web build needs it; 20.19 or newer also works) from [nodejs.org](https://nodejs.org/en/download) or your preferred method. The `nodejs` package of Debian 12 is version 18, which is too old. Then:
 
 ```sh
-git clone YOUR_REPOSITORY_URL qoop-src && cd qoop-src
-cargo build --release --locked -p qoop-server
+git clone YOUR_REPOSITORY_URL infall-src && cd infall-src
+cargo build --release --locked -p infall-server
 (cd web && npm ci && npm run build)
 ```
 
-`--locked` builds with exactly the library versions the repository was tested with. The kit files are now in `qoop-src/deploy`.
+`--locked` builds with exactly the library versions the repository was tested with. The kit files are now in `infall-src/deploy`.
 
 If `cargo` is killed for lack of memory on a 1 GB VPS, add swap first, or use 3b.
 
 #### 3b. Build elsewhere and copy
 
-On a Linux machine with the same distribution family and the same kind of processor as the VPS, run the same two build commands (`cargo build --release --locked -p qoop-server`, and `npm ci && npm run build` inside `web/`). Then copy the outputs and the kit files up:
+On a Linux machine with the same distribution family and the same kind of processor as the VPS, run the same two build commands (`cargo build --release --locked -p infall-server`, and `npm ci && npm run build` inside `web/`). Then copy the outputs and the kit files up:
 
 ```sh
-scp target/release/qoop-server you@qoop.example.org:/tmp/
-scp -r web/dist you@qoop.example.org:/tmp/qoop-web
-scp -r deploy you@qoop.example.org:/tmp/qoop-deploy
+scp target/release/infall-server you@infall.example.org:/tmp/
+scp -r web/dist you@infall.example.org:/tmp/infall-web
+scp -r deploy you@infall.example.org:/tmp/infall-deploy
 ```
 
 `/tmp` is emptied when the VPS restarts. For step 10 and for later changes to the backup you copy them up again.
@@ -306,33 +306,33 @@ Where each output goes:
 
 | Built file | Install location |
 |---|---|
-| `target/release/qoop-server` | `/opt/qoop/qoop-server` |
-| contents of `web/dist/` | `/opt/qoop/web/` |
+| `target/release/infall-server` | `/opt/infall/infall-server` |
+| contents of `web/dist/` | `/opt/infall/web/` |
 
 ```sh
 # Run from the source folder (3a) or from /tmp (3b, using the copied paths).
-sudo install -o root -g root -m 755 target/release/qoop-server /opt/qoop/qoop-server
-sudo cp -r web/dist/. /opt/qoop/web/
-sudo chown -R root:root /opt/qoop/web
+sudo install -o root -g root -m 755 target/release/infall-server /opt/infall/infall-server
+sudo cp -r web/dist/. /opt/infall/web/
+sudo chown -R root:root /opt/infall/web
 ```
 
-(For 3b use `/tmp/qoop-server` and `/tmp/qoop-web/.` as the sources.)
+(For 3b use `/tmp/infall-server` and `/tmp/infall-web/.` as the sources.)
 
 ### 4. Configuration and the systemd service
 
-Go into the kit folder: `cd qoop-src/deploy` (3a) or `cd /tmp/qoop-deploy` (3b). Steps 4, 6 and 9 name its files without a path.
+Go into the kit folder: `cd infall-src/deploy` (3a) or `cd /tmp/infall-deploy` (3b). Steps 4, 6 and 9 name its files without a path.
 
 ```sh
-sudo install -o root -g qoop -m 640 qoop.env.example /etc/qoop/qoop.env
-sudoedit /etc/qoop/qoop.env
+sudo install -o root -g infall -m 640 infall.env.example /etc/infall/infall.env
+sudoedit /etc/infall/infall.env
 ```
 
-Set `QOOP_PUBLIC_ORIGIN` to your real `https://` address. It controls the secure-cookie flag, which Origin is accepted for changes, and the invite links, so a mistake shows up as failed logins. Leave `QOOP_DEV_ORIGIN` unset: it is only for local development and would add a second allowed origin. The backup variables are filled in during step 9.
+Set `INFALL_PUBLIC_ORIGIN` to your real `https://` address. It controls the secure-cookie flag, which Origin is accepted for changes, and the invite links, so a mistake shows up as failed logins. Leave `INFALL_DEV_ORIGIN` unset: it is only for local development and would add a second allowed origin. The backup variables are filled in during step 9.
 
 ```sh
-sudo install -o root -g root -m 644 qoop.service /etc/systemd/system/qoop.service
+sudo install -o root -g root -m 644 infall.service /etc/systemd/system/infall.service
 sudo systemctl daemon-reload
-sudo systemctl enable qoop
+sudo systemctl enable infall
 ```
 
 Do not start it yet: the first Admin is created first.
@@ -340,12 +340,12 @@ Do not start it yet: the first Admin is created first.
 ### 5. Create the first Admin
 
 ```sh
-sudo -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
-  /opt/qoop/qoop-server create-admin --email you@example.org --name "Your Name"
-sudo chmod 600 /var/lib/qoop/qoop.db
+sudo -u infall env INFALL_DB=/var/lib/infall/infall.db \
+  /opt/infall/infall-server create-admin --email you@example.org --name "Your Name"
+sudo chmod 600 /var/lib/infall/infall.db
 ```
 
-It asks for a password (at least 12 characters), twice, and does not show what you type. It prints `Created Admin Your Name <you@example.org>.` This command also creates the database file, and the server creates it private to the `qoop` account (mode 600), whichever command comes first; the folder around it keeps others out as well. The `chmod` is a second check that costs nothing: it changes nothing on a file made by this version, and makes private one that an earlier version left readable by everyone (the server never changes the rights of a file that is already there — it says so in its log instead). Use a password manager's generated password. The password is deliberately not a command-line option: arguments are visible to every user on the machine through `ps` and are saved in shell history. For the same reason do not put `QOOP_ADMIN_PASSWORD` in a file or in your shell. The command refuses if that email already exists.
+It asks for a password (at least 12 characters), twice, and does not show what you type. It prints `Created Admin Your Name <you@example.org>.` This command also creates the database file, and the server creates it private to the `infall` account (mode 600), whichever command comes first; the folder around it keeps others out as well. The `chmod` is a second check that costs nothing: it changes nothing on a file made by this version, and makes private one that an earlier version left readable by everyone (the server never changes the rights of a file that is already there — it says so in its log instead). Use a password manager's generated password. The password is deliberately not a command-line option: arguments are visible to every user on the machine through `ps` and are saved in shell history. For the same reason do not put `INFALL_ADMIN_PASSWORD` in a file or in your shell. The command refuses if that email already exists.
 
 ### 6. Install Caddy and start everything
 
@@ -365,9 +365,9 @@ sudo apt install -y caddy
 Put your domain into the Caddyfile and install it:
 
 ```sh
-sed 's/qoop\.example\.org/YOUR.DOMAIN/g' Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
+sed 's/infall\.example\.org/YOUR.DOMAIN/g' Caddyfile | sudo tee /etc/caddy/Caddyfile >/dev/null
 sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl start qoop
+sudo systemctl start infall
 sudo systemctl reload caddy
 ```
 
@@ -375,7 +375,7 @@ sudo systemctl reload caddy
 
 ### 7. First login and inviting the others
 
-1. Open `https://qoop.example.org` and sign in with the Admin email and password.
+1. Open `https://infall.example.org` and sign in with the Admin email and password.
 2. As Admin, create an invite for each person: their email, and role Member (the students) or Guest (with an end date, for outside readers such as a professor you only want to give temporary access).
 3. Infall shows the invite link once, when you create it. Send it to that person over a channel you trust. It works one time and expires after 7 days.
 4. They open the link, choose a name and a password of at least 12 characters, and are signed in.
@@ -385,24 +385,24 @@ There is no open sign-up: nobody gets an account without an invite. To remove so
 ### 8. Check that it is healthy
 
 ```sh
-systemctl status qoop                 # should say "active (running)"
-journalctl -u qoop -n 50 --no-pager   # recent log lines; add -f to follow live
+systemctl status infall                 # should say "active (running)"
+journalctl -u infall -n 50 --no-pager   # recent log lines; add -f to follow live
 systemctl status caddy
-curl -fsS https://qoop.example.org/api/health   # must print {"ok":true}
-curl -I https://qoop.example.org/
+curl -fsS https://infall.example.org/api/health   # must print {"ok":true}
+curl -I https://infall.example.org/
 ```
 
 The health call succeeds once the server has opened its database, and reveals nothing else. The header check below confirms Caddy's HTTPS and the headers.
 
-The `curl -I` output should show `HTTP/2 200`, a `strict-transport-security` header (from Caddy), and `x-content-type-options: nosniff`, `referrer-policy: same-origin` and a `content-security-policy` header (from the server; the CSP is on the HTML page). Also check that plain HTTP redirects: `curl -I http://qoop.example.org/` should answer with a redirect to `https://`. If the page does not load, `journalctl -u caddy` explains certificate problems (usually DNS or a closed port 80/443).
+The `curl -I` output should show `HTTP/2 200`, a `strict-transport-security` header (from Caddy), and `x-content-type-options: nosniff`, `referrer-policy: same-origin` and a `content-security-policy` header (from the server; the CSP is on the HTML page). Also check that plain HTTP redirects: `curl -I http://infall.example.org/` should answer with a redirect to `https://`. If the page does not load, `journalctl -u caddy` explains certificate problems (usually DNS or a closed port 80/443).
 
 ### Forgot a password
 
 An Admin who forgot their password (or anyone, if no other Admin can help) is reset from the server shell:
 
 ```sh
-sudo -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
-  /opt/qoop/qoop-server reset-password --email you@example.org
+sudo -u infall env INFALL_DB=/var/lib/infall/infall.db \
+  /opt/infall/infall-server reset-password --email you@example.org
 ```
 
 Type the new password at the prompt (at least 12 characters; not shown, not on the command line, for the reason in step 5). This also signs that person out everywhere. Needing shell access is deliberate: only someone who already administers the machine can take over an account.
@@ -414,36 +414,36 @@ Everything lives in one file, so one encrypted daily copy is enough. The backups
 1. On your laptop (not the VPS) install `age` and make a key pair:
 
    ```sh
-   age-keygen -o qoop-backup-key.txt
+   age-keygen -o infall-backup-key.txt
    ```
 
-   It prints `Public key: age1...`. That public key is what goes on the server. Store `qoop-backup-key.txt` in your password manager and keep a second copy somewhere offline: **if you lose it, the backups are unreadable.** Never copy it to the VPS.
+   It prints `Public key: age1...`. That public key is what goes on the server. Store `infall-backup-key.txt` in your password manager and keep a second copy somewhere offline: **if you lose it, the backups are unreadable.** Never copy it to the VPS.
 
 2. On the VPS, in the kit folder again (see step 4):
 
    ```sh
    sudo apt install -y sqlite3 age
-   sudo install -o root -g root -m 755 backup.sh /opt/qoop/backup.sh
-   sudo install -o root -g root -m 644 qoop-backup.service qoop-backup.timer /etc/systemd/system/
-   sudoedit /etc/qoop/qoop.env      # set QOOP_BACKUP_AGE_RECIPIENT to your age1... public key
+   sudo install -o root -g root -m 755 backup.sh /opt/infall/backup.sh
+   sudo install -o root -g root -m 644 infall-backup.service infall-backup.timer /etc/systemd/system/
+   sudoedit /etc/infall/infall.env      # set INFALL_BACKUP_AGE_RECIPIENT to your age1... public key
    sudo systemctl daemon-reload
-   sudo systemctl enable --now qoop-backup.timer
-   sudo systemctl start qoop-backup.service      # run one now
-   journalctl -u qoop-backup -n 20 --no-pager
-   sudo ls -l /var/backups/qoop
+   sudo systemctl enable --now infall-backup.timer
+   sudo systemctl start infall-backup.service      # run one now
+   journalctl -u infall-backup -n 20 --no-pager
+   sudo ls -l /var/backups/infall
    ```
 
-   You should see a file like `qoop-20260101T033000Z.db.gz.age`. A timer runs it daily at about 03:30 and catches up after downtime. Local copies older than 14 days are removed.
+   You should see a file like `infall-20260101T033000Z.db.gz.age`. A timer runs it daily at about 03:30 and catches up after downtime. Local copies older than 14 days are removed.
 
 3. Copies on the same machine do not survive losing the machine. Set up an off-machine copy with rclone (any provider it supports, for example an object-storage bucket or another server over SFTP):
 
    ```sh
    sudo apt install -y rclone
-   sudo RCLONE_CONFIG=/etc/qoop/rclone.conf rclone config      # create a remote, e.g. named "offsite"
-   sudo chown root:qoop /etc/qoop/rclone.conf && sudo chmod 640 /etc/qoop/rclone.conf
+   sudo RCLONE_CONFIG=/etc/infall/rclone.conf rclone config      # create a remote, e.g. named "offsite"
+   sudo chown root:infall /etc/infall/rclone.conf && sudo chmod 640 /etc/infall/rclone.conf
    ```
 
-   Then uncomment `QOOP_BACKUP_REMOTE=offsite:qoop-backups` and `RCLONE_CONFIG=/etc/qoop/rclone.conf` in `/etc/qoop/qoop.env` and run the backup service again. Use credentials limited to that one bucket. The remote keeps every copy; set a retention rule on the provider's side. Pruning is only done locally.
+   Then uncomment `INFALL_BACKUP_REMOTE=offsite:infall-backups` and `RCLONE_CONFIG=/etc/infall/rclone.conf` in `/etc/infall/infall.env` and run the backup service again. Use credentials limited to that one bucket. The remote keeps every copy; set a retention rule on the provider's side. Pruning is only done locally.
 
 #### Test a restore (do this once now, then every few months)
 
@@ -452,46 +452,54 @@ A backup you have never restored is a hope, not a backup. Step A needs only your
 **A. Check a backup on your laptop** (needs `age` and `sqlite3`):
 
 ```sh
-scp you@qoop.example.org:/var/backups/qoop/qoop-TIMESTAMP.db.gz.age .
-age -d -i qoop-backup-key.txt qoop-TIMESTAMP.db.gz.age | gunzip > restored.db
+scp you@infall.example.org:/var/backups/infall/infall-TIMESTAMP.db.gz.age .
+age -d -i infall-backup-key.txt infall-TIMESTAMP.db.gz.age | gunzip > restored.db
 sqlite3 restored.db 'PRAGMA integrity_check;'     # must print: ok
 ```
 
-(If scp is refused because the directory is private to `qoop`, run `sudo cp` into your home first and `chown` it to yourself, or fetch it from the off-machine copy.)
+(If scp is refused because the directory is private to `infall`, run `sudo cp` into your home first and `chown` it to yourself, or fetch it from the off-machine copy.)
 
 **B. Restore onto the server.** Decrypt on the laptop as above, then:
 
 ```sh
-scp restored.db you@qoop.example.org:/tmp/restored.db
+scp restored.db you@infall.example.org:/tmp/restored.db
 # on the VPS:
-sudo systemctl stop qoop
-sudo mv /var/lib/qoop/qoop.db /var/lib/qoop/qoop.db.before-restore
-sudo rm -f /var/lib/qoop/qoop.db-wal /var/lib/qoop/qoop.db-shm
-sudo install -o qoop -g qoop -m 600 /tmp/restored.db /var/lib/qoop/qoop.db
+sudo systemctl stop infall
+sudo mv /var/lib/infall/infall.db /var/lib/infall/infall.db.before-restore
+sudo rm -f /var/lib/infall/infall.db-wal /var/lib/infall/infall.db-shm
+sudo install -o infall -g infall -m 600 /tmp/restored.db /var/lib/infall/infall.db
 sudo rm /tmp/restored.db
-sudo systemctl start qoop
-systemctl status qoop
+sudo systemctl start infall
+systemctl status infall
 ```
 
-The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale ones left from the old database would not match the restored file, which is why they are removed. (A backup is one self-contained file: the backup script's online copy already includes everything committed.) Everything made after the backup is lost; keep `qoop.db.before-restore` until you are sure, then delete it.
+The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale ones left from the old database would not match the restored file, which is why they are removed. (A backup is one self-contained file: the backup script's online copy already includes everything committed.) Everything made after the backup is lost; keep `infall.db.before-restore` until you are sure, then delete it.
 
 ### 10. Updating to a new version
 
-The database format only moves forward: the server records a schema version in the file and a newer version migrates an older file in place when it starts, but an older version cannot be relied on to open a migrated file (it refuses one). While it migrates, the server keeps a copy of the file as it was beside it (`qoop.db.v<old version>-backup`) and removes it once the migration has succeeded; if the migration fails, the file is left as it was and the copy stays. So the backup is your way back. `systemctl stop qoop` sends SIGTERM, and the server shuts down gracefully: it finishes in-flight requests (a database write is never cut off) and exits within a few seconds.
+The database format only moves forward: the server records a schema version in the file and a newer version migrates an older file in place when it starts, but an older version cannot be relied on to open a migrated file (it refuses one). While it migrates, the server keeps a copy of the file as it was beside it (`infall.db.v<old version>-backup`) and removes it once the migration has succeeded; if the migration fails, the file is left as it was and the copy stays. So the backup is your way back. `systemctl stop infall` sends SIGTERM, and the server shuts down gracefully: it finishes in-flight requests (a database write is never cut off) and exits within a few seconds.
 
 ```sh
-sudo systemctl start qoop-backup.service            # 1. fresh backup (check it succeeded)
-journalctl -u qoop-backup -n 5 --no-pager
-sudo systemctl stop qoop                            # 2. stop
-sudo cp -a /opt/qoop/qoop-server /opt/qoop/qoop-server.prev
-sudo install -o root -g root -m 755 target/release/qoop-server /opt/qoop/qoop-server   # 3. replace
-sudo rm -rf /opt/qoop/web && sudo install -d -o root -g root -m 755 /opt/qoop/web
-sudo cp -r web/dist/. /opt/qoop/web/ && sudo chown -R root:root /opt/qoop/web
-sudo systemctl start qoop                           # 4. start
-systemctl status qoop && journalctl -u qoop -n 20 --no-pager
+sudo systemctl start infall-backup.service            # 1. fresh backup (check it succeeded)
+journalctl -u infall-backup -n 5 --no-pager
+sudo systemctl stop infall                            # 2. stop
+sudo cp -a /opt/infall/infall-server /opt/infall/infall-server.prev
+sudo install -o root -g root -m 755 target/release/infall-server /opt/infall/infall-server   # 3. replace
+sudo rm -rf /opt/infall/web && sudo install -d -o root -g root -m 755 /opt/infall/web
+sudo cp -r web/dist/. /opt/infall/web/ && sudo chown -R root:root /opt/infall/web
+sudo systemctl start infall                           # 4. start
+systemctl status infall && journalctl -u infall -n 20 --no-pager
 ```
 
-(Build first as in step 3.) To roll back: stop, restore the pre-update backup (step 9B), put `qoop-server.prev` back, start.
+(Build first as in step 3.) To roll back: stop, restore the pre-update backup (step 9B), put `infall-server.prev` back, start.
+
+## Upgrading from a pre-rename install
+
+Builds before the code was renamed (0.9.0, before its release) called everything `qoop`. Nothing looks for those names, except that the server, `backup.sh` and the image's entrypoint still read a `QOOP_…` variable when its `INFALL_…` one is not set, with a warning (rename them anyway). Make a backup first, then:
+
+- **Container route.** In `.env`, rename every `QOOP_…` variable to `INFALL_…`. The project is now called `infall`, so its volumes are `infall_data`, `infall_backups`, …; the old ones are `qoop_data`, …. Copy the old data volume into the new one before the first start (`docker run --rm -v qoop_data:/from -v infall_data:/to debian:trixie-slim cp -a /from/. /to/`, and the same for `qoop_backups`), then rename the database in it: `docker compose run --rm --no-deps --entrypoint mv server /data/qoop.db /data/infall.db` (also `-wal` and `-shm` if they are there; the server was stopped). The secret key file keeps its name.
+- **systemd route.** `sudo systemctl disable --now qoop.service qoop-backup.timer`, then move the folders: `/opt/qoop` → `/opt/infall` (the program is now `infall-server`: install it as in step 3), `/etc/qoop/qoop.env` → `/etc/infall/infall.env` (rename the variables in it), `/var/lib/qoop/qoop.db` → `/var/lib/infall/infall.db`, `/var/backups/qoop` → `/var/backups/infall`. Make the `infall` user as in step 2 and `chown -R infall:infall` the two folders it owns (or keep the old user by changing `User=`/`Group=` in the units). Install `infall.service`, `infall-backup.service` and `infall-backup.timer` as in steps 4 and 9, remove the three old units from `/etc/systemd/system/`, `sudo systemctl daemon-reload`, and start as usual.
+- **Access tokens** made before the rename (`qoop_pat_…`) keep working; people sign in again once (the session cookie has a new name).
 
 ## What protects you, and what does not
 

@@ -45,10 +45,10 @@ vi.mock('../../lib', () => ({
   history: { open: async () => {}, close: () => {}, preview: () => {}, restore: async () => {}, createCheckpoint: async () => ({}) },
   tokens: {
     list: async () => h.tokens,
-    create: async (name: string) => ({ token: { id: 'new', name, created_at: 1 }, secret: 'qoop_at_ROUTE-SECRET-42' }),
+    create: async (name: string) => ({ token: { id: 'new', name, created_at: 1 }, secret: 'infall_at_ROUTE-SECRET-42' }),
     remove: async () => {},
   },
-  toolEndpoint: () => 'https://qoop.test/mcp',
+  toolEndpoint: () => 'https://infall.test/mcp',
 }))
 vi.mock('../board', () => ({ BoardView: () => <div data-testid="board" /> }))
 vi.mock('../todos', () => ({ Todos: () => <div data-testid="todos" /> }))
@@ -58,7 +58,7 @@ import { App } from './App'
 import { AI_ACCESS_PATH, navigate, parseRoute, rememberBranch } from './router'
 import { resetThemeCache } from './theme'
 
-const SECRET = 'qoop_at_ROUTE-SECRET-42'
+const SECRET = 'infall_at_ROUTE-SECRET-42'
 const ADMIN: Member = { id: 'a', name: 'Elena Varga', role: 'admin', color: '#aaa' }
 const MEI: Member = { id: 'm', name: 'Mei Lin', role: 'member', color: '#bbb' }
 const GUEST: Member = { id: 'g', name: 'Priya Nair', role: 'guest', color: '#ccc' }

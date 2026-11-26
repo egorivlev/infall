@@ -69,7 +69,7 @@ afterEach(() => {
   pagePanel.close()
   historyPanel.close()
   vi.useRealTimers()
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
 })
 
 describe('starting and keeping its place', () => {
@@ -552,14 +552,14 @@ describe('the end', () => {
 
   it('“Back to workspaces” in the desktop app calls its bridge', async () => {
     const switchWorkspace = vi.fn(async () => {})
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { switchWorkspace }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { switchWorkspace }
     await open('end')
     await press('Back to workspaces')
     expect(switchWorkspace).toHaveBeenCalledTimes(1)
   })
 
   it('“Back to workspaces” is not offered by an app without the bridge function', async () => {
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '0.11' }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '0.11' }
     await open('end')
     expect(within(dialog()!).queryByRole('button', { name: 'Back to workspaces' })).toBeNull()
   })

@@ -1,8 +1,8 @@
 //! Where Local Workspaces' files live (docs/specs/desktop.md, "Where things are kept").
 //!
 //! On Windows they live, since 0.9.0, in the app's **local** data folder
-//! (`%LOCALAPPDATA%\app.qoop.desktop\`), not the roaming one where earlier versions kept them
-//! (`%APPDATA%\app.qoop.desktop\`): a roaming profile copies its folder to a server at every
+//! (`%LOCALAPPDATA%\app.infall.desktop\`), not the roaming one where earlier versions kept them
+//! (`%APPDATA%\app.infall.desktop\`): a roaming profile copies its folder to a server at every
 //! sign-in and sign-out, which a database of hundreds of megabytes must not go through. The
 //! list of Workspaces and the Runner's settings stay in the config folder, which is the
 //! roaming one, as before. macOS and Linux are unchanged: one data folder, nothing to move.
@@ -24,7 +24,7 @@ const MOVES_DIR: &str = "moves";
 const WEB_DIR: &str = "web";
 const WEB_MARKER: &str = ".infall-web-digest";
 /// A copy on its way in, beside where it goes.
-const STAGING_SUFFIX: &str = ".moving";
+pub(crate) const STAGING_SUFFIX: &str = ".moving";
 
 /// What moving the Workspaces from `old` to `new` did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -128,7 +128,7 @@ fn folder_names(dir: &Path, dirs: bool) -> Vec<String> {
 /// Copies `src` (a folder or a file) to beside `dest`, checks the copy, moves it into place as
 /// `dest`, then removes `src`. Returns whether `src` could be removed. On an error nothing is
 /// left at `dest` or beside it, and `src` is as it was.
-fn move_one(src: &Path, dest: &Path) -> io::Result<bool> {
+pub(crate) fn move_one(src: &Path, dest: &Path) -> io::Result<bool> {
     let parent = dest
         .parent()
         .ok_or_else(|| io::Error::other("no parent folder"))?;
@@ -237,7 +237,7 @@ fn read_full(file: &mut fs::File, buf: &mut [u8]) -> io::Result<usize> {
     Ok(filled)
 }
 
-fn create_private_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     #[cfg(unix)]
     {
@@ -274,8 +274,8 @@ mod tests {
 
     fn roots() -> Roots {
         let tmp = tempfile::tempdir().unwrap();
-        let old = tmp.path().join("Roaming").join("app.qoop.desktop");
-        let new = tmp.path().join("Local").join("app.qoop.desktop");
+        let old = tmp.path().join("Roaming").join("app.infall.desktop");
+        let new = tmp.path().join("Local").join("app.infall.desktop");
         fs::create_dir_all(&old).unwrap();
         Roots {
             _tmp: tmp,

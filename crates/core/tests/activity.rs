@@ -1,6 +1,6 @@
 //! The grouping rule of Activities, against the fixture shared with the web library.
 
-use qoop_core::*;
+use infall_core::*;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

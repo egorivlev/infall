@@ -32,7 +32,7 @@ vi.mock('../../lib', () => ({
       return h.remove(...a)
     },
   },
-  toolEndpoint: () => 'https://qoop.test/mcp',
+  toolEndpoint: () => 'https://infall.test/mcp',
   // The "AI sidebar" card above the tokens has its own tests (AiSidebarCard.test.tsx); here it stays in its checking state.
   useAi: () => h.ai,
   ai: { refresh: async () => {}, setKey: async () => {}, removeKey: async () => {}, setModel: async () => {}, models: async () => [] },
@@ -40,10 +40,10 @@ vi.mock('../../lib', () => ({
 
 import { AiAccess } from './AiAccess'
 
-const SECRET = 'qoop_at_S3CR3T-value-0123456789'
-const ENDPOINT = 'https://qoop.test/mcp'
-const PLACEHOLDER_COMMAND = `claude mcp add --transport http qoop ${ENDPOINT} --header "Authorization: Bearer <YOUR_TOKEN>"`
-const REAL_COMMAND = `claude mcp add --transport http qoop ${ENDPOINT} --header "Authorization: Bearer ${SECRET}"`
+const SECRET = 'infall_at_S3CR3T-value-0123456789'
+const ENDPOINT = 'https://infall.test/mcp'
+const PLACEHOLDER_COMMAND = `claude mcp add --transport http infall ${ENDPOINT} --header "Authorization: Bearer <YOUR_TOKEN>"`
+const REAL_COMMAND = `claude mcp add --transport http infall ${ENDPOINT} --header "Authorization: Bearer ${SECRET}"`
 
 const LAPTOP: AccessToken = { id: 't1', name: 'Claude Code on my laptop', created_at: new Date(2030, 10, 14, 9, 0).getTime(), last_used_at: new Date(2030, 10, 20, 14, 6).getTime() }
 const DESKTOP: AccessToken = { id: 't2', name: 'office desktop', created_at: new Date(2030, 10, 2, 9, 0).getTime() }

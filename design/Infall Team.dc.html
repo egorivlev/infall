@@ -10,14 +10,14 @@
 <helmet>
 <meta name="design_doc_mode" content="canvas">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
-<link rel="stylesheet" href="./qoop-theme.css">
-<script src="./qoop-math.js"></script>
+<link rel="stylesheet" href="./infall-theme.css">
+<script src="./infall-math.js"></script>
 </helmet>
 <div data-theme="{{ theme }}" style="min-height:100vh;background:var(--q-sunken);color:var(--q-ink);padding:72px;display:flex;flex-wrap:wrap;gap:72px;align-content:flex-start;font-family:'IBM Plex Sans',sans-serif;">
 
   <div style="width:100%;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;">
     <span style="font:600 28px 'Source Serif 4',serif;">Infall — To-dos, History, Branches</span>
-    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 6, 7, 8 · <a href="Qoop Design System.dc.html">Design system</a> · <a href="Qoop Board.dc.html">Board</a> · <a href="Qoop Page.dc.html">Page</a> · <a href="Qoop Merge.dc.html">Merge</a> · <a href="Qoop Access.dc.html">Guest, Login, Settings</a></span>
+    <span style="font:12px 'IBM Plex Mono',monospace;color:var(--q-ink-3);">Screens 6, 7, 8 · <a href="Infall Design System.dc.html">Design system</a> · <a href="Infall Board.dc.html">Board</a> · <a href="Infall Page.dc.html">Page</a> · <a href="Infall Merge.dc.html">Merge</a> · <a href="Infall Access.dc.html">Guest, Login, Settings</a></span>
   </div>
 
   <div id="6a" data-screen-label="6a To-dos" style="display:flex;flex-direction:column;gap:12px;">
@@ -54,7 +54,7 @@
                     <span></span>
                     <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-start;">
                       <sc-if value="{{ t.refCard }}"><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px solid var(--q-line-soft);font-size:11.5px;color:var(--q-ink-2);"><span style="color:var(--q-ink-3);">Card:</span>{{ t.card }}</span></sc-if>
-                      <sc-if value="{{ t.refBranch }}"><a href="Qoop Board.dc.html#2a" title="Opens try-QEC and selects the Card" style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px solid var(--q-branch);background:color-mix(in oklch, var(--q-branch) 10%, transparent);font-size:11.5px;color:var(--q-ink);text-decoration:none;"><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--q-branch);">⑂ try-QEC</span><span style="color:var(--q-ink-3);">Card:</span>{{ t.card }}<span style="color:var(--q-branch);">↗</span></a></sc-if>
+                      <sc-if value="{{ t.refBranch }}"><a href="Infall Board.dc.html#2a" title="Opens try-QEC and selects the Card" style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px solid var(--q-branch);background:color-mix(in oklch, var(--q-branch) 10%, transparent);font-size:11.5px;color:var(--q-ink);text-decoration:none;"><span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--q-branch);">⑂ try-QEC</span><span style="color:var(--q-ink-3);">Card:</span>{{ t.card }}<span style="color:var(--q-branch);">↗</span></a></sc-if>
                       <sc-if value="{{ t.refGone }}"><span title="The To-do is kept; the Card it pointed to was removed." style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;border:1px dashed var(--q-line);font-size:11.5px;color:var(--q-ink-3);"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="8" height="8" rx="1"></rect><path d="M3 3 L7 7 M7 3 L3 7"></path></svg>Card removed<span style="text-decoration:line-through;">{{ t.card }}</span></span><span style="font-size:11px;color:var(--q-ink-3);">by Jonas on main, 18 Nov · Restore from History</span></sc-if>
                       <sc-if value="{{ t.hasBy }}"><span style="font-size:11px;color:var(--q-ink-3);">{{ t.by }}</span></sc-if>
                     </div>
@@ -184,7 +184,7 @@
                 <span style="display:flex;gap:6px;justify-content:flex-end;">
                   <sc-if value="{{ b.notMain }}">
                     <span style="height:26px;padding:0 10px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-line);font-size:12px;">Compare</span>
-                    <a href="Qoop Merge.dc.html" style="height:26px;padding:0 10px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);font-size:12px;color:var(--q-ink);text-decoration:none;white-space:nowrap;">Merge into main…</a>
+                    <a href="Infall Merge.dc.html" style="height:26px;padding:0 10px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);font-size:12px;color:var(--q-ink);text-decoration:none;white-space:nowrap;">Merge into main…</a>
                   </sc-if>
                   <sc-if value="{{ b.isMain }}"><span style="font-size:12px;color:var(--q-ink-3);">default Branch</span></sc-if>
                 </span>
@@ -217,7 +217,7 @@
           <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:5px;border:1px solid var(--q-line-soft);background:var(--q-raised);font-size:12.5px;">
             <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;"><span style="color:var(--q-branch);font-weight:600;">try-QEC</span><span style="color:var(--q-ink-3);">→</span><span style="font-weight:600;">main</span></div>
             <div style="color:var(--q-ink-2);line-height:1.5;">14 Changes ahead, 5 behind. 9 merge automatically; 5 Conflicts need a decision.</div>
-            <a href="Qoop Merge.dc.html" style="align-self:flex-start;height:28px;padding:0 12px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);color:var(--q-ink);text-decoration:none;font-weight:500;">Review Merge →</a>
+            <a href="Infall Merge.dc.html" style="align-self:flex-start;height:28px;padding:0 12px;display:flex;align-items:center;border-radius:4px;border:1px solid var(--q-ink-2);color:var(--q-ink);text-decoration:none;font-weight:500;">Review Merge →</a>
           </div>
         </div>
       </div>

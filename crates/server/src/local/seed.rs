@@ -3,7 +3,7 @@
 //! Member's own edits, recorded under the one Member, so the Changes, the history and the
 //! Checkpoint are ordinary ones.
 
-use qoop_core::{BranchId, EntityId, EntityKind, Fields, MemberId, Moment, Op, Value, Workspace};
+use infall_core::{BranchId, EntityId, EntityKind, Fields, MemberId, Moment, Op, Value, Workspace};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;

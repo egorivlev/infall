@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../../lib', () => ({
   tokens: { list: async () => [], create: async () => ({}), remove: async () => {} },
-  toolEndpoint: () => 'https://qoop.test/mcp',
+  toolEndpoint: () => 'https://infall.test/mcp',
   useAi: () => ({ setup: h.setup, conversations: [], current: null, busy: false }),
   ai: {
     refresh: () => {
@@ -100,7 +100,7 @@ beforeEach(() => {
   h.setModel = async () => {}
   h.models = async () => MODELS
   h.calls = { refresh: 0, setKey: [], removeKey: 0, setModel: [], models: 0 }
-  delete (window as { qoopDesktop?: unknown }).qoopDesktop
+  delete (window as { infallDesktop?: unknown }).infallDesktop
 })
 afterEach(() => {
   cleanup()

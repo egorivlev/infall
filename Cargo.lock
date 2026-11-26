@@ -976,6 +976,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "infall-core"
+version = "0.9.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "infall-server"
+version = "0.9.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "base64 0.23.1",
+ "chacha20poly1305",
+ "clap",
+ "futures-util",
+ "http-body-util",
+ "infall-core",
+ "rand 0.10.4",
+ "reqwest",
+ "rpassword",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "inout"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1338,47 +1379,6 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "qoop-core"
-version = "0.9.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror",
- "uuid",
-]
-
-[[package]]
-name = "qoop-server"
-version = "0.9.0"
-dependencies = [
- "argon2",
- "axum",
- "base64 0.23.1",
- "chacha20poly1305",
- "clap",
- "futures-util",
- "http-body-util",
- "qoop-core",
- "rand 0.10.4",
- "reqwest",
- "rpassword",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

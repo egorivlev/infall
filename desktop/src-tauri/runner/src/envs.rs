@@ -70,7 +70,7 @@ fn python_in(prefix: &Path) -> Option<PathBuf> {
     candidates
         .iter()
         .map(|c| prefix.join(c))
-        .find(|p| qoop_proc::is_executable_file(p))
+        .find(|p| infall_proc::is_executable_file(p))
 }
 
 fn subdirs(dir: &Path) -> Vec<(String, PathBuf)> {

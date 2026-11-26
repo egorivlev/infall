@@ -43,7 +43,7 @@ function pdfjsAssets(): Plugin {
   }
 }
 
-// In development the UI runs on :5173 and talks to qoop-server on :8787.
+// In development the UI runs on :5173 and talks to infall-server on :8787.
 export default defineConfig({
   plugins: [react(), pdfjsAssets()],
   server: {

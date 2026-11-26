@@ -225,7 +225,7 @@ async fn the_upgrade_needs_a_session_and_an_allowed_origin() {
     };
     assert_eq!(status(connect(addr, None, Some(ORIGIN)).await), 401);
     assert_eq!(
-        status(connect(addr, Some("qoop_session=forged"), Some(ORIGIN)).await),
+        status(connect(addr, Some("infall_session=forged"), Some(ORIGIN)).await),
         401
     );
     assert_eq!(
@@ -238,20 +238,20 @@ async fn the_upgrade_needs_a_session_and_an_allowed_origin() {
 
 #[tokio::test]
 async fn guests_may_subscribe_only_to_main() {
-    let (mut ws_state, main_id) = qoop_core::Workspace::new();
+    let (mut ws_state, main_id) = infall_core::Workspace::new();
     let side = ws_state
         .fork(
             "side",
-            qoop_core::Moment {
+            infall_core::Moment {
                 branch: main_id,
                 seq: 0,
             },
-            qoop_core::MemberId::new(),
+            infall_core::MemberId::new(),
             1,
         )
         .unwrap();
-    let store = qoop_server::store::MemoryStore::new();
-    qoop_server::store::Store::save_workspace(&store, &ws_state).unwrap();
+    let store = infall_server::store::MemoryStore::new();
+    infall_server::store::Store::save_workspace(&store, &ws_state).unwrap();
     let app = TestApp::with_store(std::sync::Arc::new(store));
     let admin = app.admin().await;
     let guest = app
@@ -308,21 +308,21 @@ async fn removing_a_member_closes_their_live_connection() {
 
 #[tokio::test]
 async fn shutting_down_closes_live_connections() {
-    use qoop_server::config::Config;
-    use qoop_server::store::MemoryStore;
-    let store: std::sync::Arc<dyn qoop_server::store::Store> =
+    use infall_server::config::Config;
+    use infall_server::store::MemoryStore;
+    let store: std::sync::Arc<dyn infall_server::store::Store> =
         std::sync::Arc::new(MemoryStore::new());
     let web = web_dir();
-    let (router, shutdown) = qoop_server::build_app_with(
+    let (router, shutdown) = infall_server::build_app_with(
         Config::for_tests(web.path()),
         store.clone(),
-        qoop_server::Clock::manual(START),
+        infall_server::Clock::manual(START),
     )
     .unwrap();
-    qoop_server::create_admin(&*store, "admin@example.org", "Ada", PASSWORD, START).unwrap();
+    infall_server::create_admin(&*store, "admin@example.org", "Ada", PASSWORD, START).unwrap();
     let app = TestApp {
         router,
-        clock: qoop_server::Clock::manual(START),
+        clock: infall_server::Clock::manual(START),
         store,
         web,
     };

@@ -46,7 +46,7 @@ use toolchains::{FoundProgram, PYTHON, QSHARP};
 /// The environment variable that overrides the interpreter (used by tests). It chooses the
 /// program, nothing more: the approval is asked exactly as without it. With it, every Python
 /// Run uses it, whatever environment the Run names.
-pub const PYTHON_ENV: &str = "QOOP_PYTHON_BIN";
+pub const PYTHON_ENV: &str = "INFALL_PYTHON_BIN";
 
 /// The Workspace a Run is asked for from, as the app knows it: nothing here comes from the
 /// page.
@@ -59,7 +59,7 @@ pub struct Workspace {
     pub name: String,
 }
 
-/// The `request` argument of `qoopDesktop.runner.run` and `.start`. Everything in it comes
+/// The `request` argument of `infallDesktop.runner.run` and `.start`. Everything in it comes
 /// from the page: it names things, and the names are only looked up here.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RunRequest {
@@ -130,7 +130,7 @@ pub struct LanguageStatus {
     pub version: Option<String>,
 }
 
-/// `qoopDesktop.runner.status()`.
+/// `infallDesktop.runner.status()`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Status {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -203,7 +203,7 @@ pub struct SettingsView {
     pub environments: Vec<EnvView>,
     /// A name a Run asks for → the interpreter it means here.
     pub names: BTreeMap<String, String>,
-    /// Set when `QOOP_PYTHON_BIN` decides the interpreter instead of the choice here.
+    /// Set when `INFALL_PYTHON_BIN` decides the interpreter instead of the choice here.
     pub overridden: Option<String>,
     /// How many approvals are remembered.
     pub remembered: usize,
@@ -270,7 +270,7 @@ pub trait Ui {
 pub struct Options {
     /// The app's config directory: settings and remembered approvals live here.
     pub config_dir: PathBuf,
-    /// `QOOP_PYTHON_BIN`, if set.
+    /// `INFALL_PYTHON_BIN`, if set.
     pub python_override: Option<PathBuf>,
     /// How long the approval window must have shown the code before "Run" counts.
     pub min_view: Duration,
@@ -294,12 +294,10 @@ impl Options {
         }
     }
 
-    /// As [`Options::new`], with the interpreter override read from `QOOP_PYTHON_BIN`.
+    /// As [`Options::new`], with the interpreter override read from `INFALL_PYTHON_BIN`.
     pub fn from_process_env(config_dir: impl Into<PathBuf>) -> Self {
         let mut options = Self::new(config_dir);
-        options.python_override = std::env::var_os(PYTHON_ENV)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from);
+        options.python_override = infall_proc::env_var_os(PYTHON_ENV).map(PathBuf::from);
         options
     }
 }
@@ -440,7 +438,7 @@ impl Runner {
         Ok(self
             .load()
             .python
-            .filter(|p| qoop_proc::is_executable_file(Path::new(&p.path))))
+            .filter(|p| infall_proc::is_executable_file(Path::new(&p.path))))
     }
 
     /// The command Toolchain for `id`, if it is set up, switched on and its program is there.
@@ -448,7 +446,7 @@ impl Runner {
         settings
             .languages
             .get(id)
-            .filter(|t| !t.off && qoop_proc::is_executable_file(Path::new(&t.program)))
+            .filter(|t| !t.off && infall_proc::is_executable_file(Path::new(&t.program)))
             .cloned()
     }
 
@@ -459,7 +457,7 @@ impl Runner {
 
     /// What Runs would use now, and which languages and environment names are there. Read
     /// from the saved settings and the file system: it starts nothing (except, once, the
-    /// check of `QOOP_PYTHON_BIN`).
+    /// check of `INFALL_PYTHON_BIN`).
     pub fn status(&self) -> Status {
         let settings = self.load();
         let python = self.interpreter().ok().flatten();
@@ -588,7 +586,7 @@ impl Runner {
                 version: t.version.clone(),
                 problem: t.problem.clone(),
                 enabled: !t.off,
-                available: qoop_proc::is_executable_file(Path::new(&t.program)),
+                available: infall_proc::is_executable_file(Path::new(&t.program)),
             })
             .collect();
         let view = SettingsView {

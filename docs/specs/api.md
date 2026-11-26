@@ -6,10 +6,10 @@ M1 scope: accounts, one Branch in use (`main`), the Board (Cards, Frames, Connec
 
 ## 1. Process and configuration
 
-Binary `qoop-server` (crate `crates/server`). Subcommands:
+Binary `infall-server` (crate `crates/server`). Subcommands:
 
 - `serve` (default) — run the HTTP server.
-- `create-admin --email <e> --name <n>` — create the first Admin. Password is read from the env var `QOOP_ADMIN_PASSWORD` if set, otherwise prompted on the terminal without echo. Refuses if that email exists.
+- `create-admin --email <e> --name <n>` — create the first Admin. Password is read from the env var `INFALL_ADMIN_PASSWORD` if set, otherwise prompted on the terminal without echo. Refuses if that email exists.
 - `reset-password --email <e>` — set a new password for an existing account (same password input as above) and delete all of that account's sessions. The only way back in if an Admin forgets theirs; it needs shell access to the machine, which is the point.
 - `import-workspace <file> --admin-email <e>` and `export-workspace <dest>` — a Workspace file into an empty Workspace, and out of this one (M18, §19).
 
@@ -19,13 +19,15 @@ Environment:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QOOP_ADDR` | `127.0.0.1:8787` | listen address |
-| `QOOP_DB` | `./qoop.db` | SQLite file |
-| `QOOP_PUBLIC_ORIGIN` | `http://localhost:8787` | the origin people use; drives the cookie `Secure` flag (set when it starts with `https://`), the Origin check, and invite URLs |
-| `QOOP_DEV_ORIGIN` | unset | one extra allowed Origin (e.g. `http://localhost:5173`) for local UI development |
-| `QOOP_WEB_DIR` | `./web/dist` | built UI to serve; any non-`/api` path that is not a file serves `index.html` |
-| `QOOP_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
-| `QOOP_MAX_PDF_MB` | `100` | the largest PDF the server stores, in MiB (a whole number ≥ 1; §20) |
+| `INFALL_ADDR` | `127.0.0.1:8787` | listen address |
+| `INFALL_DB` | `./infall.db` | SQLite file |
+| `INFALL_PUBLIC_ORIGIN` | `http://localhost:8787` | the origin people use; drives the cookie `Secure` flag (set when it starts with `https://`), the Origin check, and invite URLs |
+| `INFALL_DEV_ORIGIN` | unset | one extra allowed Origin (e.g. `http://localhost:5173`) for local UI development |
+| `INFALL_WEB_DIR` | `./web/dist` | built UI to serve; any non-`/api` path that is not a file serves `index.html` |
+| `INFALL_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
+| `INFALL_MAX_PDF_MB` | `100` | the largest PDF the server stores, in MiB (a whole number ≥ 1; §20) |
+
+Each is also read under its name from before the rename (`QOOP_ADDR`, …) when the new one is not set ([Names before the rename](#names-before-the-rename)).
 
 ## 2. Storage
 
@@ -58,8 +60,8 @@ type Member = {
 ```
 
 - Passwords: Argon2id, minimum 12 characters. Never logged, never returned.
-- Session: 32 random bytes, sent as cookie `qoop_session` (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the public origin is https, 30-day expiry, sliding). Only a hash of the token is stored. A Local Workspace's server names its cookie differently (§16); everything else here is the same for it.
-- Every request whose method is not `GET`/`HEAD` must carry header `X-Qoop-Request: 1` and an `Origin` equal to the public origin or the dev origin; otherwise `403 forbidden_origin`. The WebSocket upgrade checks `Origin` the same way.
+- Session: 32 random bytes, sent as cookie `infall_session` (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the public origin is https, 30-day expiry, sliding). Only a hash of the token is stored. A Local Workspace's server names its cookie differently (§16); everything else here is the same for it.
+- Every request whose method is not `GET`/`HEAD` must carry header `X-Infall-Request: 1` and an `Origin` equal to the public origin or the dev origin; otherwise `403 forbidden_origin`. The WebSocket upgrade checks `Origin` the same way.
 - Login failures: more than 5 for one email within 15 minutes → `429 too_many_attempts` until the window passes. The login error never says whether the email exists.
 - A Guest whose `access_until` has passed is treated as signed out.
 - There is no open sign-up. Accounts come only from `create-admin` or an invite.
@@ -308,10 +310,10 @@ type AccessToken = { id: string; name: string; created_at: number; last_used_at?
 | Method, path | Body | 200 response |
 |---|---|---|
 | `GET /api/tokens` | — | `{ tokens: AccessToken[] }` — the caller's own, oldest first |
-| `POST /api/tokens` | `{ name: string }` (1–60 characters, trimmed, no control characters) | `{ token: AccessToken, secret: string }` — `secret` is `qoop_pat_` + 43 url-safe base64 characters (32 random bytes); shown only here. Only its SHA-256 is stored. At most 10 per Member (`400 bad_request` beyond) |
+| `POST /api/tokens` | `{ name: string }` (1–60 characters, trimmed, no control characters) | `{ token: AccessToken, secret: string }` — `secret` is `infall_pat_` + 43 url-safe base64 characters (32 random bytes); shown only here. Only its SHA-256 is stored. At most 10 per Member (`400 bad_request` beyond) |
 | `DELETE /api/tokens/{id}` | — | `{}`; own tokens only (`404` otherwise) |
 
-Removing a Member and `reset-password` delete that Member's tokens. `last_used_at` is updated at most once a minute.
+Removing a Member and `reset-password` delete that Member's tokens. `last_used_at` is updated at most once a minute. A secret made before the rename starts with `qoop_pat_`; it is still accepted ([Names before the rename](#names-before-the-rename)).
 
 ### Suggestions
 Not Research Content, not versioned; each belongs to one Branch. Members and Admins only.
@@ -346,9 +348,9 @@ There is no HTTP route that creates a Suggestion: they come only through the too
 Rules at creation (tool layer): the Branch exists; for a Source the Card, and for a Connection both Cards, exist and are live at the Branch head and `from ≠ to`; a Source needs a `url` (http/https, ≤ 2000 characters) or a `doi`; text fields ≤ 500 characters, no control characters; an identical pending Suggestion (same Branch, kind, Card(s) and the same doi/url, or the same from/to in either direction) is returned instead of making a duplicate; at most 100 pending per Branch (then the tool call fails with a clear message). Removing a Member keeps the Suggestions they created.
 
 ### The tool endpoint — `POST /mcp`
-Model Context Protocol, Streamable HTTP transport, stateless: one JSON-RPC 2.0 message per `POST`, answered with `Content-Type: application/json` (no SSE, no sessions; `GET` and `DELETE` → `405`). Authentication: `Authorization: Bearer <secret>`; missing or unknown → `401` with `WWW-Authenticate: Bearer`. The `X-Qoop-Request` header is not required here (non-browser clients), but if an `Origin` header is present it must be the public origin or the dev origin (`403`). Body limit 1 MB. Per token: at most 120 requests a minute (`429`).
+Model Context Protocol, Streamable HTTP transport, stateless: one JSON-RPC 2.0 message per `POST`, answered with `Content-Type: application/json` (no SSE, no sessions; `GET` and `DELETE` → `405`). Authentication: `Authorization: Bearer <secret>`; missing or unknown → `401` with `WWW-Authenticate: Bearer`. The `X-Infall-Request` header is not required here (non-browser clients), but if an `Origin` header is present it must be the public origin or the dev origin (`403`). Body limit 1 MB. Per token: at most 120 requests a minute (`429`).
 
-Methods: `initialize` (answer with the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, otherwise `2025-06-18`; `capabilities: { tools: {} }`; `serverInfo: { name: "qoop", version }`; `instructions`: two sentences saying what Infall is and that changes are proposed as Suggestions for a Member to accept), `notifications/initialized` and any other notification (→ `202`, empty body), `ping` (→ `{}`), `tools/list`, `tools/call`. Unknown method → JSON-RPC error `-32601`; malformed → `-32700`/`-32600`; bad tool arguments → a tool result with `isError: true` and a plain sentence (not a protocol error), so the model can correct itself.
+Methods: `initialize` (answer with the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, otherwise `2025-06-18`; `capabilities: { tools: {} }`; `serverInfo: { name: "infall", version }`; `instructions`: two sentences saying what Infall is and that changes are proposed as Suggestions for a Member to accept), `notifications/initialized` and any other notification (→ `202`, empty body), `ping` (→ `{}`), `tools/list`, `tools/call`. Unknown method → JSON-RPC error `-32601`; malformed → `-32700`/`-32600`; bad tool arguments → a tool result with `isError: true` and a plain sentence (not a protocol error), so the model can correct itself.
 
 Tools — every result is one `text` content item holding compact JSON. `branch` is always optional and is a Branch **name** (default `main`). Card arguments are entity ids as returned by the tools.
 
@@ -382,7 +384,7 @@ Cache-Control: no-cache
 Content-Type: text/html; charset=utf-8
 ```
 
-The UI embeds it as `<iframe sandbox="allow-scripts" src="/visual-frame">`. Both the attribute and the header sandbox it, so the page always runs in an opaque origin: no cookies, no storage, no access to the app or the API, no network (`default-src 'none'`), even if someone opens the URL directly. The page carries no data. Its only inline script implements this message protocol with its parent (`postMessage`, every message is `{ qoop: "visual", … }`; the parent accepts messages only from that iframe's `contentWindow`, the frame only from `window.parent`):
+The UI embeds it as `<iframe sandbox="allow-scripts" src="/visual-frame">`. Both the attribute and the header sandbox it, so the page always runs in an opaque origin: no cookies, no storage, no access to the app or the API, no network (`default-src 'none'`), even if someone opens the URL directly. The page carries no data. Its only inline script implements this message protocol with its parent (`postMessage`, every message is `{ infall: "visual", … }`; the parent accepts messages only from that iframe's `contentWindow`, the frame only from `window.parent`):
 
 | Direction | Message | Meaning |
 |---|---|---|
@@ -412,8 +414,8 @@ Configuration (new):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QOOP_SECRET_KEY` | unset | 32 random bytes, base64. Encrypts Members' OpenRouter keys at rest (authenticated encryption, fresh random nonce per value). Unset → the OpenRouter path is off (`503 ai_not_configured` on every write below, `enabled: false` in status). `qoop-server gen-secret-key` prints a fresh one |
-| `QOOP_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | upstream base URL; the only host the server ever calls out to |
+| `INFALL_SECRET_KEY` | unset | 32 random bytes, base64. Encrypts Members' OpenRouter keys at rest (authenticated encryption, fresh random nonce per value). Unset → the OpenRouter path is off (`503 ai_not_configured` on every write below, `enabled: false` in status). `infall-server gen-secret-key` prints a fresh one |
+| `INFALL_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | upstream base URL; the only host the server ever calls out to |
 
 Members and Admins only (`403` for Guests).
 
@@ -491,7 +493,7 @@ The server checks an incoming `result` (`400 bad_request` with a plain sentence 
 
 ## 16. M12 — Local Workspaces
 
-See [local.md](local.md). The desktop app links this crate and runs the same server in-process for a Local Workspace: `qoop_server::local::start_local` listens on `127.0.0.1` on the port asked for in `LocalOptions::port` when it is free, else on a port the OS chooses, on the caller's tokio runtime, reads no environment variables and installs no signal handlers. The public origin is `http://127.0.0.1:<port>`; there is no dev origin; the Origin rules of §3 apply unchanged. `stop` closes live connections and lets in-flight requests finish for at most a few seconds.
+See [local.md](local.md). The desktop app links this crate and runs the same server in-process for a Local Workspace: `infall_server::local::start_local` listens on `127.0.0.1` on the port asked for in `LocalOptions::port` when it is free, else on a port the OS chooses, on the caller's tokio runtime, reads no environment variables and installs no signal handlers. The public origin is `http://127.0.0.1:<port>`; there is no dev origin; the Origin rules of §3 apply unchanged. `stop` closes live connections and lets in-flight requests finish for at most a few seconds.
 
 Files, all in the folder the desktop app gives: the database (one per Workspace) and beside it `<database file name>.secret-key` — the secret key of §14 as base64, made on the first start and kept (owner-only, mode 0600, on unix; on Windows the folder's own access rules apply). So the OpenRouter path is on in every Local Workspace.
 
@@ -509,7 +511,7 @@ Storage: a `settings` table (schema version 5), one text value per name: `preset
 
 The key of `entry_url` is 32 random bytes (URL-safe base64, no padding), made at each start, compared in constant time, and valid until `stop`. A session made with it lasts like any other (§3), but after a restart only the new key can make a new one.
 
-**The session cookie of a Local Workspace** is called `qoop_session_<id>`, not `qoop_session`. Every Local Workspace is served from `127.0.0.1`, and a browser (the desktop app's web view included) keeps cookies apart by host and name, never by port: under one name, entering one Workspace would replace the sign-in of another, and one database's session token would be sent to another Workspace's server. `<id>` is 16 URL-safe base64 characters, made at random the first time the database is opened by `start_local` and kept in it (the `settings` row `session_cookie`), so it is the same at every start, whatever port the Workspace gets; a stored value of any other shape is replaced by a new one. It is the database's and not the port's because a Workspace whose port is taken opens on another, possibly one another Workspace had. A Workspace file leaves that row out (§17), so an imported Workspace has an id of its own. Everything that sets, reads, extends or clears the session cookie (`/api/local/enter`, every request under `/api`, the WebSocket upgrade, `logout` on a Team server) uses the server's own name, and reads no other: a cookie under another name — another Workspace's, or a `qoop_session` left from before this rule — is not looked at and signs no one in, with no error. Attributes are those of §3. A Team server's cookie is `qoop_session`, exactly as before.
+**The session cookie of a Local Workspace** is called `infall_session_<id>`, not `infall_session`. Every Local Workspace is served from `127.0.0.1`, and a browser (the desktop app's web view included) keeps cookies apart by host and name, never by port: under one name, entering one Workspace would replace the sign-in of another, and one database's session token would be sent to another Workspace's server. `<id>` is 16 URL-safe base64 characters, made at random the first time the database is opened by `start_local` and kept in it (the `settings` row `session_cookie`), so it is the same at every start, whatever port the Workspace gets; a stored value of any other shape is replaced by a new one. It is the database's and not the port's because a Workspace whose port is taken opens on another, possibly one another Workspace had. A Workspace file leaves that row out (§17), so an imported Workspace has an id of its own. Everything that sets, reads, extends or clears the session cookie (`/api/local/enter`, every request under `/api`, the WebSocket upgrade, `logout` on a Team server) uses the server's own name, and reads no other: a cookie under another name — another Workspace's, or a `infall_session` left from before this rule — is not looked at and signs no one in, with no error. Attributes are those of §3. A Team server's cookie is `infall_session`, exactly as before.
 
 On a Team Workspace every `/api/local/*` path is `404 not_found`, whatever the method and whether or not there is a session.
 
@@ -521,7 +523,7 @@ See [portability.md](portability.md) (Contracts A and B).
 
 ### Workspace files (the crate, for the desktop app)
 
-In `qoop_server::local`:
+In `infall_server::local`:
 
 ```rust
 pub fn export_workspace(db: &Path, dest: &Path) -> Result<(), PortError>;
@@ -564,10 +566,10 @@ Configuration (new; a Local Workspace always uses the defaults):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QOOP_CROSSREF_URL` | `https://api.crossref.org` | where DOIs are looked up |
-| `QOOP_ARXIV_URL` | `https://export.arxiv.org` | where arXiv ids are looked up |
+| `INFALL_CROSSREF_URL` | `https://api.crossref.org` | where DOIs are looked up |
+| `INFALL_ARXIV_URL` | `https://export.arxiv.org` | where arXiv ids are looked up |
 
-Besides OpenRouter (§14), these are the only hosts the server calls out to, and only when a Member asks. The whole lookup has a 10 s limit (`Config::lookup_timeout`, not read from the environment). The request carries only the id: the server's generic `User-Agent` (`qoop-server/<version>`), `Accept`, no cookie, no name, nothing about the Workspace. Redirects are not followed and no proxy is used (the same HTTP client as §14).
+Besides OpenRouter (§14), these are the only hosts the server calls out to, and only when a Member asks. The whole lookup has a 10 s limit (`Config::lookup_timeout`, not read from the environment). The request carries only the id: the server's generic `User-Agent` (`infall-server/<version>`), `Accept`, no cookie, no name, nothing about the Workspace. Redirects are not followed and no proxy is used (the same HTTP client as §14).
 
 `POST /api/sources/lookup` — Members and Admins, Team and Local Workspaces alike (`403 forbidden` for Guests, `401` without a session). Body: exactly one of
 
@@ -647,7 +649,7 @@ New error codes:
 | 403 | `moved` | any changing request in a moved Local Workspace; message "This Workspace was moved to a Team server; open it there to make changes." |
 | 409 | `not_empty` | a Workspace file into a Workspace that is not empty |
 | 400 | `not_a_workspace_file` | what was sent is not a Workspace file this server can read |
-| 413 | `too_large` | a Workspace file over `QOOP_MAX_IMPORT_MB` |
+| 413 | `too_large` | a Workspace file over `INFALL_MAX_IMPORT_MB` |
 | 422 | `newer_version` | a Workspace file made by a newer schema version |
 
 ### Storage (schema version 7)
@@ -676,7 +678,7 @@ Since version 7 a Workspace file's `settings` say which kind of Workspace it cam
 
 A Workspace file of an older version imports as before (§17) and, onto a Team server, is first brought up to version 7.
 
-### Contract A — `qoop_server::local`
+### Contract A — `infall_server::local`
 
 ```rust
 pub struct LocalOptions { /* §16 */ pub read_only: bool, pub moved_to: Option<String> }
@@ -694,7 +696,7 @@ pub fn build_local_app_with(config, store, clock, preset, member_name, read_only
 | Method, path | Who | Body | Response |
 |---|---|---|---|
 | `GET /api/workspace` | any signed-in | — | §16's shape with `empty` and `read_only` (and `moved_to` when set) |
-| `POST /api/workspace/import` | Admin, Team (`403` in a Local Workspace and for Members and Guests, `401` without a session) | the Workspace file as the raw body (any `Content-Type`; the UI sends `application/octet-stream`), at most `QOOP_MAX_IMPORT_MB` MiB. The usual write rules of §3 apply (`Origin`, `X-Qoop-Request: 1`) | `200 { members: { id, name, claimed }[], you_were: string }` |
+| `POST /api/workspace/import` | Admin, Team (`403` in a Local Workspace and for Members and Guests, `401` without a session) | the Workspace file as the raw body (any `Content-Type`; the UI sends `application/octet-stream`), at most `INFALL_MAX_IMPORT_MB` MiB. The usual write rules of §3 apply (`Origin`, `X-Infall-Request: 1`) | `200 { members: { id, name, claimed }[], you_were: string }` |
 | `GET /api/workspace/export` | Admin, Team (`403` otherwise) | — | `200`, `Content-Type: application/octet-stream`, `Content-Disposition: attachment; filename="<host of the public origin, ':' as '-'>.infall"`, `Cache-Control: no-store`, the Team file |
 
 **Empty** (decision 1): `main` is the only Branch, with no Changes and no Checkpoints, and there are no To-dos and no Comments; Members and invites may exist. Always `false` in a Local Workspace. "Start empty" needs nothing from the server: `empty` stays `true` until the first Change, Checkpoint, Branch, To-do or Comment.
@@ -703,8 +705,8 @@ pub fn build_local_app_with(config, store, clock, preset, member_name, read_only
 
 ### Command line
 
-- `qoop-server import-workspace <file> --admin-email <e>`: the same rules and work as the import above, with the existing Admin of that email (case and surrounding spaces ignored) as the importing Admin. Exits non-zero and changes nothing when there is no such Admin, when the Workspace is not empty, or when the file cannot be read as a Workspace file. Prints whose work came in and the names not signed in yet. A server running on the same database refuses to write afterwards until it is restarted (`content_epoch` above): run it with the server stopped, or restart the server.
-- `qoop-server export-workspace <dest>`: a Team file of `QOOP_DB` at `dest` (which must not exist), recording the oldest Admin as who exported it. Safe while the server runs on that database in another process: the file is a consistent snapshot.
+- `infall-server import-workspace <file> --admin-email <e>`: the same rules and work as the import above, with the existing Admin of that email (case and surrounding spaces ignored) as the importing Admin. Exits non-zero and changes nothing when there is no such Admin, when the Workspace is not empty, or when the file cannot be read as a Workspace file. Prints whose work came in and the names not signed in yet. A server running on the same database refuses to write afterwards until it is restarted (`content_epoch` above): run it with the server stopped, or restart the server.
+- `infall-server export-workspace <dest>`: a Team file of `INFALL_DB` at `dest` (which must not exist), recording the oldest Admin as who exported it. Safe while the server runs on that database in another process: the file is a consistent snapshot.
 
 ### Members (Contract B)
 
@@ -771,21 +773,21 @@ Migrated in place from every earlier version as in §2. Three tables, outside th
 
 | Method, path | Who | Body | Response |
 |---|---|---|---|
-| `PUT /api/files/pdf` | Member | the PDF itself, streamed (any `Content-Type`; the UI sends `application/pdf`). The usual write rules of §3 apply | `200 { hash, size, pages: null }` — `pages` is the UI's to find out and put in `pdf_pages`. Idempotent: the same bytes again store nothing and answer the same. `415 not_a_pdf` unless the first bytes are `%PDF-` (checked as they arrive; the name and declared type do not count); `413 too_large` over `QOOP_MAX_PDF_MB` (at once from `Content-Length`, else as soon as the body passes it) |
+| `PUT /api/files/pdf` | Member | the PDF itself, streamed (any `Content-Type`; the UI sends `application/pdf`). The usual write rules of §3 apply | `200 { hash, size, pages: null }` — `pages` is the UI's to find out and put in `pdf_pages`. Idempotent: the same bytes again store nothing and answer the same. `415 not_a_pdf` unless the first bytes are `%PDF-` (checked as they arrive; the name and declared type do not count); `413 too_large` over `INFALL_MAX_PDF_MB` (at once from `Content-Length`, else as soon as the body passes it) |
 | `GET /api/files/pdf/{hash}` | Member; a Guest per §13 | — | `200` the bytes, or `206` one range: `Content-Type: application/pdf`, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable`, `Accept-Ranges: bytes`, `ETag: "<hash>"`, `Content-Length`; `Content-Range: bytes <first>-<last>/<size>` with `206`. `Range: bytes=a-b`, `bytes=a-` and `bytes=-n` are served (an end past the file is cut to it); several ranges, another unit or a malformed header give the whole file (`200`); a start at or past the end, or `-0`, is `416 range_not_satisfiable`. `If-Range` with another validator than the `ETag` gives the whole file; `If-None-Match` with it gives `304`. `HEAD` answers the headers alone. `404 file_missing` when the bytes are not here |
 | `PUT /api/files/pdf/{hash}/text` | Member | `{ "pages": ["text of page 1", …] }` exactly (no other key; strings), at most 20 MiB of body and 100 000 pages | `200 { stored: true }`, or `{ stored: false }` when the file already had its text: the first write wins and is never replaced. `404 file_missing` when the file is not stored, `413 too_large` over 20 MiB, `400 bad_request` for any other shape |
 | `GET /api/files/pdf/{hash}/text` | Member; a Guest per §13 | — | `200 { pages: string[] }` as first stored. `404 file_missing`, `404 no_text` |
 | `POST /api/sources/fetch-pdf` | Member | `{ "arxiv": "<id>" }` and no other key; an id in any form §17 takes (`arXiv:…`, an arxiv.org address, a version) | as `PUT /api/files/pdf` |
 | `GET /api/search/pdf?q=` | Member; a Guest searches only what §13 lets them read | — | `200 [{ hash, page, snippet }]` |
 
-**Fetching from arXiv** (decision 9): only on that request, the server asks `GET <QOOP_ARXIV_URL>/pdf/<id>` — the same base address as §17's lookup (`https://export.arxiv.org` by default, arXiv's address for programs, so the hosts the server ever calls stay the ones §14 and §17 name), the id percent-encoded as §17 encodes it, with `Accept: application/pdf` and the same client as §17 (generic `User-Agent`, no cookie, nothing about the Workspace or the person, no redirects followed, no proxy). arXiv has 30 s to answer and then 30 s for each next part of the body (`Config::pdf_fetch_timeout`, not read from the environment). Per Member at most 30 a minute, counted apart from lookups (`429 too_many_requests`; a refused request is not counted, nor a bad body, which sends nothing). Answers, each with a sentence that ends with what to do (try again, or download the PDF and attach it), never arXiv's own text:
+**Fetching from arXiv** (decision 9): only on that request, the server asks `GET <INFALL_ARXIV_URL>/pdf/<id>` — the same base address as §17's lookup (`https://export.arxiv.org` by default, arXiv's address for programs, so the hosts the server ever calls stay the ones §14 and §17 name), the id percent-encoded as §17 encodes it, with `Accept: application/pdf` and the same client as §17 (generic `User-Agent`, no cookie, nothing about the Workspace or the person, no redirects followed, no proxy). arXiv has 30 s to answer and then 30 s for each next part of the body (`Config::pdf_fetch_timeout`, not read from the environment). Per Member at most 30 a minute, counted apart from lookups (`429 too_many_requests`; a refused request is not counted, nor a bad body, which sends nothing). Answers, each with a sentence that ends with what to do (try again, or download the PDF and attach it), never arXiv's own text:
 
 | Status, code | When |
 |---|---|
 | `200` | stored, as `PUT /api/files/pdf` |
 | `400 bad_request` | the body is not `{ "arxiv": "<arXiv id>" }` |
 | `404 not_found` | arXiv answers `404` |
-| `413 too_large` | the PDF is over `QOOP_MAX_PDF_MB` (from its `Content-Length`, or as it arrives); nothing is stored |
+| `413 too_large` | the PDF is over `INFALL_MAX_PDF_MB` (from its `Content-Length`, or as it arrives); nothing is stored |
 | `502 fetch_failed` | arXiv could not be reached, answered with another error status or a redirect, took longer than above, broke off, or sent something that does not start with `%PDF-` |
 
 **Search** (decision 8): the stored text of every file is searched for `q` (trimmed, 1–200 characters, else `400 bad_request`), ignoring case (Unicode lowercase) and how white space runs (any run of white space in the text or in `q` matches any other, so words broken over a line are found). Plain substring matching over the stored pages, no index: SQLite's FTS5 is compiled into the bundled build, but its token matching is not this, and the text of a Workspace's PDFs is small enough to read through. One result per page that matches, by `hash`, then `page`; at most 50. `page` counts from 1. `snippet` is up to 200 characters of the page around the first match, white space collapsed. Files whose text is not stored, and scanned PDFs with no text, are simply not found. The web UI maps `hash` to the Sources of the Branch it shows.
@@ -794,11 +796,11 @@ Migrated in place from every earlier version as in §2. Three tables, outside th
 
 ### Workspace files
 
-Every Workspace file carries the stored PDFs and their text: `export_workspace` (and so `export_for_move` and the desktop app's backups), `GET /api/workspace/export` and `export-workspace`. Every import brings them: a Local file or a hand-copied database into a new Local Workspace (§17), a Team file into a Local Workspace (§19), any file onto an empty Team server (§19 — added to what the server already stores, never replacing it: a file the server has without text gets the file's text). They are content, not secrets: who stored a file and from where is not kept, and the stripping of §17 and §19 leaves them as they are. A Workspace file with many PDFs can pass `QOOP_MAX_IMPORT_MB` (512 MiB by default); raise it for such a move.
+Every Workspace file carries the stored PDFs and their text: `export_workspace` (and so `export_for_move` and the desktop app's backups), `GET /api/workspace/export` and `export-workspace`. Every import brings them: a Local file or a hand-copied database into a new Local Workspace (§17), a Team file into a Local Workspace (§19), any file onto an empty Team server (§19 — added to what the server already stores, never replacing it: a file the server has without text gets the file's text). They are content, not secrets: who stored a file and from where is not kept, and the stripping of §17 and §19 leaves them as they are. A Workspace file with many PDFs can pass `INFALL_MAX_IMPORT_MB` (512 MiB by default); raise it for such a move.
 
 A file exported without them (below) has none of the three tables' rows (`secure_delete` and `VACUUM` as in §17, so not a byte of them); its Sources still name their hashes, and `GET` of each is `404 file_missing` until the same file is attached again (same bytes, same hash: the Source is whole again with no edit).
 
-In `qoop_server::local`:
+In `infall_server::local`:
 
 ```rust
 pub struct ExportOptions { pub include_files: bool }   // Default: include_files = true
@@ -810,3 +812,12 @@ pub fn file_stats(db: &Path) -> Result<FileStats, PortError>;
 // X MB)"). Reads without changing anything, safe while it is open; a database from before
 // schema version 8 has none. `PortError::Io` when there is no database at `db`.
 ```
+
+## Names before the rename
+
+Until 0.9.0 was renamed in its code (CHANGELOG, 0.9.0), the server used the working name `qoop`. What servers, scripts and tokens made under it keeps working; nothing new is written under these names:
+
+- **Environment variables** (`infall_server::config::env_var`, used for every variable of §1 and `INFALL_ADMIN_PASSWORD`): `INFALL_X` is read; if it is unset or empty and `QOOP_X` is set, that value is used and one warning names `INFALL_X`. The same rule in `deploy/backup.sh`, `deploy/container/entrypoint.sh` (which exports the new name for the server it starts) and `scripts/package-linux.sh`.
+- **Access tokens** (§12): secrets made before the rename start with `qoop_pat_` and are still accepted on `/mcp` (`tokens::OLD_SECRET_PREFIX`); new ones start with `infall_pat_`.
+- **Stored formats: nothing to read.** The databases (every schema version, the fixtures `crates/server/tests/fixtures/v1…v7`), Workspace files (`PRAGMA application_id` is `0x496e6661`, "Infa", since it was introduced) and their settings rows never held the old name, so no format string changed.
+- Not kept: the session cookies (`qoop_session`, `qoop_session_<id>`, now `infall_session…`) and the request header (`X-Qoop-Request`, now `X-Infall-Request`): the web UI ships with the server, and people sign in again. The MCP server's name (`serverInfo.name`) is `infall`. A server installed under `/opt/qoop`, `/etc/qoop` or `/var/lib/qoop` is not looked for: `deploy/README.md`, "Upgrading from a pre-rename install".

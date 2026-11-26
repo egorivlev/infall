@@ -12,7 +12,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use qoop_proc::{Group, is_executable_file, own_process_group, own_session};
+use infall_proc::{Group, is_executable_file, own_process_group, own_session};
 
 pub use crate::settings::Interpreter;
 
@@ -27,7 +27,7 @@ const SHELL_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_CANDIDATES: usize = 12;
 
 #[cfg(unix)]
-const ENV_MARKER: &[u8] = b"\n__QOOP_ENV_BEGIN__\n";
+const ENV_MARKER: &[u8] = b"\n__INFALL_ENV_BEGIN__\n";
 
 /// Runs `command` to its end and returns whether it succeeded and what it printed (at most
 /// `limit` bytes). `None` if it could not be started or did not end within `timeout`; it
@@ -167,7 +167,7 @@ fn shell_env(shell: &Path, flags: &[&str]) -> Option<EnvVars> {
     let mut command = Command::new(shell);
     command
         .args(flags)
-        .arg("printf '\\n%s\\n' __QOOP_ENV_BEGIN__; exec /usr/bin/env -0")
+        .arg("printf '\\n%s\\n' __INFALL_ENV_BEGIN__; exec /usr/bin/env -0")
         .current_dir(std::env::temp_dir());
     let (ok, output) = capture(command, SHELL_TIMEOUT, 1 << 20, false, true)?;
     if !ok {
@@ -279,7 +279,7 @@ pub fn validate(path: &str, env: &EnvVars) -> Result<Interpreter, String> {
     }
 }
 
-const PROBE: &str = "import os,sys;v=sys.version_info;print('QOOP %d.%d.%d'%(v[0],v[1],v[2]));\
+const PROBE: &str = "import os,sys;v=sys.version_info;print('INFALL %d.%d.%d'%(v[0],v[1],v[2]));\
 print(sys.executable);print(os.path.realpath(sys.executable));print(sys.prefix)";
 
 /// Asks a candidate what it really is: the interpreter behind a shim or a link, its version,
@@ -292,8 +292,8 @@ fn probe(path: &Path, env: &EnvVars) -> Option<(Interpreter, String)> {
         return None;
     }
     let text = String::from_utf8(out).ok()?;
-    let mut lines = text.lines().skip_while(|l| !l.starts_with("QOOP "));
-    let version = parse_version(&lines.next()?.replacen("QOOP", "Python", 1))?;
+    let mut lines = text.lines().skip_while(|l| !l.starts_with("INFALL "));
+    let version = parse_version(&lines.next()?.replacen("INFALL", "Python", 1))?;
     let executable = lines.next()?.trim();
     let real = lines.next()?.trim();
     let prefix = lines.next()?.trim();
@@ -314,10 +314,10 @@ fn probe(path: &Path, env: &EnvVars) -> Option<(Interpreter, String)> {
 // (One line per `concat!` part: a `\` line continuation would eat the indentation.)
 const QSHARP_PROBE: &str = concat!(
     "import importlib.metadata as m, sys\n",
-    "print('QOOP %d.%d' % sys.version_info[:2])\n",
+    "print('INFALL %d.%d' % sys.version_info[:2])\n",
     "for d in ('qdk', 'qsharp'):\n",
     "    try:\n",
-    "        print('QOOP', d, m.version(d))\n",
+    "        print('INFALL', d, m.version(d))\n",
     "        break\n",
     "    except Exception:\n",
     "        pass\n",
@@ -336,7 +336,7 @@ pub fn qsharp_probe(path: &Path, env: &EnvVars) -> Result<crate::settings::Qshar
         .ok_or_else(|| {
             "The chosen Python did not answer. Check it in the list above.".to_owned()
         })?;
-    let mut lines = answer.lines().filter_map(|l| l.strip_prefix("QOOP "));
+    let mut lines = answer.lines().filter_map(|l| l.strip_prefix("INFALL "));
     let old = lines
         .next()
         .and_then(|v| v.split_once('.'))
@@ -605,7 +605,7 @@ mod tests {
 
     #[test]
     fn the_shells_environment_is_read_after_the_marker() {
-        let out = b"motd noise\nPATH=/wrong\0\n__QOOP_ENV_BEGIN__\nPATH=/a:/b\0HOME=/home/me\0MULTI=line one\nline two\0EMPTY=\0=odd\0noequals\0";
+        let out = b"motd noise\nPATH=/wrong\0\n__INFALL_ENV_BEGIN__\nPATH=/a:/b\0HOME=/home/me\0MULTI=line one\nline two\0EMPTY=\0=odd\0noequals\0";
         let vars = parse_env(out).unwrap();
         assert_eq!(env_value(&vars, "PATH"), Some(OsStr::new("/a:/b")));
         assert_eq!(env_value(&vars, "HOME"), Some(OsStr::new("/home/me")));
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(vars.len(), 4);
         // No marker, or no PATH after it: not an answer.
         assert!(parse_env(b"PATH=/a\0").is_none());
-        assert!(parse_env(b"\n__QOOP_ENV_BEGIN__\nHOME=/h\0").is_none());
+        assert!(parse_env(b"\n__INFALL_ENV_BEGIN__\nHOME=/h\0").is_none());
         assert!(parse_env(b"").is_none());
 
         let tidied = tidy(vec![
@@ -655,7 +655,7 @@ mod tests {
                 dir,
                 name,
                 &format!(
-                    "echo 'QOOP {version}'; echo '{0}'; echo '{0}'; echo '{prefix}'",
+                    "echo 'INFALL {version}'; echo '{0}'; echo '{0}'; echo '{prefix}'",
                     real.display()
                 ),
             )

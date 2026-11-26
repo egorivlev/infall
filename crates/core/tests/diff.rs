@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 #[test]
 fn diff_of_equal_boards_is_empty() {

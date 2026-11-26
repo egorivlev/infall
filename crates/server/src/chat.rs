@@ -19,7 +19,7 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
-use qoop_core::{EntityId, MemberId, Value as FieldValue};
+use infall_core::{EntityId, MemberId, Value as FieldValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;

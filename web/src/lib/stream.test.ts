@@ -119,7 +119,7 @@ describe('postEventStream', () => {
     const [path, init] = fetchSpy.mock.calls[0]!
     expect(path).toBe('/api/ai/chat')
     expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin', body: '{"messages":[{"role":"user","content":"Hi"}]}' })
-    expect(init!.headers).toMatchObject({ 'X-Qoop-Request': '1', 'Content-Type': 'application/json' })
+    expect(init!.headers).toMatchObject({ 'X-Infall-Request': '1', 'Content-Type': 'application/json' })
   })
   it('reads the same events through one-byte chunks', async () => {
     server.aiScript = [{ type: 'delta', text: 'π ≈ 3,14 🙂' }, { raw: ': ping\r\n' }, { type: 'tool', name: 'list_cards' }, { type: 'done' }]

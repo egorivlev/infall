@@ -113,11 +113,11 @@ export const searchUse = {
 }
 
 /**
- * `window.qoopDesktop.switchWorkspace` (docs/specs/local.md, Contract C): the same as the app's menu item
+ * `window.infallDesktop.switchWorkspace` (docs/specs/local.md, Contract C): the same as the app's menu item
  * "Switch Workspace…". An older app, and every browser, has none — so this is null and nothing may offer it.
  */
 export function desktopSwitchWorkspace(): (() => Promise<void>) | null {
-  const desktop = (globalThis as { qoopDesktop?: { switchWorkspace?: unknown } }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: { switchWorkspace?: unknown } }).infallDesktop
   if (typeof desktop !== 'object' || desktop === null) return null
   const fn = desktop.switchWorkspace
   return typeof fn === 'function' ? () => Promise.resolve((fn as () => Promise<void>).call(desktop)) : null
@@ -129,11 +129,11 @@ export function desktopSwitchWorkspace(): (() => Promise<void>) | null {
 type SaveFile = (file: { suggestedName: string; text: string }) => Promise<boolean>
 
 /**
- * `window.qoopDesktop.saveFile`: the system's save dialog, then the text written as UTF-8. Resolves false when the
+ * `window.infallDesktop.saveFile`: the system's save dialog, then the text written as UTF-8. Resolves false when the
  * person cancelled. A browser, and an app from before M13, has none — so this is null and the caller downloads.
  */
 export function desktopSaveFile(): SaveFile | null {
-  const desktop = (globalThis as { qoopDesktop?: { saveFile?: unknown } }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: { saveFile?: unknown } }).infallDesktop
   if (typeof desktop !== 'object' || desktop === null) return null
   const fn = desktop.saveFile
   return typeof fn === 'function' ? (file) => Promise.resolve((fn as SaveFile).call(desktop, file)).then((ok) => ok !== false) : null
@@ -144,9 +144,9 @@ export function desktopSaveFile(): SaveFile | null {
 
 type SaveBinaryFile = (file: { suggestedName: string; bytes: Uint8Array }) => Promise<boolean>
 
-/** `window.qoopDesktop.saveBinaryFile`: the save dialog, then the bytes as they are; false when cancelled. Null in a browser and an older app. */
+/** `window.infallDesktop.saveBinaryFile`: the save dialog, then the bytes as they are; false when cancelled. Null in a browser and an older app. */
 export function desktopSaveBinaryFile(): SaveBinaryFile | null {
-  const desktop = (globalThis as { qoopDesktop?: { saveBinaryFile?: unknown } }).qoopDesktop
+  const desktop = (globalThis as { infallDesktop?: { saveBinaryFile?: unknown } }).infallDesktop
   if (typeof desktop !== 'object' || desktop === null) return null
   const fn = desktop.saveBinaryFile
   return typeof fn === 'function' ? (file) => Promise.resolve((fn as SaveBinaryFile).call(desktop, file)).then((ok) => ok !== false) : null
@@ -161,7 +161,7 @@ export type DesktopMove = {
 }
 
 export function desktopMove(): DesktopMove | null {
-  const d = (globalThis as { qoopDesktop?: Record<string, unknown> }).qoopDesktop
+  const d = (globalThis as { infallDesktop?: Record<string, unknown> }).infallDesktop
   if (typeof d !== 'object' || d === null) return null
   const { moveHandover, moveFile, moveDone } = d
   if (typeof moveHandover !== 'function' || typeof moveFile !== 'function' || typeof moveDone !== 'function') return null

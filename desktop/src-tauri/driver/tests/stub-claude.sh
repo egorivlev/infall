@@ -1,10 +1,10 @@
 #!/bin/sh
-# A stand-in for `claude`, used by the driver's tests through QOOP_CLAUDE_BIN-style
+# A stand-in for `claude`, used by the driver's tests through INFALL_CLAUDE_BIN-style
 # selection (Driver::bin). It never talks to anything. It records how it was started in
-# $QOOP_STUB_DIR and prints the canned event stream chosen by $QOOP_STUB_MODE.
+# $INFALL_STUB_DIR and prints the canned event stream chosen by $INFALL_STUB_MODE.
 
-dir="${QOOP_STUB_DIR:?QOOP_STUB_DIR is not set}"
-mode="${QOOP_STUB_MODE:-answer}"
+dir="${INFALL_STUB_DIR:?INFALL_STUB_DIR is not set}"
+mode="${INFALL_STUB_MODE:-answer}"
 
 if [ "$1" = "--version" ]; then
   case "$mode" in
@@ -35,11 +35,11 @@ fi
 cat > "$dir/stdin"
 echo "$$" > "$dir/pid"
 
-init='{"type":"system","subtype":"init","session_id":"sess-42","model":"claude-stub-1","tools":["mcp__qoop__list_cards"],"mcp_servers":[{"name":"qoop","status":"connected"}]}'
+init='{"type":"system","subtype":"init","session_id":"sess-42","model":"claude-stub-1","tools":["mcp__infall__list_cards"],"mcp_servers":[{"name":"infall","status":"connected"}]}'
 d1='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Looking at "}}}'
 d2='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"the board."}}}'
-tool='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"mcp__qoop__list_cards","input":{}}}}'
-full='{"type":"assistant","session_id":"sess-42","message":{"model":"claude-stub-1","content":[{"type":"text","text":"Looking at the board."},{"type":"tool_use","id":"toolu_1","name":"mcp__qoop__list_cards","input":{}}]}}'
+tool='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"mcp__infall__list_cards","input":{}}}}'
+full='{"type":"assistant","session_id":"sess-42","message":{"model":"claude-stub-1","content":[{"type":"text","text":"Looking at the board."},{"type":"tool_use","id":"toolu_1","name":"mcp__infall__list_cards","input":{}}]}}'
 tres='{"type":"user","session_id":"sess-42","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[]"}]}}'
 b2='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}'
 d3='{"type":"stream_event","session_id":"sess-42","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"It is empty."}}}'

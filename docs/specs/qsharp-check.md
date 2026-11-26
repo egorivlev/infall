@@ -15,7 +15,7 @@ cd $Q/work && python3 -I $Q/scripts/harness.py $Q/venv/bin/python $Q/work $Q/scr
 # …each experiment as written above its output below
 ```
 
-`harness.py` starts a program the way the Runner does (`exec.rs`): `<python> -u -X utf8 <script> <file>`, standard input from `/dev/null`, its own process group, an environment given in full with `PYTHONUNBUFFERED`, `PYTHONIOENCODING`, `QOOP_RUN_DIR` (the working directory here). It prints each line with the time since start and the stream it came on (`out`, `err`, or `out+err` with `MERGED=1`: one pipe for both streams, exactly as the Runner reads it). Lines a stream delivered in pieces show `⏎` at the break. It sets `QDK_PYTHON_TELEMETRY=none` unless `TELEMETRY=on`.
+`harness.py` starts a program the way the Runner does (`exec.rs`): `<python> -u -X utf8 <script> <file>`, standard input from `/dev/null`, its own process group, an environment given in full with `PYTHONUNBUFFERED`, `PYTHONIOENCODING`, `INFALL_RUN_DIR` (the working directory here). It prints each line with the time since start and the stream it came on (`out`, `err`, or `out+err` with `MERGED=1`: one pipe for both streams, exactly as the Runner reads it). Lines a stream delivered in pieces show `⏎` at the break. It sets `QDK_PYTHON_TELEMETRY=none` unless `TELEMETRY=on`.
 
 Paths of the scratch folder are shortened to `$Q` in the outputs. Runs of `e2`–`e5` and the samples are shown without the timestamps, where they add nothing.
 
@@ -45,7 +45,7 @@ import time
 
 python, cwd, script, *args = sys.argv[1:]
 env = {k: os.environ[k] for k in ("PATH", "HOME", "USER", "LANG", "TMPDIR") if k in os.environ}
-env.update(MPLBACKEND="Agg", PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", QOOP_RUN_DIR=cwd)
+env.update(MPLBACKEND="Agg", PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", INFALL_RUN_DIR=cwd)
 # QS_HOME / QS_TMP: run the program with that HOME / TMPDIR (empty folders, to see what it writes there).
 if os.environ.get("QS_HOME"):
     env["HOME"] = os.environ["QS_HOME"]
@@ -907,7 +907,7 @@ def called_in_text(text, short):
 
 
 def write_env():
-    """qoop-env.json, as runner.py writes it: the Python, and the distribution that ran the code
+    """infall-env.json, as runner.py writes it: the Python, and the distribution that ran the code
     with its version as installed now."""
     import importlib.metadata
     import json
@@ -918,11 +918,11 @@ def write_env():
         info["packages"] = [[dist, importlib.metadata.version(dist)]]
     except Exception:
         pass
-    run_dir = os.environ.get("QOOP_RUN_DIR") or os.path.dirname(os.path.abspath(sys.argv[1]))
-    tmp = os.path.join(run_dir, "qoop-env.json.tmp")
+    run_dir = os.environ.get("INFALL_RUN_DIR") or os.path.dirname(os.path.abspath(sys.argv[1]))
+    tmp = os.path.join(run_dir, "infall-env.json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(info, f)
-    os.replace(tmp, os.path.join(run_dir, "qoop-env.json"))
+    os.replace(tmp, os.path.join(run_dir, "infall-env.json"))
 
 
 import atexit
@@ -1186,7 +1186,7 @@ Output (`runner_diff.txt`):
 
 Only three things differ: the measurement outcomes (random), one line that the pipe delivered in two pieces (`5⏎`), and the prefix of error codes (`Qsc.` instead of `Qdk.Qsc.`).
 
-What it writes as `qoop-env.json` (`QOOP_RUN_DIR` = `$Q/rundir`), on success and on failure:
+What it writes as `infall-env.json` (`INFALL_RUN_DIR` = `$Q/rundir`), on success and on failure:
 
 Output (`e13_env.txt`):
 
@@ -1446,8 +1446,8 @@ Output (`e7.txt`):
 == qdk 1.34.0, the runner
 [ 0.146s out+err] Bell pair prepared
 [ 0.146s out+err] (Zero, Zero)
-[ 0.155s out+err] AUDIT open '$Q/rundir/qoop-env.json.tmp
-[ 0.155s out+err] AUDIT os.rename ('$Q/rundir/qoop-env.js
+[ 0.155s out+err] AUDIT open '$Q/rundir/infall-env.json.tmp
+[ 0.155s out+err] AUDIT os.rename ('$Q/rundir/infall-env.js
 [ 0.177s    exit] 0
 ```
 
@@ -1465,8 +1465,8 @@ Output (`e7_128.txt`):
 == 1.28, the runner
 [ 0.138s out+err] Bell pair prepared
 [ 0.138s out+err] (Zero, Zero)
-[ 0.146s out+err] AUDIT open '$Q/rundir/qoop-env.json.tmp' mode 'w'
-[ 0.146s out+err] AUDIT os.rename ('$Q/rundir/qoop-env.json.tmp', '$Q…
+[ 0.146s out+err] AUDIT open '$Q/rundir/infall-env.json.tmp' mode 'w'
+[ 0.146s out+err] AUDIT os.rename ('$Q/rundir/infall-env.json.tmp', '$Q…
 [ 0.160s    exit] 0
 ```
 
@@ -1519,13 +1519,13 @@ cwd DIR $Q/work2
 [ 2.952s    exit] 0
 -- files new since the start in fake HOME, fake TMPDIR, cwd, venv:
 $Q/work2
-$Q/work2/qoop-env.json
+$Q/work2/infall-env.json
 -- qdk/qsharp/qsc/quantum names changed in the last 30 min in the real caches:
 (end)
 ```
 
 
-(`qoop-env.json` is in the working directory because the harness makes it the Run's directory.)
+(`infall-env.json` is in the working directory because the harness makes it the Run's directory.)
 
 ## 10. Time
 
@@ -1600,12 +1600,12 @@ The OS file cache cannot be emptied without root, so the "no bytecode cache" lin
 
 ## 11. Stopping
 
-As `qoop_proc::Group::terminate` does on macOS and Linux: SIGTERM to the process group, 500 ms, then SIGKILL.
+As `infall_proc::Group::terminate` does on macOS and Linux: SIGTERM to the process group, 500 ms, then SIGKILL.
 
 `e10_stop.py`:
 
 ```python
-"""Stops a running Q# program the way the Runner does on macOS/Linux (qoop_proc::Group::terminate):
+"""Stops a running Q# program the way the Runner does on macOS/Linux (infall_proc::Group::terminate):
 SIGTERM to its process group, 500 ms grace, then SIGKILL. Reports what ended it, its status,
 and whether anything of its group or in its folders is left. Also tries SIGINT for comparison.
     e10_stop.py <venv python> <cwd> <qsharp_runner.py> <main.qs> <fake tmp>

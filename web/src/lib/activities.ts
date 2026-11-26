@@ -362,7 +362,7 @@ export type ActivityShape = {
 }
 
 /**
- * The grouping rule of Activities without their words. The server has the same rule (`qoop_core::activities`,
+ * The grouping rule of Activities without their words. The server has the same rule (`infall_core::activities`,
  * behind `GET /api/graph`); both are checked against the shared fixture `docs/specs/branch-graph-activities.json`.
  *
  * - Consecutive `Edit` Changes by one author with no pause over `gapMs` between neighbours are one Activity

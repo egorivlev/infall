@@ -17,7 +17,7 @@
 #     "your laptop": the backup key is made there and never reaches "the VPS".
 #
 # The one deliberate difference from the guide: a rehearsal has no public name, so
-# Caddy cannot get a real certificate. The site is called qoop.test (it resolves only
+# Caddy cannot get a real certificate. The site is called infall.test (it resolves only
 # inside the container), one line `tls internal` is added to the guide's Caddyfile,
 # and every HTTPS check is made against Caddy's own local root certificate.
 #
@@ -26,9 +26,9 @@
 # rustup, crates.io). Passwords and the backup key are made inside the containers
 # at run time, are never printed, and go away with the containers.
 #
-# What it creates, all named qoop-rehearsal…:
-#   containers  qoop-rehearsal ("the VPS"), qoop-rehearsal-laptop, qoop-rehearsal-build
-#   volume      qoop-rehearsal-cargo   (Rust toolchain, crates, build output)
+# What it creates, all named infall-rehearsal…:
+#   containers  infall-rehearsal ("the VPS"), infall-rehearsal-laptop, infall-rehearsal-build
+#   volume      infall-rehearsal-cargo   (Rust toolchain, crates, build output)
 #   image       debian:bookworm        (pulled if this Docker does not have it)
 # What it leaves behind: the volume, so that the next run does not build everything
 # again, and nothing else. `--clean` removes the volume too. With `--keep` the "VPS"
@@ -46,10 +46,10 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-MACHINE=qoop-rehearsal
-LAPTOP=qoop-rehearsal-laptop
-BUILDER=qoop-rehearsal-build
-VOLUME=qoop-rehearsal-cargo
+MACHINE=infall-rehearsal
+LAPTOP=infall-rehearsal-laptop
+BUILDER=infall-rehearsal-build
+VOLUME=infall-rehearsal-cargo
 IMAGE=debian:bookworm
 # Free space below which a build into the volume is not started (KiB).
 MIN_FREE_KB=$((2500 * 1024))
@@ -164,7 +164,7 @@ build_server() {
 	local stamp
 	stamp="$(source_stamp)"
 	if docker run --rm -v "$VOLUME":/cargo -e STAMP="$stamp" "$IMAGE" \
-		sh -c '[ -x /cargo/out/qoop-server ] && [ "$(cat /cargo/out/stamp 2>/dev/null)" = "$STAMP" ]'; then
+		sh -c '[ -x /cargo/out/infall-server ] && [ "$(cat /cargo/out/stamp 2>/dev/null)" = "$STAMP" ]'; then
 		echo "The binary in $VOLUME was built from these sources; using it."
 		return 0
 	fi
@@ -196,9 +196,9 @@ build_server() {
 			fi
 			. /cargo/home/env
 			cd /src
-			cargo build --release --locked -p qoop-server
+			cargo build --release --locked -p infall-server
 			mkdir -p /cargo/out
-			cp "$CARGO_TARGET_DIR/release/qoop-server" /cargo/out/qoop-server
+			cp "$CARGO_TARGET_DIR/release/infall-server" /cargo/out/infall-server
 			printf "%s" "$STAMP" >/cargo/out/stamp
 		'
 }
@@ -230,7 +230,7 @@ start_machine() {
 	# sudo, and the right to start services when a package is installed.
 	# systemd needs --privileged here to set up the sandbox the units ask for.
 	docker run -d --name "$MACHINE" --hostname "$MACHINE" --privileged --cgroupns=private \
-		--tmpfs /run --tmpfs /run/lock --add-host qoop.test:127.0.0.1 \
+		--tmpfs /run --tmpfs /run/lock --add-host infall.test:127.0.0.1 \
 		--stop-signal SIGRTMIN+3 "$IMAGE" sh -c '
 			if [ ! -x /sbin/init ]; then
 				export DEBIAN_FRONTEND=noninteractive
@@ -249,7 +249,7 @@ start_machine() {
 	docker exec -i "$MACHINE" sh -c 'cat >/root/rehearsal/lib.sh' <<'LIB'
 # Helpers for the rehearsal's scripts on "the VPS". Sourced, not executed.
 R=/root/rehearsal
-ORIGIN=https://qoop.test
+ORIGIN=https://infall.test
 CA=/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
 
 ok() { printf 'ok    %s\n' "$1" >>"$R/results"; }
@@ -279,11 +279,11 @@ owner_mode() { stat -c '%U:%G %a' "$1"; }
 
 # api <cookie jar> <method> <path> [file with the JSON body]
 # Leaves the status in $STATUS and the response body in $R/body.
-# It sends what the page sends: the Origin and the X-Qoop-Request header.
+# It sends what the page sends: the Origin and the X-Infall-Request header.
 api() {
 	local jar="$1" method="$2" path="$3" body="${4:-}"
 	set -- -sS --cacert "$CA" -b "$jar" -c "$jar" -X "$method" -o "$R/body" -w '%{http_code}' \
-		-H "Origin: $ORIGIN" -H 'X-Qoop-Request: 1' -H 'Expect:'
+		-H "Origin: $ORIGIN" -H 'X-Infall-Request: 1' -H 'Expect:'
 	if [ -n "$body" ]; then
 		set -- "$@" -H 'Content-Type: application/json' --data-binary "@$body"
 	fi
@@ -316,12 +316,12 @@ LIB
 
 copy_outputs() {
 	say "Copy the outputs to the machine (guide 3b)"
-	# scp target/release/qoop-server …:/tmp/   ·   scp -r web/dist …:/tmp/qoop-web
-	# scp -r deploy …:/tmp/qoop-deploy
-	docker run --rm -v "$VOLUME":/cargo "$IMAGE" cat /cargo/out/qoop-server |
-		docker exec -i "$MACHINE" sh -c 'cat >/tmp/qoop-server'
-	docker cp "$REPO/web/dist" "$MACHINE":/tmp/qoop-web >/dev/null
-	docker cp "$REPO/deploy" "$MACHINE":/tmp/qoop-deploy >/dev/null
+	# scp target/release/infall-server …:/tmp/   ·   scp -r web/dist …:/tmp/infall-web
+	# scp -r deploy …:/tmp/infall-deploy
+	docker run --rm -v "$VOLUME":/cargo "$IMAGE" cat /cargo/out/infall-server |
+		docker exec -i "$MACHINE" sh -c 'cat >/tmp/infall-server'
+	docker cp "$REPO/web/dist" "$MACHINE":/tmp/infall-web >/dev/null
+	docker cp "$REPO/deploy" "$MACHINE":/tmp/infall-deploy >/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -336,37 +336,37 @@ set -uo pipefail
 following_guide
 
 STEP='2. Create the service user and directories'
-sudo adduser --system --group --no-create-home --home /nonexistent qoop >/dev/null 2>&1
-sudo install -d -o root -g root -m 755 /opt/qoop /opt/qoop/web
-sudo install -d -o qoop -g qoop -m 700 /var/lib/qoop
-sudo install -d -o qoop -g qoop -m 700 /var/backups/qoop
-sudo install -d -o root -g qoop -m 750 /etc/qoop
+sudo adduser --system --group --no-create-home --home /nonexistent infall >/dev/null 2>&1
+sudo install -d -o root -g root -m 755 /opt/infall /opt/infall/web
+sudo install -d -o infall -g infall -m 700 /var/lib/infall
+sudo install -d -o infall -g infall -m 700 /var/backups/infall
+sudo install -d -o root -g infall -m 750 /etc/infall
 
 STEP='3. Install the outputs'
-sudo install -o root -g root -m 755 /tmp/qoop-server /opt/qoop/qoop-server
-sudo cp -r /tmp/qoop-web/. /opt/qoop/web/
-sudo chown -R root:root /opt/qoop/web
+sudo install -o root -g root -m 755 /tmp/infall-server /opt/infall/infall-server
+sudo cp -r /tmp/infall-web/. /opt/infall/web/
+sudo chown -R root:root /opt/infall/web
 
 STEP='4. Configuration and the systemd service'
-cd /tmp/qoop-deploy
-sudo install -o root -g qoop -m 640 qoop.env.example /etc/qoop/qoop.env
-# "sudoedit /etc/qoop/qoop.env": set QOOP_PUBLIC_ORIGIN.
-sudo sed -i 's|^QOOP_PUBLIC_ORIGIN=.*|QOOP_PUBLIC_ORIGIN=https://qoop.test|' /etc/qoop/qoop.env
-sudo install -o root -g root -m 644 qoop.service /etc/systemd/system/qoop.service
+cd /tmp/infall-deploy
+sudo install -o root -g infall -m 640 infall.env.example /etc/infall/infall.env
+# "sudoedit /etc/infall/infall.env": set INFALL_PUBLIC_ORIGIN.
+sudo sed -i 's|^INFALL_PUBLIC_ORIGIN=.*|INFALL_PUBLIC_ORIGIN=https://infall.test|' /etc/infall/infall.env
+sudo install -o root -g root -m 644 infall.service /etc/systemd/system/infall.service
 sudo systemctl daemon-reload
-sudo systemctl enable qoop 2>/dev/null
+sudo systemctl enable infall 2>/dev/null
 
 STEP='5. Create the first Admin'
 # The guide types the password at a prompt. Nobody is here to type, so the
 # rehearsal makes one now and hands it over in the environment of this one
 # command: never as an argument, never in a file the server reads.
 new_password >"$R/admin-password"
-QOOP_ADMIN_PASSWORD="$(cat "$R/admin-password")"
-export QOOP_ADMIN_PASSWORD
-sudo --preserve-env=QOOP_ADMIN_PASSWORD -u qoop env QOOP_DB=/var/lib/qoop/qoop.db \
-	/opt/qoop/qoop-server create-admin --email admin@qoop.test --name "Rehearsal Admin"
-unset QOOP_ADMIN_PASSWORD
-sudo chmod 600 /var/lib/qoop/qoop.db
+INFALL_ADMIN_PASSWORD="$(cat "$R/admin-password")"
+export INFALL_ADMIN_PASSWORD
+sudo --preserve-env=INFALL_ADMIN_PASSWORD -u infall env INFALL_DB=/var/lib/infall/infall.db \
+	/opt/infall/infall-server create-admin --email admin@infall.test --name "Rehearsal Admin"
+unset INFALL_ADMIN_PASSWORD
+sudo chmod 600 /var/lib/infall/infall.db
 
 STEP='6. Install Caddy and start everything'
 {
@@ -380,10 +380,10 @@ STEP='6. Install Caddy and start everything'
 	sudo apt-get install -y caddy
 } >>"$R/apt.log" 2>&1
 # The guide's Caddyfile with the rehearsal's name, plus the one allowed line.
-sed 's/qoop\.example\.org/qoop.test/g' Caddyfile | sed '/^qoop\.test {$/a\	tls internal' |
+sed 's/infall\.example\.org/infall.test/g' Caddyfile | sed '/^infall\.test {$/a\	tls internal' |
 	sudo tee /etc/caddy/Caddyfile >/dev/null
 sudo caddy validate --config /etc/caddy/Caddyfile >>"$R/apt.log" 2>&1
-sudo systemctl start qoop
+sudo systemctl start infall
 sudo systemctl reload caddy
 
 STEP='waiting for the first HTTPS answer'
@@ -405,10 +405,10 @@ check_deployment() {
 . /root/rehearsal/lib.sh
 set -uo pipefail
 
-check 'qoop.service is active' is "$(systemctl is-active qoop)" active
-check 'qoop.service is enabled (starts with the machine)' is "$(systemctl is-enabled qoop)" enabled
-PID="$(systemctl show -p MainPID --value qoop)"
-check 'the server runs under the account qoop' is "$(stat -c '%U:%G' "/proc/$PID")" qoop:qoop
+check 'infall.service is active' is "$(systemctl is-active infall)" active
+check 'infall.service is enabled (starts with the machine)' is "$(systemctl is-enabled infall)" enabled
+PID="$(systemctl show -p MainPID --value infall)"
+check 'the server runs under the account infall' is "$(stat -c '%U:%G' "/proc/$PID")" infall:infall
 check 'caddy.service is active' is "$(systemctl is-active caddy)" active
 
 check '/api/health over HTTPS answers {"ok":true}' health_ok
@@ -420,26 +420,26 @@ check 'header: x-content-type-options: nosniff' grep -qx 'x-content-type-options
 check 'header: referrer-policy: same-origin' grep -qx 'referrer-policy: same-origin' "$R/head"
 check "header: content-security-policy on the page" grep -q "^content-security-policy: default-src 'self'" "$R/head"
 
-curl -sS -I "http://qoop.test/" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' >"$R/head"
-redirects() { grep -q '^http/1.1 30[18]' "$R/head" && grep -qx 'location: https://qoop.test/' "$R/head"; }
+curl -sS -I "http://infall.test/" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' >"$R/head"
+redirects() { grep -q '^http/1.1 30[18]' "$R/head" && grep -qx 'location: https://infall.test/' "$R/head"; }
 check 'plain HTTP is redirected to https://' redirects
 
-check '/var/lib/qoop is qoop:qoop, mode 700' is "$(owner_mode /var/lib/qoop)" 'qoop:qoop 700'
-check 'the database file is qoop:qoop, mode 600' is "$(owner_mode /var/lib/qoop/qoop.db)" 'qoop:qoop 600'
+check '/var/lib/infall is infall:infall, mode 700' is "$(owner_mode /var/lib/infall)" 'infall:infall 700'
+check 'the database file is infall:infall, mode 600' is "$(owner_mode /var/lib/infall/infall.db)" 'infall:infall 600'
 others_cannot_read() {
 	local f
-	for f in /var/lib/qoop/qoop.db*; do
+	for f in /var/lib/infall/infall.db*; do
 		case "$(stat -c '%a' "$f")" in 600) ;; *) return 1 ;; esac
 	done
 }
 check 'the database companions (-wal, -shm) are mode 600 too' others_cannot_read
-check '/etc/qoop/qoop.env is root:qoop, mode 640' is "$(owner_mode /etc/qoop/qoop.env)" 'root:qoop 640'
-check '/etc/qoop is root:qoop, mode 750' is "$(owner_mode /etc/qoop)" 'root:qoop 750'
-check '/opt/qoop is root:root, mode 755' is "$(owner_mode /opt/qoop)" 'root:root 755'
-check '/opt/qoop/qoop-server is root:root, mode 755' is "$(owner_mode /opt/qoop/qoop-server)" 'root:root 755'
-nothing_of_qoop() { [ -z "$(find /opt/qoop \( ! -user root -o ! -group root -o -perm /022 \) -print | head -n 1)" ]; }
-check 'nothing under /opt/qoop belongs to, or is writable by, anyone but root' nothing_of_qoop
-check '/var/backups/qoop is qoop:qoop, mode 700' is "$(owner_mode /var/backups/qoop)" 'qoop:qoop 700'
+check '/etc/infall/infall.env is root:infall, mode 640' is "$(owner_mode /etc/infall/infall.env)" 'root:infall 640'
+check '/etc/infall is root:infall, mode 750' is "$(owner_mode /etc/infall)" 'root:infall 750'
+check '/opt/infall is root:root, mode 755' is "$(owner_mode /opt/infall)" 'root:root 755'
+check '/opt/infall/infall-server is root:root, mode 755' is "$(owner_mode /opt/infall/infall-server)" 'root:root 755'
+nothing_of_infall() { [ -z "$(find /opt/infall \( ! -user root -o ! -group root -o -perm /022 \) -print | head -n 1)" ]; }
+check 'nothing under /opt/infall belongs to, or is writable by, anyone but root' nothing_of_infall
+check '/var/backups/infall is infall:infall, mode 700' is "$(owner_mode /var/backups/infall)" 'infall:infall 700'
 
 # The sandbox the unit declares, read from the running process.
 status_has() { grep -Eq "^$1:[[:space:]]*$2\$" "/proc/$PID/status"; }
@@ -448,9 +448,9 @@ check 'sandbox: the system call filter is on (SystemCallFilter)' status_has Secc
 check 'sandbox: the server holds no capabilities (CapabilityBoundingSet)' status_has CapBnd 0000000000000000
 mount_options() { awk -v at="$1" '$5 == at { print $6 }' "/proc/$PID/mountinfo" | tail -n 1; }
 root_read_only() { case "$(mount_options /)" in ro | ro,*) return 0 ;; *) return 1 ;; esac; }
-data_writable() { case "$(mount_options /var/lib/qoop)" in rw | rw,*) return 0 ;; *) return 1 ;; esac; }
+data_writable() { case "$(mount_options /var/lib/infall)" in rw | rw,*) return 0 ;; *) return 1 ;; esac; }
 check 'sandbox: the server sees the system read-only (ProtectSystem=strict)' root_read_only
-check 'sandbox: the server can write to /var/lib/qoop' data_writable
+check 'sandbox: the server can write to /var/lib/infall' data_writable
 own_namespace() { [ "$(readlink "/proc/$PID/ns/mnt")" != "$(readlink /proc/1/ns/mnt)" ]; }
 check 'sandbox: the server has its own view of the file system' own_namespace
 
@@ -459,11 +459,11 @@ ADDRESS="$(hostname -I | cut -d' ' -f1)"
 not_reachable() { ! curl -s -m 3 -o /dev/null "http://$ADDRESS:8787/api/health"; }
 check "the server listens on 127.0.0.1 only (not on $ADDRESS:8787)" not_reachable
 
-sudo systemctl restart qoop
-back() { wait_for_health && [ "$(systemctl is-active qoop)" = active ]; }
-check 'after "systemctl restart qoop" the server is active and healthy again' back
-check 'the journal of qoop.service has no error lines' sh -c '! journalctl -q -u qoop --no-pager -p err | grep -q .'
-note "systemd-analyze security qoop:$(systemd-analyze security qoop --no-pager 2>/dev/null | tail -n 1 | sed 's/.*qoop.service://; s/ [^ ]*$//')"
+sudo systemctl restart infall
+back() { wait_for_health && [ "$(systemctl is-active infall)" = active ]; }
+check 'after "systemctl restart infall" the server is active and healthy again' back
+check 'the journal of infall.service has no error lines' sh -c '! journalctl -q -u infall --no-pager -p err | grep -q .'
+note "systemd-analyze security infall:$(systemd-analyze security infall --no-pager 2>/dev/null | tail -n 1 | sed 's/.*infall.service://; s/ [^ ]*$//')"
 exit 0
 EOF
 }
@@ -478,19 +478,19 @@ first_day() {
 . /root/rehearsal/lib.sh
 set -uo pipefail
 
-login "$R/admin.jar" admin@qoop.test "$R/admin-password"
+login "$R/admin.jar" admin@infall.test "$R/admin-password"
 check 'the Admin signs in' is "$STATUS" 200
 body_id >"$R/admin-id"
 
-printf '{"email":"member@qoop.test","role":"member"}' >"$R/req"
+printf '{"email":"member@infall.test","role":"member"}' >"$R/req"
 api "$R/admin.jar" POST /api/invites "$R/req"
 check 'the Admin creates an invite for a Member' is "$STATUS" 200
-check 'the invite link starts with the public address' body_has '"url":"https://qoop.test/invite/'
-sed -n 's|.*"url":"https://qoop.test/invite/\([^"]*\)".*|\1|p' "$R/body" >"$R/invite-token"
+check 'the invite link starts with the public address' body_has '"url":"https://infall.test/invite/'
+sed -n 's|.*"url":"https://infall.test/invite/\([^"]*\)".*|\1|p' "$R/body" >"$R/invite-token"
 TOKEN="$(cat "$R/invite-token")"
 
 api "$R/nobody.jar" GET "/api/invites/lookup?token=$TOKEN"
-opens() { [ "$STATUS" = 200 ] && body_has '"email":"member@qoop.test"' && body_has '"role":"member"'; }
+opens() { [ "$STATUS" = 200 ] && body_has '"email":"member@infall.test"' && body_has '"role":"member"'; }
 check 'the invite link opens: it names the email and the role' opens
 
 new_password >"$R/member-password"
@@ -510,7 +510,7 @@ check 'the refused second use signed nobody in' is "$STATUS" 401
 api "$R/nobody.jar" GET "/api/invites/lookup?token=$TOKEN"
 check 'the used invite link no longer opens (410)' is "$STATUS" 410
 
-login "$R/member.jar" member@qoop.test "$R/member-password"
+login "$R/member.jar" member@infall.test "$R/member-password"
 check 'the new Member signs in with their own password' is "$STATUS" 200
 
 api "$R/member.jar" GET /api/branches
@@ -529,7 +529,7 @@ api "$R/admin.jar" GET "/api/branches/$BRANCH/changes?after=0"
 by_member() { [ "$STATUS" = 200 ] && body_has "\"author\":\"$(cat "$R/member-id")\""; }
 check 'the Change is recorded under the new Member' by_member
 api "$R/admin.jar" GET /api/members
-check 'the Admin sees the new Member in the list' body_has '"email":"member@qoop.test"'
+check 'the Admin sees the new Member in the list' body_has '"email":"member@infall.test"'
 exit 0
 EOF
 }
@@ -629,9 +629,9 @@ check "a request of $SIZE bytes to another route is refused (413)" is "$STATUS" 
 # The limits are the server's own: asked directly, without Caddy, it refuses the
 # same requests (with 400 "The request body is too large.").
 # (The cookie is marked Secure, so curl would not send it over plain HTTP by itself.)
-awk '$6 == "qoop_session" { print "Cookie: qoop_session=" $7 }' "$R/admin.jar" >"$R/cookie-header"
+awk '$6 == "infall_session" { print "Cookie: infall_session=" $7 }' "$R/admin.jar" >"$R/cookie-header"
 direct() {
-	curl -sS -o "$R/body" -w '%{http_code}' -X POST -H "@$R/cookie-header" -H "Origin: $ORIGIN" -H 'X-Qoop-Request: 1' \
+	curl -sS -o "$R/body" -w '%{http_code}' -X POST -H "@$R/cookie-header" -H "Origin: $ORIGIN" -H 'X-Infall-Request: 1' \
 		-H 'Content-Type: application/json' -H 'Expect:' --data-binary "@$2" "http://127.0.0.1:8787$1" 2>/dev/null
 }
 printf '{"owner":"%s","text":"asked directly"}' "$ADMIN" >"$R/small"
@@ -656,7 +656,7 @@ check_backup_on_laptop() {
 	in_laptop -e NAME="$1" <<'EOF'
 set -euo pipefail
 cd /root/laptop
-age -d -i qoop-backup-key.txt "$NAME" | gunzip >restored.db
+age -d -i infall-backup-key.txt "$NAME" | gunzip >restored.db
 sqlite3 restored.db 'PRAGMA integrity_check;'
 EOF
 }
@@ -672,10 +672,10 @@ apt-get install -y -qq age sqlite3 >/dev/null 2>&1
 install -d -m 700 /root/laptop
 cd /root/laptop
 umask 077
-age-keygen -o qoop-backup-key.txt 2>/dev/null
+age-keygen -o infall-backup-key.txt 2>/dev/null
 EOF
 	local recipient
-	recipient="$(docker exec "$LAPTOP" age-keygen -y /root/laptop/qoop-backup-key.txt)"
+	recipient="$(docker exec "$LAPTOP" age-keygen -y /root/laptop/infall-backup-key.txt)"
 
 	say "Backup with the guide's unit (guide 9.2)"
 	in_machine -e AGE_RECIPIENT="$recipient" <<'EOF'
@@ -684,30 +684,30 @@ set -uo pipefail
 following_guide
 
 STEP='9.2 Backups on the VPS'
-cd /tmp/qoop-deploy
+cd /tmp/infall-deploy
 sudo apt-get install -y sqlite3 age >>"$R/apt.log" 2>&1
-sudo install -o root -g root -m 755 backup.sh /opt/qoop/backup.sh
-sudo install -o root -g root -m 644 qoop-backup.service qoop-backup.timer /etc/systemd/system/
-# "sudoedit /etc/qoop/qoop.env": set QOOP_BACKUP_AGE_RECIPIENT.
-sudo sed -i "s|^QOOP_BACKUP_AGE_RECIPIENT=.*|QOOP_BACKUP_AGE_RECIPIENT=$AGE_RECIPIENT|" /etc/qoop/qoop.env
+sudo install -o root -g root -m 755 backup.sh /opt/infall/backup.sh
+sudo install -o root -g root -m 644 infall-backup.service infall-backup.timer /etc/systemd/system/
+# "sudoedit /etc/infall/infall.env": set INFALL_BACKUP_AGE_RECIPIENT.
+sudo sed -i "s|^INFALL_BACKUP_AGE_RECIPIENT=.*|INFALL_BACKUP_AGE_RECIPIENT=$AGE_RECIPIENT|" /etc/infall/infall.env
 sudo systemctl daemon-reload
-sudo systemctl enable --now qoop-backup.timer 2>/dev/null
-sudo systemctl start qoop-backup.service
+sudo systemctl enable --now infall-backup.timer 2>/dev/null
+sudo systemctl start infall-backup.service
 checking
 
-check '/etc/qoop/qoop.env is still root:qoop, mode 640 after editing' is "$(owner_mode /etc/qoop/qoop.env)" 'root:qoop 640'
-check 'qoop-backup.timer is enabled' is "$(systemctl is-enabled qoop-backup.timer)" enabled
-check 'qoop-backup.timer is waiting for its next time' is "$(systemctl is-active qoop-backup.timer)" active
-check 'qoop-backup.service ran and succeeded' is "$(systemctl show -p Result --value qoop-backup.service)" success
-note "systemd-analyze security qoop-backup:$(systemd-analyze security qoop-backup --no-pager 2>/dev/null | tail -n 1 | sed 's/.*qoop-backup.service://; s/ [^ ]*$//')"
-check 'its journal says which file it wrote' sh -c 'journalctl -u qoop-backup --no-pager | grep -q "qoop-backup: wrote /var/backups/qoop/qoop-"'
-ls /var/backups/qoop/qoop-*.db.gz.age 2>/dev/null | tail -n 1 >"$R/backup-file"
+check '/etc/infall/infall.env is still root:infall, mode 640 after editing' is "$(owner_mode /etc/infall/infall.env)" 'root:infall 640'
+check 'infall-backup.timer is enabled' is "$(systemctl is-enabled infall-backup.timer)" enabled
+check 'infall-backup.timer is waiting for its next time' is "$(systemctl is-active infall-backup.timer)" active
+check 'infall-backup.service ran and succeeded' is "$(systemctl show -p Result --value infall-backup.service)" success
+note "systemd-analyze security infall-backup:$(systemd-analyze security infall-backup --no-pager 2>/dev/null | tail -n 1 | sed 's/.*infall-backup.service://; s/ [^ ]*$//')"
+check 'its journal says which file it wrote' sh -c 'journalctl -u infall-backup --no-pager | grep -q "infall-backup: wrote /var/backups/infall/infall-"'
+ls /var/backups/infall/infall-*.db.gz.age 2>/dev/null | tail -n 1 >"$R/backup-file"
 BACKUP="$(cat "$R/backup-file")"
-check 'there is one backup file named qoop-<time>.db.gz.age' is "$(ls /var/backups/qoop | wc -l)" 1
-check 'the backup file is qoop:qoop, mode 600' is "$(owner_mode "$BACKUP")" 'qoop:qoop 600'
+check 'there is one backup file named infall-<time>.db.gz.age' is "$(ls /var/backups/infall | wc -l)" 1
+check 'the backup file is infall:infall, mode 600' is "$(owner_mode "$BACKUP")" 'infall:infall 600'
 check 'the backup file is age-encrypted' sh -c "head -c 21 '$BACKUP' | grep -q '^age-encryption.org/v1'"
-check 'the backup left no temporary files behind' sh -c '[ -z "$(find /var/backups/qoop -name ".tmp.*" -print)" ]'
-check 'no private key is on the machine' sh -c '! grep -rqs "AGE-SECRET-KEY" /etc/qoop /opt/qoop /var/backups/qoop /root /tmp'
+check 'the backup left no temporary files behind' sh -c '[ -z "$(find /var/backups/infall -name ".tmp.*" -print)" ]'
+check 'no private key is on the machine' sh -c '! grep -rqs "AGE-SECRET-KEY" /etc/infall /opt/infall /var/backups/infall /root /tmp'
 check 'the server stayed up during the backup' health_ok
 
 # Something made after the backup: a restore must not bring it back.
@@ -723,7 +723,7 @@ EOF
 	local backup name
 	backup="$(docker exec "$MACHINE" cat /root/rehearsal/backup-file)"
 	name="$(basename "$backup")"
-	# scp you@…:/var/backups/qoop/qoop-TIMESTAMP.db.gz.age .
+	# scp you@…:/var/backups/infall/infall-TIMESTAMP.db.gz.age .
 	docker exec "$MACHINE" cat "$backup" | docker exec -i "$LAPTOP" sh -c "cat >/root/laptop/$name"
 	local verdict
 	verdict="$(check_backup_on_laptop "$name")" || verdict="failed"
@@ -738,12 +738,12 @@ EOF
 	in_machine <<'EOF'
 . /root/rehearsal/lib.sh
 set -uo pipefail
-sudo systemctl stop qoop
-sudo rm -f /var/lib/qoop/qoop.db-wal /var/lib/qoop/qoop.db-shm
+sudo systemctl stop infall
+sudo rm -f /var/lib/infall/infall.db-wal /var/lib/infall/infall.db-shm
 # What is left is not a database any more: the same size of random bytes.
-SIZE="$(stat -c %s /var/lib/qoop/qoop.db)"
-head -c "$SIZE" /dev/urandom | sudo -u qoop tee /var/lib/qoop/qoop.db >/dev/null
-sudo systemctl start qoop
+SIZE="$(stat -c %s /var/lib/infall/infall.db)"
+head -c "$SIZE" /dev/urandom | sudo -u infall tee /var/lib/infall/infall.db >/dev/null
+sudo systemctl start infall
 sleep 3
 down() { ! health_ok; }
 check 'with the database destroyed the server does not answer' down
@@ -759,20 +759,20 @@ set -uo pipefail
 following_guide
 
 STEP='Test a restore, B'
-sudo systemctl stop qoop
-sudo mv /var/lib/qoop/qoop.db /var/lib/qoop/qoop.db.before-restore
-sudo rm -f /var/lib/qoop/qoop.db-wal /var/lib/qoop/qoop.db-shm
-sudo install -o qoop -g qoop -m 600 /tmp/restored.db /var/lib/qoop/qoop.db
+sudo systemctl stop infall
+sudo mv /var/lib/infall/infall.db /var/lib/infall/infall.db.before-restore
+sudo rm -f /var/lib/infall/infall.db-wal /var/lib/infall/infall.db-shm
+sudo install -o infall -g infall -m 600 /tmp/restored.db /var/lib/infall/infall.db
 sudo rm /tmp/restored.db
-sudo systemctl start qoop
+sudo systemctl start infall
 checking
 
-back() { wait_for_health && [ "$(systemctl is-active qoop)" = active ]; }
+back() { wait_for_health && [ "$(systemctl is-active infall)" = active ]; }
 check 'after the restore the server is active and healthy' back
-check 'the restored database file is qoop:qoop, mode 600' is "$(owner_mode /var/lib/qoop/qoop.db)" 'qoop:qoop 600'
+check 'the restored database file is infall:infall, mode 600' is "$(owner_mode /var/lib/infall/infall.db)" 'infall:infall 600'
 
 BRANCH="$(cat "$R/branch-id")"
-login "$R/admin-after.jar" admin@qoop.test "$R/admin-password"
+login "$R/admin-after.jar" admin@infall.test "$R/admin-password"
 check 'the Admin signs in after the restore' is "$STATUS" 200
 api "$R/admin-after.jar" GET "/api/branches/$BRANCH/board"
 card_back() { [ "$STATUS" = 200 ] && body_has "$(cat "$R/card-id")" && body_has 'Card made before the backup'; }
@@ -785,8 +785,8 @@ check 'restored: the Runs with their results' runs_back
 check 'restored: the Card the Member made on the first day' body_has "$(cat "$R/member-card-id")"
 check 'what was made after the backup is gone, as the guide says' late_gone
 api "$R/admin-after.jar" GET /api/members
-check 'restored: the second Member' body_has '"email":"member@qoop.test"'
-login "$R/member-after.jar" member@qoop.test "$R/member-password"
+check 'restored: the second Member' body_has '"email":"member@infall.test"'
+login "$R/member-after.jar" member@infall.test "$R/member-password"
 check 'the second Member signs in after the restore' is "$STATUS" 200
 exit 0
 EOF
@@ -803,10 +803,10 @@ restart_machine() {
 	in_machine <<'EOF'
 . /root/rehearsal/lib.sh
 set -uo pipefail
-came_back() { wait_for_health && [ "$(systemctl is-active qoop)" = active ] && [ "$(systemctl is-active caddy)" = active ]; }
+came_back() { wait_for_health && [ "$(systemctl is-active infall)" = active ] && [ "$(systemctl is-active caddy)" = active ]; }
 check 'after a restart of the machine Infall and Caddy start by themselves and answer' came_back
-check 'after a restart of the machine the backup timer is waiting again' is "$(systemctl is-active qoop-backup.timer)" active
-login "$R/admin-reboot.jar" admin@qoop.test "$R/admin-password"
+check 'after a restart of the machine the backup timer is waiting again' is "$(systemctl is-active infall-backup.timer)" active
+login "$R/admin-reboot.jar" admin@infall.test "$R/admin-password"
 check 'the Admin signs in after the restart of the machine' is "$STATUS" 200
 exit 0
 EOF

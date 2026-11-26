@@ -45,11 +45,11 @@ vi.mock('../../lib', async (orig) => {
     invites: {
       lookup: (token: string) => h.lookup(token),
       list: async () => h.pending,
-      create: async () => ({ invite: {}, url: 'https://qoop.test/invite/T' }),
+      create: async () => ({ invite: {}, url: 'https://infall.test/invite/T' }),
       remove: async () => {},
     },
     tokens: { list: async () => [], create: async () => ({}), remove: async () => {} },
-    toolEndpoint: () => 'https://qoop.test/mcp',
+    toolEndpoint: () => 'https://infall.test/mcp',
   }
 })
 

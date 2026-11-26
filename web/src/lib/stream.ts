@@ -74,7 +74,7 @@ export async function* postEventStream(path: string, body: unknown, signal?: Abo
     try {
       res = await fetch(path, {
         method: 'POST',
-        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json', 'X-Qoop-Request': '1' },
+        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json', 'X-Infall-Request': '1' },
         body: JSON.stringify(body),
         credentials: 'same-origin',
         signal: control.signal,

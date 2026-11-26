@@ -2,17 +2,19 @@
 #
 # Started by the Infall desktop app as
 #     <python> -u -X utf8 runner.py <main.py>
-# with QOOP_RUN_DIR set to the Run's temporary directory. Standard library only; works on
+# with INFALL_RUN_DIR (and, as before the rename, QOOP_RUN_DIR) set to the Run's temporary
+# directory. Standard library only; works on
 # Python 3.8 and newer.
 #
-# It makes a module `qoop` importable by the code (qoop.step, qoop.progress: what the code
-# says it is doing and how far it is, written to qoop-progress.json for the app to read),
+# It makes a module `infall` importable by the code (infall.step, infall.progress: what the code
+# says it is doing and how far it is, written to infall-progress.json for the app to read),
+# also under its name before the rename, `qoop`, for code saved in a Workspace before it,
 # runs the code as __main__, then saves the matplotlib figures that are still open (only
-# if the code imported matplotlib.pyplot) and writes qoop-env.json: the Python version, the
+# if the code imported matplotlib.pyplot) and writes infall-env.json: the Python version, the
 # versions of the packages the code imports, and the names of the figure files.
 #
 # Nothing in here may hide the program's own output or change its exit code: every step of
-# its own is guarded, and its own messages are single lines starting with "[qoop]".
+# its own is guarded, and its own messages are single lines starting with "[infall]".
 
 import sys
 
@@ -20,8 +22,11 @@ MAX_FIGURES = 3
 MAX_FIGURE_BYTES = 120000  # 160 000 base64 characters
 MAX_PACKAGES = 32
 MIN_DPI = 12.0
-ENV_FILE = "qoop-env.json"
-SAID_FILE = "qoop-progress.json"
+ENV_FILE = "infall-env.json"
+SAID_FILE = "infall-progress.json"
+# The names before the rename (docs/specs/desktop.md, "Names before the rename").
+OLD_MODULE = "qoop"
+OLD_RUN_DIR_ENV = "QOOP_RUN_DIR"
 SAID_INTERVAL = 0.2  # seconds between two writes of it: about five a second
 MAX_STEP = 120
 
@@ -40,7 +45,7 @@ def _note(text):
         import os
 
         _flush()
-        os.write(2, ("[qoop] " + text + "\n").encode("utf-8", "replace"))
+        os.write(2, ("[infall] " + text + "\n").encode("utf-8", "replace"))
     except BaseException:
         pass
 
@@ -105,7 +110,7 @@ def _run(main_path):
     module.__file__ = main_path
     module.__spec__ = None
     # Keep this file's own module alive under another name: its functions are still needed.
-    sys.modules["__qoop_runner__"] = sys.modules["__main__"]
+    sys.modules["__infall_runner__"] = sys.modules["__main__"]
     sys.modules["__main__"] = module
     sys.argv = [main_path]
     # As for any script: the working directory first on the import path, not this file's.
@@ -133,8 +138,8 @@ def _run(main_path):
     return source, 0
 
 
-def _make_qoop(run_dir):
-    """The module `qoop` the code can import. Returns (module, flush); flush writes what was
+def _make_infall(run_dir):
+    """The module `infall` the code can import. Returns (module, flush); flush writes what was
     said last if that has not been written yet.
 
     Its functions never raise and never print, whatever they are given: a value that makes
@@ -158,7 +163,7 @@ def _make_qoop(run_dir):
     def write():
         state["dirty"] = False
         state["written"] = clock()
-        # Its own name per process: a child process of the code may call qoop too.
+        # Its own name per process: a child process of the code may call infall too.
         temporary = "%s.%d.tmp" % (path, getpid())
         with open_(temporary, "w", encoding="utf-8") as handle:
             handle.write(dumps(said, allow_nan=False))
@@ -276,7 +281,7 @@ def _make_qoop(run_dir):
         except BaseException:
             pass
 
-    module = types.ModuleType("qoop", "What a Run's code can tell Infall while it runs: step(text), progress(done, total).")
+    module = types.ModuleType("infall", "What a Run's code can tell Infall while it runs: step(text), progress(done, total).")
     module.step = step
     module.progress = progress
     module.__all__ = ["step", "progress"]
@@ -294,7 +299,7 @@ def _save_figures(run_dir):
     numbers = list(pyplot.get_fignums())
     saved = []
     for position, number in enumerate(numbers[:MAX_FIGURES], 1):
-        name = "qoop-figure-%d.png" % (len(saved) + 1)
+        name = "infall-figure-%d.png" % (len(saved) + 1)
         path = os.path.join(run_dir, name)
         try:
             figure = pyplot.figure(number)
@@ -507,7 +512,11 @@ def _main():
     import os
 
     main_path = sys.argv[1]
-    run_dir = os.environ.get("QOOP_RUN_DIR") or os.path.dirname(os.path.abspath(main_path))
+    run_dir = (
+        os.environ.get("INFALL_RUN_DIR")
+        or os.environ.get(OLD_RUN_DIR_ENV)
+        or os.path.dirname(os.path.abspath(main_path))
+    )
     try:
         import warnings
 
@@ -518,9 +527,12 @@ def _main():
 
     flush_said = None
     try:
-        sys.modules["qoop"], flush_said = _make_qoop(run_dir)
+        sys.modules["infall"], flush_said = _make_infall(run_dir)
+        # The same module under its name before the rename: `import qoop` keeps working.
+        sys.modules[OLD_MODULE] = sys.modules["infall"]
     except BaseException:
-        sys.modules.pop("qoop", None)
+        sys.modules.pop("infall", None)
+        sys.modules.pop(OLD_MODULE, None)
 
     source = None
     code = 1

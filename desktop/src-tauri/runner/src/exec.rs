@@ -17,7 +17,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use base64::Engine;
-use qoop_proc::{Group, own_process_group};
+use infall_proc::{Group, own_process_group};
 use serde::Serialize;
 
 use crate::approvals::{Approved, Cancel};
@@ -54,7 +54,33 @@ pub const NO_USAGE_REPORTS: &[(&str, &str)] = &[
 ];
 
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
-const ENV_FILE: &str = "qoop-env.json";
+const ENV_FILE: &str = "infall-env.json";
+
+/// The Run contract's names before the rename (docs/specs/desktop.md, "Names before the
+/// rename"): code saved in a Workspace before it may still use them, so they are honoured
+/// beside the new ones. The variable naming the Run's directory, set under both names.
+pub const RUN_DIR_ENV: &str = "INFALL_RUN_DIR";
+pub const OLD_RUN_DIR_ENV: &str = "QOOP_RUN_DIR";
+/// What a figure file is called, `<prefix>N.png`: the new name first, then the old one.
+const FIGURE_PREFIXES: [&str; 2] = ["infall-figure-", "qoop-figure-"];
+/// The description runner.py writes, under its old name: read when the new one is not there.
+const OLD_ENV_FILE: &str = "qoop-env.json";
+
+/// The figure file numbered `n` the Run left in `dir`: under its new name, else its old one.
+fn figure_file(dir: &Path, n: usize, limit: usize) -> Option<Vec<u8>> {
+    FIGURE_PREFIXES
+        .iter()
+        .find_map(|prefix| read_small_file(&dir.join(format!("{prefix}{n}.png")), limit))
+}
+
+/// Whether `name` is one of the figure files' names (new or old), never a path.
+fn is_figure_name(name: &str) -> bool {
+    (1..=MAX_FIGURES).any(|n| {
+        FIGURE_PREFIXES
+            .iter()
+            .any(|prefix| name == format!("{prefix}{n}.png"))
+    })
+}
 
 /// The character set a Run in another language gets when the Member's environment names no
 /// locale: UTF-8, as the Run's output is read. Without it, R in the "C" locale prints `"α"`
@@ -179,7 +205,7 @@ impl RunDir {
                 .map(|d| d.subsec_nanos())
                 .unwrap_or(0);
             let path = root.join(format!(
-                "qoop-run-{}-{}-{}",
+                "infall-run-{}-{}-{}",
                 std::process::id(),
                 nanos,
                 COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -262,13 +288,12 @@ fn short_plain(text: &str, max_chars: usize) -> bool {
     !text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control)
 }
 
-/// The figures a Run in another language left in its directory: `qoop-figure-1.png` to
-/// `-3.png`, real PNG files of at most 120 000 bytes, read without following links.
+/// The figures a Run in another language left in its directory: `infall-figure-1.png` to
+/// `-3.png` (or, from code written before the rename, `qoop-figure-1.png` …), real PNG
+/// files of at most 120 000 bytes, read without following links.
 fn collect_figures(dir: &Path) -> Vec<Figure> {
     (1..=MAX_FIGURES)
-        .filter_map(|n| {
-            read_small_file(&dir.join(format!("qoop-figure-{n}.png")), MAX_FIGURE_BYTES)
-        })
+        .filter_map(|n| figure_file(dir, n, MAX_FIGURE_BYTES))
         .filter(|data| data.starts_with(PNG_SIGNATURE))
         .map(|data| Figure {
             png: base64::engine::general_purpose::STANDARD.encode(data),
@@ -286,6 +311,7 @@ fn collect(
     Vec<Figure>,
 ) {
     let Some(info) = read_small_file(&dir.join(ENV_FILE), 64 * 1024)
+        .or_else(|| read_small_file(&dir.join(OLD_ENV_FILE), 64 * 1024))
         .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok())
     else {
         return (None, None, Vec::new());
@@ -319,9 +345,8 @@ fn collect(
             if figures.len() == MAX_FIGURES {
                 break;
             }
-            // Only the names runner.py uses; never a path.
-            let known = (1..=MAX_FIGURES).any(|n| name == format!("qoop-figure-{n}.png"));
-            if !known {
+            // Only the names runner.py uses (and used before the rename); never a path.
+            if !is_figure_name(name) {
                 continue;
             }
             if let Some(data) = read_small_file(&dir.join(name), MAX_FIGURE_BYTES)
@@ -407,7 +432,8 @@ impl Exec {
             // Over whatever the login shell says, for every language: a script may start a
             // Python that imports those packages.
             .envs(NO_USAGE_REPORTS.iter().copied())
-            .env("QOOP_RUN_DIR", &dir.path)
+            .env(RUN_DIR_ENV, &dir.path)
+            .env(OLD_RUN_DIR_ENV, &dir.path)
             .stdin(Stdio::null())
             .stdout(writer.try_clone().map_err(|_| NO_FOLDER)?)
             .stderr(writer);
@@ -480,7 +506,7 @@ impl Exec {
             if ended.is_none()
                 && let Some(mut usage) = sampler.latest()
             {
-                // Nothing said through `qoop`: a progress bar in the output says it.
+                // Nothing said through `infall`: a progress bar in the output says it.
                 if usage.step.is_none()
                     && usage.progress.is_none()
                     && let Some(bar) = bars.last()
@@ -538,7 +564,7 @@ impl Exec {
             })
         {
             text.push_str(&format!(
-                "\n[qoop] The process was ended by signal {signal}.\n"
+                "\n[infall] The process was ended by signal {signal}.\n"
             ));
         }
         if !text.is_empty() {
@@ -622,9 +648,9 @@ mod tests {
         let d = dir.path();
         assert_eq!(collect(d), (None, None, Vec::new()));
 
-        fs::write(d.join("qoop-figure-1.png"), png(100)).unwrap();
-        fs::write(d.join("qoop-figure-2.png"), b"GIF89a not a png").unwrap();
-        fs::write(d.join("qoop-figure-3.png"), png(MAX_FIGURE_BYTES)).unwrap(); // 8 too many
+        fs::write(d.join("infall-figure-1.png"), png(100)).unwrap();
+        fs::write(d.join("infall-figure-2.png"), b"GIF89a not a png").unwrap();
+        fs::write(d.join("infall-figure-3.png"), png(MAX_FIGURE_BYTES)).unwrap(); // 8 too many
         fs::write(d.join("other.png"), png(10)).unwrap();
         fs::write(
             d.join(ENV_FILE),
@@ -635,8 +661,8 @@ mod tests {
                     ["n".repeat(61), "1"], [1, 2], "junk", ["ok", "2.0+cu121"]
                 ],
                 "figures": [
-                    "qoop-figure-1.png", "qoop-figure-2.png", "qoop-figure-3.png", "other.png",
-                    "../qoop-figure-1.png", "/etc/passwd", "qoop-figure-4.png", 5
+                    "infall-figure-1.png", "infall-figure-2.png", "infall-figure-3.png", "other.png",
+                    "../infall-figure-1.png", "/etc/passwd", "infall-figure-4.png", 5
                 ],
             })
             .to_string(),
@@ -660,7 +686,7 @@ mod tests {
         assert_eq!(bytes, png(100));
 
         // Exactly the limit is kept, and is exactly 160 000 base64 characters.
-        fs::write(d.join("qoop-figure-3.png"), png(MAX_FIGURE_BYTES - 8)).unwrap();
+        fs::write(d.join("infall-figure-3.png"), png(MAX_FIGURE_BYTES - 8)).unwrap();
         let (_, _, figures) = collect(d);
         assert_eq!(figures.len(), 2);
         assert_eq!(figures[1].png.len(), 160_000);
@@ -671,22 +697,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
         assert!(collect_figures(d).is_empty());
-        fs::write(d.join("qoop-figure-1.png"), png(10)).unwrap();
-        fs::write(d.join("qoop-figure-2.png"), b"not a png").unwrap();
-        fs::write(d.join("qoop-figure-3.png"), png(MAX_FIGURE_BYTES)).unwrap(); // too large
-        fs::write(d.join("qoop-figure-4.png"), png(10)).unwrap(); // a fourth is never read
+        fs::write(d.join("infall-figure-1.png"), png(10)).unwrap();
+        fs::write(d.join("infall-figure-2.png"), b"not a png").unwrap();
+        fs::write(d.join("infall-figure-3.png"), png(MAX_FIGURE_BYTES)).unwrap(); // too large
+        fs::write(d.join("infall-figure-4.png"), png(10)).unwrap(); // a fourth is never read
         let figures = collect_figures(d);
         assert_eq!(figures.len(), 1);
-        fs::write(d.join("qoop-figure-3.png"), png(20)).unwrap();
+        fs::write(d.join("infall-figure-3.png"), png(20)).unwrap();
         assert_eq!(collect_figures(d).len(), 2);
         #[cfg(unix)]
         {
             let outside = tempfile::tempdir().unwrap();
             fs::write(outside.path().join("secret.png"), png(5)).unwrap();
-            fs::remove_file(d.join("qoop-figure-1.png")).unwrap();
+            fs::remove_file(d.join("infall-figure-1.png")).unwrap();
             std::os::unix::fs::symlink(
                 outside.path().join("secret.png"),
-                d.join("qoop-figure-1.png"),
+                d.join("infall-figure-1.png"),
             )
             .unwrap();
             assert_eq!(collect_figures(d).len(), 1);
@@ -694,11 +720,48 @@ mod tests {
     }
 
     #[test]
+    fn figures_and_the_description_under_their_names_before_the_rename_are_read_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        // Code saved before the rename writes `qoop-figure-N.png` itself.
+        fs::write(d.join("qoop-figure-1.png"), png(1)).unwrap();
+        fs::write(d.join("infall-figure-2.png"), png(2)).unwrap();
+        fs::write(d.join("qoop-figure-3.png"), png(3)).unwrap();
+        let figures = collect_figures(d);
+        assert_eq!(figures.len(), 3);
+        // Both names for one number: the new one counts, once.
+        fs::write(d.join("infall-figure-1.png"), png(11)).unwrap();
+        let figures = collect_figures(d);
+        assert_eq!(figures.len(), 3);
+        let first = base64::engine::general_purpose::STANDARD
+            .decode(&figures[0].png)
+            .unwrap();
+        assert_eq!(first, png(11));
+
+        // The description under its old name, naming figures by their old names.
+        fs::write(
+            d.join(OLD_ENV_FILE),
+            r#"{"python":"3.11.2","packages":[],"figures":["qoop-figure-1.png","qoop-figure-3.png","qoop-figure-9.png"]}"#,
+        )
+        .unwrap();
+        let (python, _, figures) = collect(d);
+        assert_eq!(python.as_deref(), Some("3.11.2"));
+        assert_eq!(figures.len(), 2);
+        // The new name, when there, is the one read.
+        fs::write(d.join(ENV_FILE), r#"{"python":"3.12.0","figures":[]}"#).unwrap();
+        let (python, _, figures) = collect(d);
+        assert_eq!(python.as_deref(), Some("3.12.0"));
+        assert!(figures.is_empty());
+        assert!(is_figure_name("qoop-figure-2.png") && is_figure_name("infall-figure-2.png"));
+        assert!(!is_figure_name("qoop-figure-4.png") && !is_figure_name("../qoop-figure-1.png"));
+    }
+
+    #[test]
     fn at_most_thirty_two_packages_and_three_figures() {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
         for n in 1..=3 {
-            fs::write(d.join(format!("qoop-figure-{n}.png")), png(n)).unwrap();
+            fs::write(d.join(format!("infall-figure-{n}.png")), png(n)).unwrap();
         }
         let packages: Vec<_> = (0..40)
             .map(|n| vec![format!("p{n:02}"), "1".into()])
@@ -708,7 +771,7 @@ mod tests {
             serde_json::json!({
                 "python": "3.9.6; rm -rf",
                 "packages": packages,
-                "figures": ["qoop-figure-1.png", "qoop-figure-1.png", "qoop-figure-2.png", "qoop-figure-3.png"],
+                "figures": ["infall-figure-1.png", "infall-figure-1.png", "infall-figure-2.png", "infall-figure-3.png"],
             })
             .to_string(),
         )
@@ -727,11 +790,11 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         let secret = outside.path().join("secret.png");
         fs::write(&secret, png(50)).unwrap();
-        std::os::unix::fs::symlink(&secret, d.join("qoop-figure-1.png")).unwrap();
-        fs::write(d.join(ENV_FILE), r#"{"figures":["qoop-figure-1.png"]}"#).unwrap();
+        std::os::unix::fs::symlink(&secret, d.join("infall-figure-1.png")).unwrap();
+        fs::write(d.join(ENV_FILE), r#"{"figures":["infall-figure-1.png"]}"#).unwrap();
         assert_eq!(collect(d).2, Vec::new());
         assert!(read_small_file(&secret, 1000).is_some());
-        assert!(read_small_file(&d.join("qoop-figure-1.png"), 1000).is_none());
+        assert!(read_small_file(&d.join("infall-figure-1.png"), 1000).is_none());
         assert!(read_small_file(d, 1000).is_none());
 
         // The description itself as a link, or too large, or not JSON: nothing is reported.

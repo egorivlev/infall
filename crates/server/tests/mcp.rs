@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::http::{StatusCode, header};
 use common::*;
-use qoop_server::store::{MemoryStore, SqliteStore, Store};
+use infall_server::store::{MemoryStore, SqliteStore, Store};
 use serde_json::{Value, json};
 
 struct World {
@@ -216,7 +216,7 @@ async fn initialize_negotiates_the_protocol_version() {
         assert_eq!(result["capabilities"], json!({ "tools": {} }));
         assert_eq!(
             result["serverInfo"],
-            json!({ "name": "qoop", "version": env!("CARGO_PKG_VERSION") })
+            json!({ "name": "infall", "version": env!("CARGO_PKG_VERSION") })
         );
         let instructions = result["instructions"].as_str().unwrap();
         assert!(instructions.contains("Infall"));
@@ -1470,7 +1470,7 @@ async fn no_tool_call_changes_the_workspace() {
 #[tokio::test]
 async fn a_server_fault_in_a_tool_is_one_plain_sentence() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let w = world_on(Arc::new(SqliteStore::open(&path).unwrap())).await;
     let s = small_board(&w).await;
     // Break the store under the running server.

@@ -4,7 +4,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::header::SET_COOKIE;
 use axum::response::{IntoResponse, Response};
-use qoop_core::MemberId;
+use infall_core::MemberId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;

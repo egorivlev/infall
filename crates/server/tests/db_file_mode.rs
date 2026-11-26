@@ -6,7 +6,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use qoop_server::store::SqliteStore;
+use infall_server::store::SqliteStore;
 
 fn mode(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o777
@@ -26,7 +26,7 @@ fn open_and_write(db: &Path) -> SqliteStore {
 #[test]
 fn a_new_database_file_and_its_companions_are_owner_only() {
     let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("qoop.db");
+    let db = dir.path().join("infall.db");
     let store = open_and_write(&db);
     assert_eq!(mode(&db), 0o600);
     for suffix in ["-wal", "-shm"] {
@@ -43,7 +43,7 @@ fn a_new_database_file_and_its_companions_are_owner_only() {
 #[test]
 fn a_stricter_file_that_is_already_there_keeps_its_rights() {
     let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("qoop.db");
+    let db = dir.path().join("infall.db");
     drop(open_and_write(&db));
     fs::set_permissions(&db, fs::Permissions::from_mode(0o400)).unwrap();
     // Read-only for its owner: SQLite may refuse it, but the rights are not ours to change.
@@ -54,7 +54,7 @@ fn a_stricter_file_that_is_already_there_keeps_its_rights() {
 #[test]
 fn a_wider_file_that_is_already_there_is_left_as_it_is() {
     let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("qoop.db");
+    let db = dir.path().join("infall.db");
     drop(open_and_write(&db));
     fs::set_permissions(&db, fs::Permissions::from_mode(0o644)).unwrap();
     let _store = open_and_write(&db);
@@ -64,5 +64,5 @@ fn a_wider_file_that_is_already_there_is_left_as_it_is() {
 #[test]
 fn a_missing_folder_is_still_reported_by_the_open() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(SqliteStore::open(&dir.path().join("none/qoop.db")).is_err());
+    assert!(SqliteStore::open(&dir.path().join("none/infall.db")).is_err());
 }

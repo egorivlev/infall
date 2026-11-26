@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use common::*;
-use qoop_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
+use infall_server::store::{MemoryStore, SCHEMA_VERSION, SqliteStore, Store};
 use serde_json::{Value, json};
 
 /// An Admin, two Members and a Guest.
@@ -468,7 +468,7 @@ async fn removing_a_member_deletes_their_own_todos_and_keeps_what_they_assigned(
 #[tokio::test]
 async fn todos_survive_a_restart_on_the_same_sqlite_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
     let before = {
         let w = world_on(Arc::new(SqliteStore::open(&path).unwrap())).await;
         let card = json!({ "id": new_id(), "title": "Kept", "branch": new_id() });
@@ -536,16 +536,16 @@ PRAGMA user_version = 1;
 #[tokio::test]
 async fn a_database_file_from_before_m4_upgrades_in_place_and_keeps_its_data() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("qoop.db");
+    let path = dir.path().join("infall.db");
 
     // An M3 file with an account and a Board holding one Card.
     let scratch = MemoryStore::new();
     let ada =
-        qoop_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
+        infall_server::create_admin(&scratch, "admin@example.org", "Ada Admin", PASSWORD, START)
             .unwrap();
-    let (mut ws, main) = qoop_core::Workspace::new();
+    let (mut ws, main) = infall_core::Workspace::new();
     let card = new_id();
-    let ops: Vec<qoop_core::Op> =
+    let ops: Vec<infall_core::Op> =
         serde_json::from_value(json!([create_card(&card, "From M3")])).unwrap();
     ws.record_all(main, ada.id, START, ops).unwrap();
     {
@@ -641,7 +641,7 @@ async fn the_new_writes_need_the_origin_and_the_marker_header() {
         (Method::DELETE, item.as_str(), Value::Null),
     ];
     for (method, path, body) in attempts {
-        // (Origin, X-Qoop-Request)
+        // (Origin, X-Infall-Request)
         let cases = [
             (Some("https://evil.example"), Some("1")),
             (None, Some("1")),
@@ -658,7 +658,7 @@ async fn the_new_writes_need_the_origin_and_the_marker_header() {
                 b = b.header(header::ORIGIN, o);
             }
             if let Some(m) = marker {
-                b = b.header("x-qoop-request", m);
+                b = b.header("x-infall-request", m);
             }
             let res = w
                 .app

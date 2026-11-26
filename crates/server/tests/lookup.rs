@@ -12,11 +12,11 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use common::{ORIGIN, START, TestApp, web_dir};
-use qoop_server::Clock;
-use qoop_server::config::Config;
-use qoop_server::local::{Preset, build_local_app, local_config};
-use qoop_server::sources::LOOKUPS_PER_MINUTE;
-use qoop_server::store::{MemoryStore, Store};
+use infall_server::Clock;
+use infall_server::config::Config;
+use infall_server::local::{Preset, build_local_app, local_config};
+use infall_server::sources::LOOKUPS_PER_MINUTE;
+use infall_server::store::{MemoryStore, Store};
 use serde_json::{Value, json};
 
 /// What the fake does with the next request.
@@ -185,7 +185,7 @@ async fn a_doi_is_looked_up_at_crossref() {
     assert!(h.get("origin").is_none());
     assert!(h.get("referer").is_none());
     let agent = h["user-agent"].to_str().unwrap();
-    assert!(agent.starts_with("qoop-server/"), "{agent}");
+    assert!(agent.starts_with("infall-server/"), "{agent}");
     for (_, v) in h.iter() {
         let v = v.to_str().unwrap_or("");
         assert!(!v.contains("Ada") && !v.contains("example.org"), "{v}");

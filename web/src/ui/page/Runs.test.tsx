@@ -25,7 +25,7 @@ const { boardStore, pageStore, sessionStore, historyStore, membersStore, runsSto
 
 const CODE = 'import pennylane as qml\n\ndev = qml.device("default.qubit", wires=4)\nprint("reward", 176.4)\n'
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-const DESKTOP: RunnerSetup = { available: true, python: { path: '/usr/bin/python3', version: '3.12.4' }, folder: '/Users/ana/qoop-runs' }
+const DESKTOP: RunnerSetup = { available: true, python: { path: '/usr/bin/python3', version: '3.12.4' }, folder: '/Users/ana/infall-runs' }
 const onClose = vi.fn<(cardId: string) => void>()
 
 beforeEach(() => {

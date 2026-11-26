@@ -83,7 +83,7 @@ export const movedRefusals = {
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (method !== 'GET' && method !== 'HEAD') headers['X-Qoop-Request'] = '1'
+  if (method !== 'GET' && method !== 'HEAD') headers['X-Infall-Request'] = '1'
   let payload: string | undefined
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -162,7 +162,7 @@ export function uploadBytes<T>(path: string, body: Blob | Uint8Array, options: {
   if (typeof XMLHttpRequest === 'undefined') {
     return fetch(path, {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/octet-stream', 'X-Qoop-Request': '1' },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/octet-stream', 'X-Infall-Request': '1' },
       body: payload,
       credentials: 'same-origin',
       signal,
@@ -183,7 +183,7 @@ export function uploadBytes<T>(path: string, body: Blob | Uint8Array, options: {
     xhr.withCredentials = true
     xhr.setRequestHeader('Accept', 'application/json')
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-    xhr.setRequestHeader('X-Qoop-Request', '1')
+    xhr.setRequestHeader('X-Infall-Request', '1')
     if (onProgress && xhr.upload) {
       xhr.upload.onprogress = (e: ProgressEvent) => onProgress(e.loaded, e.lengthComputable ? e.total : total)
     }

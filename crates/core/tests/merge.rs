@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use qoop_core::*;
+use infall_core::*;
 
 struct Ids {
     me: MemberId,

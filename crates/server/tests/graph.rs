@@ -7,8 +7,8 @@ use std::time::Instant;
 
 use axum::http::StatusCode;
 use common::*;
-use qoop_core::{EntityId, EntityKind, Fields, MemberId, Moment, Op, Value as V, Workspace};
-use qoop_server::store::{MemoryStore, Store};
+use infall_core::{EntityId, EntityKind, Fields, MemberId, Moment, Op, Value as V, Workspace};
+use infall_server::store::{MemoryStore, Store};
 use serde_json::{Value, json};
 
 async fn ops(app: &TestApp, cookie: &str, branch: &str, list: Value) {
@@ -293,8 +293,8 @@ async fn guests_and_strangers_have_no_graph() {
 
 #[tokio::test]
 async fn a_local_workspace_has_the_graph_too() {
-    use qoop_server::Clock;
-    use qoop_server::local::{Preset, build_local_app, local_config};
+    use infall_server::Clock;
+    use infall_server::local::{Preset, build_local_app, local_config};
 
     let web = web_dir();
     let mut config = local_config(([127, 0, 0, 1], 4321).into(), web.path().to_path_buf());

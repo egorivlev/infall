@@ -1,4 +1,4 @@
-// Test helpers: a fake qoop server (fetch + WebSocket) and a manual timer. Not exported from index.ts.
+// Test helpers: a fake infall server (fetch + WebSocket) and a manual timer. Not exported from index.ts.
 import { groupShapes } from './activities'
 import { applyOps } from './board-state'
 import type { Entities } from './board-state'
@@ -31,8 +31,8 @@ import type {
   Moment,
   Op,
   Origin,
-  QoopDesktop,
-  QoopRunner,
+  InfallDesktop,
+  InfallRunner,
   RunEvent,
   RunResult,
   RunUsage,
@@ -128,7 +128,7 @@ export type Logged = { method: string; path: string; body: unknown }
 export type AiStep = AiEvent | { raw: string } | { wait: Promise<void> }
 
 export type FakeRun = {
-  request: Parameters<QoopDesktop['claude']['send']>[0]
+  request: Parameters<InfallDesktop['claude']['send']>[0]
   ended: boolean
   /** Hands an event to the page as the app would (anything can be passed, to play a misbehaving app). */
   emit(event: unknown): void
@@ -182,7 +182,7 @@ export type FakeExecution = {
 }
 
 /**
- * A fake `window.qoopDesktop.runner` (desktop.md, M8). Every `run` becomes an entry of `executions` that the test
+ * A fake `window.infallDesktop.runner` (desktop.md, M8). Every `run` becomes an entry of `executions` that the test
  * drives by hand; with `script` set, it is called with each new execution as soon as it is asked for (e.g.
  * `(x) => { x.start(); x.write('hi\n'); x.done() }`). `cancel` answers as the app does: a started execution ends
  * with a stopped `done` carrying what was written, one still at the approval with `declined` — unless
@@ -227,10 +227,10 @@ export function fakeRunner(
       if (!x) throw new Error('fake Runner: nothing was executed')
       return x
     },
-    async status(): Promise<Awaited<ReturnType<QoopRunner['status']>>> {
+    async status(): Promise<Awaited<ReturnType<InfallRunner['status']>>> {
       runner.statusCalls++
       if (runner.statusFails) throw new Error('bridge down')
-      const status: Awaited<ReturnType<QoopRunner['status']>> = {}
+      const status: Awaited<ReturnType<InfallRunner['status']>> = {}
       if (runner.python) status.python = { ...runner.python }
       if (runner.folder !== undefined) status.folder = runner.folder
       if (runner.languages !== undefined) {
@@ -315,25 +315,25 @@ export function fakeRunner(
       runner.script?.(x)
     })
   }
-  return runner satisfies QoopRunner
+  return runner satisfies InfallRunner
 }
 
 export type FakeRunner = ReturnType<typeof fakeRunner>
 
 /**
- * Puts a bridge on `window.qoopDesktop`, as the desktop app does, for code that reads it from the page (the
+ * Puts a bridge on `window.infallDesktop`, as the desktop app does, for code that reads it from the page (the
  * default of `ai` and `runs`). Returns the function that takes it away again: call it when the test ends.
  */
 export function installDesktop(desk: unknown): () => void {
-  const page = globalThis as { qoopDesktop?: unknown }
-  page.qoopDesktop = desk
+  const page = globalThis as { infallDesktop?: unknown }
+  page.infallDesktop = desk
   return () => {
-    if (page.qoopDesktop === desk) delete page.qoopDesktop
+    if (page.infallDesktop === desk) delete page.infallDesktop
   }
 }
 
 /**
- * A fake `qoopDesktop.fullscreen` (window chrome, 0.9): `current()` answers `on`; `set(on)` changes it and tells every
+ * A fake `infallDesktop.fullscreen` (window chrome, 0.9): `current()` answers `on`; `set(on)` changes it and tells every
  * subscriber, as the app does when the window enters or leaves fullscreen. `listeners` is how many are subscribed.
  */
 export function fakeFullscreen(on = false) {
@@ -359,7 +359,7 @@ export function fakeFullscreen(on = false) {
 }
 
 /**
- * A fake `qoopDesktop.chromeScale` (window chrome, 0.9): every scale it is told goes into `said`, in order.
+ * A fake `infallDesktop.chromeScale` (window chrome, 0.9): every scale it is told goes into `said`, in order.
  */
 export function fakeChromeScale() {
   const said: number[] = []
@@ -370,7 +370,7 @@ export function fakeChromeScale() {
 }
 
 /**
- * A fake `window.qoopDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
+ * A fake `window.infallDesktop` (desktop.md). Every `claude.send` becomes a run in `runs` that the test drives with
  * `emit` / `end` / `fail`; with `script` set, a run plays those events and ends by itself. `cancel` ends the run,
  * as the app does when it has terminated the process. It has a Runner (`runner`, a `fakeRunner()` unless one is
  * passed); `runner: false` plays an app from before M8.
@@ -426,7 +426,7 @@ export function fakeDesktop(options: { installed?: boolean; claudeVersion?: stri
   }
   const out: typeof desk & { runner?: FakeRunner } = desk
   if (options.runner !== false) out.runner = options.runner ?? fakeRunner()
-  return out satisfies QoopDesktop
+  return out satisfies InfallDesktop
 }
 
 /** One Branch inside the fake server. `base` is its Board at seq 0. */
@@ -487,7 +487,7 @@ export function restoreOps(current: Entities, target: Entities): Op[] {
 }
 
 /**
- * A fake qoop server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
+ * A fake infall server: M1 (Board, Changes, ops), M2 (Branches, Checkpoints, Restore, Board at a moment) and
  * M3 (Merge), M4 (To-dos, and the frames about who edits a Page), M5 (access tokens, Suggestions — which only
  * `suggest` makes, as the tool layer would), M6 (a Guest gets the Board without deleted entities, 403 on Changes,
  * and `refreshFrame`), M7 (`/api/ai/*`: settings, and a chat whose event stream tests script with `aiScript`),
@@ -547,7 +547,7 @@ export class FakeServer {
   suggestionFail: { status: number; code: string } | null = null
   /** When set, accept / reject / reopen wait for it before doing anything. */
   suggestionGate: Promise<void> | null = null
-  /** M7, the OpenRouter path: false plays a server without `QOOP_SECRET_KEY`. */
+  /** M7, the OpenRouter path: false plays a server without `INFALL_SECRET_KEY`. */
   aiEnabled = true
   /** Per Member id: the stored key (never sent back) and the model. */
   aiSettings: Record<string, { key?: string; added_at?: number; model?: string }> = {}
@@ -1029,7 +1029,7 @@ export class FakeServer {
       const full = this.tokens.filter((t) => t.member === me).length >= 10
       if (name === '' || name.length > 60 || full) return fail(400, 'bad_request')
       const token = { id: `k${this.n++}`, name, created_at: this.now, member: me }
-      const secret = 'qoop_pat_' + String(this.secrets.length).padStart(43, 'A')
+      const secret = 'infall_pat_' + String(this.secrets.length).padStart(43, 'A')
       this.tokens.push(token)
       this.secrets.push(secret)
       return { status: 200, body: { token: shown(token), secret } }

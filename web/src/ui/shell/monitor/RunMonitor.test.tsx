@@ -244,7 +244,7 @@ describe('the popover', () => {
     await go(() => x.stats())
     noRow('Progress')
     expect(row('Left')).toHaveTextContent('No estimate — the code reports no progress')
-    expect(within(row('Left')).getByText('qoop.progress(done, total)')).toBeInTheDocument()
+    expect(within(row('Left')).getByText('infall.progress(done, total)')).toBeInTheDocument()
     expect(trigger().querySelector('.q-mon__line')).toBeNull()
   })
 

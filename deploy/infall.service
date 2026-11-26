@@ -1,5 +1,5 @@
-# /etc/systemd/system/qoop.service
-# Runs the Infall server as an unprivileged user that can write only to /var/lib/qoop.
+# /etc/systemd/system/infall.service
+# Runs the Infall server as an unprivileged user that can write only to /var/lib/infall.
 [Unit]
 Description=Infall research workspace server
 After=network-online.target
@@ -7,23 +7,23 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=qoop
-Group=qoop
-WorkingDirectory=/opt/qoop
-EnvironmentFile=/etc/qoop/qoop.env
-ExecStart=/opt/qoop/qoop-server serve
+User=infall
+Group=infall
+WorkingDirectory=/opt/infall
+EnvironmentFile=/etc/infall/infall.env
+ExecStart=/opt/infall/infall-server serve
 Restart=on-failure
 RestartSec=3
 # Give the server time to finish a database write after SIGTERM.
 TimeoutStopSec=30
-# Files the server creates (the database) are private to the qoop user.
+# Files the server creates (the database) are private to the infall user.
 UMask=0077
 
 # --- Sandboxing: if the server is ever compromised, this limits the damage. ---
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 ProtectSystem=strict
-ReadWritePaths=/var/lib/qoop
+ReadWritePaths=/var/lib/infall
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

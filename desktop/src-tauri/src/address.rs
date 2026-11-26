@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use url::Url;
 
-/// Checks what the Member typed and returns the server's origin (`https://qoop.example.org`,
+/// Checks what the Member typed and returns the server's origin (`https://infall.example.org`,
 /// `http://localhost:8787`): `https`, or `http` only for `localhost` and `127.0.0.1`; no
 /// user name or password; nothing after the host but an optional `/`.
 pub fn parse_server_address(input: &str) -> Result<String, String> {
@@ -104,7 +104,7 @@ pub fn check_health(origin: &str) -> Result<(), String> {
 }
 
 fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
-    const NOT_QOOP: &str = "That address answered, but not as an Infall server.";
+    const NOT_INFALL: &str = "That address answered, but not as an Infall server.";
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .max_redirects(0)
@@ -116,19 +116,19 @@ fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
         .call()
         .map_err(|_| "No server answered at that address. Check it and try again.".to_owned())?;
     if response.status() != 200 {
-        return Err(NOT_QOOP.into());
+        return Err(NOT_INFALL.into());
     }
     let body = response
         .body_mut()
         .with_config()
         .limit(4096)
         .read_to_string()
-        .map_err(|_| NOT_QOOP.to_owned())?;
+        .map_err(|_| NOT_INFALL.to_owned())?;
     let ok = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
         .and_then(|v| v.get("ok").and_then(serde_json::Value::as_bool))
         .unwrap_or(false);
-    if ok { Ok(()) } else { Err(NOT_QOOP.into()) }
+    if ok { Ok(()) } else { Err(NOT_INFALL.into()) }
 }
 
 #[cfg(test)]
@@ -140,12 +140,18 @@ mod tests {
     #[test]
     fn accepted_addresses_become_origins() {
         for (input, origin) in [
-            ("https://qoop.example.org", "https://qoop.example.org"),
-            ("  https://qoop.example.org/  ", "https://qoop.example.org"),
-            ("HTTPS://Qoop.Example.org:443/", "https://qoop.example.org"),
+            ("https://infall.example.org", "https://infall.example.org"),
             (
-                "https://qoop.example.org:8443",
-                "https://qoop.example.org:8443",
+                "  https://infall.example.org/  ",
+                "https://infall.example.org",
+            ),
+            (
+                "HTTPS://Infall.Example.org:443/",
+                "https://infall.example.org",
+            ),
+            (
+                "https://infall.example.org:8443",
+                "https://infall.example.org:8443",
             ),
             ("http://localhost:8787", "http://localhost:8787"),
             ("http://127.0.0.1:8787/", "http://127.0.0.1:8787"),
@@ -166,27 +172,27 @@ mod tests {
         for input in [
             "",
             "   ",
-            "qoop.example.org",
+            "infall.example.org",
             "localhost:8787",
-            "http://qoop.example.org",
+            "http://infall.example.org",
             "http://192.168.1.20:8787",
             "http://localhost.evil.example",
             "http://127.0.0.1.evil.example",
             "http://[::1]:8787",
             "http://0.0.0.0:8787",
-            "https://user@qoop.example.org",
-            "https://user:pw@qoop.example.org",
-            "https://:pw@qoop.example.org",
-            "https://qoop.example.org/app",
-            "https://qoop.example.org/?x=1",
-            "https://qoop.example.org/#x",
+            "https://user@infall.example.org",
+            "https://user:pw@infall.example.org",
+            "https://:pw@infall.example.org",
+            "https://infall.example.org/app",
+            "https://infall.example.org/?x=1",
+            "https://infall.example.org/#x",
             "https://",
-            "ftp://qoop.example.org",
+            "ftp://infall.example.org",
             "file:///etc/passwd",
             "javascript:alert(1)",
             "tauri://localhost",
-            "https://qoop.example.org\n.evil.example",
-            "https://qoop example.org",
+            "https://infall.example.org\n.evil.example",
+            "https://infall example.org",
         ] {
             assert!(parse_server_address(input).is_err(), "accepted {input:?}");
         }
@@ -194,37 +200,40 @@ mod tests {
 
     #[test]
     fn only_the_configured_origin_is_shown() {
-        let origin = "https://qoop.example.org";
+        let origin = "https://infall.example.org";
         let nav = |u: &str| navigation(&Url::parse(u).unwrap(), origin);
-        assert_eq!(nav("https://qoop.example.org/"), Navigation::Allow);
+        assert_eq!(nav("https://infall.example.org/"), Navigation::Allow);
         assert_eq!(
-            nav("https://qoop.example.org/board/1?x=1#y"),
+            nav("https://infall.example.org/board/1?x=1#y"),
             Navigation::Allow
         );
         assert_eq!(
-            nav("https://qoop.example.org/visual-frame"),
+            nav("https://infall.example.org/visual-frame"),
             Navigation::Allow
         );
-        assert_eq!(nav("https://qoop.example.org:443/a"), Navigation::Allow);
+        assert_eq!(nav("https://infall.example.org:443/a"), Navigation::Allow);
         assert_eq!(nav("about:blank"), Navigation::Allow);
         assert_eq!(nav("about:srcdoc"), Navigation::Allow);
         assert_eq!(
-            nav("blob:https://qoop.example.org/1234-abcd"),
+            nav("blob:https://infall.example.org/1234-abcd"),
             Navigation::Allow
         );
 
-        assert_eq!(nav("http://qoop.example.org/"), Navigation::External);
-        assert_eq!(nav("https://qoop.example.org:8443/"), Navigation::External);
+        assert_eq!(nav("http://infall.example.org/"), Navigation::External);
         assert_eq!(
-            nav("https://qoop.example.org.evil.example/"),
+            nav("https://infall.example.org:8443/"),
             Navigation::External
         );
         assert_eq!(
-            nav("https://evil.example/https://qoop.example.org/"),
+            nav("https://infall.example.org.evil.example/"),
             Navigation::External
         );
         assert_eq!(
-            nav("https://qoop.example.org@evil.example/"),
+            nav("https://evil.example/https://infall.example.org/"),
+            Navigation::External
+        );
+        assert_eq!(
+            nav("https://infall.example.org@evil.example/"),
             Navigation::External
         );
         assert_eq!(nav("https://doi.org/10.1000/xyz"), Navigation::External);
@@ -258,7 +267,7 @@ mod tests {
             "http://[::1]:53124",
             "http://user@127.0.0.1:53124",
             "http://127.0.0.1.evil.example:53124",
-            "https://qoop.example.org",
+            "https://infall.example.org",
             "",
             "not a url",
         ] {

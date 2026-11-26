@@ -52,7 +52,7 @@ afterEach(() => {
   tour.end()
   aiPanel.close()
   vi.restoreAllMocks()
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
 })
 
 describe('the offer', () => {
@@ -269,7 +269,7 @@ describe('moving through the steps', () => {
     await press('Skip the tour')
     view.unmount()
 
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = {}
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = {}
     render(<Screen member={MEMBER} />)
     await begin(MEMBER)
     for (let i = 0; i < 9; i++) await press('Next')
@@ -291,7 +291,7 @@ describe('moving through the steps', () => {
 describe('the last step and the start screen (M12)', () => {
   it('in the desktop app, says a Tutorial Workspace is made from the start screen, with a button that goes there', async () => {
     const switchWorkspace = vi.fn(async () => {})
-    ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { switchWorkspace }
+    ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { switchWorkspace }
     render(<Screen member={MEMBER} />)
     await begin(MEMBER)
     for (let i = 0; i < 10; i++) await press('Next')
@@ -304,7 +304,7 @@ describe('the last step and the start screen (M12)', () => {
 
   it('says nothing of it in a browser, nor in an app without the bridge function', async () => {
     for (const desk of [undefined, { version: '0.11' }]) {
-      if (desk) (globalThis as { qoopDesktop?: unknown }).qoopDesktop = desk
+      if (desk) (globalThis as { infallDesktop?: unknown }).infallDesktop = desk
       const view = render(<Screen member={MEMBER} />)
       await begin(MEMBER)
       for (let i = 0; i < 10; i++) await press('Next')

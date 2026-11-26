@@ -39,7 +39,7 @@ function seed() {
 }
 
 const desktop = (saveFile: (f: { suggestedName: string; text: string }) => Promise<boolean>) => {
-  ;(globalThis as { qoopDesktop?: unknown }).qoopDesktop = { version: '1', saveFile }
+  ;(globalThis as { infallDesktop?: unknown }).infallDesktop = { version: '1', saveFile }
 }
 
 beforeEach(() => {
@@ -54,7 +54,7 @@ afterEach(() => {
     toasts.clear()
     pagePanel.close()
   })
-  delete (globalThis as { qoopDesktop?: unknown }).qoopDesktop
+  delete (globalThis as { infallDesktop?: unknown }).infallDesktop
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.useRealTimers()

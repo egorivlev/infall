@@ -51,7 +51,7 @@ beforeEach(() => {
   h.people = [ELENA, ANA, PRIYA]
   h.pending = []
   h.remove = async () => {}
-  h.create = async () => ({ invite: {}, url: 'https://qoop.test/invite/TOKEN123' })
+  h.create = async () => ({ invite: {}, url: 'https://infall.test/invite/TOKEN123' })
   h.revoke = async () => {}
   h.removed = []
   h.created = []
@@ -204,11 +204,11 @@ describe('Invite form', () => {
     await user.type(emailField(), 'new@lab.org')
     await user.click(screen.getByRole('button', { name: 'Create invite' }))
     const url = await screen.findByLabelText('Invite link for new@lab.org')
-    expect(url).toHaveValue('https://qoop.test/invite/TOKEN123')
+    expect(url).toHaveValue('https://infall.test/invite/TOKEN123')
     expect(url).toHaveAttribute('readonly')
     expect(screen.getByText('This is shown once. It expires in 7 days.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Copy' }))
-    expect(write).toHaveBeenCalledWith('https://qoop.test/invite/TOKEN123')
+    expect(write).toHaveBeenCalledWith('https://infall.test/invite/TOKEN123')
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
     // The form is cleared; the next invite replaces the link.
     expect(emailField()).toHaveValue('')
@@ -245,7 +245,7 @@ describe('Invite form', () => {
     const busy = await screen.findByRole('button', { name: 'Creating invite…' })
     await user.click(busy)
     expect(h.created).toHaveLength(1)
-    finish({ invite: {}, url: 'https://qoop.test/invite/T' })
+    finish({ invite: {}, url: 'https://infall.test/invite/T' })
     await screen.findByLabelText('Invite link for new@lab.org')
   })
 })

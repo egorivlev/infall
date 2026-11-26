@@ -1,5 +1,5 @@
 //! Encryption at rest for Members' OpenRouter keys (contract §14): XChaCha20-Poly1305 under
-//! the server's `QOOP_SECRET_KEY`, a fresh random nonce per value, and the Member's id as
+//! the server's `INFALL_SECRET_KEY`, a fresh random nonce per value, and the Member's id as
 //! associated data so a sealed value cannot be moved to another account.
 //!
 //! Nothing here ever formats a key: `SecretKey` and `Opened` print as `[redacted]`.
@@ -8,7 +8,7 @@ use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use qoop_core::MemberId;
+use infall_core::MemberId;
 use rand::TryRng;
 use rand::rngs::SysRng;
 
@@ -58,7 +58,7 @@ fn random<const N: usize>() -> Result<[u8; N], String> {
 }
 
 impl SecretKey {
-    /// Reads `QOOP_SECRET_KEY`: 32 bytes as base64 (standard or URL-safe alphabet, padded
+    /// Reads `INFALL_SECRET_KEY`: 32 bytes as base64 (standard or URL-safe alphabet, padded
     /// or not). The error says what is wrong without repeating the value.
     pub fn from_base64(raw: &str) -> Result<SecretKey, String> {
         let raw = raw.trim();
@@ -80,7 +80,7 @@ impl SecretKey {
         Ok(SecretKey(random()?))
     }
 
-    /// The key as `QOOP_SECRET_KEY` takes it. Only `gen-secret-key` and the secret key file
+    /// The key as `INFALL_SECRET_KEY` takes it. Only `gen-secret-key` and the secret key file
     /// of a Local Workspace call this.
     pub fn to_base64(&self) -> String {
         STANDARD.encode(self.0)

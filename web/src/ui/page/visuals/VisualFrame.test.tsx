@@ -27,7 +27,7 @@ const say = (f: HTMLIFrameElement, data: unknown, source: Window | null = win(f)
   act(() => {
     window.dispatchEvent(new MessageEvent('message', { data, source }))
   })
-const ready = (f: HTMLIFrameElement) => say(f, { qoop: 'visual', type: 'ready' })
+const ready = (f: HTMLIFrameElement) => say(f, { infall: 'visual', type: 'ready' })
 const open = (source = SOURCE) => render(<VisualFrame source={source} title="Bloch sphere" />)
 
 describe('VisualFrame: the frame', () => {
@@ -71,7 +71,7 @@ describe('VisualFrame: ready → render', () => {
     expect(post).toHaveBeenCalledTimes(1)
     expect(post).toHaveBeenCalledWith(
       {
-        qoop: 'visual',
+        infall: 'visual',
         type: 'render',
         html: SOURCE,
         theme: { '--q-ink': 'oklch(0.94 0.006 255)', '--q-accent': 'oklch(0.80 0.10 195)', 'color-scheme': 'dark' },
@@ -111,7 +111,7 @@ describe('VisualFrame: ready → render', () => {
     const w = win(f)
     unmount()
     act(() => {
-      window.dispatchEvent(new MessageEvent('message', { data: { qoop: 'visual', type: 'ready' }, source: w }))
+      window.dispatchEvent(new MessageEvent('message', { data: { infall: 'visual', type: 'ready' }, source: w }))
     })
     expect(post).toHaveBeenCalledTimes(1) // the listener went with the component
   })
@@ -125,18 +125,18 @@ describe('VisualFrame: what it does not listen to', () => {
     const other = frame('Visual: Other')
     const post = spyOn(f)
     const postOther = spyOn(other)
-    say(f, { qoop: 'visual', type: 'ready' }, window) // the app's own window
-    say(f, { qoop: 'visual', type: 'ready' }, null) // no source at all
-    say(f, { qoop: 'visual', type: 'height', value: 500 }, window)
-    say(f, { qoop: 'visual', type: 'error', message: 'not mine' }, null)
+    say(f, { infall: 'visual', type: 'ready' }, window) // the app's own window
+    say(f, { infall: 'visual', type: 'ready' }, null) // no source at all
+    say(f, { infall: 'visual', type: 'height', value: 500 }, window)
+    say(f, { infall: 'visual', type: 'error', message: 'not mine' }, null)
     expect(post).not.toHaveBeenCalled()
     expect(postOther).not.toHaveBeenCalled()
     expect(f.style.height).toBe('240px')
     expect(screen.queryByRole('status')).toBeNull()
 
     // Another Visual's frame speaks for itself only.
-    say(f, { qoop: 'visual', type: 'ready' }, win(other))
-    say(f, { qoop: 'visual', type: 'height', value: 500 }, win(other))
+    say(f, { infall: 'visual', type: 'ready' }, win(other))
+    say(f, { infall: 'visual', type: 'height', value: 500 }, win(other))
     expect(post).not.toHaveBeenCalled()
     expect(postOther).toHaveBeenCalledTimes(1)
     expect(postOther.mock.calls[0]![0]).toMatchObject({ html: '<p>other</p>' })
@@ -152,14 +152,14 @@ describe('VisualFrame: what it does not listen to', () => {
       null,
       'ready',
       { type: 'ready' },
-      { qoop: 'other', type: 'ready' },
-      { qoop: 'visual' },
-      { qoop: 'visual', type: 'render', html: '<p>evil</p>', theme: {} },
-      { qoop: 'visual', type: 'height', value: '500' },
-      { qoop: 'visual', type: 'height', value: NaN },
-      { qoop: 'visual', type: 'height', value: Infinity },
-      { qoop: 'visual', type: 'error', message: { html: '<b>x</b>' } },
-      { qoop: 'visual', type: 'error' },
+      { infall: 'other', type: 'ready' },
+      { infall: 'visual' },
+      { infall: 'visual', type: 'render', html: '<p>evil</p>', theme: {} },
+      { infall: 'visual', type: 'height', value: '500' },
+      { infall: 'visual', type: 'height', value: NaN },
+      { infall: 'visual', type: 'height', value: Infinity },
+      { infall: 'visual', type: 'error', message: { html: '<b>x</b>' } },
+      { infall: 'visual', type: 'error' },
     ]) {
       say(f, data)
     }
@@ -174,7 +174,7 @@ describe('VisualFrame: height', () => {
     open()
     const f = frame()
     const height = (value: unknown) => {
-      say(f, { qoop: 'visual', type: 'height', value })
+      say(f, { infall: 'visual', type: 'height', value })
       return f.style.height
     }
     expect(height(312)).toBe('312px')
@@ -191,7 +191,7 @@ describe('VisualFrame: height', () => {
 describe('VisualFrame: error', () => {
   it('shows a quiet strip under the frame, and the frame stays', () => {
     open()
-    say(frame(), { qoop: 'visual', type: 'error', message: 'ReferenceError: theta is not defined' })
+    say(frame(), { infall: 'visual', type: 'error', message: 'ReferenceError: theta is not defined' })
     expect(screen.getByRole('status')).toHaveTextContent('This Visual reported an error: ReferenceError: theta is not defined')
     expect(frame()).toBeInTheDocument()
   })
@@ -199,7 +199,7 @@ describe('VisualFrame: error', () => {
   it('cuts the message to 300 characters and shows markup as text', () => {
     open()
     const markup = '<img src=x onerror="alert(1)">'
-    say(frame(), { qoop: 'visual', type: 'error', message: markup + 'y'.repeat(1000) })
+    say(frame(), { infall: 'visual', type: 'error', message: markup + 'y'.repeat(1000) })
     const strip = screen.getByRole('status')
     expect(strip.querySelector('img')).toBeNull()
     expect(strip.textContent).toBe(`This Visual reported an error: ${markup}${'y'.repeat(300 - markup.length)}`)
@@ -213,8 +213,8 @@ describe('VisualFrame: rendering again means loading again', () => {
     const firstWindow = win(first)
     const postFirst = spyOn(first)
     ready(first)
-    say(first, { qoop: 'visual', type: 'height', value: 400 })
-    say(first, { qoop: 'visual', type: 'error', message: 'old error' })
+    say(first, { infall: 'visual', type: 'height', value: 400 })
+    say(first, { infall: 'visual', type: 'error', message: 'old error' })
     expect(screen.getByRole('status')).toBeInTheDocument()
 
     rerender(<VisualFrame source="<p>second</p>" title="Bloch sphere" />)
@@ -227,7 +227,7 @@ describe('VisualFrame: rendering again means loading again', () => {
 
     // The old frame's window no longer counts; nothing is sent until the new frame is ready.
     const postSecond = spyOn(second)
-    say(second, { qoop: 'visual', type: 'ready' }, firstWindow)
+    say(second, { infall: 'visual', type: 'ready' }, firstWindow)
     expect(postFirst).toHaveBeenCalledTimes(1)
     expect(postSecond).not.toHaveBeenCalled()
     ready(second)

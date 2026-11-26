@@ -1,11 +1,11 @@
 [package]
-name = "qoop-server"
+name = "infall-server"
 version = "0.9.0"
 license = "Apache-2.0"
 edition = "2024"
 
 [[bin]]
-name = "qoop-server"
+name = "infall-server"
 path = "src/main.rs"
 
 [dependencies]
@@ -15,7 +15,7 @@ base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 clap = { version = "4.6.9", features = ["derive", "env"] }
 futures-util = "0.3.34"
-qoop-core = { path = "../core" }
+infall-core = { path = "../core" }
 rand = "0.10.4"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "json"] }
 rpassword = "7.5.5"

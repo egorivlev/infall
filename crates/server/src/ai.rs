@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
-use qoop_core::MemberId;
+use infall_core::MemberId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -54,7 +54,7 @@ impl AiState {
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .connect_timeout(CONNECT_TIMEOUT)
-            .user_agent(concat!("qoop-server/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("infall-server/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| format!("cannot set up the HTTP client: {e}"))?;
         Ok(AiState {

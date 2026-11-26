@@ -4,7 +4,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use qoop_core::{
+use infall_core::{
     ACTIVITY_GAP_MS, Activity, Branch, BranchId, MemberId, Moment, Workspace, activities,
 };
 use serde::{Deserialize, Serialize};

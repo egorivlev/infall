@@ -1,4 +1,4 @@
-# /etc/systemd/system/qoop-backup.timer
+# /etc/systemd/system/infall-backup.timer
 [Unit]
 Description=Daily Infall backup
 

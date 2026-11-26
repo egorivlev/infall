@@ -12,7 +12,7 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CON
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
-use qoop_core::{BranchId, MemberId, Workspace};
+use infall_core::{BranchId, MemberId, Workspace};
 use serde_json::{Value, json};
 
 use crate::app::{AppState, Shared, blocking};
@@ -64,7 +64,7 @@ pub(crate) fn scratch_file(st: &AppState, what: &str) -> Result<PathBuf, ApiErro
     let db = &st.config.db;
     let name = db.to_string_lossy();
     let base = if name.is_empty() || name == ":memory:" || name.starts_with("file:") {
-        std::env::temp_dir().join("qoop-server.db")
+        std::env::temp_dir().join("infall-server.db")
     } else {
         db.clone()
     };
@@ -168,7 +168,7 @@ async fn receive(headers: &HeaderMap, body: Body, to: &Path, limit: u64) -> Resu
 }
 
 /// `POST /api/workspace/import`: an Admin of an empty Team Workspace brings in a Workspace
-/// file (the body, `application/octet-stream`, at most `QOOP_MAX_IMPORT_MB`). A Local
+/// file (the body, `application/octet-stream`, at most `INFALL_MAX_IMPORT_MB`). A Local
 /// Workspace's file: its Member's work becomes the Admin's (decision 2). A Team Workspace's:
 /// who exported it becomes the Admin, every other Member arrives as a name that cannot sign
 /// in (decision 7). One transaction: on any failure nothing changes. Then everyone connected
@@ -312,7 +312,7 @@ pub async fn export(State(st): State<Shared>, Admin(who): Admin) -> Result<Respo
 
 // ---------------------------------------------------------------- the command line
 
-/// What `qoop-server import-workspace` did.
+/// What `infall-server import-workspace` did.
 #[derive(Debug, Clone)]
 pub struct ImportSummary {
     /// The Admin who took over the work.
@@ -323,7 +323,7 @@ pub struct ImportSummary {
     pub members: Vec<(String, bool)>,
 }
 
-/// `qoop-server import-workspace <file> --admin-email <e>`: the same rules as `POST
+/// `infall-server import-workspace <file> --admin-email <e>`: the same rules as `POST
 /// /api/workspace/import`, with the existing Admin of that email as the importing Admin.
 /// Refuses unless the Workspace is empty or when there is no such Admin. A server that is
 /// running on the same database refuses to write until it is restarted.
@@ -371,7 +371,7 @@ pub fn import_from_command_line(
     })
 }
 
-/// `qoop-server export-workspace <dest>`: a Workspace file of the database, made as
+/// `infall-server export-workspace <dest>`: a Workspace file of the database, made as
 /// `GET /api/workspace/export` makes one, with the oldest Admin recorded as who exported it.
 /// Safe while a server runs on the database, in this process or another: the file is a
 /// consistent snapshot.

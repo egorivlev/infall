@@ -17,7 +17,7 @@
 - Every public type derives `Debug, Clone, PartialEq, Serialize, Deserialize`; id types also `Copy, Eq, Ord, Hash`.
 - Every fallible public function returns a `thiserror` enum; a failed call leaves its `&mut self` unchanged.
 - All output orderings are deterministic: iterate entities by id, fields by name.
-- `cargo test -p qoop-core` and `cargo clippy -p qoop-core --all-targets -- -D warnings` pass at the end of every task.
+- `cargo test -p infall-core` and `cargo clippy -p infall-core --all-targets -- -D warnings` pass at the end of every task.
 - Status values, exactly: `idea`, `reading`, `understood`, `open_question`, `dead_end`.
 
 ## Review Focus
@@ -33,7 +33,7 @@
 ```
 Cargo.toml                    workspace manifest
 .gitignore                    target/
-crates/core/Cargo.toml        package qoop-core
+crates/core/Cargo.toml        package infall-core
 crates/core/src/lib.rs        module declarations + re-exports
 crates/core/src/ids.rs        EntityId, MemberId, BranchId, ChangeId, BatchId
 crates/core/src/schema.rs     Value, EntityKind, Fields, field classes, validation
@@ -70,12 +70,12 @@ crates/core/tests/*.rs        one integration test file per task
   pub enum SchemaError { UnknownField { kind: EntityKind, field: String }, WrongType { field: String }, NotFinite { field: String }, BadStatus(String) }
   ```
 
-- [ ] **Step 1: Create the workspace.** `git init`; root `Cargo.toml` with `[workspace] members = ["crates/core"]`, `resolver = "3"`; package `qoop-core`, edition 2024, the dependencies from Tech Stack; `.gitignore` containing `target/`; `lib.rs` declaring `pub mod ids; pub mod schema;` and re-exporting their items.
+- [ ] **Step 1: Create the workspace.** `git init`; root `Cargo.toml` with `[workspace] members = ["crates/core"]`, `resolver = "3"`; package `infall-core`, edition 2024, the dependencies from Tech Stack; `.gitignore` containing `target/`; `lib.rs` declaring `pub mod ids; pub mod schema;` and re-exporting their items.
 
 - [ ] **Step 2: Write the failing tests** in `crates/core/tests/schema.rs`:
 
 ```rust
-use qoop_core::*;
+use infall_core::*;
 
 #[test] fn field_classes_follow_the_spec_table() {
     for f in ["title", "summary", "status", "color"] { assert_eq!(field_class(EntityKind::Card, f), Some(FieldClass::Content)); }
@@ -107,9 +107,9 @@ use qoop_core::*;
 }
 ```
 
-- [ ] **Step 3: Run** `cargo test -p qoop-core --test schema` — Expected: FAIL to compile (items not defined).
+- [ ] **Step 3: Run** `cargo test -p infall-core --test schema` — Expected: FAIL to compile (items not defined).
 - [ ] **Step 4: Implement `ids.rs` and `schema.rs`** to the Interfaces block and spec §1.
-- [ ] **Step 5: Run** `cargo test -p qoop-core` and the clippy command — Expected: 4 passed, no warnings.
+- [ ] **Step 5: Run** `cargo test -p infall-core` and the clippy command — Expected: 4 passed, no warnings.
 - [ ] **Step 6: Commit** — `git add -A && git commit -m "feat(core): scaffold crate with ids and field schema"`
 
 ---
@@ -151,7 +151,7 @@ use qoop_core::*;
   ```
 - Semantics the signatures leave open: a `Null` value is never stored (setting `Null` removes the key; `Null` entries in `Create` are dropped). `is_visible`: live, and for a Connection both endpoints live. `same_content`: equal sets of live entity ids with equal kind and fields; deleted entities are ignored. `MissingEndpoint`: Connection created without `from`/`to`, or either set to `Null`. `BadEndpoint`: `from`/`to` refers to an id that is absent or not a Card (a deleted Card is accepted).
 
-- [ ] **Step 1: Write the failing tests** in `crates/core/tests/board.rs` (`mod common; use common::*; use qoop_core::*;`):
+- [ ] **Step 1: Write the failing tests** in `crates/core/tests/board.rs` (`mod common; use common::*; use infall_core::*;`):
 
 ```rust
 #[test] fn create_then_set_changes_one_field() {
@@ -200,7 +200,7 @@ use qoop_core::*;
 }
 ```
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test board` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test board` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `tests/common/mod.rs` and `board.rs`** to the Interfaces block and spec §1–2. `apply` validates fully before mutating.
 - [ ] **Step 4: Run** tests and clippy — Expected: all pass.
 - [ ] **Step 5: Commit** — `git commit -am "feat(core): board state and the four operations"` (after `git add -A`)
@@ -254,7 +254,7 @@ proptest::proptest! {
 ```
 Write the three example tests out in full with the helpers; the comments above state their exact assertions.
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test diff` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test diff` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `scribble` and `diff_ops`.**
 - [ ] **Step 4: Run** tests and clippy — Expected: all pass (proptest runs 256 cases).
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(core): diff between two boards"`
@@ -333,7 +333,7 @@ Write the three example tests out in full with the helpers; the comments above s
 ```
 Write each test out in full; the comments state the exact scenario and assertions.
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test workspace` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test workspace` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `workspace.rs`.** Keep a cached head `Board` per Branch (skipped by serde, rebuilt lazily or on deserialize) so `record` does not replay.
 - [ ] **Step 4: Run** tests and clippy — Expected: all pass.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(core): workspace with branches, changes and checkpoints"`
@@ -379,7 +379,7 @@ proptest::proptest! {
 }
 ```
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test restore` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test restore` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `restore`.**
 - [ ] **Step 4: Run** tests and clippy — Expected: all pass.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(core): non-destructive restore"`
@@ -455,7 +455,7 @@ proptest::proptest! {
 }
 ```
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test three_way` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test three_way` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `three_way`.**
 - [ ] **Step 4: Run** tests and clippy — Expected: all pass.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(core): three-way comparison with conflicts"`
@@ -538,9 +538,9 @@ proptest::proptest! {
 }
 ```
 
-- [ ] **Step 2: Run** `cargo test -p qoop-core --test merge` — Expected: FAIL to compile.
+- [ ] **Step 2: Run** `cargo test -p infall-core --test merge` — Expected: FAIL to compile.
 - [ ] **Step 3: Implement `resolve`, `plan_merge`, `apply_merge`, and the sync-point pruning in `restore`.**
-- [ ] **Step 4: Run** `cargo test -p qoop-core` and clippy — Expected: every test in all seven files passes, no warnings.
+- [ ] **Step 4: Run** `cargo test -p infall-core` and clippy — Expected: every test in all seven files passes, no warnings.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(core): plan, decide and apply merges"`
 
 ---

@@ -1,4 +1,4 @@
-use qoop_core::*;
+use infall_core::*;
 
 #[test]
 fn field_classes_follow_the_spec_table() {
