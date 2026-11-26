@@ -521,6 +521,47 @@ fn a_command_toolchain_runs_its_program_with_the_file_and_nothing_else() {
 }
 
 #[test]
+fn stopping_a_run_also_ends_what_it_started_in_another_process_group() {
+    let tools = tempfile::tempdir().unwrap();
+    // A shell with job control puts each background job in a group of its own.
+    let program = script(
+        tools.path(),
+        "job-lang",
+        r#"if [ "$1" = --version ]; then echo 'job-lang 1'; exit 0; fi
+set -m
+sleep 600 &
+echo "escaped $!"
+(sleep 600 & echo "escaped $!"; wait) &
+sleep 0.2
+echo "running"
+sleep 600"#,
+    );
+    let bench = bench(test_python());
+    bench
+        .runner
+        .settings_change(Change::SetLanguage {
+            id: "jobs".into(),
+            name: "Jobs".into(),
+            program: program.to_str().unwrap().into(),
+            args: vec!["{file}".into()],
+            ext: "jobs".into(),
+        })
+        .unwrap();
+    let (run, took) = stop_when(&bench, "jobs", "x\n", "running", Duration::from_secs(20));
+    assert!(run.stopped && run.exit.is_none(), "{run:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+    let escaped = pids_after(&run.output, "escaped ");
+    assert_eq!(escaped.len(), 2, "{}", run.output);
+    thread::sleep(Duration::from_millis(200));
+    let left: Vec<_> = escaped.iter().filter(|p| exists(**p)).collect();
+    for p in &left {
+        // SAFETY: only the processes this Run said it started.
+        unsafe { libc::kill(**p, libc::SIGKILL) };
+    }
+    assert!(left.is_empty(), "left behind: {left:?}");
+}
+
+#[test]
 fn a_language_that_is_not_set_up_is_asked_for_and_never_run_as_python() {
     let python = test_python();
     let tools = tempfile::tempdir().unwrap();
@@ -690,6 +731,521 @@ fn the_presets_programs_on_this_machine_run_their_code() {
         ran.push(id);
     }
     eprintln!("ran: {ran:?}");
+}
+
+// ---- Julia and R with real researcher code ---------------------------------------------------
+//
+// Each case runs for both, each skipped (with a line) where its program is missing. How long
+// each Run took is printed: Julia starts in about half a second, more on its first run after
+// an install (it precompiles), and the Runner has no time limit on a Run.
+
+const JULIA_AND_R: [&str; 2] = ["julia", "r"];
+
+/// A bench with `id` set up from this machine's first program for it; `None` when there is
+/// none (a SKIPPED line was printed).
+fn bench_for(env: EnvVars, id: &str) -> Option<Bench> {
+    let bench = bench_with_env(env, test_python());
+    set_up_preset(&bench, id)?;
+    Some(bench)
+}
+
+/// Runs `code` in `id` to its end, printing how long it took.
+fn timed_run(bench: &Bench, id: &str, case: &str, code: &str) -> Done {
+    let member = Member::new(&bench.runner);
+    let began = Instant::now();
+    let run = bench.run(&member, Some(id), None, code);
+    eprintln!("{id} {case}: {:?}", began.elapsed());
+    assert_eq!(run.lang, id);
+    assert!(run.env.runtime.is_some(), "{id}: no version");
+    run
+}
+
+#[test]
+fn julia_and_r_keep_standard_output_and_error_in_the_order_written() {
+    // No flush in either: the Runner gives both streams one pipe, and neither language holds
+    // back what it writes to a pipe at a line's end, so lines come out as they were written.
+    let julia = r#"
+for epoch in 1:25
+    loss = round(1 / epoch, digits = 4)
+    println("epoch $epoch loss $loss")
+    epoch % 5 == 0 && println(stderr, "checkpoint $epoch")
+end
+println(stderr, "warning: learning rate not tuned")
+println("done")
+"#;
+    let r = r#"
+for (epoch in 1:25) {
+  loss <- round(1 / epoch, 4)
+  cat("epoch ", epoch, " loss ", loss, "\n", sep = "")
+  if (epoch %% 5 == 0) message("checkpoint ", epoch)
+}
+message("warning: learning rate not tuned")
+cat("done\n")
+"#;
+    let mut expected = String::new();
+    for epoch in 1..=25u32 {
+        let loss = 1.0 / f64::from(epoch);
+        let loss = (loss * 10_000.0).round() / 10_000.0;
+        expected.push_str(&format!("epoch {epoch} loss {loss}\n"));
+        if epoch % 5 == 0 {
+            expected.push_str(&format!("checkpoint {epoch}\n"));
+        }
+    }
+    expected.push_str("warning: learning rate not tuned\ndone\n");
+    for (id, code) in JULIA_AND_R.into_iter().zip([julia, r]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let run = timed_run(&bench, id, "order", code);
+        assert_eq!(run.exit, Some(0), "{id}: {}", run.output);
+        // (Julia prints 1.0 as `1.0`, R as `1`; the rest are alike.)
+        let output = run.output.replace("epoch 1 loss 1.0\n", "epoch 1 loss 1\n");
+        assert_eq!(output, expected, "{id}");
+        assert!(!run.stopped);
+    }
+}
+
+#[test]
+fn an_uncaught_error_in_julia_or_r_fails_the_run_with_the_languages_own_message() {
+    let julia = r#"
+function concentration(absorbance, path_cm)
+    absorbance < 0 && throw(DomainError(absorbance, "absorbance must not be negative"))
+    absorbance / (6220 * path_cm)
+end
+println("sample A: ", concentration(0.5, 1.0))
+println("sample B: ", concentration(-0.1, 1.0))
+println("never printed")
+"#;
+    let r = r#"
+concentration <- function(absorbance, path_cm) {
+  if (absorbance < 0) stop("absorbance must not be negative")
+  absorbance / (6220 * path_cm)
+}
+cat("sample A:", concentration(0.5, 1), "\n")
+cat("sample B:", concentration(-0.1, 1), "\n")
+cat("never printed\n")
+"#;
+    for (id, code) in JULIA_AND_R.into_iter().zip([julia, r]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let run = timed_run(&bench, id, "error", code);
+        assert_eq!(run.exit, Some(1), "{id}: {}", run.output);
+        assert!(!run.stopped, "{id}");
+        assert!(
+            run.output.starts_with("sample A: 8.03"),
+            "{id}: {}",
+            run.output
+        );
+        assert!(!run.output.contains("never printed"), "{id}");
+        assert!(!run.output.contains("[qoop]"), "{id}: {}", run.output);
+        if id == "julia" {
+            // `ERROR: LoadError: DomainError with -0.1:` then the message and a stacktrace.
+            assert!(
+                run.output
+                    .contains("ERROR: LoadError: DomainError with -0.1:"),
+                "{}",
+                run.output
+            );
+            assert!(run.output.contains("absorbance must not be negative"));
+            assert!(run.output.contains("Stacktrace:"), "{}", run.output);
+            assert!(run.output.contains("main.jl:3"), "{}", run.output);
+        } else {
+            assert!(
+                run.output.contains(
+                    "Error in concentration(-0.1, 1) : absorbance must not be negative\n"
+                ),
+                "{}",
+                run.output
+            );
+            assert!(run.output.ends_with("Execution halted\n"), "{}", run.output);
+        }
+    }
+}
+
+#[test]
+fn an_exit_code_julia_or_r_chooses_is_the_runs() {
+    let julia = "n_failed = 3\nprintln(\"$n_failed checks failed\")\nexit(n_failed)\n";
+    let r = "n_failed <- 3\ncat(n_failed, \"checks failed\\n\")\nquit(save = \"no\", status = n_failed)\n";
+    for (id, code) in JULIA_AND_R.into_iter().zip([julia, r]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let run = timed_run(&bench, id, "exit", code);
+        assert_eq!(run.exit, Some(3), "{id}: {}", run.output);
+        assert_eq!(run.output, "3 checks failed\n", "{id}");
+        assert!(!run.stopped);
+    }
+}
+
+#[test]
+fn julia_and_r_compute_with_their_standard_libraries() {
+    let julia = r#"
+using LinearAlgebra, Statistics
+A = [4.0 1.0; 2.0 3.0]
+println("det = ", round(det(A), digits = 8))
+println("eigenvalues = ", round.(eigvals(A), digits = 8))
+println("solution = ", round.(A \ [1.0, 2.0], digits = 8))
+println("norm = ", round(norm([3.0, 4.0]), digits = 8))
+data = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]
+println("mean = ", mean(data), " median = ", median(data), " sd = ", round(std(data), digits = 6))
+println("cor = ", round(cor([1.0, 2.0, 3.0, 4.0], [2.0, 4.1, 5.9, 8.2]), digits = 6))
+"#;
+    let r = r#"
+d <- data.frame(dose = c(1, 2, 3, 4, 5), response = c(2.1, 3.9, 6.2, 7.8, 10.1))
+fit <- lm(response ~ dose, data = d)
+cat(sprintf("intercept = %.4f slope = %.4f\n", coef(fit)[[1]], coef(fit)[[2]]))
+cat(sprintf("r.squared = %.6f\n", summary(fit)$r.squared))
+cat(sprintf("mean = %.2f sd = %.6f median = %.1f\n", mean(d$response), sd(d$response), median(d$response)))
+cat(sprintf("t.test p = %.6f\n", t.test(d$response, mu = 5)$p.value))
+"#;
+    let expected = [
+        "det = 10.0\neigenvalues = [2.0, 5.0]\nsolution = [0.1, 0.6]\nnorm = 5.0\n\
+         mean = 5.0 median = 4.5 sd = 2.13809\ncor = 0.998992\n",
+        "intercept = 0.0500 slope = 1.9900\nr.squared = 0.997305\n\
+         mean = 6.02 sd = 3.150714 median = 6.2\nt.test p = 0.509200\n",
+    ];
+    for ((id, code), expected) in JULIA_AND_R.into_iter().zip([julia, r]).zip(expected) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let run = timed_run(&bench, id, "numerics", code);
+        assert_eq!(run.exit, Some(0), "{id}: {}", run.output);
+        assert_eq!(run.output, expected, "{id}");
+    }
+}
+
+/// A 64×48 colour gradient written as a PNG by hand: Julia's standard library has no plotting
+/// and no deflate, so the image data goes in "stored" (uncompressed) zlib blocks, with
+/// CRC-32 and Adler-32 computed here.
+const JULIA_PNG: &str = r#"
+const CRC_TABLE = [begin
+    c = UInt32(n)
+    for _ in 1:8
+        c = isodd(c) ? 0xedb88320 ⊻ (c >> 1) : c >> 1
+    end
+    c
+end for n in 0:255]
+crc32(data) = ~foldl((c, b) -> CRC_TABLE[((c ⊻ b) & 0xff) + 1] ⊻ (c >> 8), data; init = 0xffffffff)
+function adler32(data)
+    a, b = UInt32(1), UInt32(0)
+    for x in data
+        a = (a + x) % 65521
+        b = (b + a) % 65521
+    end
+    (b << 16) | a
+end
+be32(x) = collect(reinterpret(UInt8, [hton(UInt32(x))]))
+chunk(kind, data) = vcat(be32(length(data)), Vector{UInt8}(kind), data,
+                         be32(crc32(vcat(Vector{UInt8}(kind), data))))
+
+w, h = 64, 48
+raw = UInt8[]
+for y in 0:h-1
+    push!(raw, 0x00)
+    for x in 0:w-1
+        append!(raw, UInt8[round(UInt8, 255x / (w - 1)), round(UInt8, 255y / (h - 1)), 0x80])
+    end
+end
+z = UInt8[0x78, 0x01]
+starts = 1:65535:length(raw)
+for start in starts
+    block = raw[start:min(start + 65534, end)]
+    n = length(block)
+    append!(z, UInt8[start == last(starts) ? 1 : 0, n & 0xff, n >> 8, ~n & 0xff, (~n >> 8) & 0xff])
+    append!(z, block)
+end
+append!(z, be32(adler32(raw)))
+png = vcat(UInt8[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+           chunk("IHDR", vcat(be32(w), be32(h), UInt8[8, 2, 0, 0, 0])),
+           chunk("IDAT", z), chunk("IEND", UInt8[]))
+write(joinpath(ENV["QOOP_RUN_DIR"], "qoop-figure-1.png"), png)
+println("figure: ", length(png), " bytes")
+"#;
+
+/// Base graphics into a PNG, no package: Cairo where R has it (headless anywhere), else
+/// R's own default bitmap device (Quartz on a Mac).
+const R_PNG: &str = r#"
+x <- seq(0, 2 * pi, length.out = 200)
+f <- file.path(Sys.getenv("QOOP_RUN_DIR"), "qoop-figure-1.png")
+png(f, width = 640, height = 480,
+    type = if (capabilities("cairo")) "cairo" else getOption("bitmapType"))
+plot(x, sin(x), type = "l", col = "steelblue", lwd = 2, main = "sin(x)", xlab = "x", ylab = "y")
+abline(h = 0, lty = 2)
+invisible(dev.off())
+cat("figure:", file.exists(f), "\n")
+"#;
+
+#[test]
+fn a_png_julia_or_r_writes_into_the_runs_folder_is_its_figure() {
+    for (id, code) in JULIA_AND_R.into_iter().zip([JULIA_PNG, R_PNG]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let run = timed_run(&bench, id, "figure", code);
+        assert_eq!(run.exit, Some(0), "{id}: {}", run.output);
+        if id == "julia" {
+            // Signature 8, IHDR 25, IDAT 12 + (2 + 5 + 48 × 193 + 4), IEND 12.
+            assert_eq!(run.output, "figure: 9332 bytes\n");
+        } else {
+            assert_eq!(run.output, "figure: TRUE \n");
+        }
+        assert_eq!(run.figures, 1, "{id}");
+    }
+}
+
+#[test]
+fn unicode_julia_or_r_prints_survives_with_or_without_a_locale() {
+    let julia = "s = \"αβγ 🧪\"\nprintln(\"μ = 1.5 ± 0.2, Δt = 3 ms, σ² ≈ 0.04 🚀\")\n@show s\nprintln(length(s), \" characters\")\n";
+    let r = "s <- \"αβγ 🧪\"\ncat(\"μ = 1.5 ± 0.2, Δt = 3 ms, σ² ≈ 0.04 🚀\\n\")\nprint(s)\ncat(nchar(s), \"characters\\n\")\n";
+    let expected = [
+        "μ = 1.5 ± 0.2, Δt = 3 ms, σ² ≈ 0.04 🚀\ns = \"αβγ 🧪\"\n5 characters\n",
+        "μ = 1.5 ± 0.2, Δt = 3 ms, σ² ≈ 0.04 🚀\n[1] \"αβγ 🧪\"\n5 characters\n",
+    ];
+    // The app started from the Finder: often no locale at all in the login shell's
+    // environment. R in the "C" locale would print `"\316\261\316\262…"` and count 11.
+    let mut bare = login_env().clone();
+    bare.retain(|(k, _)| k != "LANG" && !k.to_string_lossy().starts_with("LC_"));
+    for ((id, code), expected) in JULIA_AND_R.into_iter().zip([julia, r]).zip(expected) {
+        for (which, env) in [("locale", login_env().clone()), ("no locale", bare.clone())] {
+            let Some(bench) = bench_for(env, id) else {
+                break;
+            };
+            let run = timed_run(&bench, id, &format!("unicode, {which}"), code);
+            assert_eq!(run.exit, Some(0), "{id}, {which}: {}", run.output);
+            assert_eq!(run.output, expected, "{id}, {which}");
+        }
+    }
+}
+
+/// Starts `code` in `id` on a thread, waits (up to `start_within`) for a line starting with
+/// `marker`, stops the Run, and returns how it ended and how long the stop took.
+fn stop_when(
+    bench: &Bench,
+    id: &str,
+    code: &str,
+    marker: &'static str,
+    start_within: Duration,
+) -> (Done, Duration) {
+    let runner = bench.runner.clone();
+    let started = Arc::new(AtomicUsize::new(0));
+    let seen = started.clone();
+    let (lang, code) = (id.to_owned(), code.to_owned());
+    let launched = Instant::now();
+    let worker = thread::spawn(move || {
+        let member = Member::new(&runner);
+        let mut events = Vec::new();
+        let mut text = String::new();
+        runner.run(
+            RunRequest {
+                id: "long".into(),
+                code,
+                title: String::new(),
+                lang: Some(lang),
+                env: None,
+            },
+            &Workspace {
+                key: ORIGIN.into(),
+                name: ORIGIN.into(),
+            },
+            &member,
+            &mut |e| {
+                if let RunEvent::Output { text: more } = &e {
+                    text.push_str(more);
+                    if text.lines().any(|l| l.starts_with(marker)) {
+                        seen.store(1, Ordering::SeqCst);
+                    }
+                }
+                events.push(e);
+            },
+        );
+        events
+    });
+    let deadline = Instant::now() + start_within;
+    while started.load(Ordering::SeqCst) == 0 {
+        assert!(Instant::now() < deadline, "{id}: the loop never started");
+        thread::sleep(Duration::from_millis(20));
+    }
+    eprintln!("{id} stop: running after {:?}", launched.elapsed());
+    let began = Instant::now();
+    bench.runner.cancel("long");
+    let run = done(worker.join().unwrap());
+    let took = began.elapsed();
+    eprintln!("{id} stop: stopped in {took:?}");
+    (run, took)
+}
+
+fn pids_after(output: &str, prefix: &str) -> Vec<i32> {
+    output
+        .lines()
+        .filter_map(|l| l.strip_prefix(prefix))
+        .map(|p| p.trim().parse().unwrap())
+        .collect()
+}
+
+/// Whether the process (or, negative, the group) `pid` still exists.
+fn exists(pid: i32) -> bool {
+    // SAFETY: signal 0 only asks whether it exists.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+#[test]
+fn a_julia_or_r_loop_is_stopped_at_once_and_leaves_nothing_behind() {
+    // Julia: the loop runs in tasks on Julia's threads (one unless the Member's environment
+    // says more). R starts no threads or processes of its own for this.
+    let julia = r#"
+using Base.Threads
+println("pid ", getpid())
+println("threads ", nthreads())
+tasks = [Threads.@spawn begin
+    s = 0.0
+    while true
+        s += sin(s) + 1e-9
+    end
+end for _ in 1:2]
+foreach(wait, tasks)
+"#;
+    let r = r#"
+cat("pid ", Sys.getpid(), "\n", sep = "")
+total <- 0
+repeat {
+  total <- total + sqrt(runif(1))
+}
+"#;
+    for (id, code) in JULIA_AND_R.into_iter().zip([julia, r]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let (run, took) = stop_when(&bench, id, code, "pid ", Duration::from_secs(60));
+        assert!(run.stopped && run.exit.is_none(), "{id}: {run:?}");
+        assert!(took < Duration::from_secs(5), "{id}: {took:?}");
+        let pid = pids_after(&run.output, "pid ")[0];
+        thread::sleep(Duration::from_millis(200));
+        assert!(!exists(-pid), "{id}: the group survived");
+        assert!(!exists(pid), "{id}: the process survived");
+    }
+}
+
+/// Julia's `Distributed` starts its workers as processes of their own, each in a process
+/// group of its own (`detach`), so stopping the Run's group does not reach them. Julia ends
+/// them itself when it exits on the Runner's polite request, but only some 300 to 500 ms
+/// after it, about when the Runner stops waiting: before the Runner looked for what left
+/// the group, a stopped Run could leave both workers running for good. `detach(…)` with
+/// `run(…; wait = false)` is the same, and Julia never ends that one: it shows the Runner
+/// does it.
+#[test]
+fn a_julia_run_with_distributed_workers_is_stopped_with_its_workers() {
+    let Some(bench) = bench_for(login_env().clone(), "julia") else {
+        return;
+    };
+    let code = r#"
+using Distributed
+addprocs(2)
+@everywhere simulate(seed) = (s = 0.0; for i in 1:10^6; s += sin(seed * i); end; s)
+println("partial sums: ", length(pmap(simulate, 1:4)))
+for w in workers()
+    println("worker ", remotecall_fetch(getpid, w))
+end
+helper = run(detach(`sleep 600`); wait = false)
+println("worker ", getpid(helper))
+println("looping")
+while true
+    pmap(simulate, 1:4)
+end
+"#;
+    let (run, took) = stop_when(&bench, "julia", code, "looping", Duration::from_secs(120));
+    assert!(run.stopped && run.exit.is_none(), "{run:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+    let workers = pids_after(&run.output, "worker ");
+    assert_eq!(workers.len(), 3, "{}", run.output);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while workers.iter().any(|w| exists(*w)) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    let left: Vec<_> = workers.iter().filter(|w| exists(**w)).collect();
+    for w in &left {
+        // SAFETY: only the workers this Run said it started.
+        unsafe { libc::kill(**w, libc::SIGKILL) };
+    }
+    assert!(left.is_empty(), "workers left behind: {left:?}");
+}
+
+#[test]
+fn julia_and_r_get_the_runs_file_and_run_in_the_runs_folder_or_the_chosen_one() {
+    let julia = r#"
+println("file: ", abspath(PROGRAM_FILE))
+println("cwd: ", pwd())
+println("run dir: ", ENV["QOOP_RUN_DIR"])
+println("args: ", length(ARGS))
+open("results.csv", "w") do io
+    println(io, "sample,value")
+    println(io, "A,1.5")
+end
+println("wrote: ", isfile(joinpath(pwd(), "results.csv")))
+"#;
+    let r = r#"
+file <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+cat("file: ", normalizePath(file), "\n", sep = "")
+cat("cwd: ", getwd(), "\n", sep = "")
+cat("run dir: ", Sys.getenv("QOOP_RUN_DIR"), "\n", sep = "")
+cat("args: ", length(commandArgs(trailingOnly = TRUE)), "\n", sep = "")
+write.csv(data.frame(sample = "A", value = 1.5), "results.csv", row.names = FALSE)
+cat("wrote: ", file.exists(file.path(getwd(), "results.csv")), "\n", sep = "")
+"#;
+    // The Run's folder is gone when it is over, so it cannot be canonicalised then; on a Mac
+    // `/var` is `/private/var`, which `pwd()` and `getwd()` say.
+    let real = |p: &str| PathBuf::from(p.strip_prefix("/private").unwrap_or(p));
+    for ((id, code), ext) in JULIA_AND_R.into_iter().zip([julia, r]).zip(["jl", "R"]) {
+        let Some(bench) = bench_for(login_env().clone(), id) else {
+            continue;
+        };
+        let field = |run: &Done, name: &str| -> String {
+            run.output
+                .lines()
+                .find_map(|l| l.strip_prefix(name))
+                .unwrap_or_else(|| panic!("{id}: no {name:?} in {}", run.output))
+                .to_owned()
+        };
+        let wrote = if id == "julia" { "true" } else { "TRUE" };
+
+        // No folder chosen: the Run's own temporary folder, which holds its file.
+        let run = timed_run(&bench, id, "folder", code);
+        assert_eq!(run.exit, Some(0), "{id}: {}", run.output);
+        let file = field(&run, "file: ");
+        assert!(file.ends_with(&format!("/main.{ext}")), "{id}: {file}");
+        let run_dir = field(&run, "run dir: ");
+        assert_eq!(real(&file).parent().unwrap(), real(&run_dir), "{id}");
+        assert_eq!(real(&field(&run, "cwd: ")), real(&run_dir), "{id}");
+        // `{file}` is the one argument: the code sees no others.
+        assert_eq!(field(&run, "args: "), "0", "{id}");
+        assert_eq!(field(&run, "wrote: "), wrote, "{id}");
+
+        // A folder chosen: the Run works there; its file is still in its own folder.
+        let folder = tempfile::tempdir().unwrap();
+        bench
+            .runner
+            .settings_save(test_python(), folder.path().to_str())
+            .unwrap();
+        let run = timed_run(&bench, id, "chosen folder", code);
+        assert_eq!(run.exit, Some(0), "{id}: {}", run.output);
+        let chosen = folder.path().canonicalize().unwrap();
+        assert_eq!(
+            real(&field(&run, "cwd: ")),
+            real(chosen.to_str().unwrap()),
+            "{id}"
+        );
+        let file = field(&run, "file: ");
+        assert!(file.ends_with(&format!("/main.{ext}")), "{id}: {file}");
+        assert_eq!(
+            real(&file).parent().unwrap(),
+            real(&field(&run, "run dir: ")),
+            "{id}"
+        );
+        assert_eq!(field(&run, "wrote: "), wrote, "{id}");
+        let csv = fs::read_to_string(folder.path().join("results.csv")).unwrap();
+        // (R's `write.csv` quotes text: `"A",1.5`.)
+        assert!(csv.replace('"', "").contains("A,1.5"), "{id}: {csv}");
+    }
 }
 
 // ---- Q# --------------------------------------------------------------------------------------
