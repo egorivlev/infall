@@ -70,7 +70,8 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: cargo test
-        run: cargo test --locked --workspace --no-fail-fast
+        # Also the slow ones marked #[ignore] (a literature review of thirty PDFs).
+        run: cargo test --locked --workspace --no-fail-fast -- --include-ignored
 
   web:
     name: Web UI
