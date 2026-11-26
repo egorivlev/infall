@@ -140,7 +140,7 @@ fn open(config: &Config) -> Result<SqliteStore, String> {
 
 /// `INFALL_ADMIN_PASSWORD` if set, otherwise a no-echo prompt (asked twice).
 fn read_password() -> Result<String, String> {
-    if let Ok(p) = std::env::var("INFALL_ADMIN_PASSWORD") {
+    if let Some(p) = infall_server::config::env_var("INFALL_ADMIN_PASSWORD") {
         return Ok(p);
     }
     let first = rpassword::prompt_password("Password (at least 12 characters): ")

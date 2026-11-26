@@ -75,6 +75,17 @@
 #   program as an AppImage.
 set -euo pipefail
 
+# A variable still set under its name from before the rename (QOOP_PACKAGE_RUST for
+# INFALL_PACKAGE_RUST) is read when the new one is not set, with one warning.
+for name in PACKAGE_RUST PACKAGE_NODE PACKAGE_MAINTAINER PACKAGE_CACHE; do
+    new="INFALL_$name" old="QOOP_$name"
+    if [ -z "${!new:-}" ] && [ -n "${!old:-}" ]; then
+        echo "package-linux: $old is read as $new, its name since the rename: rename it" >&2
+        export "$new=${!old}"
+    fi
+done
+unset name new old
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_src="$root/desktop/src-tauri"
 conf="$app_src/tauri.conf.json"

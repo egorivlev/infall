@@ -557,6 +557,58 @@ async fn a_guests_expiry_or_a_token_row_for_a_guest_never_authenticates() {
     assert_eq!(ping(&app, &secret).await.status, StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn a_token_issued_before_the_rename_still_works_and_new_ones_get_the_new_prefix() {
+    for store in stores() {
+        let app = TestApp::with_store(store);
+        let admin = app.admin().await;
+        let admin_id = member_id(&app, &admin).await;
+        // As a 0.9.0 build before the rename made it: `qoop_pat_`, its hash stored.
+        let old = format!("qoop_pat_{}", "o".repeat(43));
+        let stored = app
+            .store
+            .insert_access_token(
+                &infall_server::store::AccessTokenRecord {
+                    id: uuid::Uuid::new_v4(),
+                    member: infall_core::MemberId(admin_id.parse().unwrap()),
+                    name: "Claude desktop".into(),
+                    token_hash: sha256_hex(&old),
+                    created_at: START,
+                    last_used_at: None,
+                },
+                10,
+            )
+            .unwrap();
+        assert!(stored);
+        assert_eq!(ping(&app, &old).await.status, StatusCode::OK);
+        // Any other prefix is refused, even with a stored hash.
+        let other = format!("other_pat_{}", "o".repeat(43));
+        app.store
+            .insert_access_token(
+                &infall_server::store::AccessTokenRecord {
+                    id: uuid::Uuid::new_v4(),
+                    member: infall_core::MemberId(admin_id.parse().unwrap()),
+                    name: "forged".into(),
+                    token_hash: sha256_hex(&other),
+                    created_at: START,
+                    last_used_at: None,
+                },
+                10,
+            )
+            .unwrap();
+        assert_eq!(ping(&app, &other).await.status, StatusCode::UNAUTHORIZED);
+        let made = app
+            .post("/api/tokens", Some(&admin), json!({ "name": "New" }))
+            .await;
+        assert!(
+            made.body["secret"]
+                .as_str()
+                .unwrap()
+                .starts_with("infall_pat_")
+        );
+    }
+}
+
 // ---------------------------------------------------------------- the secret stays secret
 
 #[tokio::test]

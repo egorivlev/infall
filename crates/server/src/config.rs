@@ -22,6 +22,39 @@ pub const PDF_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// `INFALL_MAX_PDF_MB` unless set: the largest PDF the server stores (M19, decision 4).
 pub const DEFAULT_MAX_PDF_MB: u64 = 100;
 
+/// The prefix the server's variables have: `INFALL_DB`, `INFALL_ADDR`, …
+pub const ENV_PREFIX: &str = "INFALL_";
+/// Their prefix before the rename (the 0.9.0 builds before it): `QOOP_DB` for `INFALL_DB`.
+/// Still read, after the new name (docs/specs/api.md, "Names before the rename").
+pub const OLD_ENV_PREFIX: &str = "QOOP_";
+
+/// The variable `name` (an `INFALL_…` name) from the environment; empty counts as not set.
+/// When it is not set and its name before the rename (`QOOP_…`) is, that one is used, and
+/// one warning line names the variable to set instead.
+pub fn env_var(name: &str) -> Option<String> {
+    env_var_in(
+        name,
+        |n| std::env::var(n).ok(),
+        |old, new| tracing::warn!("{old} is read as {new}, its name since the rename: rename it"),
+    )
+}
+
+/// [`env_var`] with the environment and the warning explicit.
+pub fn env_var_in(
+    name: &str,
+    get: impl Fn(&str) -> Option<String>,
+    warn: impl FnOnce(&str, &str),
+) -> Option<String> {
+    let set = |n: &str| get(n).filter(|v| !v.trim().is_empty());
+    if let Some(value) = set(name) {
+        return Some(value);
+    }
+    let old = format!("{OLD_ENV_PREFIX}{}", name.strip_prefix(ENV_PREFIX)?);
+    let value = set(&old)?;
+    warn(&old, name);
+    Some(value)
+}
+
 /// Everything the server needs to know about where it runs.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -62,7 +95,7 @@ pub const DEFAULT_MAX_IMPORT_MB: u64 = 512;
 impl Config {
     /// Reads `INFALL_*` variables, falling back to the contract's defaults.
     pub fn from_env() -> Result<Config, String> {
-        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+        let var = env_var;
         let addr = var("INFALL_ADDR").unwrap_or_else(|| "127.0.0.1:8787".to_string());
         let addr = addr
             .parse()
@@ -205,6 +238,47 @@ pub fn normalize_base_url(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |n| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == n)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    fn no_warning(old: &str, new: &str) {
+        panic!("no warning expected, got {old} for {new}");
+    }
+
+    #[test]
+    fn a_variable_is_read_under_its_name_before_the_rename_with_one_warning() {
+        // The new name wins; nothing is said.
+        let both = env(&[("INFALL_DB", "/new.db"), ("QOOP_DB", "/old.db")]);
+        assert_eq!(
+            env_var_in("INFALL_DB", both, no_warning).as_deref(),
+            Some("/new.db")
+        );
+        // Only the old name: used, with one warning naming the new one.
+        let mut warned = Vec::new();
+        let old = env(&[("QOOP_DB", "/old.db")]);
+        let value = env_var_in("INFALL_DB", old, |o, n| warned.push(format!("{o}>{n}")));
+        assert_eq!(value.as_deref(), Some("/old.db"));
+        assert_eq!(warned, vec!["QOOP_DB>INFALL_DB".to_owned()]);
+        // An empty new name counts as not set, and so does an empty old one.
+        let fallback = env(&[("INFALL_DB", " "), ("QOOP_DB", "/old.db")]);
+        assert_eq!(
+            env_var_in("INFALL_DB", fallback, |_, _| {}).as_deref(),
+            Some("/old.db")
+        );
+        let empty = env(&[("INFALL_DB", ""), ("QOOP_DB", "")]);
+        assert_eq!(env_var_in("INFALL_DB", empty, no_warning), None);
+        // Neither; and a name that is not an INFALL_ one has no old name.
+        assert_eq!(env_var_in("INFALL_DB", env(&[]), no_warning), None);
+        let other = env(&[("QOOP_HOME", "x")]);
+        assert_eq!(env_var_in("HOME", other, no_warning), None);
+    }
 
     #[test]
     fn the_upstream_base_url_is_a_plain_http_url() {

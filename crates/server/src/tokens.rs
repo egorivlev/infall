@@ -22,6 +22,9 @@ use crate::store::{AccessTokenRecord, MemberRecord, Role};
 
 /// Every secret starts with this, so one found in a log or a paste is recognisable.
 pub const SECRET_PREFIX: &str = "infall_pat_";
+/// The prefix of secrets made before the rename; those are still accepted (api.md, "Names
+/// before the rename"). New secrets never get it.
+pub const OLD_SECRET_PREFIX: &str = "qoop_pat_";
 /// The most access tokens one Member may have.
 pub const MAX_TOKENS_PER_MEMBER: usize = 10;
 const MAX_NAME_CHARS: usize = 60;
@@ -162,7 +165,7 @@ pub async fn bearer_member(
         return Ok(None);
     };
     let now = st.clock.now();
-    if !secret.starts_with(SECRET_PREFIX)
+    if !(secret.starts_with(SECRET_PREFIX) || secret.starts_with(OLD_SECRET_PREFIX))
         || member.role == Role::Guest
         || access_expired(&member, now)
     {

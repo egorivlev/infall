@@ -5,6 +5,17 @@
 set -eu
 umask 077
 
+# A variable still set under its name from before the rename (QOOP_DB for INFALL_DB) is
+# read when the new one is not set, with one warning (docs/specs/api.md, "Names before the
+# rename").
+for name in DB BACKUP_DIR BACKUP_KEEP_DAYS BACKUP_AGE_RECIPIENT BACKUP_REMOTE; do
+	eval "new=\${INFALL_$name:-} old=\${QOOP_$name:-}"
+	if [ -z "$new" ] && [ -n "$old" ]; then
+		echo "infall-backup: QOOP_$name is read as INFALL_$name, its name since the rename: rename it" >&2
+		eval "INFALL_$name=\$old"
+	fi
+done
+
 DB="${INFALL_DB:-/var/lib/infall/infall.db}"
 DIR="${INFALL_BACKUP_DIR:-/var/backups/infall}"
 KEEP_DAYS="${INFALL_BACKUP_KEEP_DAYS:-14}"

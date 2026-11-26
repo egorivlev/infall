@@ -32,6 +32,19 @@
 set -euo pipefail
 umask 077
 
+# A variable still set under its name from before the rename (QOOP_DB for INFALL_DB) is
+# read when the new one is not set, with one warning, here and in the server it starts
+# (docs/specs/api.md, "Names before the rename").
+for name in DB BACKUP_DIR BACKUP_KEEP BACKUP_TIME BACKUP_DATABASE UPGRADE_KEEP SECRET_KEY \
+    SECRET_KEY_FILE ADDR PUBLIC_ORIGIN MAX_IMPORT_MB MAX_PDF_MB WEB_DIR; do
+    new="INFALL_$name" old="QOOP_$name"
+    if [ -z "${!new:-}" ] && [ -n "${!old:-}" ]; then
+        echo "infall: $old is read as $new, its name since the rename: rename it" >&2
+        export "$new=${!old}"
+    fi
+done
+unset name new old
+
 DB="${INFALL_DB:-/data/infall.db}"
 DATA_DIR="$(dirname "$DB")"
 BACKUP_DIR="${INFALL_BACKUP_DIR:-/backups}"
