@@ -9,7 +9,7 @@ Until now Infall has only run on the computer it was written on. M10 changes not
 - The bundle is `Infall.app`: identifier `app.infall.desktop`, version from `desktop/src-tauri/Cargo.toml`, a real icon (`.icns` made from one square source image kept in the repository), `LSMinimumSystemVersion`, `NSHighResolutionCapable`, category "Productivity". It declares no entitlements it does not use.
 - It is signed ad hoc (`codesign -s -`), which Apple silicon requires for any program to start. It is **not** signed with a Developer ID and **not** notarised: that needs a paid Apple account. The first start therefore needs the Member to allow it once; `desktop/README.md` says how, in the words the Member sees on screen, and says plainly what this warning means and does not mean.
 - The script prints the SHA-256 of the `.dmg`, so that the person handing it out can say which file is the real one.
-- App data stays where it is today (`~/Library/Application Support/app.infall.desktop/`): an installed app and a development build share it. Nothing is migrated.
+- App data is in `~/Library/Application Support/app.infall.desktop/`: an installed app and a development build share it. Builds from before the rename used `app.qoop.desktop`; the first start moves that folder's contents (desktop.md, "Names before the rename").
 
 Not in M10: Developer ID signing, notarisation, auto-update, Windows and Linux packages, an app store.
 

@@ -493,6 +493,14 @@ systemctl status infall && journalctl -u infall -n 20 --no-pager
 
 (Build first as in step 3.) To roll back: stop, restore the pre-update backup (step 9B), put `infall-server.prev` back, start.
 
+## Upgrading from a pre-rename install
+
+Builds before the code was renamed (0.9.0, before its release) called everything `qoop`. Nothing looks for those names, except that the server, `backup.sh` and the image's entrypoint still read a `QOOP_…` variable when its `INFALL_…` one is not set, with a warning (rename them anyway). Make a backup first, then:
+
+- **Container route.** In `.env`, rename every `QOOP_…` variable to `INFALL_…`. The project is now called `infall`, so its volumes are `infall_data`, `infall_backups`, …; the old ones are `qoop_data`, …. Copy the old data volume into the new one before the first start (`docker run --rm -v qoop_data:/from -v infall_data:/to debian:trixie-slim cp -a /from/. /to/`, and the same for `qoop_backups`), then rename the database in it: `docker compose run --rm --no-deps --entrypoint mv server /data/qoop.db /data/infall.db` (also `-wal` and `-shm` if they are there; the server was stopped). The secret key file keeps its name.
+- **systemd route.** `sudo systemctl disable --now qoop.service qoop-backup.timer`, then move the folders: `/opt/qoop` → `/opt/infall` (the program is now `infall-server`: install it as in step 3), `/etc/qoop/qoop.env` → `/etc/infall/infall.env` (rename the variables in it), `/var/lib/qoop/qoop.db` → `/var/lib/infall/infall.db`, `/var/backups/qoop` → `/var/backups/infall`. Make the `infall` user as in step 2 and `chown -R infall:infall` the two folders it owns (or keep the old user by changing `User=`/`Group=` in the units). Install `infall.service`, `infall-backup.service` and `infall-backup.timer` as in steps 4 and 9, remove the three old units from `/etc/systemd/system/`, `sudo systemctl daemon-reload`, and start as usual.
+- **Access tokens** made before the rename (`qoop_pat_…`) keep working; people sign in again once (the session cookie has a new name).
+
 ## What protects you, and what does not
 
 What both routes do:

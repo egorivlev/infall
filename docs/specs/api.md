@@ -27,6 +27,8 @@ Environment:
 | `INFALL_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
 | `INFALL_MAX_PDF_MB` | `100` | the largest PDF the server stores, in MiB (a whole number ≥ 1; §20) |
 
+Each is also read under its name from before the rename (`QOOP_ADDR`, …) when the new one is not set ([Names before the rename](#names-before-the-rename)).
+
 ## 2. Storage
 
 SQLite (`rusqlite`, bundled). Tables: `members`, `sessions`, `invites` (and the tables of later sections), and the Research Content, kept as the append-only log it is (docs/adr/0001):
@@ -311,7 +313,7 @@ type AccessToken = { id: string; name: string; created_at: number; last_used_at?
 | `POST /api/tokens` | `{ name: string }` (1–60 characters, trimmed, no control characters) | `{ token: AccessToken, secret: string }` — `secret` is `infall_pat_` + 43 url-safe base64 characters (32 random bytes); shown only here. Only its SHA-256 is stored. At most 10 per Member (`400 bad_request` beyond) |
 | `DELETE /api/tokens/{id}` | — | `{}`; own tokens only (`404` otherwise) |
 
-Removing a Member and `reset-password` delete that Member's tokens. `last_used_at` is updated at most once a minute.
+Removing a Member and `reset-password` delete that Member's tokens. `last_used_at` is updated at most once a minute. A secret made before the rename starts with `qoop_pat_`; it is still accepted ([Names before the rename](#names-before-the-rename)).
 
 ### Suggestions
 Not Research Content, not versioned; each belongs to one Branch. Members and Admins only.
@@ -810,3 +812,12 @@ pub fn file_stats(db: &Path) -> Result<FileStats, PortError>;
 // X MB)"). Reads without changing anything, safe while it is open; a database from before
 // schema version 8 has none. `PortError::Io` when there is no database at `db`.
 ```
+
+## Names before the rename
+
+Until 0.9.0 was renamed in its code (CHANGELOG, 0.9.0), the server used the working name `qoop`. What servers, scripts and tokens made under it keeps working; nothing new is written under these names:
+
+- **Environment variables** (`infall_server::config::env_var`, used for every variable of §1 and `INFALL_ADMIN_PASSWORD`): `INFALL_X` is read; if it is unset or empty and `QOOP_X` is set, that value is used and one warning names `INFALL_X`. The same rule in `deploy/backup.sh`, `deploy/container/entrypoint.sh` (which exports the new name for the server it starts) and `scripts/package-linux.sh`.
+- **Access tokens** (§12): secrets made before the rename start with `qoop_pat_` and are still accepted on `/mcp` (`tokens::OLD_SECRET_PREFIX`); new ones start with `infall_pat_`.
+- **Stored formats: nothing to read.** The databases (every schema version, the fixtures `crates/server/tests/fixtures/v1…v7`), Workspace files (`PRAGMA application_id` is `0x496e6661`, "Infa", since it was introduced) and their settings rows never held the old name, so no format string changed.
+- Not kept: the session cookies (`qoop_session`, `qoop_session_<id>`, now `infall_session…`) and the request header (`X-Qoop-Request`, now `X-Infall-Request`): the web UI ships with the server, and people sign in again. The MCP server's name (`serverInfo.name`) is `infall`. A server installed under `/opt/qoop`, `/etc/qoop` or `/var/lib/qoop` is not looked for: `deploy/README.md`, "Upgrading from a pre-rename install".
