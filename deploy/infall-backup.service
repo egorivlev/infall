@@ -1,6 +1,6 @@
 # /etc/systemd/system/infall-backup.service
 [Unit]
-Description=Infall encrypted database backup
+Description=Infall encrypted backup (a Workspace file)
 After=network-online.target
 
 [Service]
