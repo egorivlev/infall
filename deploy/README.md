@@ -375,7 +375,7 @@ sudo systemctl start infall
 sudo systemctl reload caddy
 ```
 
-(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
+(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run; 100 MiB for a PDF, 20 MiB for its text; 8192 MiB for a Workspace file brought onto an empty server) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
 
 ### 7. First login and inviting the others
 

@@ -381,6 +381,13 @@ async fn a_file_that_cannot_come_in_changes_nothing() {
     let (status, body) = upload(&app, &admin, vec![0u8; 64 * 1024 + 1]).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert_eq!(body["error"]["code"], "too_large");
+    let said = body["error"]["message"].as_str().unwrap();
+    assert!(
+        said.starts_with(
+            "This Workspace file is larger than 0 MB; this server takes at most 0 MB."
+        ) && said.contains("INFALL_MAX_IMPORT_MB"),
+        "{said}"
+    );
     check("too large").await;
 
     // Not a Workspace file.

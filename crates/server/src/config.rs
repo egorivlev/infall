@@ -80,7 +80,7 @@ pub struct Config {
     /// `LOOKUP_TIMEOUT`, except in tests.
     pub lookup_timeout: Duration,
     /// The largest Workspace file `POST /api/workspace/import` takes, in bytes
-    /// (`INFALL_MAX_IMPORT_MB`, default 512 MiB).
+    /// (`INFALL_MAX_IMPORT_MB`, default 8 GiB).
     pub max_import_bytes: u64,
     /// The largest PDF stored, in bytes (`INFALL_MAX_PDF_MB`, default 100 MiB; M19).
     pub max_pdf_bytes: u64,
@@ -89,8 +89,12 @@ pub struct Config {
     pub pdf_fetch_timeout: Duration,
 }
 
-/// `INFALL_MAX_IMPORT_MB` unless set.
-pub const DEFAULT_MAX_IMPORT_MB: u64 = 512;
+/// `INFALL_MAX_IMPORT_MB` unless set: 8 GiB. The body streams to a scratch file on the
+/// database's disk and is brought in by SQLite from there, so memory does not grow with the
+/// file (a 640 MiB file: under 40 MB resident in the server); what a larger file needs is
+/// disk — about three times its size free while it comes in — and time. Eighty PDFs at the
+/// 100 MiB limit fit.
+pub const DEFAULT_MAX_IMPORT_MB: u64 = 8 * 1024;
 
 impl Config {
     /// Reads `INFALL_*` variables, falling back to the contract's defaults.

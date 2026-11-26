@@ -132,19 +132,40 @@ fn member_list(members: &[MemberRecord]) -> Vec<Value> {
         .collect()
 }
 
-/// Writes the request body to `to` (a new private file), refusing more than `limit` bytes.
+/// A size as the refusal of a too large Workspace file says it: "830 MB", "9.3 GB" (units
+/// of 1024, as `INFALL_MAX_IMPORT_MB` counts).
+fn size_words(bytes: u64) -> String {
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else {
+        format!("{} MB", bytes.div_ceil(MB))
+    }
+}
+
+/// The refusal of a Workspace file over the limit: its size when it is known (from
+/// `Content-Length`), the limit, and the setting that raises it.
+fn too_large_file(size: Option<u64>, limit: u64) -> ApiError {
+    let limit_mb = limit / (1024 * 1024);
+    let is = match size {
+        Some(n) => format!("This Workspace file is {}", size_words(n)),
+        None => format!("This Workspace file is larger than {limit_mb} MB"),
+    };
+    ApiError::TooLarge(format!(
+        "{is}; this server takes at most {limit_mb} MB. Its administrator can raise that with the setting INFALL_MAX_IMPORT_MB and restart the server."
+    ))
+}
+
+/// Writes the request body to `to` (a new private file) as it arrives, refusing more than
+/// `limit` bytes. Nothing of it is kept in memory beyond the part on its way to the disk.
 async fn receive(headers: &HeaderMap, body: Body, to: &Path, limit: u64) -> Result<(), ApiError> {
     use tokio::io::AsyncWriteExt;
-    let too_large = || {
-        ApiError::TooLarge(format!(
-            "A Workspace file may be at most {} MB here.",
-            limit / (1024 * 1024)
-        ))
-    };
     let declared = headers
         .get(CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
+    let too_large = || too_large_file(declared, limit);
     if declared.is_some_and(|n| n > limit) {
         return Err(too_large());
     }
@@ -308,6 +329,29 @@ pub async fn export(State(st): State<Shared>, Admin(who): Admin) -> Result<Respo
     h.insert(CONTENT_LENGTH, HeaderValue::from(len));
     h.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_too_large_file_is_refused_with_its_size_the_limit_and_the_setting() {
+        const MB: u64 = 1024 * 1024;
+        let ApiError::TooLarge(known) = too_large_file(Some(9_985 * MB), 8192 * MB) else {
+            panic!("not too_large");
+        };
+        assert_eq!(
+            known,
+            "This Workspace file is 9.8 GB; this server takes at most 8192 MB. Its administrator can raise that with the setting INFALL_MAX_IMPORT_MB and restart the server."
+        );
+        let ApiError::TooLarge(streamed) = too_large_file(None, 512 * MB) else {
+            panic!("not too_large");
+        };
+        assert!(streamed.starts_with("This Workspace file is larger than 512 MB; "));
+        assert_eq!(size_words(600 * MB + 1), "601 MB");
+        assert_eq!(size_words(1024 * MB), "1.0 GB");
+    }
 }
 
 // ---------------------------------------------------------------- the command line
