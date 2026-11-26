@@ -1253,7 +1253,15 @@ export class FakeServer {
       .filter(({ c }) => c.mentions.includes(member))
       .sort((a, b) => b.c.created_at - a.c.created_at || b.i - a.i)
       .slice(0, 200)
-      .map(({ c }) => ({ comment: c.id, card: c.card, author: c.author, at: c.created_at, seen: seen.has(c.id) }))
+      .map(({ c }) => ({
+        comment: c.id,
+        card: c.card,
+        author: c.author,
+        at: c.created_at,
+        seen: seen.has(c.id),
+        // The fake's reading of the snippet: the first line with words, as written (no markup in the tests).
+        snippet: c.text.split('\n').map((l) => l.trim()).find((l) => l !== '') ?? '',
+      }))
   }
 
   commentsFrame(card: string): ServerFrame {

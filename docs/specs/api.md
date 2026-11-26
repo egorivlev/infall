@@ -720,7 +720,7 @@ Members and Admins, Team and Local; Guests get `403 forbidden` on every one; `40
 
 ```ts
 type Comment = { id: string; author: string; text: string; mentions: string[]; created_at: number; edited_at: number | null };
-type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean };
+type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean; snippet: string | null };
 ```
 
 | Method, path | Body | Response |
@@ -737,6 +737,7 @@ type ForYouItem = { comment: string; card: string; author: string; at: number; s
 - `text` is trimmed and must be 1–10 000 characters, with no control characters other than line breaks and tabs (`400 bad_request`). It is plain text with a Page text block's inline Markdown and math; the server does not read it.
 - Each of `mentions` must be the id of a Member or Admin (unclaimed ones included), never a Guest's or an unknown id (`400 bad_request`). An id given twice is kept once. The server does not look for `@Name` in the text.
 - **For you**: a new Comment gives each Member it mentions an unseen entry (`at` = its `created_at`). An edit gives one (`at` = `edited_at`) only to Members it mentions now and did not before. Nobody gets an entry for mentioning themself. Each Member's list keeps its newest 200 entries. Removing a Member removes their list.
+- **`snippet`** (added for 1.0; a client must not rely on it being present from an older server): the first line of the Comment **as it reads now** (an edit shows its new text), as plain text — lines that are blank, a code fence or a lone `$$` are skipped; a heading's `#`, a quote's `>` and a list's `-` or `1.` are dropped, and so are `**`, a `*` that opens or closes a word, backticks, `$`, and a link's brackets and address (its text kept); white space collapsed; at most 140 characters, cut at a word and ended with `…`. `null` when the Comment is no longer there (a deletion takes its entries with it, so in practice only in a list read while it was being deleted). It is no more than the reader may read anyway: the list is a Member's own, Guests have none, and a removed Card's thread stays readable to Members. Computed when the list is read; nothing is stored, so no schema change.
 - Outside versioning: the same on every Branch, not in History, never merged, and kept when the Card is removed. Workspace files carry them both ways (above).
 - Live, to every connected Member and Admin, never to Guests: `{ type: "comments", card }` after a Comment is written, edited or deleted and after a thread is resolved or reopened; `{ type: "for_you", count }` to a Member's own connections when their unseen count may have changed (a mention, an edit that adds them, a deletion that took one of their entries, their own `seen`). The client fetches the thread or the list again.
 - In a moved Local Workspace every write above is `403 moved`.

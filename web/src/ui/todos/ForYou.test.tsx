@@ -114,11 +114,43 @@ describe('For you', () => {
     await flush()
     const notice = screen.getByText(/mentioned you on/).closest('.q-notice') as HTMLElement
     expect(notice).toHaveTextContent('Ana mentioned you on the Card “Axions”.')
+    expect(notice.querySelector('.q-notice__snippet')?.textContent).toBe('“Look @Me”')
     expect(notice.closest('[role="status"]')).not.toBeNull()
     fireEvent.click(within(notice).getByRole('button', { name: 'Open' }))
     await flush()
     expect(usePagePanel.getState()).toMatchObject({ cardId: 'a', comment: { id: fresh.id } })
     expect(screen.queryByText(/mentioned you on the Card/)).toBeNull()
+  })
+
+  it('each row shows the first line of the Comment as plain text, and says when it was deleted', async () => {
+    server.now = 1
+    const kept = server.addComment('a', '\n  First line @Me  \nsecond line', [ME.id], ANA.id)
+    server.now = 2
+    const gone = server.addComment('a', 'Soon gone @Me', [ME.id], ANA.id)
+    const real = server.forYouOf.bind(server)
+    // The server gives null for a Comment that is no longer there.
+    server.forYouOf = (member) => real(member).map((i) => (i.comment === gone.id ? { ...i, snippet: null } : i))
+    await open()
+    act(() => navigate('/for-you'))
+    await flush()
+    const items = within(screen.getByRole('list', { name: 'Mentions, newest first' })).getAllByRole('button')
+    expect(items[0]!.querySelector('.qf-item__snippet')).toHaveTextContent('That Comment was deleted.')
+    expect(items[1]!.querySelector('.qf-item__snippet')?.textContent).toBe('“First line @Me”')
+    expect(items[1]).not.toHaveTextContent('second line')
+    expect(kept.id).not.toBe(gone.id)
+  })
+
+  it('a row from a server that gives no snippet shows none', async () => {
+    server.now = 1
+    server.addComment('a', 'Old server @Me', [ME.id], ANA.id)
+    const real = server.forYouOf.bind(server)
+    server.forYouOf = (member) => real(member).map(({ snippet: _s, ...i }) => i)
+    await open()
+    act(() => navigate('/for-you'))
+    await flush()
+    const items = within(screen.getByRole('list', { name: 'Mentions, newest first' })).getAllByRole('button')
+    expect(items[0]!.querySelector('.qf-item__snippet')).toBeNull()
+    expect(items[0]).toHaveTextContent('Ana mentioned you on the Card “Axions”')
   })
 
   it('an empty list says what will arrive', async () => {

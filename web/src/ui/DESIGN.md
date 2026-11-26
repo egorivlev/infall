@@ -408,9 +408,9 @@ Spec: [docs/specs/team-move.md](../../../docs/specs/team-move.md) (binding). Dat
 
 ## For you — `ui/todos/ForYou.tsx`, route `/for-you`
 - Rail item "For you" (an "@" glyph) right after To-dos, badge = unseen (accent when > 0), `aria-label` "For you, n unseen". Not for Guests (the route goes to the Board).
-- The To-dos screen pattern: the header starts with two tabs (links) "To-dos" | "For you n", then serif "For you", mono "n unseen · m mentions", **Mark all as seen**. One row per mention, newest first: avatar, "**Ana** mentioned you on Card <title>" (or "a Card that was removed"), time; unseen rows have a stronger border and "● NEW" (word and shape, not colour alone). A row is a button: it goes to the Board, opens the Page at the Comment and marks the mentions up to it as seen.
+- The To-dos screen pattern: the header starts with two tabs (links) "To-dos" | "For you n", then serif "For you", mono "n unseen · m mentions", **Mark all as seen**. One row per mention, newest first: avatar, "**Ana** mentioned you on Card <title>" (or "a Card that was removed"), under it the Comment's first line in quotes, one line with an ellipsis (`ui/todos/MentionSnippet.tsx`; the server's `snippet`, plain text; "That Comment was deleted." in italic `--q-ink-3` when it is gone; nothing from a server that sends none), time; unseen rows have a stronger border and "● NEW" (word and shape, not colour alone). A row is a button: it goes to the Board, opens the Page at the Comment and marks the mentions up to it as seen.
 - Empty: serif "No mentions yet", "When a Member writes @<you> in a Comment, it shows here, newest first." Loading after 150 ms: "Loading mentions…".
-- The notice (`ui/shell/MentionNotice.tsx`): bottom right, `role="status"`, for 8 s (held while hovered or focused): "**Ana** mentioned you on Card <title>." **Open** ×.
+- The notice (`ui/shell/MentionNotice.tsx`): bottom right, `role="status"`, for 8 s (held while hovered or focused): "**Ana** mentioned you on Card <title>." with the Comment's first line under it as in a row, **Open** ×.
 
 
 ---

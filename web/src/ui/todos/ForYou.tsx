@@ -7,6 +7,7 @@ import { formatWhen } from '../history/format'
 import { firstName, memberName } from '../page/people'
 import { initials } from '../shell/initials'
 import { useDelayedFlag } from '../shell/useDelayedFlag'
+import { MentionSnippet } from './MentionSnippet'
 import { cardWords, useOpenMention } from './openMention'
 import { TodoTabs } from './TodoTabs'
 import './todos.css'
@@ -87,6 +88,7 @@ export function ForYou({ me }: { me: Member }) {
                     <span className="qf-item__line">
                       <b>{firstName(author.name)}</b> mentioned you on {where}
                     </span>
+                    <MentionSnippet snippet={item.snippet} className="qf-item__snippet" />
                     <span className="qf-item__when">{formatWhen(item.at)}</span>
                   </span>
                   {!item.seen && (

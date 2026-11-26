@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { forYou, useBoard, useMembers } from '../../lib'
 import type { ForYouItem } from '../../lib'
 import { firstName, memberName } from '../page/people'
+import { MentionSnippet } from '../todos/MentionSnippet'
 import { cardWords, useOpenMention } from '../todos/openMention'
 
 export const NOTICE_MS = 8000
@@ -35,6 +36,7 @@ export function MentionNotice() {
         >
           <span className="q-notice__text">
             <b>{firstName(memberName(people, item.author).name)}</b> mentioned you on {cardWords(item.card, cards)}.
+            <MentionSnippet snippet={item.snippet} className="q-notice__snippet" />
           </span>
           <button
             type="button"

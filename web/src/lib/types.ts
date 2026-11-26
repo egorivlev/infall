@@ -670,7 +670,16 @@ export type ThreadSnapshot = {
 /** `GET /api/comments/counts`, per Card with a thread. */
 export type CommentCount = { open: number; resolved: boolean }
 
-export type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean }
+export type ForYouItem = {
+  comment: string
+  card: string
+  author: string
+  at: number
+  seen: boolean
+  /** The Comment's first line as it reads now, plain text, at most 140 characters; `null`: the Comment was deleted;
+   * absent from a server before 1.0. */
+  snippet?: string | null
+}
 
 export type ForYouSnapshot = {
   status: 'idle' | 'loading' | 'ready' | 'error'

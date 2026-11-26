@@ -208,7 +208,9 @@ let forYouAgain = false
 
 function readItem(v: unknown): ForYouItem | null {
   if (!isRecord(v) || typeof v.comment !== 'string' || typeof v.card !== 'string' || typeof v.author !== 'string') return null
-  return { comment: v.comment, card: v.card, author: v.author, at: num(v.at), seen: v.seen === true }
+  const item: ForYouItem = { comment: v.comment, card: v.card, author: v.author, at: num(v.at), seen: v.seen === true }
+  if (typeof v.snippet === 'string' || v.snippet === null) item.snippet = v.snippet
+  return item
 }
 
 function setForYou(patch: Partial<ForYouSnapshot>) {
@@ -218,7 +220,7 @@ function setForYou(patch: Partial<ForYouSnapshot>) {
     const old = new Map(prev.items.map((i) => [i.comment, i]))
     items = patch.items.map((i) => {
       const was = old.get(i.comment)
-      return was && was.card === i.card && was.author === i.author && was.at === i.at && was.seen === i.seen ? was : i
+      return was && was.card === i.card && was.author === i.author && was.at === i.at && was.seen === i.seen && was.snippet === i.snippet ? was : i
     })
     if (items.length === prev.items.length && items.every((i, k) => i === prev.items[k])) items = prev.items
   }

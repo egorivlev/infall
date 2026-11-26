@@ -163,6 +163,21 @@ describe('For you', () => {
     off()
   })
 
+  it('keeps the snippet as given: text, null for a deleted Comment, absent from an older server', async () => {
+    server.now = 1
+    const a = server.addComment('c1', 'a', [ME.id], OTHER.id)
+    server.now = 2
+    const b = server.addComment('c1', 'b', [ME.id], OTHER.id)
+    server.now = 3
+    server.addComment('c1', 'c', [ME.id], OTHER.id)
+    const real = server.forYouOf.bind(server)
+    server.forYouOf = (member) =>
+      real(member).map((i) => (i.comment === a.id ? { ...i, snippet: null } : i.comment === b.id ? { ...i, snippet: 7 as unknown as string } : i))
+    await openLive()
+    expect(state().forYou.items.map((i) => i.snippet)).toEqual(['c', undefined, null])
+    expect('snippet' in state().forYou.items[1]!).toBe(false)
+  })
+
   it('seen marks that one and every older one, at once', async () => {
     server.now = 1
     const a = server.addComment('c1', 'a', [ME.id], OTHER.id)
