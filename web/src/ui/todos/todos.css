@@ -100,6 +100,8 @@
 .qf-item__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .qf-item__line { overflow-wrap: anywhere; }
 .qf-item__line b { font-weight: 600; color: var(--q-ink); }
+.qf-item__snippet { color: var(--q-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qf-item__snippet.is-gone { font-style: italic; color: var(--q-ink-3); }
 .qf-item__when { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); font-variant-numeric: tabular-nums; }
 .qf-item__new { display: inline-flex; align-items: center; gap: 5px; font: 500 calc(10.5px * var(--q-text, 1)) var(--q-mono); text-transform: uppercase; letter-spacing: .07em; color: var(--q-accent); }
 .qf-item__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--q-accent); }

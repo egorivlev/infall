@@ -347,7 +347,7 @@ async fn for_you_lists_mentions_newest_first_keeps_200_and_marks_them_seen_on(w:
     assert_eq!(items[199]["comment"], ids[5]);
     assert_eq!(
         items[0],
-        json!({ "comment": ids[204], "card": card, "author": w.bo_id, "at": START + 205, "seen": false })
+        json!({ "comment": ids[204], "card": card, "author": w.bo_id, "at": START + 205, "seen": false, "snippet": "n204" })
     );
     assert!(
         w.app.get("/api/for-you", Some(&w.cy)).await.body["items"]
@@ -440,6 +440,52 @@ async fn an_edit_tells_only_the_newly_mentioned_on(w: World) {
         let list = w.app.get("/api/for-you", Some(who)).await.body;
         assert!(list["items"].as_array().unwrap().is_empty());
     }
+}
+
+#[tokio::test]
+async fn a_for_you_entry_shows_the_first_line_of_the_comment_as_it_reads_now() {
+    for w in [world().await, sqlite_world().await] {
+        a_for_you_entry_shows_the_first_line_of_the_comment_as_it_reads_now_on(w).await;
+    }
+}
+
+async fn a_for_you_entry_shows_the_first_line_of_the_comment_as_it_reads_now_on(w: World) {
+    // A Card on no Branch (removed, or never there): its thread is still the Members' to read.
+    let card = new_id();
+    let long = format!(
+        "**@Ada** look at [this](https://example.org) {}\nsecond line",
+        "x ".repeat(200)
+    );
+    let c = comment(&w, &w.bo, &card, &long, json!([w.ada_id]))
+        .await
+        .body;
+    let list = w.app.get("/api/for-you", Some(&w.ada)).await.body;
+    let snippet = list["items"][0]["snippet"].as_str().unwrap().to_string();
+    assert!(snippet.starts_with("@Ada look at this x x"), "{snippet}");
+    assert!(
+        snippet.ends_with('…') && snippet.chars().count() <= 140,
+        "{snippet}"
+    );
+    assert!(!snippet.contains("second") && !snippet.contains("example.org"));
+
+    // An edit shows its new text.
+    let path = format!("/api/comments/{}", c["id"].as_str().unwrap());
+    let res = w
+        .app
+        .write(
+            Method::PATCH,
+            &path,
+            Some(&w.bo),
+            json!({ "text": "  \n`Changed` my mind  " }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+    let list = w.app.get("/api/for-you", Some(&w.ada)).await.body;
+    assert_eq!(list["items"][0]["snippet"], "Changed my mind");
+
+    // A Guest has no For you list at all.
+    let res = w.app.get("/api/for-you", Some(&w.guest)).await;
+    assert_eq!(res.status, StatusCode::FORBIDDEN);
 }
 
 // ---------------------------------------------------------------- live

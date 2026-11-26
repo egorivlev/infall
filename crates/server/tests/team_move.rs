@@ -381,6 +381,13 @@ async fn a_file_that_cannot_come_in_changes_nothing() {
     let (status, body) = upload(&app, &admin, vec![0u8; 64 * 1024 + 1]).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert_eq!(body["error"]["code"], "too_large");
+    let said = body["error"]["message"].as_str().unwrap();
+    assert!(
+        said.starts_with(
+            "This Workspace file is larger than 0 MB; this server takes at most 0 MB."
+        ) && said.contains("INFALL_MAX_IMPORT_MB"),
+        "{said}"
+    );
     check("too large").await;
 
     // Not a Workspace file.
@@ -899,6 +906,101 @@ async fn a_team_file_opens_as_a_local_workspace_whose_member_is_who_exported_it(
     assert_eq!(body["you_were"], "Renamed");
     assert_eq!(body["members"].as_array().unwrap().len(), 3);
     assert_eq!(body["members"][1]["claimed"], false);
+}
+
+/// Decision 6: in a Local Workspace from a Team file, the other Members are names only and
+/// their To-dos keep them as owner; the Local Member may tick, change and delete them (the
+/// name stays on them). On a Team server a name's To-dos wait for whoever claims the name.
+#[tokio::test]
+async fn the_to_dos_of_names_only_are_the_local_members_to_finish() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = team_a(dir.path()).await;
+    // Bo's own To-do, and one Bo gave Di: neither was Ada's.
+    let mut ids = Vec::new();
+    for (owner, text) in [(&a.bo_id, "Bo's own"), (&a.di_id, "For Di, from Bo")] {
+        let res = a
+            .app
+            .post(
+                "/api/todos",
+                Some(&a.bo),
+                json!({ "owner": owner, "text": text }),
+            )
+            .await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+        ids.push(res.body["todo"]["id"].as_str().unwrap().to_string());
+    }
+    let file_bytes = download(&a.app, &a.ada).await;
+
+    // On another Team server the names are still to be claimed: nobody ticks for them.
+    let b = team(dir.path(), "b", |_| {});
+    let cy = admin_as(&b, "cy@example.org", "Cy").await;
+    let (status, body) = upload(&b, &cy, file_bytes.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for id in &ids {
+        let path = format!("/api/todos/{id}");
+        let res = b
+            .write(Method::PATCH, &path, Some(&cy), json!({ "done": true }))
+            .await;
+        assert_eq!(res.status, StatusCode::FORBIDDEN, "{}", res.text);
+        assert_eq!(
+            b.delete(&path, Some(&cy)).await.status,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    // In a Local Workspace they are the Local Member's to finish.
+    let file = dir.path().join("team.infall");
+    std::fs::write(&file, &file_bytes).unwrap();
+    let db = dir.path().join("laptop").join("workspace.db");
+    import_workspace(&file, &db).unwrap();
+    let w = local_ws(&db, Preset::Blank, "Laptop User", false);
+    let c = w.enter().await;
+    for id in &ids {
+        let path = format!("/api/todos/{id}");
+        let res = w
+            .app
+            .write(
+                Method::PATCH,
+                &path,
+                Some(&c),
+                json!({ "done": true, "text": "Finished here" }),
+            )
+            .await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.text);
+        assert_eq!(res.body["todo"]["done"], true);
+        assert_eq!(res.body["todo"]["text"], "Finished here");
+    }
+    let todos = w.app.get("/api/todos", Some(&c)).await.body;
+    let by_id = |id: &str| -> Value {
+        todos["todos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    // Nothing was reassigned: the names are still on them, and who added them.
+    assert_eq!(by_id(&ids[0])["owner"], a.bo_id);
+    assert_eq!(by_id(&ids[1])["owner"], a.di_id);
+    assert_eq!(by_id(&ids[1])["created_by"], a.bo_id);
+    let path = format!("/api/todos/{}", ids[1]);
+    let res = w
+        .app
+        .write(Method::PATCH, &path, Some(&c), json!({ "done": false }))
+        .await;
+    assert_eq!(res.body["todo"]["done"], false);
+    assert_eq!(w.app.delete(&path, Some(&c)).await.status, StatusCode::OK);
+    // A To-do of the Local Member's own is theirs as always.
+    let res = w
+        .app
+        .post(
+            "/api/todos",
+            Some(&c),
+            json!({ "owner": a.ada_id, "text": "Mine" }),
+        )
+        .await;
+    assert_eq!(res.status, StatusCode::OK);
 }
 
 // ---------------------------------------------------------------- the moved Workspace

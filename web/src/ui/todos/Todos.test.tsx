@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   calls: { reload: 0, add: [] as unknown[], setDone: [] as unknown[], edit: [] as unknown[], remove: [] as unknown[] },
   next: 0,
   me: 'm',
+  nameOnly: new Set<string>(),
 }))
 const setList = (list: Todo[]) => {
   h.list = list
@@ -39,6 +40,7 @@ vi.mock('../../lib', async () => {
     useBoard: () => h.board,
     useBranches: () => h.branches,
     useForYou: () => ({ status: 'ready', items: [], unseen: 0 }),
+    isNameOnly: (id: string) => h.nameOnly.has(id),
     todos: {
       reload: () => {
         h.calls.reload++
@@ -125,6 +127,7 @@ beforeEach(() => {
   h.reload = async () => {}
   h.calls = { reload: 0, add: [], setDone: [], edit: [], remove: [] }
   h.next = 0
+  h.nameOnly = new Set()
 })
 afterEach(() => {
   cleanup()
@@ -187,6 +190,26 @@ describe('columns', () => {
     expect(column('Mei Lin').getAllByRole('listitem').map((li) => within(li).getByRole('checkbox').getAttribute('aria-labelledby'))).toHaveLength(2)
     const texts = column('Mei Lin').getAllByRole('listitem').map((li) => li.querySelector('.qt-item__text')?.textContent)
     expect(texts).toEqual(['First', 'Second'])
+  })
+})
+
+describe('names only (a Local Workspace from a Team file)', () => {
+  it('keeps the name on its column and lets you tick, change and delete its To-dos', async () => {
+    h.nameOnly = new Set(['n'])
+    h.list = [todo('t1', 'n', 'Ana’s own'), todo('t2', 'j', 'Jonas’s own')]
+    await show()
+    expect(column('Ana Ruiz').getByText('Member · name only')).toBeInTheDocument()
+    expect(column('Jonas Weber').getByText('Member')).toBeInTheDocument()
+    const box = item('Ana’s own').getByRole('checkbox')
+    expect(box).toBeEnabled()
+    expect(box).toHaveAttribute('title', 'Mark done for Ana')
+    expect(item('Ana’s own').getByRole('button', { name: 'Edit To-do: Ana’s own' })).toBeInTheDocument()
+    fireEvent.click(box)
+    await act(async () => {})
+    expect(h.calls.setDone).toEqual([['t1', true]])
+    // Someone who can sign in keeps their own.
+    expect(item('Jonas’s own').getByRole('checkbox')).toBeDisabled()
+    expect(item('Jonas’s own').queryByRole('button', { name: /Edit/ })).toBeNull()
   })
 })
 

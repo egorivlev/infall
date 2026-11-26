@@ -11,7 +11,7 @@ use crate::app::{Shared, blocking};
 use crate::auth::MemberOrAdmin;
 use crate::error::{ApiError, ApiJson};
 use crate::live::Hub;
-use crate::store::{TodoCard, TodoRecord};
+use crate::store::{Role, TodoCard, TodoRecord};
 
 const MAX_TEXT_CHARS: usize = 500;
 const MAX_CARD_TITLE_CHARS: usize = 300;
@@ -53,6 +53,20 @@ fn clean_card(card: CardPointer) -> Result<TodoCard, ApiError> {
 
 fn parse_id(raw: &str) -> Result<Uuid, ApiError> {
     Uuid::parse_str(raw).map_err(|_| ApiError::NotFound)
+}
+
+/// Whether the caller may act for the owner of `todo` as if it were theirs: in a Local
+/// Workspace, when the owner is a name only — a Member who came with a Team file and can
+/// never sign in here (docs/specs/team-move.md, decision 6). Their To-dos keep their owner;
+/// the Local Member ticks, changes and deletes them. Never on a Team server, where the
+/// person who claims the name takes over everything under it (decision 7).
+async fn acts_for_a_name(st: &Shared, todo: &TodoRecord) -> Result<bool, ApiError> {
+    if st.local.is_none() {
+        return Ok(false);
+    }
+    let owner = todo.owner;
+    let member = blocking(st, move |s| s.member(owner)).await?;
+    Ok(member.is_some_and(|m| m.role != Role::Guest && !m.claimed()))
 }
 
 /// Reads the full list and sends it to every connected Member and Admin. Callers hold
@@ -143,7 +157,7 @@ pub async fn patch_todo(
     let mut todo = blocking(&st, move |s| s.todo(id))
         .await?
         .ok_or(ApiError::NotFound)?;
-    let is_owner = todo.owner == who.id();
+    let is_owner = todo.owner == who.id() || acts_for_a_name(&st, &todo).await?;
     if !is_owner && todo.created_by != who.id() {
         return Err(ApiError::Forbidden(
             "Only its owner or whoever added it can change a To-do.",
@@ -191,7 +205,8 @@ pub async fn delete_todo(
     let todo = blocking(&st, move |s| s.todo(id))
         .await?
         .ok_or(ApiError::NotFound)?;
-    if todo.owner != who.id() && todo.created_by != who.id() {
+    if todo.owner != who.id() && todo.created_by != who.id() && !acts_for_a_name(&st, &todo).await?
+    {
         return Err(ApiError::Forbidden(
             "Only its owner or whoever added it can delete a To-do.",
         ));

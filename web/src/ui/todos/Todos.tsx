@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { todos, useBoard, useBranches, useForYou, useMembers, useTodos } from '../../lib'
+import { isNameOnly, todos, useBoard, useBranches, useForYou, useMembers, useTodos } from '../../lib'
 import type { Member, Todo } from '../../lib'
 import { initials } from '../shell/initials'
 import { useDelayedFlag } from '../shell/useDelayedFlag'
@@ -104,7 +104,7 @@ export function Todos({ me }: { me: Member }) {
     attempt(() => todos.add({ owner: todo.owner, text: todo.text, ...(todo.card ? { card: todo.card } : {}) }))
       .then((again) => {
         // Only the owner can tick: a done To-do of your own comes back done.
-        if (todo.done && todo.owner === me.id && again?.id) return todos.setDone(again.id, true)
+        if (todo.done && (todo.owner === me.id || isNameOnly(todo.owner)) && again?.id) return todos.setDone(again.id, true)
       })
       .then(succeed(todo.owner), fail(todo.owner, 'brought back'))
   }
@@ -197,6 +197,7 @@ function TodoColumn({ col, filter, failed, deleted, onAdd, onUndo, onForget, ren
   const { member, mine } = col
   const shown = col.items.filter((t) => matches(filter, t))
   const role = member.role === 'admin' ? 'Admin' : 'Member'
+  const nameOnly = !mine && isNameOnly(member.id)
   const empty =
     col.items.length === 0 ? (readOnly ? 'No To-dos.' : 'No To-dos yet. Add one below.') : filter === 'open' ? 'No open To-dos.' : filter === 'done' ? 'No done To-dos.' : ''
 
@@ -209,7 +210,9 @@ function TodoColumn({ col, filter, failed, deleted, onAdd, onUndo, onForget, ren
         <h2 className="qt-col__name" id={headId}>
           {member.name}
         </h2>
-        <span className="qt-col__role">{mine ? `${role} (you)` : role}</span>
+        <span className="qt-col__role" title={nameOnly ? `${firstName(member.name)} came with the Workspace file and does not sign in here; you can tick, change and delete these To-dos.` : undefined}>
+          {mine ? `${role} (you)` : nameOnly ? `${role} · name only` : role}
+        </span>
         <span className="qt__grow" />
         <span className="qt-col__open">{col.open} open</span>
       </div>

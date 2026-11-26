@@ -5,6 +5,7 @@ import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import { ApiError, MOVED_SENTENCE, request } from './http'
 import { newId } from './ops'
+import { membersStore } from './people'
 import { sessionStore } from './session-store'
 import { workspaceStore } from './workspace'
 import type { Member, Todo } from './types'
@@ -57,6 +58,17 @@ export function setTodos(list: Todo[]): void {
 
 function upsert(todo: Todo) {
   confirmed = [...confirmed.filter((t) => t.id !== todo.id), todo].sort(inOrder)
+}
+
+/**
+ * M18 decision 6: in a Local Workspace made from a Team file, the other Members are names only, who never sign in
+ * here. Their To-dos keep them as owner and are the Local Member's to tick, change and delete. Never on a Team
+ * server, where whoever claims the name takes over its To-dos.
+ */
+export function isNameOnly(owner: string): boolean {
+  if (workspaceStore.getState().kind !== 'local') return false
+  const m = membersStore.getState().members.find((x) => x.id === owner)
+  return m !== undefined && m.role !== 'guest' && m.claimed === false
 }
 
 function member(action: string): Member {
@@ -132,7 +144,8 @@ export const todos = {
   },
   async setDone(id: string, done: boolean): Promise<void> {
     const me = member('tick')
-    if (visible(id).owner !== me.id) throw new ApiError(403, 'forbidden', 'Only its owner can tick a To-do.')
+    const owner = visible(id).owner
+    if (owner !== me.id && !isNameOnly(owner)) throw new ApiError(403, 'forbidden', 'Only its owner can tick a To-do.')
     const at = Date.now()
     await optimistic(
       change(id, (t) => {

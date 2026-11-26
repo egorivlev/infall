@@ -901,14 +901,17 @@ export class FakeServer {
     const todo = this.todos[at]
     if (!path.startsWith('/api/todos/') || !todo) return fail(404, 'not_found')
     const me = this.actor.id
-    const mine = todo.owner === me || todo.created_by === me
+    // M18 decision 6: in a Local Workspace a name only's To-dos are the Local Member's to finish.
+    const owner = this.members.find((m) => m.id === todo.owner)
+    const forName = this.workspace?.kind === 'local' && owner !== undefined && owner.role !== 'guest' && owner.claimed === false
+    const mine = todo.owner === me || todo.created_by === me || forName
     if (method === 'DELETE') {
       if (!mine) return fail(403, 'forbidden')
       this.todos.splice(at, 1)
       return { status: 200, body: {} }
     }
     if (method !== 'PATCH') return fail(404, 'not_found', 'no route')
-    if (input.done !== undefined && todo.owner !== me) return fail(403, 'forbidden')
+    if (input.done !== undefined && todo.owner !== me && !forName) return fail(403, 'forbidden')
     if ((input.text !== undefined || input.card !== undefined) && !mine) return fail(403, 'forbidden')
     if (input.text !== undefined && !goodText(input.text)) return fail(400, 'bad_request')
     const next: Todo = { ...todo }
@@ -1253,7 +1256,15 @@ export class FakeServer {
       .filter(({ c }) => c.mentions.includes(member))
       .sort((a, b) => b.c.created_at - a.c.created_at || b.i - a.i)
       .slice(0, 200)
-      .map(({ c }) => ({ comment: c.id, card: c.card, author: c.author, at: c.created_at, seen: seen.has(c.id) }))
+      .map(({ c }) => ({
+        comment: c.id,
+        card: c.card,
+        author: c.author,
+        at: c.created_at,
+        seen: seen.has(c.id),
+        // The fake's reading of the snippet: the first line with words, as written (no markup in the tests).
+        snippet: c.text.split('\n').map((l) => l.trim()).find((l) => l !== '') ?? '',
+      }))
   }
 
   commentsFrame(card: string): ServerFrame {

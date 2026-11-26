@@ -243,5 +243,7 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 .q-notice-region { position: fixed; right: var(--q-s4); bottom: var(--q-s4); z-index: 45; max-width: min(420px, calc(var(--q-vw, 100vw) - 32px)); }
 .q-notice { display: flex; align-items: center; gap: var(--q-s2); padding: 10px 10px 10px 14px; border: 1px solid var(--q-line); border-radius: var(--q-r-panel); background: var(--q-raised); box-shadow: var(--q-shadow); font-size: calc(13px * var(--q-text, 1)); color: var(--q-ink); }
 .q-notice__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.q-notice__snippet { display: block; margin-top: 2px; color: var(--q-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-notice__snippet.is-gone { font-style: italic; color: var(--q-ink-3); }
 .q-notice__close { flex: none; width: 24px; height: 24px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink-3); font-size: calc(16px * var(--q-text, 1)); cursor: pointer; }
 .q-notice__close:hover { background: var(--q-hover); color: var(--q-ink); }

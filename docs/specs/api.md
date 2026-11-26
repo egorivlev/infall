@@ -24,7 +24,7 @@ Environment:
 | `INFALL_PUBLIC_ORIGIN` | `http://localhost:8787` | the origin people use; drives the cookie `Secure` flag (set when it starts with `https://`), the Origin check, and invite URLs |
 | `INFALL_DEV_ORIGIN` | unset | one extra allowed Origin (e.g. `http://localhost:5173`) for local UI development |
 | `INFALL_WEB_DIR` | `./web/dist` | built UI to serve; any non-`/api` path that is not a file serves `index.html` |
-| `INFALL_MAX_IMPORT_MB` | `512` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19) |
+| `INFALL_MAX_IMPORT_MB` | `8192` | the largest Workspace file `POST /api/workspace/import` takes, in MiB (a whole number ≥ 1; §19). The body streams to a scratch file on the database's disk, so it costs disk (about three times the file's size free while it comes in), not memory. `import-workspace` on the command line has no limit |
 | `INFALL_MAX_PDF_MB` | `100` | the largest PDF the server stores, in MiB (a whole number ≥ 1; §20) |
 
 Each is also read under its name from before the rename (`QOOP_ADDR`, …) when the new one is not set ([Names before the rename](#names-before-the-rename)).
@@ -293,6 +293,8 @@ type Todo = {
 | `DELETE /api/todos/{id}` | — | `{}`; owner or creator only |
 
 Removing a Member (`DELETE /api/members/{id}`) deletes the To-dos they own; ones they created for others stay.
+
+**Names only in a Local Workspace** (M18, team-move.md decision 6): in a Local Workspace, a To-do whose owner is a Member who cannot sign in (`claimed: false` — someone who came with a Team file) may be ticked, unticked, changed and deleted by the Local Member as if it were theirs. Its `owner` and `created_by` stay as they were: nothing is reassigned. On a Team server there is no such rule: the person who claims the name (§19) takes over its To-dos.
 
 After every change the server sends `{ type: "todos", todos: Todo[] }` (the full list) to every connected Member/Admin, never to Guests.
 
@@ -649,7 +651,7 @@ New error codes:
 | 403 | `moved` | any changing request in a moved Local Workspace; message "This Workspace was moved to a Team server; open it there to make changes." |
 | 409 | `not_empty` | a Workspace file into a Workspace that is not empty |
 | 400 | `not_a_workspace_file` | what was sent is not a Workspace file this server can read |
-| 413 | `too_large` | a Workspace file over `INFALL_MAX_IMPORT_MB` |
+| 413 | `too_large` | a Workspace file over `INFALL_MAX_IMPORT_MB`; the message gives the file's size (from `Content-Length`; "larger than <limit> MB" without one), the limit in MB, and the setting's name |
 | 422 | `newer_version` | a Workspace file made by a newer schema version |
 
 ### Storage (schema version 7)
@@ -720,7 +722,7 @@ Members and Admins, Team and Local; Guests get `403 forbidden` on every one; `40
 
 ```ts
 type Comment = { id: string; author: string; text: string; mentions: string[]; created_at: number; edited_at: number | null };
-type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean };
+type ForYouItem = { comment: string; card: string; author: string; at: number; seen: boolean; snippet: string | null };
 ```
 
 | Method, path | Body | Response |
@@ -737,6 +739,7 @@ type ForYouItem = { comment: string; card: string; author: string; at: number; s
 - `text` is trimmed and must be 1–10 000 characters, with no control characters other than line breaks and tabs (`400 bad_request`). It is plain text with a Page text block's inline Markdown and math; the server does not read it.
 - Each of `mentions` must be the id of a Member or Admin (unclaimed ones included), never a Guest's or an unknown id (`400 bad_request`). An id given twice is kept once. The server does not look for `@Name` in the text.
 - **For you**: a new Comment gives each Member it mentions an unseen entry (`at` = its `created_at`). An edit gives one (`at` = `edited_at`) only to Members it mentions now and did not before. Nobody gets an entry for mentioning themself. Each Member's list keeps its newest 200 entries. Removing a Member removes their list.
+- **`snippet`** (added for 1.0; a client must not rely on it being present from an older server): the first line of the Comment **as it reads now** (an edit shows its new text), as plain text — lines that are blank, a code fence or a lone `$$` are skipped; a heading's `#`, a quote's `>` and a list's `-` or `1.` are dropped, and so are `**`, a `*` that opens or closes a word, backticks, `$`, and a link's brackets and address (its text kept); white space collapsed; at most 140 characters, cut at a word and ended with `…`. `null` when the Comment is no longer there (a deletion takes its entries with it, so in practice only in a list read while it was being deleted). It is no more than the reader may read anyway: the list is a Member's own, Guests have none, and a removed Card's thread stays readable to Members. Computed when the list is read; nothing is stored, so no schema change.
 - Outside versioning: the same on every Branch, not in History, never merged, and kept when the Card is removed. Workspace files carry them both ways (above).
 - Live, to every connected Member and Admin, never to Guests: `{ type: "comments", card }` after a Comment is written, edited or deleted and after a thread is resolved or reopened; `{ type: "for_you", count }` to a Member's own connections when their unseen count may have changed (a mention, an edit that adds them, a deletion that took one of their entries, their own `seen`). The client fetches the thread or the list again.
 - In a moved Local Workspace every write above is `403 moved`.
@@ -796,7 +799,7 @@ Migrated in place from every earlier version as in §2. Three tables, outside th
 
 ### Workspace files
 
-Every Workspace file carries the stored PDFs and their text: `export_workspace` (and so `export_for_move` and the desktop app's backups), `GET /api/workspace/export` and `export-workspace`. Every import brings them: a Local file or a hand-copied database into a new Local Workspace (§17), a Team file into a Local Workspace (§19), any file onto an empty Team server (§19 — added to what the server already stores, never replacing it: a file the server has without text gets the file's text). They are content, not secrets: who stored a file and from where is not kept, and the stripping of §17 and §19 leaves them as they are. A Workspace file with many PDFs can pass `INFALL_MAX_IMPORT_MB` (512 MiB by default); raise it for such a move.
+Every Workspace file carries the stored PDFs and their text: `export_workspace` (and so `export_for_move` and the desktop app's backups), `GET /api/workspace/export` and `export-workspace`. Every import brings them: a Local file or a hand-copied database into a new Local Workspace (§17), a Team file into a Local Workspace (§19), any file onto an empty Team server (§19 — added to what the server already stores, never replacing it: a file the server has without text gets the file's text). They are content, not secrets: who stored a file and from where is not kept, and the stripping of §17 and §19 leaves them as they are. A Workspace file with many PDFs can be large: `INFALL_MAX_IMPORT_MB` is 8192 MiB by default (it was 512 before 1.0). Size is a matter of disk, not memory — measured with a 640 MiB file of PDFs: `POST /api/workspace/import` peaked under 40 MB resident in the server, `import-workspace` and `export-workspace` under 17 MB, each 7–30 s on a laptop's SSD (release build); while a file comes in, the database's disk holds its scratch copy, the database growing by as much, and the write-ahead log until the next checkpoint.
 
 A file exported without them (below) has none of the three tables' rows (`secure_delete` and `VACUUM` as in §17, so not a byte of them); its Sources still name their hashes, and `GET` of each is `404 file_missing` until the same file is attached again (same bytes, same hash: the Source is whole again with no edit).
 

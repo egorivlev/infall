@@ -55,18 +55,138 @@ struct ForYouView {
     author: MemberId,
     at: i64,
     seen: bool,
+    /// The first line of the Comment as it reads now, as plain text (`snippet`); `None`
+    /// when the Comment is gone.
+    snippet: Option<String>,
 }
 
-impl From<&ForYouRecord> for ForYouView {
-    fn from(e: &ForYouRecord) -> ForYouView {
+impl ForYouView {
+    fn new(e: &ForYouRecord, comment: Option<&CommentRecord>) -> ForYouView {
         ForYouView {
             comment: e.comment,
             card: e.card,
             author: e.author,
             at: e.at,
             seen: e.seen,
+            snippet: comment.map(|c| snippet(&c.text)),
         }
     }
+}
+
+/// The longest a For you entry's `snippet` is, in characters, with the `…` that ends a cut one.
+pub const SNIPPET_CHARS: usize = 140;
+
+/// The first line of a Comment that has words, as plain text, for a For you entry and the
+/// short notice: a fence or a lone `$$` is skipped; a heading's `#`, a quote's `>` and a
+/// list's `-` or `1.` are dropped, and so are the inline marks a Page's text block knows
+/// (`**`, `*` around words, `` ` ``, `$`, a link's brackets and address, keeping its text);
+/// white space is collapsed and the line cut at a word to `SNIPPET_CHARS` with `…`.
+pub fn snippet(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("```") && *l != "$$")
+        .unwrap_or("");
+    let plain = strip_inline(strip_block_marks(line));
+    let words: Vec<&str> = plain.split_whitespace().collect();
+    let line = words.join(" ");
+    if line.chars().count() <= SNIPPET_CHARS {
+        return line;
+    }
+    let mut out = String::new();
+    for word in words {
+        let room = SNIPPET_CHARS - 1;
+        let have = out.chars().count();
+        let need = word.chars().count() + usize::from(!out.is_empty());
+        if have + need > room {
+            if out.is_empty() {
+                out = word.chars().take(room).collect();
+            }
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(word);
+    }
+    out.push('…');
+    out
+}
+
+/// A line without the marks that start a heading, a quote or a list item.
+fn strip_block_marks(mut line: &str) -> &str {
+    loop {
+        let before = line;
+        if let Some(rest) = line.strip_prefix('>') {
+            line = rest.trim_start();
+        }
+        let hashes = line.len() - line.trim_start_matches('#').len();
+        if (1..=3).contains(&hashes) && line[hashes..].starts_with([' ', '\t']) {
+            line = line[hashes..].trim_start();
+        }
+        if let Some(rest) = line.strip_prefix("- ") {
+            line = rest.trim_start();
+        }
+        let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if (1..=9).contains(&digits) && line[digits..].starts_with(". ") {
+            line = line[digits + 2..].trim_start();
+        }
+        if line == before {
+            return line;
+        }
+    }
+}
+
+/// Inline marks dropped: `**`, a `*` that opens or closes a word (not one between spaces or
+/// inside a word, as in `2 * 3` or `a*b`), backticks, `$`, and `[text](address)` as `text`.
+fn strip_inline(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '`' | '$' => {}
+            '*' => {
+                let mut j = i;
+                while j < chars.len() && chars[j] == '*' {
+                    j += 1;
+                }
+                let before = i.checked_sub(1).map(|k| chars[k]);
+                let after = chars.get(j).copied();
+                let space = |c: Option<char>| c.is_none_or(|c| c.is_whitespace());
+                let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric());
+                // Kept only alone between spaces or inside a word.
+                let keep = j - i == 1
+                    && ((space(before) && space(after)) || (word(before) && word(after)));
+                if keep {
+                    out.push('*');
+                }
+                i = j;
+                continue;
+            }
+            '[' => {
+                // `[text](address)`: the text alone.
+                if let Some(close) = chars[i + 1..].iter().position(|&c| c == ']') {
+                    let close = i + 1 + close;
+                    if chars.get(close + 1) == Some(&'(')
+                        && let Some(end) = chars[close + 2..].iter().position(|&c| c == ')')
+                    {
+                        out.push_str(&strip_inline(
+                            &chars[i + 1..close].iter().collect::<String>(),
+                        ));
+                        i = close + 2 + end + 1;
+                        continue;
+                    }
+                }
+                out.push('[');
+            }
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    out
 }
 
 fn parse_id(raw: &str) -> Result<Uuid, ApiError> {
@@ -312,8 +432,14 @@ pub async fn for_you(
     MemberOrAdmin(who): MemberOrAdmin,
 ) -> Result<Json<Value>, ApiError> {
     let me = who.id();
-    let items = blocking(&st, move |s| s.for_you(me)).await?;
-    let views: Vec<ForYouView> = items.iter().map(ForYouView::from).collect();
+    // Each entry with its Comment as it reads now: an edit shows its new text.
+    let views = blocking(&st, move |s| {
+        s.for_you(me)?
+            .iter()
+            .map(|e| Ok(ForYouView::new(e, s.comment(e.comment)?.as_ref())))
+            .collect::<Result<Vec<ForYouView>, _>>()
+    })
+    .await?;
     Ok(Json(json!({ "items": views })))
 }
 
@@ -342,4 +468,55 @@ pub async fn seen(
         .count();
     Hub::send_for_you(&st, me, unseen);
     Ok(Json(json!({ "count": unseen })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_snippet_is_the_first_line_with_words_without_markup() {
+        assert_eq!(
+            snippet("  \n\nHave a **look** at *this*\nsecond"),
+            "Have a look at this"
+        );
+        assert_eq!(snippet("```\ncode\n```"), "code");
+        assert_eq!(snippet("$$\nx^2\n$$"), "x^2");
+        assert_eq!(snippet("## Heading `code`"), "Heading code");
+        assert_eq!(snippet("> - 1. quoted item"), "quoted item");
+        assert_eq!(
+            snippet("see [the paper](https://example.org/a) on $\\alpha$"),
+            "see the paper on \\alpha"
+        );
+        assert_eq!(snippet("2 * 3 and a*b, **bold**"), "2 * 3 and a*b, bold");
+        assert_eq!(snippet("[not a link] (x)"), "[not a link] (x)");
+        assert_eq!(snippet("tab\there"), "tab here");
+        assert_eq!(snippet("#hashtag stays"), "#hashtag stays");
+        assert_eq!(snippet("<b>html</b> stays text"), "<b>html</b> stays text");
+    }
+
+    #[test]
+    fn an_entry_whose_comment_is_gone_has_no_snippet() {
+        let e = ForYouRecord {
+            comment: Uuid::new_v4(),
+            card: Uuid::new_v4(),
+            author: MemberId(Uuid::new_v4()),
+            at: 1,
+            seen: false,
+        };
+        let v = serde_json::to_value(ForYouView::new(&e, None)).unwrap();
+        assert_eq!(v["snippet"], Value::Null);
+    }
+
+    #[test]
+    fn a_long_snippet_is_cut_at_a_word() {
+        let long = "word ".repeat(100);
+        let s = snippet(&long);
+        assert!(s.chars().count() <= SNIPPET_CHARS);
+        assert!(s.ends_with("word…"), "{s}");
+        let one = "x".repeat(500);
+        assert_eq!(snippet(&one).chars().count(), SNIPPET_CHARS);
+        let exact = "y".repeat(SNIPPET_CHARS);
+        assert_eq!(snippet(&exact), exact);
+    }
 }

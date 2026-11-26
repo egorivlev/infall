@@ -375,7 +375,7 @@ sudo systemctl start infall
 sudo systemctl reload caddy
 ```
 
-(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
+(Replace `YOUR.DOMAIN` with your domain, or edit `/etc/caddy/Caddyfile` by hand.) Caddy now fetches a certificate automatically, which can take under a minute. The Caddyfile refuses request bodies over the server's own limits (1 MiB; 2 MiB on the one route that carries the captured result of a Run; 100 MiB for a PDF, 20 MiB for its text; 8192 MiB for a Workspace file brought onto an empty server) and adds an HSTS header; the server sets its own content-security headers. If you change one of these limits, change it in both places.
 
 ### 7. First login and inviting the others
 
@@ -413,7 +413,9 @@ Type the new password at the prompt (at least 12 characters; not shown, not on t
 
 ### 9. Backups
 
-Everything lives in one file, so one encrypted daily copy is enough. The backups are encrypted with a public key; the matching private key stays on your own laptop, never on the server. That way a stolen backup (or a compromised server) does not leak the data.
+Every day `backup.sh` writes a **Workspace file** with the server's own `infall-server export-workspace`: every Branch, the history, Checkpoints, To-dos, Comments and the PDFs, with the Members as names only and nothing secret — what an Admin's **Export Workspace file…** gives. It is a consistent snapshot, taken while the server runs. It is checked, compressed and encrypted with a public key; the matching private key stays on your own laptop, never on the server. That way a stolen backup (or a compromised server) does not leak the data. A Workspace file goes back onto an empty server with `import-workspace`, of this version or any newer one; everyone but the Admin who brings it in is invited again (their work waits under their names, and accepting the invite takes it over).
+
+If you also want this server back exactly as it was — sign-ins, invites, access tokens and sealed AI keys included — set `INFALL_BACKUP_DATABASE=yes` in `/etc/infall/infall.env`: each run then also writes an encrypted copy of the whole database, about as large again.
 
 1. On your laptop (not the VPS) install `age` and make a key pair:
 
@@ -437,7 +439,7 @@ Everything lives in one file, so one encrypted daily copy is enough. The backups
    sudo ls -l /var/backups/infall
    ```
 
-   You should see a file like `infall-20260101T033000Z.db.gz.age`. A timer runs it daily at about 03:30 and catches up after downtime. Local copies older than 14 days are removed.
+   You should see a file like `infall-20260101T033000Z.infall.gz.age` (and `infall-20260101T033000Z.db.gz.age` beside it with `INFALL_BACKUP_DATABASE=yes`). A timer runs it daily at about 03:30 and catches up after downtime. Local copies older than 14 days are removed, of both kinds, including the database copies this script wrote before it wrote Workspace files.
 
 3. Copies on the same machine do not survive losing the machine. Set up an off-machine copy with rclone (any provider it supports, for example an object-storage bucket or another server over SFTP):
 
@@ -456,28 +458,34 @@ A backup you have never restored is a hope, not a backup. Step A needs only your
 **A. Check a backup on your laptop** (needs `age` and `sqlite3`):
 
 ```sh
-scp you@infall.example.org:/var/backups/infall/infall-TIMESTAMP.db.gz.age .
-age -d -i infall-backup-key.txt infall-TIMESTAMP.db.gz.age | gunzip > restored.db
-sqlite3 restored.db 'PRAGMA integrity_check;'     # must print: ok
+scp you@infall.example.org:/var/backups/infall/infall-TIMESTAMP.infall.gz.age .
+age -d -i infall-backup-key.txt infall-TIMESTAMP.infall.gz.age | gunzip > restored.infall
+sqlite3 restored.infall 'PRAGMA integrity_check;'     # must print: ok
 ```
 
-(If scp is refused because the directory is private to `infall`, run `sudo cp` into your home first and `chown` it to yourself, or fetch it from the off-machine copy.)
+(If scp is refused because the directory is private to `infall`, run `sudo cp` into your home first and `chown` it to yourself, or fetch it from the off-machine copy.) The desktop app opens the same file as a Local Workspace (**Import a workspace…** on its start screen), a second way to look inside.
 
-**B. Restore onto the server.** Decrypt on the laptop as above, then:
+**B. Restore onto the server.** A Workspace file goes onto an **empty** server: the database is set aside, a fresh one gets an Admin, and the file comes in under that Admin. Decrypt on the laptop as above, then:
 
 ```sh
-scp restored.db you@infall.example.org:/tmp/restored.db
+scp restored.infall you@infall.example.org:/tmp/restored.infall
 # on the VPS:
 sudo systemctl stop infall
 sudo mv /var/lib/infall/infall.db /var/lib/infall/infall.db.before-restore
 sudo rm -f /var/lib/infall/infall.db-wal /var/lib/infall/infall.db-shm
-sudo install -o infall -g infall -m 600 /tmp/restored.db /var/lib/infall/infall.db
-sudo rm /tmp/restored.db
+sudo -u infall env INFALL_DB=/var/lib/infall/infall.db \
+  /opt/infall/infall-server create-admin --email you@example.org --name "Your Name"
+sudo install -o infall -g infall -m 600 /tmp/restored.infall /var/lib/infall/restored.infall
+sudo -u infall env INFALL_DB=/var/lib/infall/infall.db \
+  /opt/infall/infall-server import-workspace /var/lib/infall/restored.infall --admin-email you@example.org
+sudo rm /tmp/restored.infall /var/lib/infall/restored.infall
 sudo systemctl start infall
 systemctl status infall
 ```
 
-The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale ones left from the old database would not match the restored file, which is why they are removed. (A backup is one self-contained file: the backup script's online copy already includes everything committed.) Everything made after the backup is lost; keep `infall.db.before-restore` until you are sure, then delete it.
+`import-workspace` prints whose work came in (it is now yours) and the names not signed in yet. Sign in, and on the Members screen **Invite** each of them again: the invite takes over that name and everything under it. The database runs in WAL mode, so it has companion `-wal`/`-shm` files; stale ones left from the old database would not match the new one, which is why they are removed. Everything made after the backup is lost; keep `infall.db.before-restore` until you are sure, then delete it.
+
+**B′. Restore a database copy** (with `INFALL_BACKUP_DATABASE=yes`: this server exactly as it was, sign-ins included). Decrypt `infall-TIMESTAMP.db.gz.age` the same way into `restored.db`, check it with `PRAGMA integrity_check;`, then on the VPS stop the server, set the old database and its `-wal`/`-shm` aside as above, `sudo install -o infall -g infall -m 600 /tmp/restored.db /var/lib/infall/infall.db`, and start the server.
 
 ### 10. Updating to a new version
 
@@ -486,7 +494,8 @@ The database format only moves forward: the server records a schema version in t
 ```sh
 sudo systemctl start infall-backup.service            # 1. fresh backup (check it succeeded)
 journalctl -u infall-backup -n 5 --no-pager
-sudo systemctl stop infall                            # 2. stop
+sudo systemctl stop infall                            # 2. stop, and copy the database as it is
+sudo -u infall sqlite3 /var/lib/infall/infall.db ".backup /var/lib/infall/infall.db.before-update"
 sudo cp -a /opt/infall/infall-server /opt/infall/infall-server.prev
 sudo install -o root -g root -m 755 target/release/infall-server /opt/infall/infall-server   # 3. replace
 sudo rm -rf /opt/infall/web && sudo install -d -o root -g root -m 755 /opt/infall/web
@@ -495,7 +504,7 @@ sudo systemctl start infall                           # 4. start
 systemctl status infall && journalctl -u infall -n 20 --no-pager
 ```
 
-(Build first as in step 3.) To roll back: stop, restore the pre-update backup (step 9B), put `infall-server.prev` back, start.
+(Build first as in step 3.) To roll back: stop, put `infall.db.before-update` back as `infall.db` (remove `infall.db-wal` and `infall.db-shm` first), put `infall-server.prev` back, start. The daily Workspace file is not the way back here: an older server refuses a Workspace file made by a newer one. Delete `infall.db.before-update` once the new version has run well for a while.
 
 ## Upgrading from a pre-rename install
 
@@ -514,7 +523,7 @@ What both routes do:
 - **Small attack surface.** The firewall allows only SSH, HTTP and HTTPS, and SSH takes keys only. Caddy is the only way in: on the systemd route Infall listens on `127.0.0.1` only; in the container it is reachable only on the compose network, and only Caddy publishes ports.
 - **Contained service.** Infall runs as an unprivileged user that can write only to its own data folder: in a systemd sandbox, or in a container with a read-only system, no capabilities and `no-new-privileges`.
 - **Automatic security updates** for the operating system (not for Infall or Caddy: update those yourselves — on the systemd route step 10 and `sudo apt upgrade`; in the container `./update.sh`, which also brings a newer `caddy:2.x` tag once `compose.yaml` names one).
-- **Backups.** On the systemd route encrypted, with the decryption key off the server, plus an off-machine copy if you set one up. In the container a daily Workspace file (the work, no sign-ins), consistent and checked, plus database copies before upgrades and on request; not encrypted, and on the same host until you copy them off.
+- **Backups.** On the systemd route a daily Workspace file (the work, PDFs included, no sign-ins), consistent and checked, encrypted, with the decryption key off the server, plus an off-machine copy if you set one up; an encrypted database copy too if you ask for it. In the container a daily Workspace file (the work, no sign-ins), consistent and checked, plus database copies before upgrades and on request; not encrypted, and on the same host until you copy them off.
 - **Few outgoing requests.** The server connects out only for two things, and only when a Member uses them: the AI sidebar's OpenRouter path (once a Member has added a key), and **Look up** in the Source form, which sends one DOI to `api.crossref.org` or one arXiv id to `export.arxiv.org` over HTTPS, with nothing about the Workspace or the person. The firewall of [harden.md](harden.md) allows outgoing connections; if you restrict them, allow HTTPS to those hosts, or those two features say they could not reach them. The full list for Members: [docs/privacy.md](../docs/privacy.md).
 
 What it does not do:
