@@ -166,8 +166,11 @@ fn candidates(given: &str) -> Vec<String> {
         }
     };
     push(given.to_owned());
-    for entry in split_unescaped(given, ';') {
-        let fields = split_unescaped(&entry, ':');
+    // The escapes are taken away once, by the second split. Taken away by the first too, an
+    // escaped `\\` (as in Windows' `\\?\C:\…` or `\\server\share\…`) became `\` and then the
+    // escape of whatever followed it: `\\?\C` became `\?\C`.
+    for entry in split_at(given, ';', false) {
+        let fields = split_at(&entry, ':', true);
         if fields.len() >= 3 {
             // `description:path:type`; a Windows drive's colon left unescaped makes the path
             // two fields (`C`, `\Users\…`), so everything between the first and the last is it.
@@ -180,14 +183,26 @@ fn candidates(given: &str) -> Vec<String> {
 /// `text` split at every `sep` that is not escaped with a backslash, with the escapes of the
 /// separators and of the backslash itself taken away (`\:` is `:`, `\\` is `\`). Other
 /// backslashes stay, so a Windows path written plainly keeps its separators.
+#[cfg(test)]
 fn split_unescaped(text: &str, sep: char) -> Vec<String> {
+    split_at(text, sep, true)
+}
+
+/// `text` split at every `sep` that is not escaped with a backslash. With `unescape`, the
+/// escapes of `:`, `;` and `\` are taken away (as [`split_unescaped`]); without, every part
+/// keeps them as written, for a second split.
+fn split_at(text: &str, sep: char, unescape: bool) -> Vec<String> {
     let mut parts = vec![String::new()];
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             '\\' => match chars.peek() {
                 Some(&next) if next == ':' || next == ';' || next == '\\' => {
-                    parts.last_mut().unwrap().push(next);
+                    let part = parts.last_mut().unwrap();
+                    if !unescape {
+                        part.push('\\');
+                    }
+                    part.push(next);
                     chars.next();
                 }
                 _ => parts.last_mut().unwrap().push('\\'),
@@ -495,6 +510,31 @@ mod tests {
         assert_eq!(
             split_unescaped(r"a\;b;c", ';'),
             vec!["a;b".to_owned(), "c".to_owned()]
+        );
+    }
+
+    /// Pure string handling, so it runs on every system: the paths Windows gives a folder
+    /// picked there (`fs::canonicalize` makes them `\\?\C:\…`) and network paths begin with
+    /// two backslashes, which a reference manager writes escaped as four. They failed
+    /// `a_reference_managers_file_field_is_read` on Windows: the escapes were taken away twice.
+    #[test]
+    fn escaped_double_backslashes_of_windows_paths_survive() {
+        assert_eq!(
+            candidates(r"Full Text PDF:\\\\?\\C\:\\Users\\me\\a.pdf:application/pdf")[1],
+            r"\\?\C:\Users\me\a.pdf".to_owned()
+        );
+        assert_eq!(
+            candidates(r"PDF:\\\\server\\share\\a\;b.pdf:application/pdf")[1],
+            r"\\server\share\a;b.pdf".to_owned()
+        );
+        // Several files: each keeps its own escapes until its own fields are read.
+        assert_eq!(
+            candidates(r"A:\\\\?\\C\:\\x.pdf:pdf;B:\\\\?\\D\:\\y\;z.pdf:pdf")[1..],
+            [r"\\?\C:\x.pdf".to_owned(), r"\\?\D:\y;z.pdf".to_owned()]
+        );
+        assert_eq!(
+            split_at(r"a\\b\;c;d\:e", ';', false),
+            vec![r"a\\b\;c".to_owned(), r"d\:e".to_owned()]
         );
     }
 

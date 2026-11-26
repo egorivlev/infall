@@ -12,8 +12,9 @@
 #     and the request body limits;
 #   - walks the first day through the API (docs/first-day.md): invite, accept once,
 #     sign in, a Card;
-#   - takes a backup with the guide's unit, destroys the database, and restores it
-#     with the guide's steps from the encrypted file alone. A second container is
+#   - takes a backup with the guide's unit (a Workspace file, infall-<time>.infall.gz.age),
+#     destroys the database, and restores it with the guide's steps from the encrypted file
+#     alone: a fresh database, `create-admin`, `import-workspace`. A second container is
 #     "your laptop": the backup key is made there and never reaches "the VPS".
 #
 # The one deliberate difference from the guide: a rehearsal has no public name, so
@@ -173,6 +174,7 @@ build_server() {
 	if [ "$IN_MEMORY" = 1 ]; then
 		# Intermediate files in memory. The limit keeps a build that runs out of
 		# memory from hurting other containers: it is this one that gets stopped.
+		# shellcheck disable=SC2054  # the commas are --tmpfs's own options
 		target_args=(--tmpfs /ramtarget:exec,size=1500m -e CARGO_TARGET_DIR=/ramtarget --memory 2800m)
 	else
 		local free_kb
@@ -651,13 +653,14 @@ EOF
 # Guide step 9: backups, then "Test a restore" A and B.
 # ---------------------------------------------------------------------------
 
-# Guide, Test a restore, A: prints "ok" when the file decrypts and is a sound database.
+# Guide, Test a restore, A: prints "ok" when the file decrypts and is a sound database (a
+# Workspace file is an SQLite database too).
 check_backup_on_laptop() {
 	in_laptop -e NAME="$1" <<'EOF'
 set -euo pipefail
 cd /root/laptop
-age -d -i infall-backup-key.txt "$NAME" | gunzip >restored.db
-sqlite3 restored.db 'PRAGMA integrity_check;'
+age -d -i infall-backup-key.txt "$NAME" | gunzip >restored.infall
+sqlite3 restored.infall 'PRAGMA integrity_check;'
 EOF
 }
 
@@ -701,9 +704,10 @@ check 'infall-backup.timer is waiting for its next time' is "$(systemctl is-acti
 check 'infall-backup.service ran and succeeded' is "$(systemctl show -p Result --value infall-backup.service)" success
 note "systemd-analyze security infall-backup:$(systemd-analyze security infall-backup --no-pager 2>/dev/null | tail -n 1 | sed 's/.*infall-backup.service://; s/ [^ ]*$//')"
 check 'its journal says which file it wrote' sh -c 'journalctl -u infall-backup --no-pager | grep -q "infall-backup: wrote /var/backups/infall/infall-"'
-ls /var/backups/infall/infall-*.db.gz.age 2>/dev/null | tail -n 1 >"$R/backup-file"
+# A Workspace file (export-workspace), and no database copy: INFALL_BACKUP_DATABASE is "no".
+ls /var/backups/infall/infall-*.infall.gz.age 2>/dev/null | tail -n 1 >"$R/backup-file"
 BACKUP="$(cat "$R/backup-file")"
-check 'there is one backup file named infall-<time>.db.gz.age' is "$(ls /var/backups/infall | wc -l)" 1
+check 'there is one backup file, named infall-<time>.infall.gz.age' sh -c '[ "$(ls /var/backups/infall | wc -l)" = 1 ] && [ -n "$1" ]' _ "$BACKUP"
 check 'the backup file is infall:infall, mode 600' is "$(owner_mode "$BACKUP")" 'infall:infall 600'
 check 'the backup file is age-encrypted' sh -c "head -c 21 '$BACKUP' | grep -q '^age-encryption.org/v1'"
 check 'the backup left no temporary files behind' sh -c '[ -z "$(find /var/backups/infall -name ".tmp.*" -print)" ]'
@@ -723,7 +727,7 @@ EOF
 	local backup name
 	backup="$(docker exec "$MACHINE" cat /root/rehearsal/backup-file)"
 	name="$(basename "$backup")"
-	# scp you@…:/var/backups/infall/infall-TIMESTAMP.db.gz.age .
+	# scp you@…:/var/backups/infall/infall-TIMESTAMP.infall.gz.age .
 	docker exec "$MACHINE" cat "$backup" | docker exec -i "$LAPTOP" sh -c "cat >/root/laptop/$name"
 	local verdict
 	verdict="$(check_backup_on_laptop "$name")" || verdict="failed"
@@ -751,29 +755,52 @@ exit 0
 EOF
 
 	say "B. Restore onto the server (guide: Test a restore, B)"
-	# scp restored.db you@…:/tmp/restored.db
-	docker exec "$LAPTOP" cat /root/laptop/restored.db | docker exec -i "$MACHINE" sh -c 'cat >/tmp/restored.db'
+	# scp restored.infall you@…:/tmp/restored.infall
+	docker exec "$LAPTOP" cat /root/laptop/restored.infall | docker exec -i "$MACHINE" sh -c 'cat >/tmp/restored.infall'
 	in_machine <<'EOF'
 . /root/rehearsal/lib.sh
 set -uo pipefail
 following_guide
 
 STEP='Test a restore, B'
+# A Workspace file goes onto an empty server: the database is set aside, a fresh one gets an
+# Admin (the guide types the password at a prompt; here it is handed over as in step 5), and
+# the file comes in under that Admin.
 sudo systemctl stop infall
 sudo mv /var/lib/infall/infall.db /var/lib/infall/infall.db.before-restore
 sudo rm -f /var/lib/infall/infall.db-wal /var/lib/infall/infall.db-shm
-sudo install -o infall -g infall -m 600 /tmp/restored.db /var/lib/infall/infall.db
-sudo rm /tmp/restored.db
+new_password >"$R/admin-password-after"
+INFALL_ADMIN_PASSWORD="$(cat "$R/admin-password-after")"
+export INFALL_ADMIN_PASSWORD
+sudo --preserve-env=INFALL_ADMIN_PASSWORD -u infall env INFALL_DB=/var/lib/infall/infall.db \
+	/opt/infall/infall-server create-admin --email admin@infall.test --name "Rehearsal Admin"
+unset INFALL_ADMIN_PASSWORD
+sudo install -o infall -g infall -m 600 /tmp/restored.infall /var/lib/infall/restored.infall
+sudo -u infall env INFALL_DB=/var/lib/infall/infall.db \
+	/opt/infall/infall-server import-workspace /var/lib/infall/restored.infall --admin-email admin@infall.test \
+	>"$R/import.out" 2>&1
+echo "import-workspace: $?" >>"$R/import.out"
+sudo rm /tmp/restored.infall /var/lib/infall/restored.infall
 sudo systemctl start infall
 checking
 
 back() { wait_for_health && [ "$(systemctl is-active infall)" = active ]; }
 check 'after the restore the server is active and healthy' back
-check 'the restored database file is infall:infall, mode 600' is "$(owner_mode /var/lib/infall/infall.db)" 'infall:infall 600'
+check 'import-workspace brought the file in' grep -q '^import-workspace: 0$' "$R/import.out"
+check 'import-workspace says whose work came in' grep -q '^Brought in /var/lib/infall/restored.infall\. The work of .* is now Rehearsal Admin'"'"'s\.$' "$R/import.out"
+check 'import-workspace names the second Member as not signed in yet' grep -q '^Not signed in yet (invite them from Members): .*Rehearsal Member' "$R/import.out"
+check 'the new database file is infall:infall, mode 600' is "$(owner_mode /var/lib/infall/infall.db)" 'infall:infall 600'
+check 'the copied Workspace file is gone again' sh -c '[ ! -e /var/lib/infall/restored.infall ] && [ ! -e /tmp/restored.infall ]'
 
 BRANCH="$(cat "$R/branch-id")"
-login "$R/admin-after.jar" admin@infall.test "$R/admin-password"
-check 'the Admin signs in after the restore' is "$STATUS" 200
+login "$R/admin-after.jar" admin@infall.test "$R/admin-password-after"
+check 'the Admin signs in after the restore, with the password made for the new database' is "$STATUS" 200
+login "$R/admin-old.jar" admin@infall.test "$R/admin-password"
+check 'the old password does not sign in any more' is "$STATUS" 401
+api "$R/admin-after.jar" GET /api/branches
+check 'the Admin lists the Branches' is "$STATUS" 200
+same_branch() { body_has "$(cat "$R/branch-id")"; }
+check 'the Branch kept its id through the Workspace file' same_branch
 api "$R/admin-after.jar" GET "/api/branches/$BRANCH/board"
 card_back() { [ "$STATUS" = 200 ] && body_has "$(cat "$R/card-id")" && body_has 'Card made before the backup'; }
 block_back() { body_has "$(cat "$R/block-id")" && body_has 'Page block written before the backup.'; }
@@ -785,9 +812,10 @@ check 'restored: the Runs with their results' runs_back
 check 'restored: the Card the Member made on the first day' body_has "$(cat "$R/member-card-id")"
 check 'what was made after the backup is gone, as the guide says' late_gone
 api "$R/admin-after.jar" GET /api/members
-check 'restored: the second Member' body_has '"email":"member@infall.test"'
+check 'restored: the second Member, by name' body_has '"Rehearsal Member"'
+# A Workspace file carries no sign-ins: the guide has the Admin invite each of them again.
 login "$R/member-after.jar" member@infall.test "$R/member-password"
-check 'the second Member signs in after the restore' is "$STATUS" 200
+check 'the second Member cannot sign in until invited again, as the guide says' is "$STATUS" 401
 exit 0
 EOF
 }
@@ -806,7 +834,8 @@ set -uo pipefail
 came_back() { wait_for_health && [ "$(systemctl is-active infall)" = active ] && [ "$(systemctl is-active caddy)" = active ]; }
 check 'after a restart of the machine Infall and Caddy start by themselves and answer' came_back
 check 'after a restart of the machine the backup timer is waiting again' is "$(systemctl is-active infall-backup.timer)" active
-login "$R/admin-reboot.jar" admin@infall.test "$R/admin-password"
+# The password of the Admin made for the restored database (Test a restore, B).
+login "$R/admin-reboot.jar" admin@infall.test "$R/admin-password-after"
 check 'the Admin signs in after the restart of the machine' is "$STATUS" 200
 exit 0
 EOF

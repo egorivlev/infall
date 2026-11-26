@@ -29,6 +29,7 @@ use crate::address::{self, Navigation};
 use crate::bridge::{
     self, EditItem, MAIN_WINDOW, SETTINGS_WINDOW, SETUP_WINDOW, SendRequest, Step, UndoSteps,
 };
+#[cfg(target_os = "macos")]
 use crate::chrome;
 use crate::datadir;
 use crate::files;

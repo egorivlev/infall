@@ -810,6 +810,70 @@ fn the_chosen_folder_is_where_the_code_runs() {
     assert_eq!(failure(&events).0, Reason::Failed);
 }
 
+/// Ubuntu's python3 sets apport's excepthook at start (sitecustomize), and that hook hands
+/// the error to the interpreter's built-in printer, which reads the line from a file called
+/// main.py in the working directory: with the folder's own main.py, the traceback showed no
+/// line (the CI failure of `the_chosen_folder_is_where_the_code_runs` on ubuntu-latest).
+/// A hook set before the code ran is not the code's own; here one is set the same way by a
+/// `.pth` file of a virtual environment, on every system.
+#[test]
+fn an_excepthook_set_before_the_code_ran_does_not_replace_the_traceback() {
+    let python = python_or_skip!();
+    let venv = tempfile::tempdir().unwrap();
+    let made = Command::new(&python.path)
+        .args(["-m", "venv", "--without-pip"])
+        .arg(venv.path())
+        .env_clear()
+        .envs(python.env.iter().map(|(k, v)| (k, v)))
+        .output()
+        .unwrap();
+    if !made.status.success() {
+        eprintln!(
+            "SKIPPED: {} cannot make a virtual environment: {}",
+            python.path,
+            String::from_utf8_lossy(&made.stderr).trim()
+        );
+        return;
+    }
+    let lib = venv.path().join("lib");
+    let site = fs::read_dir(&lib)
+        .unwrap()
+        .map(|e| e.unwrap().path().join("site-packages"))
+        .find(|p| p.is_dir())
+        .expect("the virtual environment has a site-packages");
+    // What apport's hook does: hand everything to the built-in printer.
+    fs::write(
+        site.join("an_inherited_hook.pth"),
+        "import sys; sys.excepthook = lambda kind, value, tb: sys.__excepthook__(kind, value, tb)\n",
+    )
+    .unwrap();
+    let interpreter = TestPython {
+        path: venv.path().join("bin/python").to_str().unwrap().to_owned(),
+        env: python.env.clone(),
+        matplotlib: false,
+    };
+    let bench = bench(&interpreter);
+    let folder = tempfile::tempdir().unwrap();
+    let folder_path = folder.path().canonicalize().unwrap();
+    fs::write(folder_path.join("main.py"), "print('the wrong main.py')\n").unwrap();
+    bench
+        .runner
+        .settings_save(Some(&interpreter.path), folder_path.to_str())
+        .unwrap();
+    let member = Member::new(&bench.runner, Answer::Run);
+    let code = "import sys\nprint(sys.excepthook is sys.__excepthook__)\n1/0\n";
+    let run = done(bench.run_as(&member, ORIGIN, code));
+    assert_eq!(run.exit, Some(1));
+    // The hook was really there while the code ran.
+    assert!(run.output.starts_with("False\n"), "{}", run.output);
+    assert!(
+        run.output
+            .contains("File \"main.py\", line 3, in <module>\n    1/0\n"),
+        "{}",
+        run.output
+    );
+}
+
 // ---- execution -----------------------------------------------------------------------------
 
 #[test]
@@ -1165,10 +1229,14 @@ fn output_arrives_while_the_code_runs_about_ten_times_a_second() {
         arrivals.iter().map(|(_, t)| t.as_str()).collect::<String>(),
         expected
     );
-    // 100 prints over about 1.5 s: far fewer events than prints, but a steady stream.
+    // 100 prints over about 1.5 s: far fewer events than prints, but a steady stream. On a
+    // slow machine the sleeps overrun and the prints take longer (CI's macOS runners: 41 and
+    // 42 events), so the most there may be is about ten a second of the time they really took.
+    let took = end.duration_since(arrivals[0].0);
+    let most = 40.max(usize::try_from(took.as_millis() / 100).unwrap() + 2);
     assert!(
-        arrivals.len() >= 5 && arrivals.len() <= 40,
-        "{} events",
+        arrivals.len() >= 5 && arrivals.len() <= most && arrivals.len() < 100,
+        "{} events in {took:?}",
         arrivals.len()
     );
     for pair in arrivals.windows(2) {
@@ -1593,8 +1661,21 @@ print(sorted(name for name in dir(infall) if not name.startswith("_")))
     assert_eq!(run.exit, Some(0), "{}", run.output);
     assert_eq!(run.output, "['progress', 'step']\n");
     assert_plausible(&run.stats);
+    // On a slow machine a sample can land while the loop is still saying its thousand
+    // things (CI's macOS runner caught `(sweep, 0 of 999)`). Such a sample must be one the
+    // loop said, in order; what counts is what is said once it is done.
+    let mut seen = said(&run.stats);
+    let mut last_n = -1.0;
+    seen.retain(|&(step, progress)| match progress {
+        Some((n, total)) if total == 999.0 && step == Some("sweep") => {
+            assert!(n >= last_n, "the loop's samples went backwards at {n}");
+            last_n = n;
+            false
+        }
+        _ => true,
+    });
     assert_eq!(
-        said(&run.stats),
+        seen,
         [
             (Some("thermalising"), None),
             (Some("thermalising"), Some((3.0, 10.0))),
@@ -1958,12 +2039,23 @@ fn the_packages_the_code_imports_are_reported_with_what_they_require() {
     if !run.output.contains("'six") {
         assert!(!packages.contains_key("six"), "{packages:?}");
     }
-    // Imported itself, python-dateutil brings what it requires.
+    // Imported itself, python-dateutil brings what it requires: six up to 2.9, tzdata in
+    // 4.0 (2026), so the code says which of its requirements are installed here.
     if modern {
-        let run = bench.run("import dateutil\n");
+        let run = bench.run(
+            "import dateutil\nimport importlib.metadata as m, re\nfor r in m.requires('python-dateutil') or []:\n    if 'extra ==' in r: continue\n    name = re.match(r'[A-Za-z0-9._-]+', r).group(0)\n    try: print(m.distribution(name).metadata['Name'])\n    except m.PackageNotFoundError: pass\n",
+        );
+        assert_eq!(run.exit, Some(0), "{}", run.output);
         let packages = run.packages.expect("packages");
         assert!(packages.contains_key("python-dateutil"), "{packages:?}");
-        assert!(packages.contains_key("six"), "{packages:?}");
+        let required: Vec<&str> = run.output.lines().collect();
+        assert!(
+            !required.is_empty(),
+            "python-dateutil requires nothing installed here"
+        );
+        for name in required {
+            assert!(packages.contains_key(name), "{name}: {packages:?}");
+        }
     }
     // The standard library is never listed, nor anything not installed.
     for absent in [

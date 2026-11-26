@@ -30,8 +30,10 @@
 #     linked against. No maintainer scripts;
 #   - checks the package in a clean Ubuntu 22.04 and a clean Ubuntu 24.04 container of the
 #     package's architecture, in two steps:
-#       1. with the network: installs it with apt (and the virtual display and xdotool the
-#          check needs), checks the files and that every shared library resolves;
+#       1. with the network: installs it with apt over a stand-in for the package from before
+#          the rename (qoop), which apt must remove (`Conflicts`/`Replaces: qoop`), and the
+#          virtual display and xdotool the check needs; checks the files and that every shared
+#          library resolves;
 #       2. from a snapshot of that container, WITH NO NETWORK AT ALL (`--network none`: only the
 #          loopback interface exists) and a fresh home folder (no saved server, no Workspaces):
 #          starts the program under a virtual display and checks that it shows its window,
@@ -441,6 +443,9 @@ find "$stage/usr/share" -type f -exec chmod 644 {} +
 installed_kb="$(du -sk "$stage/usr" | cut -f1)"
 # Python is a Recommends: Infall works without it and only Runs need it. xdg-utils opens
 # links in the system browser; procps is the `ps` the Runner monitor reads.
+# Until 0.9.0 the package was called qoop (/usr/bin/qoop, qoop.desktop): this one takes its
+# place, so that apt removes the old one instead of leaving two apps, of which the old one
+# would start again under the old identifier (docs/specs/desktop.md, "Names before the rename").
 cat > "$stage/DEBIAN/control" <<CONTROL
 Package: $PACKAGE
 Version: $VERSION
@@ -449,6 +454,8 @@ Maintainer: $MAINTAINER
 Installed-Size: $installed_kb
 Depends: $depends
 Recommends: python3, xdg-utils, procps
+Conflicts: qoop
+Replaces: qoop
 Section: misc
 Priority: optional
 Description: $NAME desktop app
@@ -509,10 +516,23 @@ echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
 # Without the archive's lists apt says only "held broken packages", which is about the network,
 # not the package: say so.
 apt-get update -qq --error-on=any || fail "apt could not read Ubuntu's archive (the network, not the package)"
+# A package from before the rename is installed (a stand-in with the old name and program):
+# installing this one must remove it.
+mkdir -p /tmp/old/DEBIAN /tmp/old/usr/bin
+printf '#!/bin/sh\n' > /tmp/old/usr/bin/qoop
+chmod 755 /tmp/old/usr/bin/qoop
+printf 'Package: qoop\nVersion: 0.8.0\nArchitecture: all\nMaintainer: nobody <nobody@example.invalid>\nDescription: stand-in for the package before the rename\n' > /tmp/old/DEBIAN/control
+dpkg-deb --root-owner-group --build /tmp/old /tmp/qoop.deb >/dev/null && dpkg -i /tmp/qoop.deb >/dev/null \
+    || fail "could not install the stand-in for the old qoop package"
 # The way a Member installs it, recommended packages included.
 apt-get install -y -qq "/pkg/$DEB" >/tmp/apt.log 2>&1 || { tail -n 30 /tmp/apt.log >&2; fail "apt could not install the package"; }
 [ "$(dpkg-query -W -f '${Status}' "$PACKAGE")" = "install ok installed" ] || fail "the package is not installed"
 echo "    installed with apt: $(dpkg-query -W -f '${Package} ${Version} ${Architecture}' "$PACKAGE")"
+if [ "$PACKAGE" != qoop ]; then
+    dpkg-query -W -f '${Status}' qoop 2>/dev/null | grep -q "ok installed" && fail "the old qoop package is still installed beside it"
+    [ ! -e /usr/bin/qoop ] || fail "/usr/bin/qoop of the old package is still there"
+    echo "    it replaced the package from before the rename (qoop): removed by apt"
+fi
 [ -x "/usr/bin/$PACKAGE" ] || fail "/usr/bin/$PACKAGE is missing"
 [ -f "/usr/share/applications/$PACKAGE.desktop" ] || fail "the .desktop entry is missing"
 [ -f "/usr/share/icons/hicolor/256x256/apps/$PACKAGE.png" ] || fail "the icon is missing"
