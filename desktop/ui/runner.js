@@ -234,9 +234,11 @@
       'muted',
       !language.available
         ? 'Its program is not there any more.'
-        : language.version
-          ? language.version
-          : 'Did not say its version.'
+        : language.problem
+          ? 'Not working'
+          : language.version
+            ? language.version
+            : 'Did not say its version.'
     );
     head.appendChild(state);
     var remove = el('button', 'quiet', 'Remove');
@@ -246,6 +248,10 @@
     box.appendChild(head);
     box.appendChild(el('p', 'path', commandText(language.program, language.args)));
     box.appendChild(el('p', 'hint', 'Id ' + language.id + ' · files .' + language.ext));
+    // The program is there but failed when asked its version: what it said, and what to do.
+    if (language.available && language.problem) {
+      box.appendChild(el('p', 'hint', language.problem + ' Runs in ' + language.name + ' will likely fail until it is repaired or another program is set up.'));
+    }
     var error = el('p', 'error');
     error.setAttribute('role', 'alert');
     error.hidden = true;
@@ -272,7 +278,7 @@
     select.id = 'preset-' + preset.id;
     select.setAttribute('aria-label', 'Program for ' + preset.name);
     (preset.found || []).forEach(function (program) {
-      var option = el('option', null, program.path + (program.version ? ' — ' + program.version : ''));
+      var option = el('option', null, program.path + (program.problem ? ' — not working' : program.version ? ' — ' + program.version : ''));
       option.value = program.path;
       select.appendChild(option);
     });
