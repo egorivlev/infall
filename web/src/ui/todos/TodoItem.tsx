@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
+import { isNameOnly } from '../../lib'
 import type { Member, Todo } from '../../lib'
 import { boardBridge } from '../bridge'
 import { formatShortDate } from '../shell/dates'
@@ -27,8 +28,10 @@ type ItemProps = {
 
 export function TodoItem({ todo, owner, me, assignedBy, card, onToggle, onEdit, onDelete, readOnly = false }: ItemProps) {
   const textId = useId()
-  const mine = todo.owner === me.id && !readOnly
-  const canChange = !readOnly && (todo.owner === me.id || todo.created_by === me.id)
+  // M18 decision 6: a name only (a Member from a Team file, in a Local Workspace) — its To-dos are yours to finish.
+  const forName = todo.owner !== me.id && isNameOnly(todo.owner)
+  const mine = (todo.owner === me.id || forName) && !readOnly
+  const canChange = !readOnly && (todo.owner === me.id || todo.created_by === me.id || forName)
   const [editing, setEditing] = useState(false)
   const editButton = useRef<HTMLButtonElement>(null)
   const refocus = useRef(false) // the editor was closed from the keyboard: focus goes back to "Edit"
@@ -48,7 +51,17 @@ export function TodoItem({ todo, owner, me, assignedBy, card, onToggle, onEdit, 
         disabled={!mine}
         aria-labelledby={editing ? undefined : textId}
         aria-label={editing ? todo.text : undefined}
-        title={readOnly ? 'This copy is read-only' : mine ? (todo.done ? 'Mark not done' : 'Mark done') : `Only ${firstName(owner.name)} can tick this`}
+        title={
+          readOnly
+            ? 'This copy is read-only'
+            : forName
+              ? `${todo.done ? 'Mark not done' : 'Mark done'} for ${firstName(owner.name)}`
+              : mine
+                ? todo.done
+                  ? 'Mark not done'
+                  : 'Mark done'
+                : `Only ${firstName(owner.name)} can tick this`
+        }
         onChange={(e) => onToggle(todo, e.target.checked)}
       />
       <div className="qt-item__main">

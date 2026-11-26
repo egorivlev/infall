@@ -4,7 +4,8 @@ import { ApiError } from './http'
 import { membersStore } from './people'
 import { sessionStore } from './session-store'
 import { FakeServer, FakeSocket, FakeTimers, GUEST, ME, OTHER, settle } from './testing'
-import { todos, todosInternal } from './todos'
+import { isNameOnly, todos, todosInternal } from './todos'
+import { workspaceStore } from './workspace'
 
 let server: FakeServer
 let timers: FakeTimers
@@ -236,6 +237,26 @@ describe('setDone', () => {
     await expect(todos.setDone('ghost', true)).rejects.toMatchObject({ status: 404, code: 'not_found' })
     expect(calls('PATCH')).toEqual([])
     expect(list()[1]!.done).toBe(false)
+  })
+  it('ticks a name only’s To-do in a Local Workspace, and only there; it stays theirs', async () => {
+    const name = { ...OTHER, claimed: false }
+    membersStore.setState({ members: [ME, name] })
+    server.members = [ME, name]
+    // On a Team server the name waits for whoever claims it.
+    expect(isNameOnly(OTHER.id)).toBe(false)
+    await expect(todos.setDone('t1', true)).rejects.toMatchObject({ status: 403, code: 'forbidden' })
+    const was = workspaceStore.getState()
+    workspaceStore.setState({ ...was, kind: 'local' }, true)
+    server.workspace = { kind: 'local', preset: 'blank' }
+    try {
+      expect(isNameOnly(OTHER.id)).toBe(true)
+      expect(isNameOnly(ME.id)).toBe(false)
+      await todos.setDone('t1', true)
+      expect(list()[1]).toMatchObject({ id: 't1', owner: OTHER.id, done: true })
+      expect(calls('PATCH')).toHaveLength(1)
+    } finally {
+      workspaceStore.setState(was, true)
+    }
   })
   it('unticks again and rejects when the server refuses', async () => {
     const before = list()

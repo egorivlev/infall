@@ -294,6 +294,8 @@ type Todo = {
 
 Removing a Member (`DELETE /api/members/{id}`) deletes the To-dos they own; ones they created for others stay.
 
+**Names only in a Local Workspace** (M18, team-move.md decision 6): in a Local Workspace, a To-do whose owner is a Member who cannot sign in (`claimed: false` — someone who came with a Team file) may be ticked, unticked, changed and deleted by the Local Member as if it were theirs. Its `owner` and `created_by` stay as they were: nothing is reassigned. On a Team server there is no such rule: the person who claims the name (§19) takes over its To-dos.
+
 After every change the server sends `{ type: "todos", todos: Todo[] }` (the full list) to every connected Member/Admin, never to Guests.
 
 ## 12. M5 — AI tool layer, access tokens, Suggestions
