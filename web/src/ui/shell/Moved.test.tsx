@@ -79,7 +79,7 @@ describe('an empty Team server', () => {
     const admin = { ...ME, role: 'admin' as const }
     act(() => sessionStore.setState({ status: 'signed_in', member: admin }, true))
     await open()
-    expect(screen.getByRole('heading', { name: 'This Team server is empty' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Set up this Team Workspace' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Start empty' }))
     expect(screen.queryByTestId('first-screen')).toBeNull()
     expect(screen.getByText('Nothing on this Board yet')).toBeInTheDocument()

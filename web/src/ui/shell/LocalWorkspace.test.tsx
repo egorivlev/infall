@@ -70,7 +70,7 @@ describe('a Team Workspace', () => {
     expect(screen.queryByLabelText('Your name')).toBeNull()
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument() // in Settings too
     const m = await menu()
-    expect(m.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out'])
+    expect(m.getAllByRole('menuitem').map((i) => i.firstChild?.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out'])
   })
 
   it('an older server without /api/workspace is a Team Workspace', async () => {

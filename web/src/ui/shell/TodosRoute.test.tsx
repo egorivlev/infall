@@ -105,7 +105,7 @@ describe('To-dos route', () => {
   it('has a real link to /todos in the rail, after the Board', () => {
     render(<App />)
     const links = rail().getAllByRole('link').map((a) => a.textContent)
-    expect(links).toEqual(['Board', 'To-dos', 'For you0', 'Branches'])
+    expect(links).toEqual(['Board', 'To-dos', 'For you', 'Branches'])
     expect(rail().getByRole('link', { name: 'To-dos' })).toHaveAttribute('href', '/todos')
   })
 

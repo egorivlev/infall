@@ -9,7 +9,7 @@ export function Presence({ branch }: { branch: string }) {
   const more = presence.length - shown.length
   return (
     <div className="q-presence">
-      <span className="q-caps" id="q-presence-label" title={`On ${branch}`}>
+      <span className="q-lab" id="q-presence-label" title={`On ${branch}`}>
         On <span className="q-presence__branch">{branch}</span>
       </span>
       <ul className="q-presence__list" aria-labelledby="q-presence-label">

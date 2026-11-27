@@ -10,7 +10,7 @@ import { describeError, errorStatus, serverSentence } from '../shell/errorMessag
 import { Field } from '../shell/Field'
 import { Link } from '../shell/Link'
 import { movedWords } from '../shell/moved'
-import { settingsPath } from '../shell/router'
+import { SETTINGS_KEYS, settingsPath } from '../shell/router'
 import type { SettingsSection } from '../shell/router'
 import { clearSigningOut, noteSigningOut } from '../shell/sessionEnd'
 import { handsOn, startTour, tourBlock, tutorialHoldsTour, TUTORIAL_PRESET, useHandsOn } from '../tutorial'
@@ -32,7 +32,6 @@ const MOTION: { value: MotionPref; label: string }[] = [
   { value: 'full', label: 'Off' },
 ]
 
-const SHORTCUT = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘,' : 'Ctrl+,'
 
 export function Settings({ member, section }: { member: Member; section: SettingsSection }) {
   const shown = sectionsFor(member)
@@ -51,7 +50,7 @@ export function Settings({ member, section }: { member: Member; section: Setting
     <div className="q-set">
       <nav className="q-set-nav" aria-label="Settings">
         <p className="q-set-nav__title">Settings</p>
-        <p className="q-set-nav__hint q-mono">{SHORTCUT}</p>
+        <p className="q-set-nav__hint q-mono">{SETTINGS_KEYS}</p>
         <ul className="q-set-nav__list">
           {shown.map((s) => (
             <li key={s}>

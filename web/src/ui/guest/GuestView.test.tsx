@@ -146,7 +146,7 @@ describe('Guest: top bar', () => {
   it('shows the badge with the date and the explaining title', () => {
     renderAs(PRIYA)
     const badge = screen.getByTitle('Read-only access to the main Branch. It ends automatically.')
-    expect(badge).toHaveTextContent('Guest — access until 30 Nov')
+    expect(badge).toHaveTextContent('Guest · access until 30 Nov')
   })
 
   it('shows no presence list, even when the data layer has people in it', () => {
@@ -169,7 +169,7 @@ describe('Guest: top bar', () => {
     expect(menu).toHaveTextContent('Priya Nair')
     expect(within(menu).getByText('Guest')).toBeInTheDocument()
     const items = within(menu).getAllByRole('menuitem')
-    expect(items.map((i) => i.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out']) // Settings (this device's appearance) and the tour are everybody's
+    expect(items.map((i) => i.firstChild?.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out']) // Settings (this device's appearance) and the tour are everybody's
     expect(within(menu).queryByText('AI access')).toBeNull()
     expect(within(menu).queryByText('Members')).toBeNull()
   })

@@ -30,7 +30,12 @@ export function SuggestionsItem({ onBoard }: { onBoard: boolean }) {
     >
       <Icon name="suggestion" />
       <span className="q-rail__label">Suggestions</span>
-      <span className={`q-rail__badge${pending > 0 ? ' q-rail__badge--hot' : ''}`}>{pending}</span>
+      {/* Neutral: Suggestions are the team's to review, not addressed to you. A zero is not drawn. */}
+      {pending > 0 && (
+        <span className="q-count" aria-hidden="true">
+          {pending}
+        </span>
+      )}
     </button>
   )
 }
