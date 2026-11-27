@@ -453,6 +453,7 @@ const LICENCES = [
 
 /** M19: the PDF reader's renderer and what it ships with. */
 const SOFTWARE = [
+  { name: 'React Flow', note: 'MIT License', file: '/licenses/LICENSE-React-Flow.txt' },
   { name: 'PDF.js', note: 'Apache License 2.0', file: '/licenses/LICENSE-pdf.js.txt' },
   { name: 'PDF.js standard fonts (Foxit, Liberation)', note: 'their own licences', file: '/licenses/LICENSE-pdf.js-fonts.txt' },
   { name: 'PDF.js image decoders (OpenJPEG, PDFium JBIG2)', note: 'BSD licences', file: '/licenses/LICENSE-pdf.js-decoders.txt' },
