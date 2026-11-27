@@ -1,0 +1,47 @@
+# Reach the server through a Cloudflare Tunnel instead of open ports (README.md,
+# "Without open ports: Cloudflare Tunnel"). For a host that cannot forward ports 80 and 443:
+# a home network, a router you do not control.
+#
+# Turned on by one line in .env, which every docker compose command and update.sh read:
+#   COMPOSE_FILE=compose.yaml:compose.cloudflare.yaml
+#
+# cloudflared makes an outgoing connection to Cloudflare and nothing on this machine listens
+# to the internet. Cloudflare holds the certificate and serves https://INFALL_DOMAIN; it
+# passes each request through the tunnel to Caddy, which keeps doing what it does on the
+# open-ports route (the request size limits, compression, the HSTS header) over plain HTTP
+# inside the compose network.
+#
+# Cloudflare decrypts the traffic at its edge: passwords, invite links and the Workspace's
+# content pass through Cloudflare in the clear before the tunnel carries them here.
+
+services:
+  caddy:
+    environment:
+      # "http://" turns off Caddy's own certificate: Cloudflare has the public one.
+      INFALL_CADDY_SITE: http://${INFALL_DOMAIN}
+    # Nothing is published on the host. (Needs Docker Compose 2.24 or newer.)
+    ports: !reset []
+
+  cloudflared:
+    # cloudflared 2026.11.1; a newer one is a one-line change here.
+    image: cloudflare/cloudflared:2026.11.1
+    restart: unless-stopped
+    depends_on:
+      caddy:
+        condition: service_started
+    # http2 over TCP 443, not QUIC over UDP 7844: many home networks block or mangle the UDP
+    # one, and cloudflared then keeps retrying instead of connecting.
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--metrics", "0.0.0.0:2000", "run"]
+    environment:
+      # The tunnel's token from Cloudflare's dashboard (README.md). Anyone with it can run
+      # this tunnel, so .env is then a secret file: chmod 600 .env.
+      TUNNEL_TOKEN: ${INFALL_CLOUDFLARE_TOKEN:?set INFALL_CLOUDFLARE_TOKEN in .env (README.md, "Without open ports")}
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "localhost:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

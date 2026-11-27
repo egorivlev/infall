@@ -15,7 +15,7 @@ Words used here: an **Admin** is a Member who also invites and removes people an
 
 - A Linux host (a VPS or your own machine) with **Docker Engine and the Compose plugin**. Check with `docker compose version`; if that fails, install Docker from [docs.docker.com/engine/install](https://docs.docker.com/engine/install/). 1 GB of memory is enough.
 - **A domain name** whose DNS record (`A`, and `AAAA` if the host has IPv6) points at the host. Check with `dig +short infall.example.org`: it must print the host's address.
-- **Ports 80 and 443** open to the internet on the host and in any provider firewall. Caddy needs both to get the certificate; nothing else on the host may use them.
+- **Ports 80 and 443** open to the internet on the host and in any provider firewall. Caddy needs both to get the certificate; nothing else on the host may use them. Cannot open them (a home network, a router that is not yours)? Use a Cloudflare Tunnel instead: [Without open ports](#without-open-ports-cloudflare-tunnel).
 - The image of the version you want, from your registry (`INFALL_IMAGE` below; "[Build the image yourself](#build-the-image-yourself)" if you have none).
 
 Before the server holds anything, do the host checklist in [harden.md](harden.md) (firewall, key-only SSH, automatic updates). Docker publishes ports past `ufw`, so the only ports this setup publishes are 80 and 443.
@@ -64,6 +64,36 @@ Before the server holds anything, do the host checklist in [harden.md](harden.md
 #### Try it on your own computer first
 
 Set `INFALL_DOMAIN=localhost` in `.env` and follow the same steps. Caddy then uses a certificate of its own instead of a public one: browsers warn about it once, and `curl` needs `-k` (`curl -kfsS https://localhost/api/health`). If ports 80 or 443 are taken on that computer, set `INFALL_HTTP_PORT`, `INFALL_HTTPS_PORT` and `INFALL_PUBLIC_ORIGIN` as `.env.example` explains.
+
+### Without open ports: Cloudflare Tunnel
+
+For a host that nobody can reach from the internet: a home network without port forwarding, a router you do not control. A small `cloudflared` container on the host makes an outgoing connection to Cloudflare; Cloudflare serves `https://your hostname` with its own certificate and sends each request down that connection to Caddy. Nothing on the host listens to the internet, and the router needs no change. Live updates (WebSockets) work through it.
+
+What changes compared with the open-ports route:
+
+- **Cloudflare sees the traffic.** It decrypts HTTPS at its edge, so passwords, invite links and the Workspace's content pass through Cloudflare in the clear before the tunnel carries them on. On the open-ports route only this host ever sees them.
+- **Uploads are capped at 100 MB** by Cloudflare's free plan. The settings below keep the server's own limits under that. A bigger Workspace file can still be brought in on the command line ([Move the data elsewhere](#move-the-data-elsewhere)), which does not go through Cloudflare.
+- **The domain must be in a Cloudflare account** (its nameservers at Cloudflare). Any domain works; Cloudflare's own registrar sells them at cost.
+
+Steps, instead of the open-ports route's step 2 (the others stay the same):
+
+1. **Make the tunnel.** In the [Cloudflare dashboard](https://dash.cloudflare.com): **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** → **Cloudflared**. Name it (for example `infall`). On the next page Cloudflare shows install commands for several systems: do not run them; copy only the **token**, the long string after `--token` (or after `TUNNEL_TOKEN=`).
+2. **Give it the hostname.** In the same tunnel, **Public Hostname** (called **Published application routes** in newer dashboards) → **Add**: subdomain `infall` (or any), your domain, **Service** type `HTTP`, URL `caddy:80`. Save. Cloudflare makes the DNS record by itself.
+3. **Write the settings.**
+
+   ```sh
+   cp .env.example .env
+   chmod 600 .env
+   nano .env
+   ```
+
+   Set `INFALL_DOMAIN` to the full hostname from step 2 (for example `infall.example.org`) and `INFALL_IMAGE` as usual. In the **Without open ports** block, remove the `#` in front of its four lines and paste the token after `INFALL_CLOUDFLARE_TOKEN=`. The token lets anyone run your tunnel, which is why `.env` is private now.
+
+Then start it as in step 3 of the open-ports route (or `./update.sh`). `docker compose ps` shows `cloudflared` as `(healthy)` once the tunnel is connected, and the tunnel's page in the dashboard says **Healthy**. `docker compose logs caddy` does not mention a certificate: Cloudflare has it. Check with `curl -fsS https://infall.example.org/api/health` as usual.
+
+`COMPOSE_FILE` in `.env` is what adds [compose.cloudflare.yaml](compose.cloudflare.yaml) to every `docker compose` command, including the ones `update.sh` runs, so nothing else in this guide changes. To go back to open ports, put the `#` back in front of the four lines and run `docker compose up -d --remove-orphans`.
+
+**Troubleshooting.** `cloudflared` not healthy: `docker compose logs cloudflared`; `Unauthorized` or `Invalid tunnel secret` means the token was copied wrong. The page shows Cloudflare's **502 Bad Gateway**: the Service URL in step 2 is not `HTTP` / `caddy:80`. Cloudflare's **404** or a blank page: the hostname in the dashboard and `INFALL_DOMAIN` differ.
 
 ### What runs, and where the data is
 

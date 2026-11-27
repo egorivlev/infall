@@ -2,7 +2,9 @@
 # INFALL_DOMAIN comes from deploy/.env. For a real domain Caddy gets and renews a
 # certificate by itself (ports 80 and 443 must reach this machine); for "localhost" it
 # uses its own local authority, which curl accepts with -k and browsers warn about.
-{$INFALL_DOMAIN} {
+# Through a Cloudflare Tunnel (compose.cloudflare.yaml) the address is http://INFALL_DOMAIN:
+# Cloudflare holds the certificate, and Caddy serves plain HTTP to the tunnel only.
+{$INFALL_CADDY_SITE} {
 	# WebSockets (live updates) pass through with no extra settings; the Origin header is
 	# passed on for the server's own check.
 	reverse_proxy server:8787
