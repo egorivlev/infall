@@ -9,35 +9,40 @@
   <body>
     <main class="approval">
       <header>
-        <h1>Run this code on your computer?</h1>
-        <p>
-          This code will run on this computer with your own rights. It can read, change and delete
-          your files and use the network; Infall does not fence it in. Someone else may have written
-          or changed it. Read it, and run it only if you trust it.
+        <h1 class="title">Run this code on your computer?</h1>
+        <p class="lead warning">
+          It will run on this computer as you. It can read, change and delete your files and use
+          the network; Infall does not fence it in. Someone else may have written or changed it.
+          Read it, and run it only if you trust it.
         </p>
       </header>
-      <dl class="facts">
-        <dt>Run</dt>
-        <dd><span id="title">…</span> <span id="language" class="language">…</span></dd>
-        <dt>From</dt>
-        <dd id="origin" class="path">…</dd>
-        <dt id="environment-label" hidden>Environment</dt>
-        <dd id="environment" hidden>…</dd>
-        <dt id="program-label">Python</dt>
-        <dd id="program" class="path">…</dd>
-        <dt>Folder</dt>
-        <dd id="folder" class="path">…</dd>
-        <dt>Code</dt>
-        <dd id="size">…</dd>
-      </dl>
-      <ul id="notices" class="notices" role="alert" hidden></ul>
+      <div class="card facts-card">
+        <dl class="facts">
+          <dt>Workspace</dt>
+          <dd><strong id="origin">…</strong> <span id="origin-kind" class="chip" hidden></span></dd>
+          <dt>Run</dt>
+          <dd><span id="title">…</span> <span id="language" class="chip data">…</span></dd>
+          <dt id="environment-label" hidden>Environment</dt>
+          <dd id="environment-row" hidden>
+            <span id="environment" class="chip data">…</span>
+            <span class="hint">the name this Run asks for</span>
+          </dd>
+          <dt id="program-label">Python</dt>
+          <dd><div id="program" class="cmd">…</div></dd>
+          <dt>Folder</dt>
+          <dd id="folder" class="path">…</dd>
+          <dt>Code</dt>
+          <dd id="size">…</dd>
+        </dl>
+      </div>
+      <ul id="notices" class="notice warn notices" role="alert" hidden></ul>
       <div id="code" class="code" tabindex="0" role="region" aria-label="The code that would run"></div>
-      <p id="error" class="error" role="alert" hidden></p>
       <footer>
-        <p id="hint" class="hint" aria-live="polite"></p>
+        <p id="hint" class="footer-hint" aria-live="polite"></p>
+        <p id="error" class="footer-hint error" role="alert" hidden></p>
         <div class="buttons">
-          <button id="run" type="button" disabled>Run on this computer</button>
-          <button id="dont" type="button" class="primary" autofocus>Don't run</button>
+          <button id="dont" type="button" class="btn lg soft" autofocus>Don’t run</button>
+          <button id="run" type="button" class="btn lg soft" disabled>Run on this computer</button>
         </div>
       </footer>
     </main>

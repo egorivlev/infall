@@ -28,6 +28,8 @@
   function showError(message) {
     error.textContent = message;
     error.hidden = !message;
+    // The sentence takes the hint's place.
+    hint.hidden = !!message;
   }
 
   function update() {
@@ -82,13 +84,28 @@
     return n === 1 ? '1 ' + one : n.toLocaleString('en-US') + ' ' + many;
   }
 
+  // Whether the app's name for the Workspace is a Local or a Team one: a Local Workspace's
+  // name ends in " (on this computer)", a Team Workspace is named by its server's address
+  // (workspaces.rs, approvals_name). The name itself is shown exactly as the app gave it.
+  function originKind(origin) {
+    if (/ \(on this computer\)$/.test(origin)) return 'Local';
+    if (/^https?:\/\//.test(origin)) return 'Team';
+    return '';
+  }
+
   function render(view) {
     setText('title', String(view.title));
-    setText('language', String(view.language || 'Python'));
-    setText('origin', String(view.origin));
+    setText('language', 'Run · ' + String(view.language || 'Python'));
+    var origin = String(view.origin);
+    setText('origin', origin);
+    var kind = originKind(origin);
+    if (kind) {
+      setText('origin-kind', kind);
+      document.getElementById('origin-kind').hidden = false;
+    }
     if (typeof view.environment === 'string') {
       setText('environment', view.environment);
-      document.getElementById('environment').hidden = false;
+      document.getElementById('environment-row').hidden = false;
       document.getElementById('environment-label').hidden = false;
     }
     if (view.lang === 'qsharp') {
@@ -168,6 +185,9 @@
   invoke('approval_view').then(render, function (reason) {
     showError(typeof reason === 'string' ? reason : 'This question is no longer open.');
     hint.textContent = '';
+    hint.hidden = true;
+    // Nothing is left to run: only Close.
+    runButton.hidden = true;
     dontButton.textContent = 'Close';
   });
 })();

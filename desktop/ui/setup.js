@@ -24,25 +24,33 @@
   var recentList = $('recent-list');
   var recentError = $('recent-error');
   var recentErrorText = $('recent-error-text');
-  var createSection = document.querySelector('.section.create');
+  var layout = document.querySelector('.layout');
   var createStatus = $('create-status');
   var createError = $('create-error');
+  var narrowError = $('narrow-error');
+  var signinBox = $('signin-box');
+  var signinToggle = $('signin-toggle');
+  var signinNarrow = $('signin-narrow');
   var signinForm = $('signin-form');
   var address = $('address');
   var addressError = $('address-error');
   var signin = $('signin');
-  var importBox = $('import');
   var importBtn = $('import-btn');
   var importError = $('import-error');
-  var importSlotRecent = $('import-slot-recent');
-  var importSlotCreate = $('import-slot-create');
-  var tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
+  var first = $('first');
+  var firstTutorial = $('first-tutorial');
+  var firstError = $('first-error');
+  var createMenuBtn = $('create-menu-btn');
+  var createMenu = $('create-menu');
+  var createItems = Array.prototype.slice.call(createMenu.querySelectorAll('[role="menuitem"]'));
+  // The four Presets. The first is the Tutorial.
+  var tiles = Array.prototype.slice.call(document.querySelectorAll('.preset'));
   var template = $('entry-template');
 
   var busy = false;
   var entries = []; // WorkspaceEntry[] as start_view gave them
   var rows = {}; // id -> row controller
-  var openMenu = null; // the row whose menu is open
+  var openMenu = null; // the menu that is open: a row's, or Create a workspace in a narrow room
 
   function invoke(command, args) {
     try {
@@ -96,7 +104,7 @@
   function actionButtons() {
     return Array.prototype.slice.call(
       document.querySelectorAll(
-        '.tile, #signin, #import-btn, #update-go, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button, .move button, .export button'
+        '.preset, #first-tutorial, #create-menu-btn, #signin, #import-btn, #update-go, .entry-open, .entry-actions button, .menu button, .confirm button, .entry-rename button, .move button, .export button'
       )
     );
   }
@@ -112,7 +120,6 @@
   // ---- time in plain words ------------------------------------------------------------
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   function two(n) {
     return n < 10 ? '0' + n : String(n);
@@ -127,27 +134,38 @@
     return typeof ms === 'number' && isFinite(ms) && ms > 0;
   }
 
-  // "<verb> just now", "<verb> 5 minutes ago", "<verb> today at 09:12", "<verb> on Monday",
-  // "<verb> 3 Nov": relative while it is recent, a date after a week.
-  function when(verb, ms, now) {
+  // "just now", "5 minutes ago", "2 hours ago", "yesterday", "3 days ago", "3 Nov": relative
+  // while it is recent, a date after a week. The full date and time is in the tooltip.
+  function ago(ms, now) {
     var d = new Date(ms);
     var diff = now - ms;
-    if (diff < 60 * 1000) return verb + ' just now';
+    if (diff < 60 * 1000) return 'just now';
     if (diff < 60 * 60 * 1000) {
       var m = Math.floor(diff / 60000);
-      return verb + ' ' + m + (m === 1 ? ' minute ago' : ' minutes ago');
+      return m + (m === 1 ? ' minute ago' : ' minutes ago');
     }
     var days = Math.round((startOfDay(new Date(now)) - startOfDay(d)) / 86400000);
-    if (days <= 0) return verb + ' today at ' + clock(d);
-    if (days === 1) return verb + ' yesterday at ' + clock(d);
-    if (days < 7) return verb + ' on ' + DAYS[d.getDay()];
+    if (days <= 0) {
+      var h = Math.max(1, Math.floor(diff / 3600000));
+      return h + (h === 1 ? ' hour ago' : ' hours ago');
+    }
+    if (days === 1) return 'yesterday';
+    if (days < 7) return days + ' days ago';
     var date = d.getDate() + ' ' + MONTHS[d.getMonth()];
     if (d.getFullYear() !== new Date(now).getFullYear()) date += ' ' + d.getFullYear();
-    return verb + ' ' + date;
+    return date;
   }
 
+  function capital(text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  // "Yesterday", in the row; "opened yesterday" where it is read out.
   function whenOpened(ms, now) {
-    return known(ms) ? when('opened', ms, now) : 'not opened yet';
+    return known(ms) ? capital(ago(ms, now)) : 'Not opened yet';
+  }
+  function whenOpenedWords(ms, now) {
+    return known(ms) ? 'opened ' + ago(ms, now) : 'not opened yet';
   }
 
   // "3 files, 4.2 MB": what Export… may include.
@@ -177,39 +195,174 @@
 
   // ---- create -------------------------------------------------------------------------
 
-  function showCreateError(text) {
-    createError.textContent = text || '';
-    createError.hidden = !text;
+  // A failure is said next to what was pressed: under the first start's button, or under
+  // the Presets (in a narrow room, where they are folded into a menu, at the top of the list).
+  function showCreateError(text, where) {
+    [createError, narrowError, firstError].forEach(function (el) {
+      var mine = where === 'first' ? el === firstError : el !== firstError;
+      el.textContent = mine ? text || '' : '';
+      el.hidden = !(mine && text);
+    });
+  }
+
+  function narrowRoom() {
+    return window.matchMedia('(max-width: 699px)').matches;
+  }
+
+  // `tile` is the Preset; `from` the control that was pressed when it is not the tile itself
+  // (the first start's button, or the narrow room's menu button), which then says it is busy.
+  function create(tile, from) {
+    if (busy) return;
+    var preset = tile.getAttribute('data-preset');
+    var name = tile.getAttribute('data-name');
+    var desc = tile.querySelector('.preset-desc');
+    var descText = desc.textContent;
+    var fromText = from ? from.textContent : '';
+    var where = from === firstTutorial ? 'first' : 'side';
+    clearMessages();
+    setBusy(true);
+    tile.setAttribute('aria-busy', 'true');
+    spinnerText(desc, 'Creating…');
+    if (from) {
+      from.setAttribute('aria-busy', 'true');
+      spinnerText(from, 'Creating…');
+    }
+    createStatus.textContent = 'Creating the ' + name + ' workspace…';
+    invoke('workspace_create', { preset: preset }).then(
+      function () {
+        // The shell opens the new Workspace and closes this window.
+        desc.textContent = 'Opening…';
+        if (from) from.textContent = 'Opening…';
+        createStatus.textContent = 'Opening the ' + name + ' workspace…';
+      },
+      function (reason) {
+        tile.removeAttribute('aria-busy');
+        desc.textContent = descText;
+        if (from) {
+          from.removeAttribute('aria-busy');
+          restoreLabel(from, fromText);
+        }
+        createStatus.textContent = '';
+        setBusy(false);
+        showCreateError(sentence(reason, 'The workspace could not be created. Try again.'), where);
+        (from || tile).focus();
+      }
+    );
+  }
+
+  // The narrow room's menu button carries a ▾ that is not read out.
+  function restoreLabel(button, text) {
+    if (button === createMenuBtn) {
+      button.textContent = 'Create a workspace ';
+      var caret = document.createElement('span');
+      caret.setAttribute('aria-hidden', 'true');
+      caret.textContent = '▾';
+      button.appendChild(caret);
+    } else {
+      button.textContent = text;
+    }
   }
 
   tiles.forEach(function (tile) {
     tile.addEventListener('click', function () {
-      if (busy) return;
-      var preset = tile.getAttribute('data-preset');
-      var name = tile.getAttribute('data-name');
-      var desc = tile.querySelector('.tile-desc');
-      var descText = desc.textContent;
-      clearMessages();
-      setBusy(true);
-      tile.setAttribute('aria-busy', 'true');
-      spinnerText(desc, 'Creating…');
-      createStatus.textContent = 'Creating the ' + name + ' workspace…';
-      invoke('workspace_create', { preset: preset }).then(
-        function () {
-          // The shell opens the new Workspace and closes this window.
-          desc.textContent = 'Opening…';
-          createStatus.textContent = 'Opening the ' + name + ' workspace…';
-        },
-        function (reason) {
-          tile.removeAttribute('aria-busy');
-          desc.textContent = descText;
-          createStatus.textContent = '';
-          setBusy(false);
-          showCreateError(sentence(reason, 'The workspace could not be created. Try again.'));
-          tile.focus();
-        }
-      );
+      create(tile, null);
     });
+  });
+
+  // A first start: the Tutorial, with the accent on one button.
+  firstTutorial.addEventListener('click', function () {
+    create(tiles[0], firstTutorial);
+  });
+
+  // ---- a narrow room: Create a workspace ▾ and Sign in… --------------------------------
+
+  var createMenuRow = {
+    menu: createMenu,
+    moreBtn: createMenuBtn,
+    closeMenu: function (refocus) {
+      if (openMenu !== createMenuRow) return;
+      openMenu = null;
+      createMenu.hidden = true;
+      createMenuBtn.setAttribute('aria-expanded', 'false');
+      if (refocus) createMenuBtn.focus();
+    },
+    openMenu: function (focusLast) {
+      closeAllPanels(null);
+      openMenu = createMenuRow;
+      createMenu.hidden = false;
+      createMenuBtn.setAttribute('aria-expanded', 'true');
+      placeMenu(createMenu, createMenuBtn);
+      (focusLast ? createItems[createItems.length - 1] : createItems[0]).focus();
+    }
+  };
+
+  createMenuBtn.addEventListener('click', function () {
+    if (busy) return;
+    if (openMenu === createMenuRow) createMenuRow.closeMenu(true);
+    else createMenuRow.openMenu(false);
+  });
+  createMenuBtn.addEventListener('keydown', function (event) {
+    if (busy) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      createMenuRow.openMenu(event.key === 'ArrowUp');
+    }
+  });
+  createMenu.addEventListener('keydown', function (event) {
+    menuKeys(event, createItems, createMenuRow);
+  });
+  createItems.forEach(function (item) {
+    item.addEventListener('click', function () {
+      if (busy) return;
+      var which = item.getAttribute('data-for');
+      createMenuRow.closeMenu(true);
+      if (which === 'import') {
+        startImport(createMenuBtn);
+        return;
+      }
+      var tile = tiles.filter(function (t) {
+        return t.getAttribute('data-preset') === which;
+      })[0];
+      if (tile) create(tile, createMenuBtn);
+    });
+  });
+
+  // Sign in, folded: a short window shows one button in its place, a narrow room one in its
+  // bar. Pressing it opens the field there.
+  function openSignin(from) {
+    signinBox.classList.add('open');
+    layout.classList.add('signin-open');
+    signinToggle.setAttribute('aria-expanded', 'true');
+    signinNarrow.setAttribute('aria-expanded', 'true');
+    address.focus();
+    // In a short window the open form may be taller than the room under the Presets: the
+    // side panel scrolls it into view.
+    if (signinBox.scrollIntoView) signinBox.scrollIntoView({ block: 'nearest' });
+  }
+  function closeSignin(refocus) {
+    var wasNarrow = layout.classList.contains('signin-open') && narrowRoom();
+    signinBox.classList.remove('open');
+    layout.classList.remove('signin-open');
+    signinToggle.setAttribute('aria-expanded', 'false');
+    signinNarrow.setAttribute('aria-expanded', 'false');
+    if (refocus) (wasNarrow ? signinNarrow : signinToggle).focus();
+  }
+  function signinFolded() {
+    return narrowRoom() || window.matchMedia('(max-height: 599px)').matches;
+  }
+  signinToggle.addEventListener('click', function () {
+    openSignin(signinToggle);
+  });
+  signinNarrow.addEventListener('click', function () {
+    if (layout.classList.contains('signin-open')) closeSignin(true);
+    else openSignin(signinNarrow);
+  });
+  signinForm.addEventListener('keydown', function (event) {
+    // Folded away again with Escape, when it was folded to begin with.
+    if (event.key === 'Escape' && !busy && signinFolded() && signinBox.classList.contains('open')) {
+      event.preventDefault();
+      closeSignin(true);
+    }
   });
 
   // ---- import -------------------------------------------------------------------------
@@ -217,18 +370,29 @@
   function showImportError(text) {
     importError.textContent = text || '';
     importError.hidden = !text;
+    // In a narrow room the side panel is folded away: the error goes where Create errors go.
+    if (text) {
+      narrowError.textContent = text;
+      narrowError.hidden = false;
+    } else if (createError.hidden) {
+      narrowError.textContent = '';
+      narrowError.hidden = true;
+    }
   }
 
-  importBtn.addEventListener('click', function () {
+  // `from`: the narrow room's menu button, when the import was chosen from its menu.
+  function startImport(from) {
     if (busy) return;
+    var button = from || importBtn;
+    var label = button.textContent;
     clearMessages();
     closeAllPanels(null);
     setBusy(true);
-    importBtn.setAttribute('aria-busy', 'true');
-    spinnerText(importBtn, 'Importing…');
+    button.setAttribute('aria-busy', 'true');
+    spinnerText(button, 'Importing…');
     function done() {
-      importBtn.removeAttribute('aria-busy');
-      importBtn.textContent = 'Import a workspace…';
+      button.removeAttribute('aria-busy');
+      restoreLabel(button, label);
       setBusy(false);
     }
     invoke('workspace_import').then(
@@ -240,9 +404,13 @@
       function (reason) {
         done();
         showImportError(sentence(reason, 'The Workspace file could not be imported. Try again.'));
-        importBtn.focus();
+        button.focus();
       }
     );
+  }
+
+  importBtn.addEventListener('click', function () {
+    startImport(null);
   });
 
   // ---- sign in ------------------------------------------------------------------------
@@ -250,6 +418,8 @@
   function showAddressError(text) {
     addressError.textContent = text || '';
     addressError.hidden = !text;
+    // The error takes the hint's place.
+    $('address-hint').hidden = !!text;
     if (text) address.setAttribute('aria-invalid', 'true');
     else address.removeAttribute('aria-invalid');
   }
@@ -341,6 +511,39 @@
     true
   );
 
+  // Arrow keys, Home and End move; a letter jumps to the next item starting with it; Escape
+  // closes and returns to the button; Tab closes and goes on from the button.
+  function menuKeys(event, items, owner) {
+    var i = items.indexOf(document.activeElement);
+    var next = -1;
+    if (event.key === 'ArrowDown') next = (i + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (i - 1 + items.length) % items.length;
+    else if (event.key === 'Home' || event.key === 'PageUp') next = 0;
+    else if (event.key === 'End' || event.key === 'PageDown') next = items.length - 1;
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      owner.closeMenu(true);
+      return;
+    } else if (event.key === 'Tab') {
+      // Close it and let Tab go on from its button, as if the menu had not been open.
+      owner.closeMenu(true);
+      return;
+    } else if (event.key.length === 1 && /\S/.test(event.key)) {
+      var k = event.key.toLowerCase();
+      for (var n = 1; n <= items.length; n++) {
+        var j = (Math.max(i, 0) + n) % items.length;
+        if (items[j].textContent.trim().toLowerCase().charAt(0) === k) {
+          next = j;
+          break;
+        }
+      }
+    }
+    if (next >= 0) {
+      event.preventDefault();
+      items[next].focus();
+    }
+  }
+
   function makeRow(entry, index) {
     var li = template.content.firstElementChild.cloneNode(true);
     var open = li.querySelector('.entry-open');
@@ -368,6 +571,9 @@
     var moveError = moveForm.querySelector('.move-error');
     var moveGo = moveForm.querySelector('.move-go');
     var moveCancel = moveForm.querySelector('.move-cancel');
+    var moveFields = moveForm.querySelector('.move-fields');
+    var moveProgress = moveForm.querySelector('.move-progress');
+    var progress = li.querySelector('.entry-progress');
     var form = li.querySelector('.entry-rename');
     var formLabel = form.querySelector('label');
     var input = form.querySelector('input');
@@ -402,31 +608,34 @@
     var uid = 'entry-' + index;
     var now = Date.now();
     var whenText = whenOpened(entry.lastOpened, now);
-    var backupText = local && known(entry.lastBackup) ? when('backed up', entry.lastBackup, now) : '';
+    var whenWords = whenOpenedWords(entry.lastOpened, now);
+    var backupText = local && known(entry.lastBackup) ? 'Backed up ' + ago(entry.lastBackup, now) : '';
 
     nameEl.textContent = entry.name;
     nameEl.id = uid + '-name';
+    nameEl.title = entry.name;
     kindEl.textContent = local ? 'Local' : 'Team';
-    kindEl.className = 'kind ' + (local ? 'kind-local' : 'kind-team');
     if (local) {
       whereEl.textContent = entry.preset ? PRESET_NAMES[entry.preset] || entry.preset : '';
     } else {
-      whereEl.textContent = entry.address || '';
-      whereEl.classList.add('address');
+      // The host is what identifies a server; the whole address is in the tooltip.
+      whereEl.textContent = entry.address ? hostOf(entry.address) : '';
       whereEl.title = entry.address || '';
     }
     if (movedTo) {
-      // Where it is now says more than the Preset it began from.
+      // Where it is now says more than the Preset it began from; its main action, in place
+      // of the time it was opened, says it opens the server.
       whereEl.textContent = '';
-      movedEl.textContent = movedText;
+      movedEl.textContent = movedText + '. This copy is read-only.';
       movedEl.title = movedTo;
       movedEl.hidden = false;
       cta.hidden = false;
+      whenEl.hidden = true;
       li.classList.add('moved');
     }
     if (!whereEl.textContent) whereEl.hidden = true;
     whenEl.textContent = whenText;
-    if (known(entry.lastOpened)) whenEl.title = fullDate(entry.lastOpened);
+    if (known(entry.lastOpened)) whenEl.title = 'Opened ' + fullDate(entry.lastOpened);
     if (backupText) {
       backupEl.textContent = backupText;
       backupEl.title = 'Backed up ' + fullDate(entry.lastBackup);
@@ -441,7 +650,10 @@
     open.setAttribute('aria-label', movedTo ? 'Open ' + entry.name + ' on the server' : 'Open ' + entry.name);
     open.setAttribute('aria-describedby', uid + '-meta');
     meta.id = uid + '-meta';
-    meta.setAttribute('aria-label', kindWords + ', ' + whenText + (backupText ? ', ' + backupText : ''));
+    meta.setAttribute(
+      'aria-label',
+      kindWords + ', ' + whenWords + (backupText ? ', backed up ' + ago(entry.lastBackup, now) : '')
+    );
 
     // Team Workspaces have no file on this computer: no export, no folder.
     if (!local) {
@@ -463,8 +675,8 @@
 
     moreBtn.setAttribute('aria-label', 'More for ' + entry.name);
     moreBtn.title = movedTo
-      ? 'Open this copy, rename, export, show in folder, remove'
-      : 'Rename, ' + (local ? 'export, show in folder, move to a Team server, ' : '') + 'remove';
+      ? 'Open this copy, rename, export, show in folder, delete'
+      : 'Rename, ' + (local ? 'export, show in folder, move to a Team server, delete' : 'forget');
 
     moveForm.id = uid + '-move';
     moveForm.setAttribute('aria-labelledby', uid + '-move-title');
@@ -500,11 +712,13 @@
     confirm.setAttribute('aria-describedby', uid + '-confirm-body');
     confirmTitle.id = uid + '-confirm-title';
     confirmBody.id = uid + '-confirm-body';
+    // The menu item says what the question it opens asks.
+    miRemove.textContent = local ? 'Delete…' : 'Forget…';
     if (local) {
       confirmTitle.textContent = 'Delete “' + entry.name + '” for good?';
       confirmBody.textContent =
         'Its Board, Pages and history are removed from this computer, and its backups with them. ' +
-        'This cannot be undone. To keep a copy, export a Workspace file first.';
+        'This cannot be undone.';
       go.textContent = 'Delete workspace';
       exportFirst.hidden = false;
       exportFirst.setAttribute('aria-label', 'Export ' + entry.name + ' first');
@@ -552,6 +766,7 @@
         closeAllPanels(row);
         openMenu = row;
         menu.hidden = false;
+        li.classList.add('menu-open');
         moreBtn.setAttribute('aria-expanded', 'true');
         placeMenu(menu, moreBtn);
         (focusLast ? items[items.length - 1] : items[0]).focus();
@@ -560,6 +775,7 @@
         if (openMenu !== row) return;
         openMenu = null;
         menu.hidden = true;
+        li.classList.remove('menu-open');
         moreBtn.setAttribute('aria-expanded', 'false');
         if (refocus) moreBtn.focus();
       },
@@ -569,6 +785,7 @@
         row.showError('');
         row.showStatus('');
         row.renaming = true;
+        li.classList.add('renaming');
         input.value = entry.name;
         open.hidden = true;
         moreBtn.parentNode.hidden = true;
@@ -579,6 +796,7 @@
       stopRename: function (refocus) {
         if (!row.renaming) return;
         row.renaming = false;
+        li.classList.remove('renaming');
         row.showError('');
         form.hidden = true;
         open.hidden = false;
@@ -619,7 +837,6 @@
         row.showMoveError('');
         row.moving = true;
         moveForm.hidden = false;
-        recent.classList.add('panel-open');
         moveInput.focus();
         if (moveForm.scrollIntoView) moveForm.scrollIntoView({ block: 'nearest' });
       },
@@ -627,7 +844,6 @@
         if (!row.moving) return;
         row.moving = false;
         moveForm.hidden = true;
-        recent.classList.remove('panel-open');
         row.showMoveError('');
         if (refocus) moreBtn.focus();
       },
@@ -640,7 +856,6 @@
         row.exporting = true;
         exportFiles.checked = true;
         exportForm.hidden = false;
-        recent.classList.add('panel-open');
         exportFiles.focus();
         if (exportForm.scrollIntoView) exportForm.scrollIntoView({ block: 'nearest' });
       },
@@ -648,10 +863,22 @@
         if (!row.exporting) return;
         row.exporting = false;
         exportForm.hidden = true;
-        recent.classList.remove('panel-open');
         if (refocus) moreBtn.focus();
       }
     };
+
+    // While the row opens: dimmed, and the time (or a moved copy's "Open on the server")
+    // gives way to what is going on.
+    function rowBusy(on) {
+      if (on) li.setAttribute('aria-busy', 'true');
+      else li.removeAttribute('aria-busy');
+      li.classList.toggle('busy', on);
+      if (movedTo) {
+        cta.hidden = on;
+        whenEl.hidden = !on;
+      }
+      if (!on) whenEl.textContent = whenText;
+    }
 
     // ---- open ----
 
@@ -661,9 +888,8 @@
       closeAllPanels(null);
       setBusy(true);
       open.setAttribute('aria-busy', 'true');
-      li.setAttribute('aria-busy', 'true');
+      rowBusy(true);
       spinnerText(whenEl, 'Opening…');
-      whenEl.classList.add('is-busy');
       if (movedTo) {
         spinnerText(whenEl, 'Checking the server…');
         announce('Opening ' + entry.name + ' on ' + hostOf(movedTo) + '…');
@@ -679,8 +905,7 @@
         },
         function (reason) {
           open.removeAttribute('aria-busy');
-          li.removeAttribute('aria-busy');
-          whenEl.textContent = whenText;
+          rowBusy(false);
           setBusy(false);
           row.showError(sentence(reason, 'This workspace could not be opened. Try again.'));
           open.focus();
@@ -693,17 +918,15 @@
       clearMessages();
       closeAllPanels(null);
       setBusy(true);
-      li.setAttribute('aria-busy', 'true');
+      rowBusy(true);
       moreBtn.setAttribute('aria-busy', 'true');
       spinnerText(whenEl, 'Opening…');
-      whenEl.classList.add('is-busy');
       announce('Opening the copy of ' + entry.name + ' on this computer…');
       invoke('workspace_open', { id: entry.id }).then(
         function () {},
         function (reason) {
-          li.removeAttribute('aria-busy');
+          rowBusy(false);
           moreBtn.removeAttribute('aria-busy');
-          whenEl.textContent = whenText;
           setBusy(false);
           row.showError(sentence(reason, 'This workspace could not be opened. Try again.'));
           moreBtn.focus();
@@ -738,34 +961,7 @@
     });
 
     menu.addEventListener('keydown', function (event) {
-      var i = items.indexOf(document.activeElement);
-      var next = -1;
-      if (event.key === 'ArrowDown') next = (i + 1) % items.length;
-      else if (event.key === 'ArrowUp') next = (i - 1 + items.length) % items.length;
-      else if (event.key === 'Home' || event.key === 'PageUp') next = 0;
-      else if (event.key === 'End' || event.key === 'PageDown') next = items.length - 1;
-      else if (event.key === 'Escape') {
-        event.preventDefault();
-        row.closeMenu(true);
-        return;
-      } else if (event.key === 'Tab') {
-        // Close it and let Tab go on from its button, as if the menu had not been open.
-        row.closeMenu(true);
-        return;
-      } else if (event.key.length === 1 && /\S/.test(event.key)) {
-        var k = event.key.toLowerCase();
-        for (var n = 1; n <= items.length; n++) {
-          var j = (Math.max(i, 0) + n) % items.length;
-          if (items[j].textContent.trim().toLowerCase().charAt(0) === k) {
-            next = j;
-            break;
-          }
-        }
-      }
-      if (next >= 0) {
-        event.preventDefault();
-        items[next].focus();
-      }
+      menuKeys(event, items, row);
     });
 
     function fromMenu(action) {
@@ -834,18 +1030,28 @@
       setBusy(true);
       li.setAttribute('aria-busy', 'true');
       moveGo.setAttribute('aria-busy', 'true');
-      spinnerText(moveGo, 'Moving…');
+      // Nothing here can measure the copy: the sentence carries it, over a still track.
+      var host = hostOf(moveInput.value.trim()).split('/')[0];
+      moveFields.hidden = true;
+      moveCancel.hidden = true;
+      moveGo.hidden = true;
+      moveProgress.hidden = false;
+      moveProgress.querySelector('.progress-text').textContent = 'Copying to ' + host + '…';
+      moveProgress.focus();
       announce('Checking the server and copying ' + entry.name + '…');
       invoke('workspace_move', { id: entry.id, address: moveInput.value }).then(
         function () {
           // The shell opens the server and closes this window; its page takes the file in.
-          moveGo.textContent = 'Opening the server…';
+          moveProgress.querySelector('.progress-text').textContent = 'Opening the server…';
           announce('Opening the server…');
         },
         function (reason) {
           li.removeAttribute('aria-busy');
           moveGo.removeAttribute('aria-busy');
-          moveGo.textContent = 'Move to server';
+          moveProgress.hidden = true;
+          moveFields.hidden = false;
+          moveCancel.hidden = false;
+          moveGo.hidden = false;
           setBusy(false);
           announce('');
           row.showMoveError(
@@ -858,9 +1064,7 @@
       );
     });
 
-    // ---- export, show in folder ----
-
-    // ---- export: with or without the PDFs ----
+    // ---- export: with or without the PDFs; show in folder ----
 
     exportCancel.addEventListener('click', function () {
       if (busy) return;
@@ -894,9 +1098,12 @@
         button.setAttribute('aria-busy', 'true');
         spinnerText(button, 'Exporting…');
       } else {
+        // From the menu: the row dims and a progress line under it says what is going on.
         moreBtn.setAttribute('aria-busy', 'true');
-        status.hidden = false;
-        spinnerText(status, 'Exporting ' + entry.name + '…');
+        li.classList.add('busy');
+        whenEl.hidden = true;
+        progress.querySelector('.progress-text').textContent = 'Exporting ' + entry.name + '…';
+        progress.hidden = false;
       }
       announce('Exporting ' + entry.name + '…');
       function done() {
@@ -906,6 +1113,9 @@
           button.removeAttribute('aria-busy');
           button.textContent = label;
         }
+        li.classList.remove('busy');
+        whenEl.hidden = !!movedTo;
+        progress.hidden = true;
         row.showStatus('');
         setBusy(false);
       }
@@ -1064,30 +1274,25 @@
   function render() {
     if (openMenu) openMenu.closeMenu(false);
     recentList.textContent = '';
-    recent.classList.remove('panel-open');
     rows = {};
     entries.forEach(function (entry, i) {
       var row = makeRow(entry, i);
       rows[entry.id] = row;
       recentList.appendChild(row.el);
     });
-    recentCount.textContent = entries.length > 1 ? entries.length + ' workspaces' : '';
+    recentCount.textContent = '';
+    if (entries.length > 1) {
+      recentCount.appendChild(document.createTextNode(String(entries.length)));
+      var words = document.createElement('span');
+      words.className = 'visually-hidden';
+      words.textContent = ' workspaces';
+      recentCount.appendChild(words);
+    }
     recentList.hidden = entries.length === 0;
-    recentList.classList.toggle('long', entries.length > 2);
-    // A first start shows the ways in, not an empty box.
+    // A first start shows one way in, not an empty list: "No workspaces yet" and the
+    // Tutorial. The Presets beside it stay the same in every state.
     recent.hidden = entries.length === 0 && recentError.hidden;
-    // Import sits under the list; with no list, under the ways to create one.
-    var slot = recent.hidden ? importSlotCreate : importSlotRecent;
-    if (importBox.parentNode !== slot) slot.appendChild(importBox);
-    // With a list to show, the Create tiles shrink so both fit in the window.
-    var compact = entries.length > 0;
-    createSection.classList.toggle('compact', compact);
-    // In the small tiles the description is read out but not shown; hovering shows it.
-    tiles.forEach(function (tile) {
-      var desc = tile.querySelector('.tile-desc');
-      if (compact && desc) tile.title = desc.textContent;
-      else tile.removeAttribute('title');
-    });
+    first.hidden = !(entries.length === 0 && recentError.hidden);
   }
 
   function focusRow(id, which) {
@@ -1096,9 +1301,12 @@
     (which === 'open' ? row.open : row.moreBtn).focus();
   }
 
+  // Where the focus starts: the newest Workspace, or on a first start the button that makes
+  // the Tutorial (scripts/package-linux.sh presses Return there to make one).
   function focusStart() {
-    var first = recentList.querySelector('.entry-open');
-    if (first && !recent.hidden) first.focus();
+    var top = recentList.querySelector('.entry-open');
+    if (top && !recent.hidden) top.focus();
+    else if (!first.hidden) firstTutorial.focus();
     else tiles[0].focus();
   }
 
@@ -1131,7 +1339,7 @@
     reload(function () {
       if (entries.length) focusStart();
       else if (!recentError.hidden) $('recent-retry').focus();
-      else tiles[0].focus();
+      else focusStart();
     });
   });
 
