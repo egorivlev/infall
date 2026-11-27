@@ -1,6 +1,7 @@
 # The installers, each built by the script a person runs by hand (docs/specs/release.md), on every
-# push to a branch, every pull request and by hand, and kept as the run's artifacts for 14 days.
-# release.yml calls this workflow on a v* tag and attaches what it builds to a GitHub Release.
+# push to a branch other than main, every pull request and by hand, and kept as the run's
+# artifacts for 14 days. release.yml calls this workflow on a v* tag and attaches what it builds
+# to a GitHub Release; latest.yml calls it on every push to main, for the Latest build release.
 #
 #   macOS arm64, macOS x64   scripts/package-macos.sh --no-verify, on a Mac of that kind
 #   Windows x64              scripts/package-windows.sh, cross-compiled on Ubuntu with mingw-w64
@@ -18,7 +19,8 @@ name: Packages
 
 on:
   push:
-    branches: ["**"]
+    # Not main: latest.yml builds these there, and puts them in the Latest build release.
+    branches: ["**", "!main"]
   pull_request:
   workflow_dispatch:
   workflow_call:

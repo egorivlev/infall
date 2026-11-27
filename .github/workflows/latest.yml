@@ -1,0 +1,80 @@
+# Latest build: on every push to main, the five installers go into one GitHub Release that
+# is replaced each time (tag `latest`, marked as a pre-release). It is the newest code, not
+# a version: versions are made by release.yml from a tag v1.2.3.
+name: Latest build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# A newer push replaces a build still running for an older one.
+concurrency:
+  group: latest-build
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  packages:
+    name: Packages
+    uses: ./.github/workflows/package.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Replace the Latest build release
+    needs: packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          pattern: infall-*
+          merge-multiple: true
+      - name: Checksums
+        working-directory: release
+        run: |
+          ls -l
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Notes
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("desktop/src-tauri/tauri.conf.json"))["version"])')"
+          short="${GITHUB_SHA::7}"
+          subject="$(git log -1 --format=%s)"
+          {
+            echo "The newest code on \`main\`, built by GitHub from commit [\`$short\`](https://github.com/$REPO/commit/$GITHUB_SHA) on $(date -u +'%-d %B %Y, %H:%M UTC'): $subject"
+            echo
+            echo "**Not a version.** This release is replaced on every push; the files say $version because that is the version number in the code, whatever has changed since. Nobody has checked these files by hand."
+            echo
+            # The same table and opening instructions as a version's release, without the
+            # line about a container image: none is built for this.
+            sed -e '/container image/d' \
+                -e "s|{version}|$version|g" -e "s|{tag}|$GITHUB_SHA|g" -e "s|{repo}|$REPO|g" \
+                .github/release-notes-unsigned.md
+            echo
+            echo '```'
+            cat release/SHA256SUMS
+            echo '```'
+          } > notes.md
+          cat notes.md
+          echo "title=Latest build ($version, $short)" >>"$GITHUB_ENV"
+      - name: Replace the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The tag has to move to this commit, so the old release and its tag go first.
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create latest --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "$title" --notes-file notes.md release/*
