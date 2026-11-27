@@ -396,24 +396,35 @@ describe('AI access: creating an access token', () => {
 })
 
 describe('AI access: revoking', () => {
-  it('asks first, naming the token, and Cancel changes nothing', async () => {
+  // M17 (B3): Revoke asks inside the token's row, not in a dialog.
+  const asking = () => screen.getByRole('group', { name: /^Revoke “office desktop”\?/ })
+
+  it('asks first, in the row, naming the token; Keep changes nothing and returns to Revoke', async () => {
     const { user } = await renderLoaded()
-    const opener = screen.getByRole('button', { name: 'Revoke access token office desktop' })
-    await user.click(opener)
-    const dialog = screen.getByRole('dialog', { name: 'Revoke “office desktop”?' })
-    expect(dialog).toHaveTextContent('Any AI using this access token loses access immediately.')
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Revoke access token office desktop' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(asking()).toHaveTextContent('Revoke “office desktop”? Any AI using it loses access immediately. This cannot be undone.')
+    expect(within(asking()).getByRole('button', { name: 'Keep' })).toHaveFocus()
+    await user.click(within(asking()).getByRole('button', { name: 'Keep' }))
+    expect(screen.queryByRole('group', { name: /^Revoke/ })).not.toBeInTheDocument()
     expect(h.removed).toEqual([])
-    expect(opener).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Revoke access token office desktop' })).toHaveFocus())
     expect(screen.getByRole('rowheader', { name: 'office desktop' })).toBeInTheDocument()
+  })
+
+  it('Esc in the question keeps the token too', async () => {
+    const { user } = await renderLoaded()
+    await user.click(screen.getByRole('button', { name: 'Revoke access token office desktop' }))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /^Revoke/ })).not.toBeInTheDocument()
+    expect(h.removed).toEqual([])
   })
 
   it('revokes on confirm and takes the row away', async () => {
     const { user } = await renderLoaded()
     await user.click(screen.getByRole('button', { name: 'Revoke access token office desktop' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(within(asking()).getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /^Revoke/ })).not.toBeInTheDocument())
     expect(h.removed).toEqual([['t2']])
     expect(screen.queryByRole('rowheader', { name: 'office desktop' })).not.toBeInTheDocument()
     expect(screen.getByRole('rowheader', { name: 'Claude Code on my laptop' })).toBeInTheDocument()
@@ -421,29 +432,28 @@ describe('AI access: revoking', () => {
     expect(screen.getByRole('heading', { name: 'Access tokens' })).toHaveFocus()
   })
 
-  it('keeps the dialog open with a plain sentence when revoking fails', async () => {
+  it('keeps asking, with a plain sentence, when revoking fails', async () => {
     h.remove = fail(500, 'internal')
     const { user } = await renderLoaded()
     await user.click(screen.getByRole('button', { name: 'Revoke access token office desktop' }))
-    const dialog = screen.getByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Something went wrong on our side. Try again.')
-    expect(screen.getByRole('rowheader', { name: 'office desktop' })).toBeInTheDocument()
+    await user.click(within(asking()).getByRole('button', { name: 'Revoke' }))
+    expect(await within(asking()).findByRole('alert')).toHaveTextContent('Something went wrong on our side. Try again.')
   })
 
   it('treats a token that is already gone as revoked', async () => {
     h.remove = fail(404, 'not_found')
     const { user } = await renderLoaded()
     await user.click(screen.getByRole('button', { name: 'Revoke access token office desktop' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' }))
-    await waitFor(() => expect(screen.queryByRole('rowheader', { name: 'office desktop' })).not.toBeInTheDocument())
+    await user.click(within(asking()).getByRole('button', { name: 'Revoke' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /^Revoke/ })).not.toBeInTheDocument())
+    expect(screen.queryByRole('rowheader', { name: 'office desktop' })).not.toBeInTheDocument()
   })
 
   it('stops showing the secret of a token that is revoked while it is on show', async () => {
     const { user } = await renderLoaded()
     await createToken(user)
     await user.click(screen.getByRole('button', { name: 'Revoke access token Cursor' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke' }))
+    await user.click(within(screen.getByRole('group', { name: /^Revoke “Cursor”\?/ })).getByRole('button', { name: 'Revoke' }))
     await waitFor(() => expect(screen.queryByRole('group', { name: 'New access token' })).not.toBeInTheDocument())
     expect(document.body.innerHTML).not.toContain(SECRET)
     expect(command().textContent).toBe(PLACEHOLDER_COMMAND)

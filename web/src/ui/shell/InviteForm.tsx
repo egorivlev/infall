@@ -103,16 +103,14 @@ export function InviteForm({ onCreated, claim = null, onClearClaim }: Props) {
 
   return (
     <section className="q-invite" aria-labelledby="q-invite-h">
-      <div className="q-invite__head">
-        <h2 className="q-panel-title" id="q-invite-h">
-          {claim ? `Invite ${claim.name}` : 'Invite someone'}
-        </h2>
-        <span className="q-tag">Admin only</span>
-      </div>
+      {/* No "Admin only" tag (M17, B4): the whole screen is the Admin's. */}
+      <h2 className="q-subtitle" id="q-invite-h">
+        {claim ? `Invite ${claim.name}` : 'Invite someone'}
+      </h2>
       {claim && (
         <p className="q-invite__claim">
-          <span>Whoever accepts takes over the name {claim.name} — their Changes, Checkpoints, To-dos and Comments.</span>
-          <button type="button" className="q-btn q-btn--sm q-btn--quiet" onClick={() => onClearClaim?.()}>
+          <span>Whoever accepts takes over the name {claim.name}: their Changes, Checkpoints, To-dos and Comments.</span>
+          <button type="button" className="q-btn q-btn--sm q-btn--soft" onClick={() => onClearClaim?.()}>
             Invite someone new instead
           </button>
         </p>
@@ -131,9 +129,10 @@ export function InviteForm({ onCreated, claim = null, onClearClaim }: Props) {
         />
         <fieldset className="q-roles">
           <legend className="q-label">Role</legend>
-          <div className="q-roles__seg">
+          {/* The shared q-seg, with native radios inside: the form keeps its own keyboard and names. */}
+          <div className="q-seg q-seg--fill">
             {(['member', 'guest'] as const).map((r) => (
-              <label key={r} className="q-roles__opt">
+              <label key={r} className="q-seg__opt">
                 <input type="radio" name="invite-role" value={r} checked={role === r} onChange={() => pickRole(r)} />
                 <span>{r === 'member' ? 'Member' : 'Guest'}</span>
               </label>
@@ -151,7 +150,7 @@ export function InviteForm({ onCreated, claim = null, onClearClaim }: Props) {
             value={until}
             inputRef={untilRef}
             error={errors.until}
-            hint={untilDate ? `Shown to them as “Guest — access until ${formatShortDate(untilDate)}”. Access ends automatically.` : 'Access ends automatically on this date.'}
+            hint={untilDate ? `Shown to them as “Guest · access until ${formatShortDate(untilDate)}”. Access ends automatically.` : 'Access ends automatically on this date.'}
             onChange={onUntil}
             onBlur={() => setErrors((x) => ({ ...x, until: checkUntil(role, until) }))}
           />

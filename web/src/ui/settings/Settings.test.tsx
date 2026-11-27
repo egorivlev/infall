@@ -173,10 +173,16 @@ describe('Appearance', () => {
   it('Interface scale, Text size and Reduce motion apply at once and are kept', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.selectOptions(screen.getByLabelText('Interface scale'), '125')
+    // M17 (B3): steppers among the same steps — the + button, and the arrow keys on the value.
+    await user.click(screen.getByRole('button', { name: 'Larger: Interface scale' }))
+    expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('1.1')
+    screen.getByRole('spinbutton', { name: 'Interface scale' }).focus()
+    await user.keyboard('{ArrowRight}')
     expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('1.25')
     expect(root.style.getPropertyValue('--q-ui-unzoom')).toBe('0.8')
-    await user.selectOptions(screen.getByLabelText('Text size'), '120')
+    expect(screen.getByRole('spinbutton', { name: 'Interface scale' })).toHaveAttribute('aria-valuetext', '125 %')
+    screen.getByRole('spinbutton', { name: 'Text size' }).focus()
+    await user.keyboard('{ArrowUp}{ArrowUp}')
     expect(root.style.getPropertyValue('--q-text')).toBe('1.2')
     await user.click(within(screen.getByRole('radiogroup', { name: 'Reduce motion' })).getByRole('radio', { name: 'On' }))
     expect(root).toHaveAttribute('data-motion', 'reduce')
@@ -184,17 +190,34 @@ describe('Appearance', () => {
     expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull()
   })
 
-  it('every control has a visible label, and "Reset to default" only when it differs', async () => {
+  it('every control has a visible label, and "Reset" only when it differs', async () => {
     const user = userEvent.setup()
     render(<App />)
+    expect(screen.queryByRole('button', { name: 'Reset Interface scale to default' })).toBeNull()
+    const scale = screen.getByLabelText('Interface scale')
+    scale.focus()
+    await user.keyboard('{Home}')
+    expect(usePrefs.getState().interfaceScale).toBe(80)
     const reset = screen.getByRole('button', { name: 'Reset Interface scale to default' })
-    expect(reset).toBeDisabled()
-    await user.selectOptions(screen.getByLabelText('Interface scale'), '80')
-    expect(reset).toBeEnabled()
+    expect(reset).toHaveTextContent(/^Reset$/)
     await user.click(reset)
     expect(usePrefs.getState().interfaceScale).toBe(100)
-    expect(screen.getByLabelText('Interface scale')).toHaveValue('100')
-    expect(screen.getByLabelText('Interface scale')).toHaveAccessibleDescription(/The Board keeps its own scale/)
+    expect(screen.queryByRole('button', { name: 'Reset Interface scale to default' })).toBeNull()
+    await waitFor(() => expect(screen.getByLabelText('Interface scale')).toHaveFocus()) // the control it reset, not nowhere
+    expect(screen.getByLabelText('Interface scale')).toHaveAttribute('aria-valuenow', '100')
+    expect(screen.getByLabelText('Interface scale')).toHaveAccessibleDescription(/The Board has its own scale/)
+  })
+
+  it('a scale stops at its ends: the button is disabled there and the keys do nothing more', async () => {
+    const user = userEvent.setup()
+    prefs.set({ interfaceScale: 150 })
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Larger: Interface scale' })).toBeDisabled()
+    screen.getByRole('spinbutton', { name: 'Interface scale' }).focus()
+    await user.keyboard('{ArrowRight}{End}')
+    expect(usePrefs.getState().interfaceScale).toBe(150)
+    await user.click(screen.getByRole('button', { name: 'Smaller: Interface scale' }))
+    expect(usePrefs.getState().interfaceScale).toBe(125)
   })
 
   it('"Reset Appearance to defaults" resets the section and leaves the Board alone', async () => {
@@ -211,11 +234,12 @@ describe('Board', () => {
     const user = userEvent.setup()
     go('/settings/board')
     render(<App />)
-    await user.selectOptions(screen.getByLabelText('Board scale'), '150')
+    screen.getByRole('spinbutton', { name: 'Board scale' }).focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
     expect(usePrefs.getState()).toMatchObject({ boardScale: 150, interfaceScale: 100 })
     expect(root.style.getPropertyValue('--q-ui-zoom')).toBe('1') // the interface did not move
     expect(screen.getByText('Larger')).toBeInTheDocument()
-    expect(screen.getByText('Back to 100%')).toBeInTheDocument()
+    expect(screen.getByText('Back to 100 %')).toBeInTheDocument()
   })
 })
 

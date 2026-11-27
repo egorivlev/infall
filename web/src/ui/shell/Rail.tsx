@@ -79,9 +79,12 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
           >
             <Icon name="mention" />
             <span className="q-rail__label">For you</span>
-            <span className={`q-rail__badge${unseen > 0 ? ' q-rail__badge--hot' : ''}`} aria-hidden="true">
-              {unseen}
-            </span>
+            {/* Addressed to you: the only count that turns accent. A zero is not drawn (the spoken name still says it). */}
+            {unseen > 0 && (
+              <span className="q-count q-count--att" aria-hidden="true">
+                {unseen}
+              </span>
+            )}
           </Link>
         )}
         {member.role !== 'guest' && !moved && <SuggestionsItem onBoard={route === 'board'} />}
@@ -100,7 +103,7 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
       </nav>
       <section className="q-rail__frames" aria-labelledby="q-frames-h">
         <div className="q-rail__head">
-          <h2 className="q-caps" id="q-frames-h">
+          <h2 className="q-lab" id="q-frames-h">
             Frames
           </h2>
           {canAdd && (
@@ -140,7 +143,8 @@ export function Rail({ member, route, branch }: { member: Member; route: ShellVi
       <TutorialProgress />
       <footer className="q-rail__foot">
         <SyncStatus status={status} readOnly={member.role === 'guest' || moved} />
-        <div className="q-rail__host">{window.location.host}</div>
+        {/* A Local Workspace has no server to name: it lives here (M17, B1). */}
+        {local ? <div className="q-rail__host">On this computer</div> : <div className="q-rail__host q-rail__host--address">{window.location.host}</div>}
       </footer>
     </aside>
   )

@@ -125,7 +125,7 @@ export function ModelPicker({ current }: Props) {
           <p className="q-error" role="alert">
             {loadError}
           </p>
-          <button type="button" className="q-btn q-btn--sm" onClick={() => void load()}>
+          <button type="button" className="q-btn q-btn--sm q-btn--soft" onClick={() => void load()}>
             Try again
           </button>
         </div>

@@ -12,12 +12,12 @@ export function MovedBar() {
   if (ws.readOnly !== true) return null
   const back = desktopSwitchWorkspace()
   return (
-    <div className="q-moved" role="region" aria-label="Moved Workspace" data-testid="moved-bar">
+    <div className="q-notice-line q-notice-line--bar q-moved" role="region" aria-label="Moved Workspace" data-testid="moved-bar">
       <svg className="q-moved__icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
         <rect x="2.5" y="6" width="9" height="6.5" rx="1" />
         <path d="M4.5 6 V4.2 a2.5 2.5 0 0 1 5 0 V6" />
       </svg>
-      <p className="q-moved__text">
+      <p className="q-notice-line__text q-moved__text">
         <span className="q-moved__line">{movedLine(ws.movedTo)}</span>
         {/* Said once: the same sentence again (each refused write) changes nothing here, so it is not announced again. */}
         <span className="q-moved__refusal" role="status">
@@ -29,7 +29,7 @@ export function MovedBar() {
           <span className="q-moved__hint" id={hintId}>
             {OPEN_ON_SERVER_HINT}
           </span>
-          <button type="button" className="q-btn q-btn--sm" aria-describedby={hintId} title={OPEN_ON_SERVER_HINT} onClick={() => void back().catch(() => {})}>
+          <button type="button" className="q-btn q-btn--sm q-btn--soft" aria-describedby={hintId} title={OPEN_ON_SERVER_HINT} onClick={() => void back().catch(() => {})}>
             Open on the server
           </button>
         </>

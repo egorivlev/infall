@@ -1,0 +1,138 @@
+/* M17 — the shared pieces of the design "Infall components" (.dev/design-2026-11-27): each named, with its states.
+   Tokens from tokens.css, sizes from base.css. Screens use these classes; React wrappers are in ui/kit/.
+   Not here: the step card and the pointer (Tutorial, ui/tutorial/), the panel that takes a panel's place (the PDF reader). */
+
+/* ---- q-menu · row menu (and the account and Branch menus) ----
+   214 wide, 28px items, raised, soft hairline, shadow. Destructive items last, after a separator, in red text. */
+.q-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 214px; max-width: calc(var(--q-vw, 100vw) - 16px); display: flex; flex-direction: column; gap: 1px; padding: var(--q-s1); background: var(--q-raised); border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
+.q-menu__head { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px 8px; min-width: 0; }
+.q-menu__name { font-weight: 600; overflow-wrap: anywhere; }
+.q-menu__place { font-size: calc(var(--q-fs-label) * var(--q-text, 1)); line-height: 1.4; color: var(--q-ink-3); overflow-wrap: anywhere; }
+.q-menu__place .q-mono { font-size: inherit; }
+.q-menu__sep { height: 1px; background: var(--q-line-soft); margin: 4px 2px; flex: none; }
+.q-menu__head + .q-menu__sep { margin-top: 0; }
+.q-menu__item { display: flex; align-items: center; gap: 8px; min-height: var(--q-h-md); padding: 0 8px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink); font-size: calc(var(--q-fs-body) * var(--q-text, 1)); text-align: left; cursor: pointer; }
+.q-menu__item:hover { background: var(--q-hover); text-decoration: none; color: var(--q-ink); }
+.q-menu__item:focus-visible { outline-offset: -2px; }
+.q-menu__item[aria-disabled="true"] { color: var(--q-ink-3); cursor: not-allowed; }
+.q-menu__item[aria-disabled="true"]:hover { background: transparent; color: var(--q-ink-3); }
+.q-menu__item--danger { color: var(--q-danger); }
+.q-menu__item--danger:hover { color: var(--q-danger); }
+.q-menu__kbd { margin-left: auto; font-size: calc(var(--q-fs-label) * var(--q-text, 1)); color: var(--q-ink-3); }
+/* A row that cannot be used says why under its name (not only in a tooltip). */
+.q-menu__item--why { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; padding-block: 5px; }
+.q-menu__why { font-size: calc(var(--q-fs-label) * var(--q-text, 1)); line-height: 1.35; }
+.q-menu__error { margin: 0; padding: 4px 8px 6px; font-size: calc(var(--q-fs-small) * var(--q-text, 1)); line-height: 1.4; }
+
+/* ---- q-seg · segmented control ----
+   Two to four exclusive choices that apply at once; one tab stop (a radio group). 28 high: 22px options, 12 / 500.
+   The chosen option is a neutral block, not accent. `--fill` stretches the options across the row (the invite form). */
+.q-seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 2px; gap: 2px; border: 1px solid var(--q-line-soft); border-radius: 6px; background: var(--q-sunken); }
+.q-seg__opt { position: relative; display: flex; align-items: center; justify-content: center; height: 22px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--q-ink-2); font: 500 calc(var(--q-fs-small) * var(--q-text, 1))/1 var(--q-sans); white-space: nowrap; cursor: pointer; }
+.q-seg__opt:hover { color: var(--q-ink); }
+.q-seg__opt[aria-checked="true"], .q-seg__opt:has(input:checked) { background: var(--q-hover); color: var(--q-ink); }
+/* The ring goes round the whole control, as the design draws it, not round one option. */
+.q-seg:has(:focus-visible) { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+.q-seg :focus-visible { outline: none; }
+.q-seg--fill { display: flex; }
+.q-seg--fill .q-seg__opt { flex: 1; height: 26px; }
+/* Native radios inside the options (forms that submit): the input covers its option and stays invisible. */
+.q-seg__opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.q-seg[aria-disabled="true"], .q-seg:has(input:disabled) { opacity: .5; }
+
+/* ---- q-scale · scale select ----
+   − value + in one 28px block; Left / Right (and Up / Down) step it; Reset beside it once the value is not the default. */
+.q-scale { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--q-line-soft); border-radius: 6px; background: var(--q-sunken); }
+.q-scale__step { width: var(--q-h-sm); height: var(--q-h-sm); padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--q-ink); font: 500 calc(14px * var(--q-text, 1))/1 var(--q-sans); cursor: pointer; }
+.q-scale__step:hover:not(:disabled) { background: var(--q-hover); }
+.q-scale__step:disabled { color: var(--q-ink-3); cursor: not-allowed; }
+.q-scale__value { min-width: 52px; padding: 0 2px; text-align: center; font: 500 calc(var(--q-fs-small) * var(--q-text, 1))/24px var(--q-sans); font-variant-numeric: tabular-nums; color: var(--q-ink); border-radius: 3px; cursor: default; }
+.q-scale:has(.q-scale__value:focus-visible) { outline: 2px solid var(--q-accent); outline-offset: 2px; }
+.q-scale__value:focus-visible { outline: none; }
+
+/* ---- q-set-row · settings row ----
+   Name and one line on the left (with a pictogram for the three scales), one control on the right, a hairline under it.
+   Changes apply at once. A row that cannot be changed says why in its description. */
+.q-set-row { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 12px 0; border-top: 1px solid var(--q-line-soft); }
+.q-set-row:first-child { border-top: 0; }
+.q-set-row__text { flex: 1 1 250px; min-width: 0; display: flex; gap: 12px; align-items: center; }
+.q-set-row__words { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.q-set-row__label { font-weight: 500; color: var(--q-ink); }
+.q-set-row__desc { margin: 0; font-size: calc(var(--q-fs-small) * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-2); text-wrap: pretty; }
+.q-set-row__desc.is-error { color: var(--q-danger); }
+.q-set-row__pic { flex: none; width: 48px; height: 34px; }
+.q-set-row__control { flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+:root[data-room="narrow"] .q-set-row__pic { display: none; }
+
+/* ---- q-chip · q-count ----
+   Chip: 18 high, 11 / 500, neutral fill, no border; `--data` (mono) only when it holds data; `is-on` for a pressed toggle.
+   Count: an 18 high pill with tabular digits; neutral, accent (`--att`) only for what waits for you. A zero is not drawn. */
+.q-chip { display: inline-flex; align-items: center; gap: 5px; height: 18px; max-width: 100%; padding: 0 6px; border: 0; border-radius: var(--q-r-chip); background: var(--q-hover); color: var(--q-ink-2); font: 500 calc(var(--q-fs-label) * var(--q-text, 1))/1 var(--q-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-chip--data { font-family: var(--q-mono); font-weight: 400; }
+.q-chip--lg { height: 22px; padding: 0 8px; gap: 6px; font-size: calc(var(--q-fs-small) * var(--q-text, 1)); }
+.q-chip--lg svg { color: var(--q-ink-3); flex: none; }
+.q-chip.is-on, .q-chip[aria-pressed="true"] { background: var(--q-accent-soft); color: var(--q-ink); }
+.q-chip.is-dim { opacity: .6; }
+button.q-chip { cursor: pointer; }
+.q-count { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--q-hover); color: var(--q-ink-2); font: 500 calc(var(--q-fs-label) * var(--q-text, 1))/1 var(--q-sans); font-variant-numeric: tabular-nums; }
+.q-count--att { background: var(--q-accent); color: var(--q-accent-ink); }
+
+/* ---- q-progress · progress line ----
+   A sentence, a 4px line and a number when known. Neutral, not accent. Nothing measurable: a still dashed track.
+   It ends as a sentence, never as a full bar left on screen. */
+.q-progress { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: calc(var(--q-fs-small) * var(--q-text, 1)); }
+.q-progress__head, .q-progress__foot { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.q-progress__what { min-width: 0; overflow-wrap: anywhere; }
+.q-progress__num { margin-left: auto; flex: none; color: var(--q-ink-2); font-variant-numeric: tabular-nums; }
+.q-progress__bar { box-sizing: border-box; height: 4px; border-radius: 2px; background: var(--q-line-soft); overflow: hidden; }
+.q-progress__fill { display: block; height: 100%; background: var(--q-ink-2); }
+/* Still, on purpose: nothing moves when nothing can be measured (with or without reduced motion). */
+.q-progress__bar--still { background: repeating-linear-gradient(90deg, var(--q-ink-3) 0 10px, transparent 10px 16px); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-motion="reduce"]) .q-progress__fill { transition: width 160ms ease-out; } }
+
+/* ---- q-confirm-row · confirmation inside a row ----
+   The row itself becomes the question, in place: it names the thing and says what is lost. Focus lands on the safe
+   choice; the destructive one is red text on the right. Esc keeps it. */
+.q-confirm-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; min-height: 40px; padding: 4px 8px; border-radius: 6px; background: var(--q-hover); }
+.q-confirm-row__text { min-width: 0; font-size: calc(var(--q-fs-small) * var(--q-text, 1)); line-height: 1.4; overflow-wrap: anywhere; }
+.q-confirm-row__q { font-weight: 600; font-size: calc(var(--q-fs-body) * var(--q-text, 1)); }
+.q-confirm-row__actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.q-confirm-row__error { grid-column: 1 / -1; margin: 0; }
+.q-confirm-row--busy { color: var(--q-ink-2); }
+.q-confirm-row .q-btn--soft { background: color-mix(in oklch, var(--q-hover) 60%, var(--q-raised)); }
+
+/* ---- q-dialog ---- (ui/shell/access.css keeps the scrim and the motion)
+   380 wide (520 for a report), raised, 18px padding, title 15 / 600 sans; ghost Cancel then one primary, bottom right. */
+.q-dialog { width: 380px; max-width: calc(var(--q-vw, 100vw) - 32px); display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--q-raised); border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
+.q-dialog--report { width: 520px; }
+.q-dialog__title { margin: 0; font: 600 calc(var(--q-fs-panel) * var(--q-text, 1))/1.3 var(--q-sans); }
+.q-dialog__body { margin: 0; color: var(--q-ink-2); line-height: 1.5; }
+.q-dialog__actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+
+/* ---- q-notice-line · notice line (the design's "q-notice"; `.q-notice` is still the mention notice) ----
+   One line across the top of a screen for something that needs knowing now. Neutral; the amber edge only when something
+   did not work. One action at most, plus Dismiss. `--bar`: full width over the work area (36 high, 16px in). */
+.q-notice-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 36px; padding: 5px 6px 5px 12px; border: 1px solid var(--q-line-soft); border-radius: 6px; background: var(--q-surface); color: var(--q-ink); font-size: calc(var(--q-fs-small) * var(--q-text, 1)); }
+.q-notice-line--warn { border-color: color-mix(in oklch, var(--q-st-question) 55%, var(--q-line)); background: color-mix(in oklch, var(--q-st-question) 8%, var(--q-surface)); }
+.q-notice-line--bar { flex: none; border-width: 0 0 1px; border-radius: 0; padding: 4px 10px 4px 16px; }
+.q-notice-line__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+/* ---- q-note · short note ----
+   One or two lines at the bottom centre of the area it is about, 8px above its edge; goes by itself after 6 s, stays while
+   hovered or focused, read out politely; one action at most. `--compact` for the Board-scale indication (1.2 s). */
+.q-note { display: inline-flex; align-items: center; gap: 10px; min-height: 32px; max-width: min(420px, calc(100% - 16px)); padding: 4px 6px 4px 12px; background: var(--q-raised); border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); color: var(--q-ink); font-size: calc(var(--q-fs-small) * var(--q-text, 1)); }
+.q-note--plain, .q-note--compact { padding-right: 12px; }
+.q-note--compact { font-variant-numeric: tabular-nums; }
+
+/* ---- type: screen and panel titles in sans (Source Serif 4 stays inside a Page) ---- */
+.q-title { margin: 0; font: 600 calc(var(--q-fs-title) * var(--q-text, 1))/1.2 var(--q-sans); color: var(--q-ink); }
+.q-title:focus-visible { outline-offset: 4px; }
+.q-title:focus:not(:focus-visible) { outline: none; }
+.q-subtitle { margin: 0; font: 600 calc(var(--q-fs-panel) * var(--q-text, 1))/1.3 var(--q-sans); color: var(--q-ink); }
+.q-subtitle:focus-visible { outline-offset: 4px; }
+
+/* ---- a card: --q-surface with a soft hairline, 14px in ---- */
+.q-card { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); background: var(--q-surface); }
+.q-card > p { margin: 0; }
+/* A card of rows (settings rows, the first screen's options): the rows bring their own spacing. */
+.q-card--rows { gap: 0; padding: 2px 14px; }

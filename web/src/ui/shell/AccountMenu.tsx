@@ -8,7 +8,8 @@ import { describeError } from './errorMessages'
 import { Icon } from './Icon'
 import { initials } from './initials'
 import { Link } from './Link'
-import { SETTINGS_PATH } from './router'
+import { formatShortDate } from './dates'
+import { SETTINGS_KEYS, SETTINGS_PATH } from './router'
 import { clearSigningOut, noteSigningOut } from './sessionEnd'
 import { startTour, tourBlock } from '../tutorial/start'
 
@@ -60,6 +61,8 @@ export function AccountMenu({ member }: { member: Member }) {
 
   // Why the tour cannot be taken right now, if it cannot; looked at each time the menu opens.
   const tourBlocked = open ? tourBlock() : null
+  const tourWhy = tourBlocked === 'merge' ? 'Finish or leave the Merge first' : tourBlocked === 'narrow' ? 'Make the window wider to take the tour' : null
+  const whyId = `${menuId}-why`
   const takeTour = () => {
     if (tourBlocked !== null) return
     setOpen(false)
@@ -115,11 +118,28 @@ export function AccountMenu({ member }: { member: Member }) {
         <div className="q-menu" id={menuId} role="menu" aria-label="Account" ref={menuRef} onKeyDown={onMenuKey}>
           <div className="q-menu__head" role="presentation">
             <span className="q-menu__name">{member.name}</span>
-            <span className="q-caps">{ROLE_LABEL[member.role]}</span>
+            {/* Who you are here, and where "here" is (M17, B1). */}
+            <span className="q-menu__place">
+              {local ? (
+                'Local Workspace · on this computer'
+              ) : member.role === 'guest' && member.access_until != null ? (
+                <>
+                  <span>Guest</span> · access until {formatShortDate(member.access_until)}
+                </>
+              ) : (
+                <>
+                  <span>{ROLE_LABEL[member.role]}</span> · <span className="q-mono">{window.location.host}</span>
+                </>
+              )}
+            </span>
           </div>
+          <div className="q-menu__sep" role="presentation" />
           {/* Everything else about the account and this device (AI access, Members, the name) is in Settings. */}
-          <Link href={SETTINGS_PATH} role="menuitem" className="q-menu__item" onClick={() => setOpen(false)}>
+          <Link href={SETTINGS_PATH} role="menuitem" className="q-menu__item" aria-keyshortcuts={SETTINGS_KEYS === '⌘,' ? 'Meta+,' : 'Control+,'} onClick={() => setOpen(false)}>
             Settings
+            <span className="q-menu__kbd" aria-hidden="true">
+              {SETTINGS_KEYS}
+            </span>
           </Link>
           {tutorialWorkspace && (
             <button type="button" role="menuitem" className="q-menu__item" aria-disabled={lesson === 'off' || lesson === 'loading'} onClick={takeTutorial}>
@@ -127,17 +147,26 @@ export function AccountMenu({ member }: { member: Member }) {
             </button>
           )}
           {showTour && (
-          <button
-            type="button"
-            role="menuitem"
-            className="q-menu__item"
-            aria-disabled={tourBlocked !== null}
-            title={tourBlocked === 'merge' ? 'Finish or leave the Merge first' : tourBlocked === 'narrow' ? 'Make the window wider to take the tour' : undefined}
-            onClick={takeTour}
-          >
-            Tour of Infall
-          </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={tourWhy ? 'q-menu__item q-menu__item--why' : 'q-menu__item'}
+              aria-disabled={tourBlocked !== null}
+              aria-label={tourWhy ? 'Tour of Infall' : undefined}
+              aria-describedby={tourWhy ? whyId : undefined}
+              title={tourWhy ?? undefined}
+              onClick={takeTour}
+            >
+              Tour of Infall
+              {/* A row that cannot be used says why, under its name (M17), not only in the tooltip. */}
+              {tourWhy && (
+                <span className="q-menu__why" id={whyId}>
+                  {tourWhy}
+                </span>
+              )}
+            </button>
           )}
+          {(switchWorkspace || !local) && <div className="q-menu__sep" role="presentation" />}
           {/* A Local Workspace signs its one Member in by itself: signing out would leave no way back in. */}
           {switchWorkspace && (
             <button

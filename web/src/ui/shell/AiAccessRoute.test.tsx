@@ -77,7 +77,7 @@ const go = (path: string) => window.history.replaceState(null, '', path)
 const signedIn = (member: Member) => (h.session = { status: 'signed_in', member })
 const rail = () => within(screen.getByRole('navigation', { name: 'Main' }))
 const item = () => rail().getByRole('button', { name: /^Suggestions/ })
-const badge = () => item().querySelector('.q-rail__badge')!
+const badge = () => item().querySelector('.q-count')
 
 beforeEach(() => {
   go('/')
@@ -225,21 +225,21 @@ describe('AI access: the secret does not outlive the screen', () => {
 })
 
 describe('Rail: Suggestions', () => {
-  it('sits after To-dos and shows how many Suggestions are pending, in accent when there are any', () => {
+  it('sits after To-dos and shows how many Suggestions are pending, in a neutral count (only For you turns accent)', () => {
     h.suggestions = [suggestion('1', 'pending'), suggestion('2', 'accepted'), suggestion('3', 'pending'), suggestion('4', 'rejected')]
     render(<App />)
     expect(badge()).toHaveTextContent(/^2$/)
-    expect(badge()).toHaveClass('q-rail__badge--hot')
+    expect(badge()).not.toHaveClass('q-count--att')
     expect(item()).toHaveAccessibleName('Suggestions, 2 pending')
     const order = Array.from(screen.getByRole('navigation', { name: 'Main' }).children).map((el) => el.querySelector('span')?.textContent)
     expect(order).toEqual(['Board', 'To-dos', 'For you', 'Suggestions', 'Branches'])
   })
 
-  it('shows a quiet 0 when nothing is pending', () => {
+  it('draws no count when nothing is pending; the spoken name still says 0', () => {
     h.suggestions = [suggestion('2', 'accepted')]
     render(<App />)
-    expect(badge()).toHaveTextContent(/^0$/)
-    expect(badge()).not.toHaveClass('q-rail__badge--hot')
+    expect(badge()).toBeNull()
+    expect(item()).toHaveAccessibleName('Suggestions, 0 pending')
   })
 
   it('toggles the panel on the Board and reflects it in aria-pressed', async () => {

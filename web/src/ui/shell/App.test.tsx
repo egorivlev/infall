@@ -180,8 +180,7 @@ describe('Guest', () => {
 
   it('sees the access badge, "read-only", no Members link, no add-Frame, and no Members request', () => {
     render(<App />)
-    expect(screen.getByText('Guest')).toBeInTheDocument()
-    expect(screen.getByText('— access until 30 Nov')).toBeInTheDocument()
+    expect(screen.getByText('Guest · access until 30 Nov')).toBeInTheDocument()
     expect(screen.getByText('read-only')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Members' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Add Frame' })).toBeNull()
@@ -204,7 +203,7 @@ describe('top bar and rail', () => {
     const menu = screen.getByRole('menu')
     expect(within(menu).getByText('Admin')).toBeInTheDocument()
     // Name, Settings, the Tour, Sign out: Members is in the rail and in Settings → Workspace.
-    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out'])
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.firstChild?.textContent)).toEqual(['Settings', 'Tour of Infall', 'Sign out'])
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.getByRole('button', { name: /Elena Varga/ })).toHaveFocus()

@@ -50,7 +50,7 @@ const file = (bytes = 2048, name = 'Physics group.infall') => new File([new Uint
 describe('the choice', () => {
   it('Start empty steps aside, asking nothing of the server', async () => {
     render(<FirstScreen />)
-    expect(screen.getByRole('heading', { name: 'This Team server is empty' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Set up this Team Workspace' })).toBeInTheDocument()
     const before = server.requests.length
     fireEvent.click(screen.getByRole('button', { name: 'Start empty' }))
     expect(workspaceStore.getState().empty).toBe(false)
@@ -85,7 +85,7 @@ describe('the choice', () => {
     expect(screen.getByRole('heading', { name: 'The Workspace is in' })).toHaveFocus()
     expect(screen.getByText('Your earlier work as Elena on her laptop is now yours.')).toBeInTheDocument()
     const names = within(screen.getByRole('region', { name: 'Names that came with the file' }))
-    expect(names.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Ana Ruiz — not signed in yetInvite', 'Ben Okafor — not signed in yetInvite'])
+    expect(names.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['ARAna Ruiz · not signed in yetInvite', 'BOBen Okafor · not signed in yetInvite'])
     expect(names.getByRole('link', { name: 'Invite Ana Ruiz' })).toHaveAttribute('href', '/members?claim=ana')
     expect((server.imported[0] as Blob).size).toBe(4096)
     // The answer stays up after the server is no longer empty, until the Admin goes on.

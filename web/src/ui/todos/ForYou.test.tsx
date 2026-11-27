@@ -76,8 +76,8 @@ describe('For you', () => {
     await open()
     const item = rail().getByRole('link', { name: 'For you, 2 unseen' })
     expect(item).toHaveAttribute('href', '/for-you')
-    expect(item.querySelector('.q-rail__badge')).toHaveClass('q-rail__badge--hot')
-    expect(item.querySelector('.q-rail__badge')).toHaveTextContent('2')
+    expect(item.querySelector('.q-count')).toHaveClass('q-count--att')
+    expect(item.querySelector('.q-count')).toHaveTextContent('2')
   })
 
   it('lists mentions newest first, the unseen marked in words, and opens one at its Comment, marking it seen', async () => {

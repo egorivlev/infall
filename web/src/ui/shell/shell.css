@@ -35,10 +35,10 @@
 .q-toolbar .q-topbar__sep { height: 18px; margin: 0 var(--q-s1); }
 .q-toolbar__fill { flex: 1; min-width: 0; }
 
-.q-branch { display: flex; align-items: center; gap: var(--q-s2); height: 26px; padding: 0 10px 0 8px; border-radius: var(--q-r); border: 1px solid var(--q-cur-branch); color: var(--q-ink); white-space: nowrap; }
+.q-branch { display: flex; align-items: center; gap: var(--q-s2); height: var(--q-h-md); padding: 0 8px; border-radius: var(--q-r); border: 1px solid transparent; color: var(--q-ink); white-space: nowrap; }
 .q-branch svg { color: var(--q-cur-branch); }
 .q-branch__name { font: 600 calc(13px * var(--q-text, 1))/1 var(--q-mono); color: var(--q-cur-branch); }
-.q-branch--plain { border: 0; padding: 0 0 0 var(--q-s1); gap: 6px; }
+.q-branch--plain { border: 0; padding: 0 0 0 var(--q-s1); gap: 6px; height: auto; }
 .q-branch--plain .q-branch__name { color: var(--q-ink); }
 .q-branch__note { font-size: calc(12px * var(--q-text, 1)); color: var(--q-ink-3); }
 
@@ -47,8 +47,8 @@
 .q-topbar__branch > .q-switch { flex: 0 1 auto; min-width: 0; }
 .q-branch--button { max-width: 100%; min-width: 0; }
 .q-branch--button > * { flex: none; }
-.q-branch--button { background: transparent; cursor: pointer; }
-.q-branch--button:hover, .q-branch--button[aria-expanded="true"] { background: var(--q-hover); }
+.q-branch--button { background: var(--q-hover); cursor: pointer; }
+.q-branch--button:hover, .q-branch--button[aria-expanded="true"] { background: var(--q-soft-hover); }
 [data-branch]:not([data-branch="main"]) .q-branch--button { background: color-mix(in oklch, var(--q-branch) 16%, transparent); }
 [data-branch]:not([data-branch="main"]) .q-branch--button:hover, [data-branch]:not([data-branch="main"]) .q-branch--button[aria-expanded="true"] { background: color-mix(in oklch, var(--q-branch) 26%, transparent); }
 .q-branch--button .q-branch__name { flex: 0 1 auto; min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
@@ -67,10 +67,13 @@
 .q-switch__name--branch { color: var(--q-branch); }
 .q-switch__meta { font-size: calc(11px * var(--q-text, 1)); color: var(--q-ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-switch__rule { height: 1px; background: var(--q-line-soft); margin: 4px 2px; }
-.q-menu__item:focus-visible, .q-switch__row:focus-visible { outline-offset: -2px; }
+.q-switch__row:focus-visible { outline-offset: -2px; }
 
-.q-topbtn { height: 26px; padding: 0 9px; border-color: transparent; font-weight: 400; }
-.q-topbtn[aria-pressed="true"], .q-topbtn[aria-expanded="true"] { background: var(--q-hover); border-color: var(--q-line); }
+.q-topbtn { height: var(--q-h-md); padding: 0 10px; border-color: transparent; font-weight: 400; color: var(--q-ink-2); }
+.q-topbtn svg { color: var(--q-ink-3); }
+.q-topbtn:hover:not(:disabled) { color: var(--q-ink); }
+.q-topbtn[aria-pressed="true"], .q-topbtn[aria-expanded="true"] { background: var(--q-hover); color: var(--q-ink); }
+.q-topbtn[aria-pressed="true"]:hover, .q-topbtn[aria-expanded="true"]:hover { background: var(--q-soft-hover); }
 
 .q-cp { position: relative; }
 .q-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
@@ -104,13 +107,11 @@
 .q-search__where b { font-weight: 600; color: var(--q-ink); }
 .q-search__opt--pdf .q-search__sum mark { background: var(--q-accent-soft); color: var(--q-ink); border-radius: 2px; box-shadow: 0 0 0 1px var(--q-accent-soft); }
 
-.q-guest-badge { display: flex; align-items: center; gap: var(--q-s2); height: 24px; padding: 0 10px; border-radius: var(--q-r); border: 1px solid var(--q-st-question); font-size: calc(12px * var(--q-text, 1)); white-space: nowrap; }
-.q-guest-badge svg { color: var(--q-st-question); }
-.q-guest-badge span { color: var(--q-ink-2); }
+.q-guest-badge { flex: 0 1 auto; min-width: 0; }
 
 .q-presence { display: flex; align-items: center; gap: var(--q-s2); min-width: 0; }
 /* A long Branch name gives way before anything is pushed off the bar. */
-.q-presence > .q-caps { flex: 0 1 auto; min-width: 0; max-width: 150px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-presence > .q-lab { flex: 0 1 auto; min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-presence__list { flex: none; display: flex; list-style: none; margin: 0; padding: 0; }
 .q-presence__avatar { position: relative; width: 20px; height: 20px; font-size: calc(9px * var(--q-text, 1)); margin-left: -5px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--q-chrome) 68%, var(--q-sunken)); }
 .q-presence__avatar:first-child { margin-left: 0; }
@@ -121,32 +122,34 @@
 .q-account__trigger:hover, .q-account__trigger[aria-expanded="true"] { background: var(--q-hover); }
 .q-account__trigger .q-avatar { width: 18px; height: 18px; font-size: calc(8px * var(--q-text, 1)); }
 .q-account__name { color: var(--q-ink-2); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 200px; display: flex; flex-direction: column; gap: 2px; padding: var(--q-s1); background: var(--q-raised); border: 1px solid var(--q-line); border-radius: var(--q-r-panel); box-shadow: var(--q-shadow); }
-.q-menu__head { display: flex; flex-direction: column; gap: 5px; padding: 8px 8px 9px; border-bottom: 1px solid var(--q-line-soft); margin-bottom: 2px; }
-.q-menu__name { font-weight: 600; }
-.q-menu__item { display: flex; align-items: center; height: 30px; padding: 0 8px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink); text-align: left; cursor: pointer; }
-.q-menu__item:hover { background: var(--q-hover); text-decoration: none; color: var(--q-ink); }
-.q-menu__error { margin: 0; padding: 4px 8px; }
+.q-account__trigger > svg { color: var(--q-ink-3); }
 
 /* ---- rail ---- */
 .q-rail { display: flex; flex-direction: column; min-height: 0; background: var(--q-chrome); border-right: 1px solid var(--q-chrome-line); }
-.q-rail__nav { display: flex; flex-direction: column; gap: 1px; padding: 10px 8px; border-bottom: 1px solid var(--q-chrome-line); margin: 0 4px; padding-inline: 4px; }
-.q-rail__item { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 8px; border-radius: var(--q-r); color: var(--q-ink-2); }
-.q-rail__item svg { color: var(--q-ink-3); }
+/* M17 (B1): rows 28 (Frames 24); the current row is carried by fill and weight, not an accent edge — the accent is kept
+   for keyboard focus (a ring inside the row) and the Tutorial's pointer. A hairline 12px in from each side under the nav. */
+.q-rail__nav { display: flex; flex-direction: column; gap: 1px; padding: 8px; position: relative; }
+.q-rail__nav::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 1px; background: var(--q-chrome-line); }
+.q-rail__item { display: flex; align-items: center; gap: 10px; height: var(--q-h-md); padding: 0 8px; border-radius: var(--q-r); color: var(--q-ink-2); }
+.q-rail__item svg { color: var(--q-ink-3); flex: none; }
 .q-rail__item:hover { background: var(--q-hover); color: var(--q-ink); text-decoration: none; }
-.q-rail__item[aria-current="page"] { background: var(--q-hover); color: var(--q-ink); font-weight: 500; box-shadow: inset 2px 0 0 var(--q-accent); }
+.q-rail__item:focus-visible { outline-offset: -2px; }
+.q-rail__item[aria-current="page"] { background: var(--q-hover); color: var(--q-ink); font-weight: 500; }
+.q-rail__item[aria-current="page"] svg { color: var(--q-ink-2); }
 .q-rail__frames { flex: 1; min-height: 0; overflow: auto; padding: 0 8px; }
-.q-rail__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 4px; min-height: 40px; }
+.q-rail__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px 4px 8px; min-height: 38px; }
 .q-rail__head h2 { margin: 0; }
 .q-rail__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.q-rail__frame { display: flex; align-items: center; gap: 10px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink-2); text-align: left; cursor: pointer; }
+.q-rail__frame { display: flex; align-items: center; gap: 10px; width: 100%; height: var(--q-h-sm); padding: 0 8px; border: 0; border-radius: var(--q-r); background: transparent; color: var(--q-ink-2); font-size: calc(12px * var(--q-text, 1)); text-align: left; cursor: pointer; }
 .q-rail__frame svg { color: var(--q-ink-3); flex: none; }
 .q-rail__frame:hover { background: var(--q-hover); color: var(--q-ink); }
+.q-rail__frame:focus-visible { outline-offset: -2px; }
 .q-rail__frame-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-rail__count { font: calc(11px * var(--q-text, 1)) var(--q-mono); color: var(--q-ink-3); }
-.q-rail__empty { margin: 0; padding: 4px 8px; }
-.q-rail__foot { padding: 12px 16px; border-top: 1px solid var(--q-chrome-line); display: flex; flex-direction: column; gap: 4px; font: calc(11px * var(--q-text, 1))/1.4 var(--q-mono); color: var(--q-ink-3); }
+.q-rail__count { font: calc(11px * var(--q-text, 1)) var(--q-sans); font-variant-numeric: tabular-nums; color: var(--q-ink-3); }
+.q-rail__empty { margin: 0; padding: 2px 8px; font-size: calc(12px * var(--q-text, 1)); }
+.q-rail__foot { padding: 10px 16px; border-top: 1px solid var(--q-chrome-line); display: flex; flex-direction: column; gap: 3px; font: calc(11px * var(--q-text, 1))/1.4 var(--q-sans); color: var(--q-ink-3); }
 .q-rail__host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-rail__host--address { font-family: var(--q-mono); }
 
 .q-sync { display: flex; align-items: center; gap: 6px; color: var(--q-ink-2); }
 .q-sync__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-sizing: border-box; }
@@ -166,14 +169,13 @@
   @keyframes q-pop { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 }
 
-.q-presence__branch { text-transform: none; letter-spacing: 0; }
+.q-presence__branch { font-family: var(--q-mono); }
 
 /* ---- rail: Suggestions (a toggle for the panel in the Board area, with the pending count) ---- */
 button.q-rail__item { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .q-rail__item[aria-pressed="true"] { background: var(--q-hover); color: var(--q-ink); font-weight: 500; }
 .q-rail__label { flex: 1; min-width: 0; }
-.q-rail__badge { flex: none; min-width: 18px; padding: 1px 5px; border-radius: 9px; text-align: center; font: 500 calc(11px * var(--q-text, 1))/1.4 var(--q-mono); color: var(--q-ink-3); }
-.q-rail__badge--hot { background: var(--q-accent); color: var(--q-accent-ink); }
+/* The counts are .q-count pills (styles/components.css); a zero is not drawn. */
 
 /* M12: "Change name" in a Local Workspace, under the account button. */
 .q-rename { width: 280px; gap: var(--q-s3); padding: var(--q-s3); }
@@ -186,21 +188,23 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
    drops the words beside them. While the hands-on Tutorial runs, its steps live in the rail, so the rail stays open. */
 .q-rail__toggle { display: none; }
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) { --q-rail-w: 48px; }
-:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail__toggle { display: inline-flex; flex: none; align-self: center; margin: 8px 0 2px; color: var(--q-ink-2); }
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail__toggle { display: inline-flex; flex: none; align-self: center; width: var(--q-h-sm); height: var(--q-h-sm); margin: 8px 0 2px; color: var(--q-ink-2); }
 :root[data-room="narrow"] .q-topbar__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 :root[data-room="narrow"] .q-topbar__brand { justify-content: center; padding-left: 0; }
 :root[data-room="narrow"] .q-titlebar.is-mac-window .q-topbar__brand { width: auto; padding-left: var(--q-mac-lights); padding-right: 13px; }
 :root[data-room="narrow"] .q-titlebar.is-mac-window.is-fullscreen .q-topbar__brand { padding-left: 13px; }
-:root[data-room="narrow"] .q-account__name, :root[data-room="narrow"] .q-presence > .q-caps { display: none; }
+:root[data-room="narrow"] .q-account__name, :root[data-room="narrow"] .q-presence > .q-lab { display: none; }
 :root[data-room="narrow"] .q-topbar__search { padding: 0 var(--q-s2); }
 
 /* Folded: icons only. The words stay for screen readers; a title says them on hover. */
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail:not(.is-open) {
-  .q-rail__nav { margin: 0; padding: 4px; align-items: center; }
-  .q-rail__item { position: relative; width: 36px; justify-content: center; padding: 0; gap: 0; }
-  .q-rail__item > span:not(.q-rail__badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .q-rail__badge { position: absolute; top: 2px; right: 0; min-width: 0; padding: 0 3px; font-size: calc(9px * var(--q-text, 1)); }
-  .q-rail__badge:not(.q-rail__badge--hot) { display: none; }
+  .q-rail__nav { margin: 0; padding: 4px 0; align-items: center; }
+  .q-rail__nav::after { display: none; }
+  .q-rail__item { position: relative; width: 32px; justify-content: center; padding: 0; gap: 0; }
+  .q-rail__item > span:not(.q-count) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Folded, only what waits for you keeps its count, on the icon's corner. */
+  .q-rail__item > .q-count { position: absolute; top: -3px; right: -5px; min-width: 14px; height: 14px; padding: 0 3px; font-size: calc(10px * var(--q-text, 1)); }
+  .q-rail__item > .q-count:not(.q-count--att) { display: none; }
   .q-rail__frames { visibility: hidden; }
   .q-rail__foot { align-items: center; padding: 12px 0; }
   .q-rail__host { display: none; }
@@ -208,35 +212,48 @@ button.q-rail__item { width: 100%; border: 0; background: transparent; font: inh
 }
 /* Unfolded: the whole rail, over the work area (it overflows its 48px column), under the top bar's menus. */
 :root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open { position: relative; z-index: 3; width: 224px; box-shadow: var(--q-shadow); }
-:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open .q-rail__toggle { align-self: flex-start; margin-left: 12px; }
+:root[data-room="narrow"] .q-shell:not(:has(.q-lesson-bar)) .q-rail.is-open .q-rail__toggle { align-self: flex-start; margin: 8px 0 0 12px; }
 
 /* ---- M18: a moved copy (a quiet bar over the work area, on every screen) ---- */
 .q-work.has-bar { display: flex; flex-direction: column; }
 .q-work__body { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.q-moved { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--q-s3); padding: 6px var(--q-s4); border-bottom: 1px solid var(--q-line); background: var(--q-surface); color: var(--q-ink-2); font-size: calc(12.5px * var(--q-text, 1)); }
+/* M17 (B1): a notice line across the work area (.q-notice-line--bar in styles/components.css); its explanation sits on
+   the right and drops away in a narrow room. */
+.q-moved { gap: 4px 10px; }
 .q-moved__icon { flex: none; color: var(--q-ink-3); }
-.q-moved__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .q-moved__line { color: var(--q-ink); }
-.q-moved__hint { flex: 0 1 auto; min-width: 0; color: var(--q-ink-3); font-size: calc(12px * var(--q-text, 1)); }
+.q-moved__refusal { color: var(--q-ink-2); }
+.q-moved__hint { flex: 0 1 auto; min-width: 0; color: var(--q-ink-3); }
 :root[data-room="narrow"] .q-moved__hint { display: none; }
 
-/* ---- M18: the first screen of an empty Team server (Admin) ---- */
-.q-first { position: absolute; inset: 0; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: var(--q-s7, 48px) var(--q-s4) var(--q-s5); background: var(--q-canvas); }
-.q-first__card { box-sizing: border-box; width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: var(--q-s4); }
-.q-first__title { margin: 0; font: 600 calc(26px * var(--q-text, 1))/1.25 var(--q-serif); color: var(--q-ink); }
+/* ---- M18: the first screen of an empty Team server (Admin); M17 (B2): a 560 column of option rows ---- */
+.q-first { position: absolute; inset: 0; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: var(--q-s7) var(--q-s5) var(--q-s5); background: var(--q-canvas); }
+:root:not([data-room="wide"]) .q-first { padding-top: 28px; }
+.q-first__card { box-sizing: border-box; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 14px; }
+.q-first__where { margin: 0; }
+.q-first__where .q-mono { font-size: inherit; }
 .q-first__title:focus { outline: none; }
-.q-first__text { margin: 0; font-size: calc(14px * var(--q-text, 1)); line-height: 1.55; color: var(--q-ink-2); text-wrap: pretty; }
+.q-first__title:focus-visible { outline: 2px solid var(--q-accent); }
+.q-first__text { margin: 0; font-size: calc(13px * var(--q-text, 1)); line-height: 1.55; color: var(--q-ink-2); text-wrap: pretty; }
 .q-first__actions { display: flex; flex-wrap: wrap; gap: var(--q-s2); }
-.q-first__actions .q-btn { max-width: 100%; white-space: normal; text-align: left; height: auto; min-height: 36px; padding-block: 6px; }
-.q-first .q-error, .q-first .q-hint { margin: 0; }
-.q-first__progress { display: flex; flex-direction: column; align-items: flex-start; gap: var(--q-s2); }
-.q-first__sending { margin: 0; font-size: calc(13px * var(--q-text, 1)); color: var(--q-ink); overflow-wrap: anywhere; }
-.q-first__bar { box-sizing: border-box; width: 100%; height: 8px; border: 1px solid var(--q-line); border-radius: 4px; background: var(--q-sunken); overflow: hidden; }
-.q-first__fill { display: block; height: 100%; background: var(--q-accent); transition: width 160ms ease-out; }
-.q-first__names { display: flex; flex-direction: column; gap: var(--q-s2); padding: var(--q-s3) var(--q-s4); border: 1px solid var(--q-line-soft); border-radius: var(--q-r-panel); background: var(--q-surface); }
-.q-first__names h2 { margin: 0; }
-.q-first__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.q-first__name { display: flex; align-items: center; justify-content: space-between; gap: var(--q-s2); font-size: calc(13px * var(--q-text, 1)); overflow-wrap: anywhere; }
+.q-first .q-error, .q-first .q-hint, .q-first p { margin: 0; }
+.q-first__option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 12px 0; border-top: 1px solid var(--q-line-soft); }
+.q-first__option:first-child { border-top: 0; }
+.q-first__about { flex: 1 1 240px; min-width: 0; }
+.q-first__name-of { font-weight: 600; overflow-wrap: anywhere; }
+.q-first__line { font-size: calc(12px * var(--q-text, 1)); line-height: 1.45; color: var(--q-ink-2); margin-top: 2px; text-wrap: pretty; }
+.q-first__option > .q-btn { margin-left: auto; max-width: 100%; }
+.q-first__progress { gap: 10px; font-size: calc(13px * var(--q-text, 1)); }
+.q-first__sending { color: var(--q-ink); }
+.q-first__progress .q-progress__foot { font-size: calc(12px * var(--q-text, 1)); }
+.q-progress__said { color: var(--q-ink-2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.q-first__stop { margin-left: auto; }
+.q-first__names { gap: 8px; padding-bottom: 6px; }
+.q-first__names-h { margin: 0; font: 600 calc(13px * var(--q-text, 1))/1.45 var(--q-sans); }
+.q-first__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.q-first__name { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 40px; padding: 4px 0; border-top: 1px solid var(--q-line-soft); font-size: calc(13px * var(--q-text, 1)); }
+.q-first__avatar { width: 22px; height: 22px; font-size: calc(9px * var(--q-text, 1)); }
+.q-first__who { min-width: 0; overflow-wrap: anywhere; }
 .q-first__unclaimed { color: var(--q-ink-3); }
 
 /* ---- M18: the notice of a new mention (bottom right, above the Board, under menus) ---- */

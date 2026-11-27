@@ -2,10 +2,11 @@
 // Workspace file. When the desktop app is handing over a move to this server, the file is already there: one press.
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { board, branches, comments, forYou, todos, workspace } from '../../lib'
+import { board, branches, comments, forYou, todos, useMembers, workspace } from '../../lib'
 import type { ImportResult } from '../../lib'
 import { desktopMove } from '../bridge'
 import { serverSentence } from './errorMessages'
+import { initials } from './initials'
 import { Link } from './Link'
 import { formatSize, useFirstScreen } from './moved'
 import { navigate } from './router'
@@ -100,32 +101,47 @@ export function FirstScreen() {
   }
 
   const unclaimed = stage.kind === 'done' ? stage.result.members.filter((m) => !m.claimed) : []
+  // Their colours, once the Members are read again after the import; until then a neutral disc.
+  const colors = new Map(useMembers().map((m) => [m.id, m.color]))
   const percent = stage.kind === 'sending' && stage.total > 0 ? Math.min(100, Math.round((stage.sent / stage.total) * 100)) : null
+
+  const host = window.location.host
+  const where = (
+    <p className="q-lab q-first__where">
+      Team Workspace · <span className="q-mono">{host}</span>
+    </p>
+  )
 
   return (
     <div className="q-first" data-testid="first-screen">
       <div className="q-first__card">
         {stage.kind === 'done' ? (
           <>
-            <h1 className="q-first__title" ref={headingRef} tabIndex={-1}>
+            {where}
+            <h1 className="q-title q-first__title" ref={headingRef} tabIndex={-1}>
               The Workspace is in
             </h1>
             <p className="q-first__text" role="status">
               {stage.result.you_were ? `Your earlier work as ${stage.result.you_were} is now yours.` : 'Your earlier work is now yours.'}
             </p>
             {unclaimed.length > 0 && (
-              <section className="q-first__names" aria-labelledby="q-first-names-h">
-                <h2 className="q-caps" id="q-first-names-h">
-                  Names that came with the file
-                </h2>
-                <p className="q-hint">Each person signs in by taking over their name: invite them with their email, and their Changes and To-dos become theirs.</p>
+              <section className="q-card q-first__names" aria-labelledby="q-first-names-h">
+                <div>
+                  <h2 className="q-first__names-h" id="q-first-names-h">
+                    Names that came with the file
+                  </h2>
+                  <p className="q-first__line">Each person signs in by taking over their name. Invite them with their email, and their Changes and To-dos become theirs.</p>
+                </div>
                 <ul className="q-first__list">
                   {unclaimed.map((m) => (
                     <li key={m.id} className="q-first__name">
-                      <span>
-                        {m.name} <span className="q-first__unclaimed">— not signed in yet</span>
+                      <span className="q-avatar q-first__avatar" style={{ background: colors.get(m.id) ?? 'var(--q-hover)' }} aria-hidden="true">
+                        {initials(m.name)}
                       </span>
-                      <Link href={`/members?claim=${encodeURIComponent(m.id)}`} className="q-btn q-btn--sm" aria-label={`Invite ${m.name}`} onClick={() => useFirstScreen.setState({ holding: false })}>
+                      <span className="q-first__who">
+                        {m.name} <span className="q-first__unclaimed">· not signed in yet</span>
+                      </span>
+                      <Link href={`/members?claim=${encodeURIComponent(m.id)}`} className="q-btn q-btn--sm q-btn--soft" aria-label={`Invite ${m.name}`} onClick={() => useFirstScreen.setState({ holding: false })}>
                         Invite
                       </Link>
                     </li>
@@ -141,17 +157,20 @@ export function FirstScreen() {
           </>
         ) : (
           <>
-            <h1 className="q-first__title" ref={headingRef} tabIndex={-1}>
-              This Team server is empty
+            {where}
+            <h1 className="q-title q-first__title" ref={headingRef} tabIndex={-1}>
+              Set up this Team Workspace
             </h1>
-            <p className="q-first__text">Start with an empty Board, or bring in a Workspace you already have — from the desktop app or another server — as a Workspace file.</p>
+            <p className="q-first__text">
+              Nothing is here yet. Start with an empty Board, or bring in a Workspace you already have, from the desktop app or another server, as a Workspace file.
+            </p>
             {stage.kind === 'sending' ? (
-              <div className="q-first__progress">
-                <p className="q-first__sending" id="q-first-sending">
+              <div className="q-card q-progress q-first__progress">
+                <p className="q-progress__what q-first__sending" id="q-first-sending">
                   Bringing in {stage.what}…
                 </p>
                 <div
-                  className="q-first__bar"
+                  className={percent !== null && percent < 100 ? 'q-progress__bar' : 'q-progress__bar q-progress__bar--still'}
                   role="progressbar"
                   aria-labelledby="q-first-sending"
                   aria-valuemin={0}
@@ -159,39 +178,75 @@ export function FirstScreen() {
                   aria-valuenow={percent ?? undefined}
                   aria-valuetext={percent === null ? 'Starting' : percent >= 100 ? 'Sent; the server is reading the file' : `${percent} %`}
                 >
-                  <span className="q-first__fill" style={{ width: `${percent ?? 0}%` }} />
+                  {/* At 100 % the line is not left full: it becomes the still track, and the words say what happens. */}
+                  {percent !== null && percent < 100 && <span className="q-progress__fill" style={{ width: `${percent}%` }} />}
                 </div>
-                <p className="q-hint q-mono" aria-hidden="true">
-                  {percent === null ? '…' : percent >= 100 ? 'Sent — the server is reading the file…' : `${formatSize(stage.sent)} of ${formatSize(stage.total)}`}
-                </p>
-                <button type="button" className="q-btn q-btn--sm" onClick={() => stop.current?.abort()}>
-                  Stop
-                </button>
+                <div className="q-progress__foot">
+                  <span className="q-progress__said" aria-hidden="true">
+                    {percent === null ? '…' : percent >= 100 ? 'Sent. The server is reading the file…' : `${formatSize(stage.sent)} of ${formatSize(stage.total)}`}
+                  </span>
+                  <button type="button" className="q-btn q-btn--sm q-btn--soft q-first__stop" onClick={() => stop.current?.abort()}>
+                    Stop
+                  </button>
+                </div>
               </div>
             ) : (
               <>
-                <div className="q-first__actions">
+                {/* One option per row: what it does, then one short button. Exactly one primary (M17, B2). */}
+                <div className="q-card q-card--rows q-first__options">
                   {handover && (
-                    <button type="button" className="q-btn q-btn--primary q-btn--lg" onClick={() => void send(handover.name, () => move!.file(), true)}>
-                      Bring in {handover.name} from this computer ({formatSize(handover.size)})
-                    </button>
+                    <div className="q-first__option">
+                      <div className="q-first__about">
+                        <p className="q-first__name-of" id="q-first-move">
+                          {handover.name}
+                        </p>
+                        <p className="q-first__line" id="q-first-move-line">
+                          From this computer, {formatSize(handover.size)}. The move you started in the desktop app.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="q-btn q-btn--primary q-btn--lg"
+                        aria-label={`Bring in ${handover.name} from this computer (${formatSize(handover.size)})`}
+                        aria-describedby="q-first-move-line"
+                        onClick={() => void send(handover.name, () => move!.file(), true)}
+                      >
+                        Bring in this Workspace
+                      </button>
+                    </div>
                   )}
-                  <button type="button" className={handover ? 'q-btn q-btn--lg' : 'q-btn q-btn--primary q-btn--lg'} onClick={pick}>
-                    Bring in a Workspace file…
-                  </button>
-                  <button type="button" className="q-btn q-btn--lg" onClick={startEmpty}>
-                    Start empty
-                  </button>
+                  <div className="q-first__option">
+                    <div className="q-first__about">
+                      <p className="q-first__name-of">Bring in a Workspace file</p>
+                      <p className="q-first__line" id="q-first-file-line">
+                        A file ending in .infall, exported from the desktop app or from another Team server.
+                      </p>
+                    </div>
+                    <button type="button" className={handover ? 'q-btn q-btn--soft q-btn--lg' : 'q-btn q-btn--primary q-btn--lg'} aria-describedby="q-first-file-line" onClick={pick}>
+                      Bring in a Workspace file…
+                    </button>
+                  </div>
+                  <div className="q-first__option">
+                    <div className="q-first__about">
+                      <p className="q-first__name-of">Start empty</p>
+                      <p className="q-first__line" id="q-first-empty-line">
+                        One empty Board on the Branch main.
+                      </p>
+                    </div>
+                    <button type="button" className="q-btn q-btn--soft q-btn--lg" aria-describedby="q-first-empty-line" onClick={startEmpty}>
+                      Start empty
+                    </button>
+                  </div>
                 </div>
                 <input ref={fileRef} type="file" className="q-sr" tabIndex={-1} aria-label="Workspace file" accept=".infall,application/octet-stream" onChange={onPick} />
                 {stage.kind === 'failed' && (
-                  <p className="q-error" role="alert">
+                  <p className="q-error q-first__error" role="alert">
                     {/* The app handed the file over: there was no file to choose, so only trying again is offered. */}
                     {stage.text} {stage.fromDesktop ? 'Try again, or bring in a Workspace file exported from the desktop app.' : 'Choose another file, or try again.'}
                   </p>
                 )}
                 <p className="q-hint">
-                  The Workspace file brings every Branch, its history, Checkpoints, To-dos and Comments. Its Members come as names; you invite each person to take theirs over.
+                  A Workspace file brings every Branch, its history, Checkpoints, To-dos and Comments. Its Members come as names; you invite each person to take theirs over.
                 </p>
               </>
             )}

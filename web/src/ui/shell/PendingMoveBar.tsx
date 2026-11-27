@@ -12,11 +12,11 @@ export function PendingMoveBar({ name, admin }: { name: string; admin: boolean }
       .catch(() => {})
   }
   return (
-    <div className="q-moved" role="region" aria-label="Move from this computer" data-testid="pending-move-bar">
-      <p className="q-moved__text">
+    <div className="q-notice-line q-notice-line--bar q-moved" role="region" aria-label="Move from this computer" data-testid="pending-move-bar">
+      <p className="q-notice-line__text q-moved__text">
         <span className="q-moved__line">{pendingMoveLine(name, admin)}</span>
       </p>
-      <button type="button" className="q-btn q-btn--sm" onClick={cancel}>
+      <button type="button" className="q-btn q-btn--sm q-btn--soft" onClick={cancel}>
         Cancel the move
       </button>
     </div>

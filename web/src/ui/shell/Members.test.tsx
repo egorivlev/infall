@@ -81,51 +81,49 @@ describe('Members table', () => {
     await screen.findByText('No pending invites.')
   })
 
-  it('confirms by name, then calls members.remove', async () => {
+  // M17 (B4): Remove asks inside the Member's row, not in a dialog, so the name stays where you were looking.
+  const asking = () => screen.getByRole('group', { name: 'Remove Ana Ruiz? They lose access immediately. Their past Changes stay.' })
+
+  it('confirms by name, in the row, then calls members.remove', async () => {
     const user = userEvent.setup()
     renderMembers()
     await user.click(screen.getByRole('button', { name: 'Remove Ana Ruiz' }))
-    const dialog = screen.getByRole('dialog', { name: 'Remove Ana Ruiz?' })
-    expect(dialog).toHaveAccessibleDescription('They lose access immediately. Their past Changes stay.')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(asking()).toBeInTheDocument()
     expect(h.removed).toHaveLength(0)
-    await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(within(asking()).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /^Remove Ana Ruiz\?/ })).toBeNull())
     expect(h.removed).toEqual([['a']])
   })
 
-  it('Cancel and Esc close the dialog without removing, and focus returns to the trigger', async () => {
-    const user = userEvent.setup()
-    renderMembers()
-    const trigger = screen.getByRole('button', { name: 'Remove Ana Ruiz' })
-    await user.click(trigger)
-    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' })).toHaveFocus()
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(trigger).toHaveFocus()
-    await user.click(trigger)
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(trigger).toHaveFocus()
-    expect(h.removed).toHaveLength(0)
-  })
-
-  it('traps Tab focus inside the dialog', async () => {
+  it('Keep and Esc keep the Member, and focus returns to their Remove', async () => {
     const user = userEvent.setup()
     renderMembers()
     await user.click(screen.getByRole('button', { name: 'Remove Ana Ruiz' }))
-    const dialog = screen.getByRole('dialog')
-    const cancel = within(dialog).getByRole('button', { name: 'Cancel' })
-    const confirm = within(dialog).getByRole('button', { name: 'Remove' })
-    expect(cancel).toHaveFocus()
-    await user.tab()
-    expect(confirm).toHaveFocus()
-    await user.tab()
-    expect(cancel).toHaveFocus()
-    await user.tab({ shift: true })
-    expect(confirm).toHaveFocus()
+    expect(within(asking()).getByRole('button', { name: 'Keep' })).toHaveFocus()
+    await user.click(within(asking()).getByRole('button', { name: 'Keep' }))
+    expect(screen.queryByRole('group', { name: /^Remove Ana Ruiz\?/ })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove Ana Ruiz' })).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: 'Remove Ana Ruiz' }))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /^Remove Ana Ruiz\?/ })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove Ana Ruiz' })).toHaveFocus())
+    expect(h.removed).toHaveLength(0)
   })
 
-  it('shows a plain error in the dialog when removal fails and ignores double clicks', async () => {
+  it('lands on the safe choice, with the destructive one after it', async () => {
+    const user = userEvent.setup()
+    renderMembers()
+    await user.click(screen.getByRole('button', { name: 'Remove Ana Ruiz' }))
+    const keep = within(asking()).getByRole('button', { name: 'Keep' })
+    const confirm = within(asking()).getByRole('button', { name: 'Remove' })
+    expect(keep).toHaveFocus()
+    await user.tab()
+    expect(confirm).toHaveFocus()
+    expect(confirm).toHaveClass('q-btn--danger')
+  })
+
+  it('shows a plain error in the row when removal fails and ignores double clicks', async () => {
     let calls = 0
     h.remove = () => {
       calls++
@@ -134,10 +132,10 @@ describe('Members table', () => {
     const user = userEvent.setup()
     renderMembers()
     await user.click(screen.getByRole('button', { name: 'Remove Ana Ruiz' }))
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await user.click(within(asking()).getByRole('button', { name: 'Remove' }))
     expect(await screen.findByRole('alert')).toHaveTextContent("Can't reach the server.")
     expect(calls).toBe(1)
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(asking()).toBeInTheDocument()
   })
 })
 
@@ -258,7 +256,7 @@ describe('M18: names that came in a Workspace file', () => {
     const user = userEvent.setup()
     renderMembers()
     const row = screen.getByText('Ben Okafor').closest('tr')!
-    expect(row).toHaveTextContent('Ben Okafor — not signed in yet')
+    expect(row).toHaveTextContent('Ben Okafor · not signed in yet')
     expect(within(row).getByRole('button', { name: 'Remove Ben Okafor' })).toBeInTheDocument()
     expect(within(screen.getByText('Ana Ruiz').closest('tr')!).queryByRole('button', { name: /Invite/ })).toBeNull()
     await user.click(within(row).getByRole('button', { name: 'Invite someone to take over Ben Okafor' }))

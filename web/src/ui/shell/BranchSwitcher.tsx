@@ -80,13 +80,13 @@ export function BranchSwitcher({ branch }: { branch: string }) {
         onKeyDown={onTriggerKey}
       >
         <Icon name="branch" />
-        <span className="q-caps">Branch</span>
+        <span className="q-lab">Branch</span>
         <span className="q-branch__name">{branch}</span>
         <Icon name="chevron" size={10} />
       </button>
       {open && (
         <div className="q-menu q-switch__menu" id={menuId} role="menu" aria-label="Branches" ref={menuRef} onKeyDown={onMenuKey}>
-          <div className="q-caps q-switch__label" role="presentation">
+          <div className="q-lab q-switch__label" role="presentation">
             Branches
           </div>
           {list.length === 0 && (

@@ -49,6 +49,8 @@ function isSettingsSection(v: string | undefined): v is SettingsSection {
 
 /** Settings: `/settings` opens its first section, `/settings/<section>` that one. */
 export const SETTINGS_PATH = '/settings'
+/** The keys that open Settings from anywhere (Shell.tsx), as the menu and the Settings list show them. */
+export const SETTINGS_KEYS = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘,' : 'Ctrl+,'
 export function settingsPath(section: SettingsSection): string {
   return `${SETTINGS_PATH}/${section}`
 }
