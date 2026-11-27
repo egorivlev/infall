@@ -39,13 +39,17 @@ main() {
         fi
     fi
 
-    if [ -n "$(compose ps -q --status running backup 2>/dev/null)" ]; then
-        say "Making a Workspace file with the version that is running now…"
-        compose exec -T backup infall backup \
+    # One backup job per Workspace on this machine: backup, and backup2 with
+    # compose.second.yaml.
+    made=no
+    for job in $(compose ps --services --status running 2>/dev/null | grep '^backup' || true); do
+        say "Making a Workspace file with the version that is running now ($job)…"
+        compose exec -T "$job" infall backup \
             || die "the backup did not work (see above). Nothing was updated."
-    else
-        say "The backup service is not running, so no Workspace file now (first start?)."
-    fi
+        made=yes
+    done
+    [ "$made" = yes ] \
+        || say "The backup service is not running, so no Workspace file now (first start?)."
 
     say "Pulling the images .env names…"
     compose pull
@@ -55,19 +59,22 @@ main() {
 
     # Only the server is waited for: the backup service checks itself once an hour.
     say "Waiting for the server to be healthy (up to 3 minutes)…"
-    status=starting
-    for _ in $(seq 1 36); do
-        id="$(compose ps -q server)"
-        status="$(docker inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || echo starting)"
-        [ "$status" = healthy ] && break
-        [ "$status" = unhealthy ] && break
-        sleep 5
+    # Every Workspace's server: server, and server2 with compose.second.yaml.
+    for srv in $(compose config --services | grep '^server'); do
+        status=starting
+        for _ in $(seq 1 36); do
+            id="$(compose ps -q "$srv")"
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$id" 2>/dev/null || echo starting)"
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && break
+            sleep 5
+        done
+        if [ "$status" != healthy ]; then
+            compose ps
+            compose logs --tail 30 "$srv"
+            die "$srv is $status (log above). To go back: README.md, \"Upgrade\"."
+        fi
     done
-    if [ "$status" != healthy ]; then
-        compose ps
-        compose logs --tail 30 server
-        die "the server is $status (log above). To go back: README.md, \"Upgrade\"."
-    fi
 
     compose ps
     version="$(compose exec -T server printenv INFALL_VERSION 2>/dev/null || echo unknown)"

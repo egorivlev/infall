@@ -1,0 +1,42 @@
+# deploy/compose.second.yaml — a second, entirely separate Workspace on the same machine
+# (README.md, "Two Workspaces on one machine"). Used together with compose.yaml: .env sets
+# COMPOSE_FILE=compose.yaml:compose.second.yaml and INFALL_SECOND_DOMAIN.
+#
+# It adds a second server and a second backup job with volumes of their own (data2,
+# backups2): other Members, other sign-ins, another secret key, other Workspace files.
+# Caddy serves both addresses and gets a certificate for each. Both run the same version.
+
+services:
+  server2:
+    extends:
+      file: compose.yaml
+      service: server
+    environment:
+      INFALL_PUBLIC_ORIGIN: ${INFALL_SECOND_PUBLIC_ORIGIN:-https://${INFALL_SECOND_DOMAIN:?set INFALL_SECOND_DOMAIN in .env}}
+      INFALL_SECRET_KEY: ${INFALL_SECOND_SECRET_KEY:-}
+    volumes: !override
+      - data2:/data
+
+  backup2:
+    extends:
+      file: compose.yaml
+      service: backup
+    depends_on: !override
+      server2:
+        condition: service_healthy
+    volumes: !override
+      - data2:/data
+      - backups2:/backups
+
+  caddy:
+    depends_on:
+      server2:
+        condition: service_healthy
+    environment:
+      INFALL_SECOND_SITE: ${INFALL_SECOND_DOMAIN}
+    volumes:
+      - ./container/second.caddy:/etc/caddy/more/second.caddy:ro
+
+volumes:
+  data2:
+  backups2:

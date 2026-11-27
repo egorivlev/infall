@@ -4,10 +4,12 @@
 # uses its own local authority, which curl accepts with -k and browsers warn about.
 # Through a Cloudflare Tunnel (compose.cloudflare.yaml) the address is http://INFALL_DOMAIN:
 # Cloudflare holds the certificate, and Caddy serves plain HTTP to the tunnel only.
-{$INFALL_CADDY_SITE} {
+# What every Infall site does, whichever server it is in front of: `import infall server`.
+# The one argument is the name of the compose service to pass requests to.
+(infall) {
 	# WebSockets (live updates) pass through with no extra settings; the Origin header is
 	# passed on for the server's own check.
-	reverse_proxy server:8787
+	reverse_proxy {args[0]}:8787
 
 	encode zstd gzip
 
@@ -46,3 +48,11 @@
 	# The server sets Content-Security-Policy, nosniff and Referrer-Policy itself.
 	# Access logging is off, which keeps invite links (/invite/<token>) out of log files.
 }
+
+{$INFALL_CADDY_SITE} {
+	import infall server
+}
+
+# More Workspaces on this machine, each with its own server and its own address
+# (compose.second.yaml puts a file here). No file: nothing more is served.
+import /etc/caddy/more/*.caddy

@@ -1,0 +1,5 @@
+# The second Workspace's address (deploy/compose.second.yaml mounts this file where the
+# main Caddyfile imports it). Same rules as the first; requests go to its own server.
+{$INFALL_SECOND_SITE} {
+	import infall server2
+}

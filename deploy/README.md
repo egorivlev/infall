@@ -95,6 +95,21 @@ Then start it as in step 3 of the open-ports route (or `./update.sh`). `docker c
 
 **Troubleshooting.** `cloudflared` not healthy: `docker compose logs cloudflared`; `Unauthorized` or `Invalid tunnel secret` means the token was copied wrong. The page shows Cloudflare's **502 Bad Gateway**: the Service URL in step 2 is not `HTTP` / `caddy:80`. Cloudflare's **404** or a blank page: the hostname in the dashboard and `INFALL_DOMAIN` differ.
 
+### Two Workspaces on one machine
+
+One Infall server holds one Workspace. For a second, entirely separate Workspace on the same host (other Members, other sign-ins, other data and backups) run a second server beside the first. It needs an address of its own: a second hostname whose DNS record points at the same machine, for example `lab.example.org` beside `infall.example.org`.
+
+1. In `.env`, in the **A second Workspace** block, remove the `#` in front of its two lines and set `INFALL_SECOND_DOMAIN` to the second hostname.
+2. Start it: `docker compose up -d`. `docker compose ps` then also shows `server2` and `backup2` as `(healthy)`, and Caddy gets a second certificate.
+3. Create its first Admin, in the second server: `docker compose run --rm server2 create-admin --email you@example.org --name "Your Name"`.
+4. Check it: `curl -fsS https://lab.example.org/api/health`, then sign in there.
+
+What is separate: everything a Workspace is. The second one keeps its database and secret key in the volume `infall_data2` and its daily Workspace files in `infall_backups2`. The same person in both Workspaces has two accounts and two passwords. What is shared: the machine, Caddy, and the version; `./update.sh` backs up and updates both.
+
+Every command in this guide that names `server` or `backup` works on the second Workspace with `server2` or `backup2` in its place, and the volumes `infall_data2` and `infall_backups2` in place of `infall_data` and `infall_backups`. Memory: allow about half a gigabyte more.
+
+Not together with the Cloudflare Tunnel route as written: `compose.cloudflare.yaml` serves the first address only.
+
 ### What runs, and where the data is
 
 | Service | What it does |
