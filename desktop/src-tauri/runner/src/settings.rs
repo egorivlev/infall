@@ -177,6 +177,16 @@ pub fn save(dir: &Path, settings: &Settings) -> io::Result<()> {
 mod tests {
     use super::*;
 
+    /// `unix`, an absolute path on Unix, as an absolute path on the system the test runs on:
+    /// the loader drops a path that is not a full one there.
+    fn abs(unix: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{}", unix.replace('/', "\\"))
+        } else {
+            unix.to_owned()
+        }
+    }
+
     #[test]
     fn nothing_is_chosen_at_first() {
         let dir = tempfile::tempdir().unwrap();
@@ -187,7 +197,7 @@ mod tests {
     fn julia() -> Toolchain {
         Toolchain {
             name: "Julia".into(),
-            program: "/opt/homebrew/bin/julia".into(),
+            program: abs("/opt/homebrew/bin/julia"),
             args: vec!["{file}".into()],
             ext: "jl".into(),
             version: Some("julia version 1.11.2".into()),
@@ -202,18 +212,18 @@ mod tests {
         let dir = dir.path().join("nested/config");
         let chosen = Settings {
             python: Some(Interpreter {
-                path: "/opt/homebrew/bin/python3".into(),
+                path: abs("/opt/homebrew/bin/python3"),
                 version: "3.12.3".into(),
             }),
-            folder: Some("/Users/me/research".into()),
+            folder: Some(abs("/Users/me/research")),
             environments: vec![NamedEnv {
                 name: "lab".into(),
-                path: "/Users/me/lab/bin/python".into(),
+                path: abs("/Users/me/lab/bin/python"),
                 version: "3.11.9".into(),
             }],
             names: [(
                 "analysis".to_owned(),
-                "/Users/me/miniconda3/envs/analysis/bin/python".to_owned(),
+                abs("/Users/me/miniconda3/envs/analysis/bin/python"),
             )]
             .into(),
             qsharp: Some(Qsharp {
@@ -235,7 +245,7 @@ mod tests {
         );
         assert_eq!(
             json["languages"]["julia"],
-            serde_json::json!({"name": "Julia", "program": "/opt/homebrew/bin/julia",
+            serde_json::json!({"name": "Julia", "program": abs("/opt/homebrew/bin/julia"),
                 "args": ["{file}"], "ext": "jl", "version": "julia version 1.11.2"})
         );
 
@@ -281,28 +291,28 @@ mod tests {
             dir.path().join(FILE),
             serde_json::json!({
                 "python": {"path": "python3", "version": "3"},
-                "folder": "/data",
+                "folder": abs("/data"),
                 "environments": [
-                    {"name": "ok", "path": "/e/bin/python", "version": "3.12.0"},
-                    {"name": "", "path": "/e/bin/python", "version": "3.12.0"},
+                    {"name": "ok", "path": abs("/e/bin/python"), "version": "3.12.0"},
+                    {"name": "", "path": abs("/e/bin/python"), "version": "3.12.0"},
                     {"name": "rel", "path": "bin/python", "version": "3.12.0"},
-                    {"name": "ok", "path": "/twice/bin/python", "version": "3.12.0"},
+                    {"name": "ok", "path": abs("/twice/bin/python"), "version": "3.12.0"},
                     "junk"
                 ],
-                "names": {"analysis": "/a/bin/python", "bad": "relative", "": "/x", "n": 5},
+                "names": {"analysis": abs("/a/bin/python"), "bad": "relative", "": abs("/x"), "n": 5},
                 "languages": {
-                    "julia": {"name": "Julia", "program": "/bin/julia", "args": ["{file}"], "ext": "jl"},
-                    "python": {"name": "Not Python", "program": "/bin/sh", "args": ["{file}"], "ext": "py"},
-                    "qsharp": {"name": "Q", "program": "/bin/sh", "args": ["{file}"], "ext": "qs"},
-                    "Bad Id": {"name": "B", "program": "/bin/b", "args": ["{file}"], "ext": "b"},
-                    "nofile": {"name": "N", "program": "/bin/n", "args": ["x"], "ext": "n"},
-                    "twice": {"name": "T", "program": "/bin/t", "args": ["{file}", "{file}"], "ext": "t"},
+                    "julia": {"name": "Julia", "program": abs("/bin/julia"), "args": ["{file}"], "ext": "jl"},
+                    "python": {"name": "Not Python", "program": abs("/bin/sh"), "args": ["{file}"], "ext": "py"},
+                    "qsharp": {"name": "Q", "program": abs("/bin/sh"), "args": ["{file}"], "ext": "qs"},
+                    "Bad Id": {"name": "B", "program": abs("/bin/b"), "args": ["{file}"], "ext": "b"},
+                    "nofile": {"name": "N", "program": abs("/bin/n"), "args": ["x"], "ext": "n"},
+                    "twice": {"name": "T", "program": abs("/bin/t"), "args": ["{file}", "{file}"], "ext": "t"},
                     "relative": {"name": "R", "program": "bin/r", "args": ["{file}"], "ext": "r"},
-                    "badext": {"name": "E", "program": "/bin/e", "args": ["{file}"], "ext": ".e"},
-                    "longversion": {"name": "L", "program": "/bin/l", "args": ["{file}"], "ext": "l", "version": "v".repeat(41)},
-                    "broken": {"name": "B", "program": "/bin/b", "args": ["{file}"], "ext": "b",
+                    "badext": {"name": "E", "program": abs("/bin/e"), "args": ["{file}"], "ext": ".e"},
+                    "longversion": {"name": "L", "program": abs("/bin/l"), "args": ["{file}"], "ext": "l", "version": "v".repeat(41)},
+                    "broken": {"name": "B", "program": abs("/bin/b"), "args": ["{file}"], "ext": "b",
                         "problem": "It crashed (signal 6) when asked its version."},
-                    "oddproblem": {"name": "O", "program": "/bin/o", "args": ["{file}"], "ext": "o",
+                    "oddproblem": {"name": "O", "program": abs("/bin/o"), "args": ["{file}"], "ext": "o",
                         "problem": "a\nb"}
                 }
             })
@@ -311,18 +321,18 @@ mod tests {
         .unwrap();
         let loaded = load(dir.path());
         assert_eq!(loaded.python, None);
-        assert_eq!(loaded.folder.as_deref(), Some("/data"));
+        assert_eq!(loaded.folder.as_deref(), Some(abs("/data").as_str()));
         assert_eq!(
             loaded
                 .environments
                 .iter()
                 .map(|e| e.path.as_str())
                 .collect::<Vec<_>>(),
-            ["/e/bin/python"]
+            [abs("/e/bin/python")]
         );
         assert_eq!(
             loaded.names,
-            [("analysis".to_owned(), "/a/bin/python".to_owned())].into()
+            [("analysis".to_owned(), abs("/a/bin/python"))].into()
         );
         assert_eq!(
             loaded.languages.keys().collect::<Vec<_>>(),

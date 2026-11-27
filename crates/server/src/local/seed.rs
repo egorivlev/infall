@@ -616,3 +616,25 @@ fn tutorial(s: &mut Seeder<'_>, main: BranchId) -> Result<Seeded, String> {
         suggestions: vec![suggestion],
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a Workspace is seeded with syncs and exports, so it is the same on every system:
+    /// the files are checked out with `\n` (`.gitattributes`: `eol=lf`), and this proves it
+    /// where the binary is built, Windows included.
+    #[test]
+    fn the_seeded_texts_end_their_lines_with_a_line_feed_only() {
+        for (name, text) in [
+            ("random_walk.py", RANDOM_WALK_CODE),
+            ("random_walk.out", RANDOM_WALK_OUTPUT),
+            ("estimate_pi.py", ESTIMATE_PI_CODE),
+            ("estimate_pi.out", ESTIMATE_PI_OUTPUT),
+            ("watch_a_walk.html", WATCH_A_WALK_VISUAL),
+        ] {
+            assert!(!text.contains('\r'), "{name} holds a carriage return");
+            assert!(text.ends_with('\n'), "{name}");
+        }
+    }
+}
