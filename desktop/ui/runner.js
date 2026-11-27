@@ -17,6 +17,9 @@
   var otherPath = $('other-path');
   var folder = $('folder');
   var save = $('save');
+  var rowMenu = $('row-menu');
+  var scrim = $('add-lang-scrim');
+  var dialog = $('add-lang-dialog');
   var busy = false;
   var mainTouched = false; // the Member changed the Python or folder choice: keep it on screen
   var view = null;
@@ -66,6 +69,138 @@
     );
   }
 
+  // ---- a row's ⋯ menu (one open at a time) --------------------------------------------------
+
+  var menuOwner = null; // the ⋯ button whose menu is open
+
+  function closeRowMenu(refocus) {
+    if (!menuOwner) return;
+    var owner = menuOwner;
+    menuOwner = null;
+    rowMenu.hidden = true;
+    rowMenu.textContent = '';
+    owner.setAttribute('aria-expanded', 'false');
+    if (refocus && document.body.contains(owner)) owner.focus();
+  }
+
+  function placeMenu(button) {
+    var r = button.getBoundingClientRect();
+    rowMenu.style.left = '0px';
+    rowMenu.style.top = '0px';
+    var w = rowMenu.offsetWidth;
+    var h = rowMenu.offsetHeight;
+    var vw = document.documentElement.clientWidth;
+    var vh = document.documentElement.clientHeight;
+    var left = Math.max(8, Math.min(r.right - w, vw - w - 8));
+    var top = r.bottom + 4;
+    if (top + h > vh - 8) top = Math.max(8, r.top - h - 4);
+    rowMenu.style.left = Math.round(left) + 'px';
+    rowMenu.style.top = Math.round(top) + 'px';
+  }
+
+  // A ⋯ button for a row: `label` names the row; `items` are { text, danger, run }.
+  function moreButton(label, items) {
+    var button = el('button', 'btn sm ico more');
+    button.type = 'button';
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-label', 'More for ' + label);
+    button.title = items
+      .map(function (item) {
+        return item.text;
+      })
+      .join(', ');
+    button.appendChild(dots());
+    function open(focusLast) {
+      closeRowMenu(false);
+      menuOwner = button;
+      rowMenu.textContent = '';
+      rowMenu.setAttribute('aria-label', label);
+      var buttons = items.map(function (item) {
+        var mi = el('button', 'mi' + (item.danger ? ' danger-text' : ''), item.text);
+        mi.type = 'button';
+        mi.setAttribute('role', 'menuitem');
+        mi.tabIndex = -1;
+        mi.addEventListener('click', function () {
+          closeRowMenu(true);
+          item.run(button);
+        });
+        rowMenu.appendChild(mi);
+        return mi;
+      });
+      rowMenu.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      placeMenu(button);
+      (focusLast ? buttons[buttons.length - 1] : buttons[0]).focus();
+    }
+    button.addEventListener('click', function () {
+      if (menuOwner === button) closeRowMenu(true);
+      else open(false);
+    });
+    button.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        open(event.key === 'ArrowUp');
+      }
+    });
+    return button;
+  }
+
+  function dots() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('class', 'more-glyph');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    [3.5, 8, 12.5].forEach(function (cx) {
+      var c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', String(cx));
+      c.setAttribute('cy', '8');
+      c.setAttribute('r', '1.4');
+      svg.appendChild(c);
+    });
+    return svg;
+  }
+
+  rowMenu.addEventListener('keydown', function (event) {
+    var items = Array.prototype.slice.call(rowMenu.querySelectorAll('[role="menuitem"]'));
+    var i = items.indexOf(document.activeElement);
+    var next = -1;
+    if (event.key === 'ArrowDown') next = (i + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (i - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeRowMenu(true);
+      return;
+    } else if (event.key === 'Tab') {
+      closeRowMenu(true);
+      return;
+    }
+    if (next >= 0) {
+      event.preventDefault();
+      items[next].focus();
+    }
+  });
+  document.addEventListener('mousedown', function (event) {
+    if (!menuOwner) return;
+    if (rowMenu.contains(event.target) || menuOwner.contains(event.target)) return;
+    closeRowMenu(false);
+  });
+  window.addEventListener('resize', function () {
+    closeRowMenu(false);
+  });
+  document.addEventListener(
+    'scroll',
+    function () {
+      closeRowMenu(false);
+    },
+    true
+  );
+
   // ---- Python ------------------------------------------------------------------------------
 
   // Every interpreter the window knows of, each once: those on PATH, the environments found
@@ -93,6 +228,25 @@
     return text;
   }
 
+  function baseName(path) {
+    var parts = String(path).split(/[\\/]/);
+    return parts[parts.length - 1] || String(path);
+  }
+
+  // The short name of an interpreter in its row: where it comes from and its name
+  // ("conda · lab"), or the program's own name for one on PATH ("python3").
+  function shortName(python) {
+    if (python.name) return (python.kind && KINDS[python.kind] ? KINDS[python.kind] + ' · ' : '') + python.name;
+    return baseName(python.path);
+  }
+
+  function versionOf(v, path) {
+    var match = interpreters(v).filter(function (python) {
+      return python.path === path;
+    })[0];
+    return match && match.version ? match.version : '';
+  }
+
   function renderPython(v) {
     var previous = mainForm.querySelector('input[name="python"]:checked');
     var keep = mainTouched && previous ? previous.value : null;
@@ -101,7 +255,7 @@
     var listed = false;
     var list = interpreters(v);
     list.forEach(function (python, index) {
-      var item = el('li');
+      var item = el('li', 'choice');
       var radio = el('input');
       radio.type = 'radio';
       radio.name = 'python';
@@ -111,23 +265,22 @@
       radio.checked = python.path === current;
       radio.addEventListener('change', function () {
         mainTouched = true;
+        otherHint();
       });
       listed = listed || radio.checked;
-      var label = el('label');
+      var label = el('label', 'choice-label');
       label.htmlFor = radio.id;
-      label.appendChild(document.createTextNode(describe(python)));
+      label.title = describe(python);
+      label.appendChild(el('span', 'choice-name', shortName(python)));
+      label.appendChild(el('span', 'version', python.version || 'did not answer'));
       label.appendChild(el('span', 'path', python.path));
+      // Read out as before: "Python 3.12.3 · lab (conda)", then the path.
+      var words = el('span', 'visually-hidden', describe(python) + ', ');
+      label.insertBefore(words, label.firstChild);
+      label.querySelector('.choice-name').setAttribute('aria-hidden', 'true');
+      label.querySelector('.version').setAttribute('aria-hidden', 'true');
       item.appendChild(radio);
       item.appendChild(label);
-      if (python.kind === 'added') {
-        var remove = el('button', 'quiet', 'Remove');
-        remove.type = 'button';
-        remove.setAttribute('aria-label', 'Remove the environment ' + python.name);
-        remove.addEventListener('click', function () {
-          change({ do: 'remove_environment', name: python.name }, $('add-env-error'), remove);
-        });
-        item.appendChild(remove);
-      }
       found.appendChild(item);
     });
     var text =
@@ -145,11 +298,17 @@
     if (typeof v.overridden === 'string') {
       show($('override'), 'INFALL_PYTHON_BIN is set, so Runs use ' + v.overridden + ' whatever is chosen here.');
     }
+    otherHint();
+  }
+
+  // What another Python must be is said once it is the one chosen.
+  function otherHint() {
+    $('other-hint').hidden = !other.checked;
   }
 
   // A <select> of every interpreter, `selected` chosen (added when it is not listed).
   function interpreterSelect(v, selected, id) {
-    var select = el('select');
+    var select = el('select', 'field mono small');
     if (id) select.id = id;
     var list = interpreters(v);
     var has = false;
@@ -171,30 +330,80 @@
     return select;
   }
 
+  // ---- environments: the names Runs ask for, and the environments added by hand --------------
+  //
+  // One table: a name a Run asks for, and what it means here. A name chosen here (`names`) can
+  // be pointed at another Python; an environment added by hand is its own name. Removing a row
+  // sends the command for the kind of entry it is.
+
   function renderNames(v) {
     var list = $('names');
     list.textContent = '';
+    var rows = [];
     var names = v.names && typeof v.names === 'object' ? Object.keys(v.names) : [];
-    names.sort();
-    $('names-empty').hidden = names.length > 0;
-    names.forEach(function (name, index) {
-      var item = el('li', 'row');
-      var label = el('label', 'name', name);
-      var select = interpreterSelect(v, String(v.names[name]), 'name-' + index);
-      label.htmlFor = select.id;
-      select.addEventListener('change', function () {
-        change({ do: 'map', name: name, path: select.value }, $('names-error'), select);
-      });
-      var remove = el('button', 'quiet', 'Remove');
-      remove.type = 'button';
-      remove.setAttribute('aria-label', 'Forget what “' + name + '” means here');
-      remove.addEventListener('click', function () {
-        change({ do: 'map', name: name, path: null }, $('names-error'), remove);
-      });
-      item.appendChild(label);
-      item.appendChild(select);
-      item.appendChild(remove);
-      list.appendChild(item);
+    names.forEach(function (name) {
+      rows.push({ name: name, mapped: String(v.names[name]) });
+    });
+    (v.environments || []).forEach(function (env) {
+      if (env && env.kind === 'added' && typeof env.name === 'string') {
+        rows.push({ name: env.name, added: env });
+      }
+    });
+    rows.sort(function (a, b) {
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : a.added ? 1 : -1;
+    });
+    $('names-empty').hidden = rows.length > 0;
+    $('names-table').hidden = rows.length === 0;
+    rows.forEach(function (entry, index) {
+      var row = el('div', 'tr');
+      row.setAttribute('role', 'row');
+      var nameCell = el('span', 'mono small name', entry.name);
+      nameCell.setAttribute('role', 'rowheader');
+      row.appendChild(nameCell);
+      var means = el('span', 'cell');
+      means.setAttribute('role', 'cell');
+      var version = el('span', 'version');
+      version.setAttribute('role', 'cell');
+      var more;
+      if (entry.added) {
+        var path = el('span', 'path', entry.added.path);
+        path.title = 'Added by hand';
+        means.appendChild(path);
+        version.textContent = entry.added.version || '';
+        more = moreButton('the environment ' + entry.name, [
+          {
+            text: 'Remove',
+            danger: true,
+            run: function (button) {
+              change({ do: 'remove_environment', name: entry.name }, $('names-error'), button);
+            }
+          }
+        ]);
+      } else {
+        var select = interpreterSelect(v, entry.mapped, 'name-' + index);
+        select.setAttribute('aria-label', 'What “' + entry.name + '” means on this computer');
+        select.addEventListener('change', function () {
+          change({ do: 'map', name: entry.name, path: select.value }, $('names-error'), select);
+        });
+        means.appendChild(select);
+        version.textContent = versionOf(v, entry.mapped);
+        more = moreButton('the name “' + entry.name + '”', [
+          {
+            text: 'Remove',
+            danger: true,
+            run: function (button) {
+              change({ do: 'map', name: entry.name, path: null }, $('names-error'), button);
+            }
+          }
+        ]);
+      }
+      row.appendChild(means);
+      row.appendChild(version);
+      var moreCell = el('span');
+      moreCell.setAttribute('role', 'cell');
+      moreCell.appendChild(more);
+      row.appendChild(moreCell);
+      list.appendChild(row);
     });
   }
 
@@ -216,22 +425,27 @@
       .join(' ');
   }
 
-  // A language that is set up: its command, version, switch and Remove.
+  // A language that is set up: its switch, name, command, version and ⋯ (Remove).
   function languageRow(language) {
     var box = el('div', 'toolchain');
     box.dataset.lang = language.id;
-    var head = el('div', 'row');
-    var label = el('label', 'switch-label');
-    var toggle = el('input');
+    var head = el('div', 'tr');
+    var toggle = el('input', 'switch');
     toggle.type = 'checkbox';
+    toggle.id = 'lang-on-' + language.id;
     toggle.setAttribute('role', 'switch');
     toggle.checked = !!language.enabled;
-    label.appendChild(toggle);
-    label.appendChild(document.createTextNode(' ' + language.name));
+    head.appendChild(toggle);
+    var label = el('label', 'lang-name', language.name);
+    label.htmlFor = toggle.id;
     head.appendChild(label);
+    var command = el('span', 'path', commandText(language.program, language.args));
+    command.title = 'Id ' + language.id + ' · files .' + language.ext;
+    head.appendChild(command);
+    var problem = !language.available || !!language.problem;
     var state = el(
       'span',
-      'muted',
+      'state' + (problem ? ' bad' : language.version ? '' : ' unknown'),
       !language.available
         ? 'Its program is not there any more.'
         : language.problem
@@ -240,27 +454,37 @@
             ? language.version
             : 'Did not say its version.'
     );
+    state.id = 'lang-state-' + language.id;
+    toggle.setAttribute('aria-describedby', state.id);
     head.appendChild(state);
-    var remove = el('button', 'quiet', 'Remove');
-    remove.type = 'button';
-    remove.setAttribute('aria-label', 'Remove ' + language.name);
-    head.appendChild(remove);
-    box.appendChild(head);
-    box.appendChild(el('p', 'path', commandText(language.program, language.args)));
-    box.appendChild(el('p', 'hint', 'Id ' + language.id + ' · files .' + language.ext));
-    // The program is there but failed when asked its version: what it said, and what to do.
-    if (language.available && language.problem) {
-      box.appendChild(el('p', 'hint', language.problem + ' Runs in ' + language.name + ' will likely fail until it is repaired or another program is set up.'));
-    }
-    var error = el('p', 'error');
+    var error = el('p', 'error row-error');
     error.setAttribute('role', 'alert');
     error.hidden = true;
+    head.appendChild(
+      moreButton(language.name, [
+        {
+          text: 'Remove',
+          danger: true,
+          run: function (button) {
+            change({ do: 'remove_language', id: language.id }, error, button);
+          }
+        }
+      ])
+    );
+    box.appendChild(head);
+    // The program is there but failed when asked its version: what it said, and what to do.
+    if (language.available && language.problem) {
+      box.appendChild(
+        el(
+          'p',
+          'hint row-note',
+          language.problem + ' Runs in ' + language.name + ' will likely fail until it is repaired or another program is set up.'
+        )
+      );
+    }
     box.appendChild(error);
     toggle.addEventListener('change', function () {
       change({ do: 'enable_language', id: language.id, on: toggle.checked }, error, toggle);
-    });
-    remove.addEventListener('click', function () {
-      change({ do: 'remove_language', id: language.id }, error, remove);
     });
     return box;
   }
@@ -270,12 +494,13 @@
     var box = el('form', 'toolchain');
     box.noValidate = true;
     box.dataset.lang = preset.id;
-    var head = el('div', 'row');
-    head.appendChild(el('strong', null, preset.name));
-    head.appendChild(el('span', 'muted', 'Not set up'));
-    box.appendChild(head);
-    var select = el('select');
+    var head = el('div', 'tr');
+    head.appendChild(el('span'));
+    var name = el('label', 'lang-name off', preset.name);
+    head.appendChild(name);
+    var select = el('select', 'field mono small');
     select.id = 'preset-' + preset.id;
+    name.htmlFor = select.id;
     select.setAttribute('aria-label', 'Program for ' + preset.name);
     (preset.found || []).forEach(function (program) {
       var option = el('option', null, program.path + (program.problem ? ' — not working' : program.version ? ' — ' + program.version : ''));
@@ -285,26 +510,28 @@
     var by = el('option', null, (preset.found || []).length ? 'Another program…' : 'No program found: enter its path…');
     by.value = '';
     select.appendChild(by);
-    var path = el('input');
+    head.appendChild(select);
+    var button = el('button', 'btn sm soft', 'Set up ' + preset.name);
+    button.type = 'submit';
+    var started = 'Started as: <program> {file}, the Run written to main.' + preset.ext + '.';
+    button.title = started;
+    head.appendChild(button);
+    box.appendChild(head);
+    var path = el('input', 'field mono small row-path');
     path.type = 'text';
     path.autocomplete = 'off';
     path.spellcheck = false;
     path.placeholder = 'The full path of the program';
     path.setAttribute('aria-label', 'Full path of the program for ' + preset.name);
-    path.hidden = select.value !== '';
+    var hint = el('p', 'hint row-note', started);
+    path.hidden = hint.hidden = select.value !== '';
     select.addEventListener('change', function () {
-      path.hidden = select.value !== '';
+      path.hidden = hint.hidden = select.value !== '';
       if (!path.hidden) path.focus();
     });
-    var button = el('button', 'quiet', 'Set up ' + preset.name);
-    button.type = 'submit';
-    var row = el('div', 'row');
-    row.appendChild(select);
-    row.appendChild(button);
-    box.appendChild(row);
     box.appendChild(path);
-    box.appendChild(el('p', 'hint', 'Started as: <program> {file}, the Run written to main.' + preset.ext + '.'));
-    var error = el('p', 'error');
+    box.appendChild(hint);
+    var error = el('p', 'error row-error');
     error.setAttribute('role', 'alert');
     error.hidden = true;
     box.appendChild(error);
@@ -340,6 +567,7 @@
     (v.languages || []).forEach(function (language) {
       if (!presetIds[language.id]) languages.appendChild(languageRow(language));
     });
+    if (asked && typeof asked.lang === 'string') markAsked(asked.lang);
 
     var q = v.qsharp;
     var on = $('qsharp-on');
@@ -373,20 +601,36 @@
     };
   }
 
+  // The language a Run asked for, outlined where it is set up.
+  function markAsked(lang) {
+    var row = document.querySelector('[data-lang="' + CSS.escape(lang) + '"]');
+    if (row) row.classList.add('asked');
+    return row;
+  }
+
   function renderAsk(v) {
     var ask = v.ask;
     if (!ask || asked) return;
     asked = ask;
     var box = $('ask');
+    var text = $('ask-text');
     box.hidden = false;
+    text.textContent = '';
     if (typeof ask.env === 'string') {
-      $('ask-text').textContent =
-        'A Run asks for the Python environment “' +
-        ask.env +
-        '”, and nothing on this computer goes by that name. Choose the one it means here; Infall remembers your choice for that name.';
+      var lead = el('strong');
+      lead.appendChild(document.createTextNode('A Run asks for the environment '));
+      lead.appendChild(el('span', 'mono', ask.env));
+      lead.appendChild(document.createTextNode('.'));
+      text.appendChild(lead);
+      text.appendChild(
+        document.createTextNode(
+          ' This computer has none of that name. Choose which of your Pythons it means here; Infall remembers the answer.'
+        )
+      );
       var form = $('ask-env');
       form.hidden = false;
       var select = interpreterSelect(v, v.python ? v.python.path : null, 'ask-env-choice');
+      select.setAttribute('aria-labelledby', 'ask-text');
       $('ask-env-choice').replaceWith(select);
       $('ask-env-use').textContent = 'Use it for “' + ask.env + '”';
       form.addEventListener('submit', function (event) {
@@ -401,21 +645,24 @@
       select.focus();
     } else if (typeof ask.lang === 'string') {
       var name = askLabel(ask.lang);
-      $('ask-text').textContent =
+      text.textContent =
         'A Run is written in ' +
         name +
         ', which is not set up on this computer. Set it up below, or close this window to leave the Run.';
       var target = null;
       if (ask.lang === 'qsharp') {
+        $('qsharp-row').classList.add('asked');
         target = $('qsharp-on');
       } else {
-        var row = document.querySelector('[data-lang="' + CSS.escape(ask.lang) + '"]');
+        var row = markAsked(ask.lang);
         if (row) {
-          row.classList.add('asked');
           target = row.querySelector('select, input[type="checkbox"], button');
         } else {
+          // Not a language this app knows: the form to add one, with its id filled in.
+          openAddLanguage();
           $('lang-id').value = ask.lang;
-          target = $('lang-name');
+          $('lang-name').focus();
+          return;
         }
       }
       if (target) {
@@ -429,6 +676,7 @@
 
   function render(v) {
     view = v;
+    closeRowMenu(false);
     renderPython(v);
     renderNames(v);
     renderLanguages(v);
@@ -449,15 +697,66 @@
     });
   }
 
+  // ---- Add a language: a dialog ------------------------------------------------------------
+
+  var dialogReturn = null;
+
+  function openAddLanguage() {
+    closeRowMenu(false);
+    dialogReturn = document.activeElement;
+    show($('add-lang-error'), '');
+    scrim.hidden = false;
+    $('lang-id').focus();
+  }
+
+  function closeAddLanguage() {
+    scrim.hidden = true;
+    var back = dialogReturn && document.body.contains(dialogReturn) ? dialogReturn : $('add-lang-open');
+    dialogReturn = null;
+    back.focus();
+  }
+
+  function dialogOpen() {
+    return !scrim.hidden;
+  }
+
+  $('add-lang-open').addEventListener('click', openAddLanguage);
+  $('add-lang-cancel').addEventListener('click', closeAddLanguage);
+  scrim.addEventListener('mousedown', function (event) {
+    if (event.target === scrim) closeAddLanguage();
+  });
+  // Focus stays inside the dialog while it is open.
+  dialog.addEventListener('keydown', function (event) {
+    if (event.key !== 'Tab') return;
+    var focusable = Array.prototype.slice.call(dialog.querySelectorAll('input, textarea, button')).filter(function (node) {
+      return !node.disabled && !node.hidden;
+    });
+    var firstOne = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === firstOne) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      firstOne.focus();
+    }
+  });
+
   // ---- the Member's actions ----------------------------------------------------------------
 
   otherPath.addEventListener('input', function () {
     other.checked = true;
     mainTouched = true;
+    otherHint();
     show($('error'), '');
+  });
+  otherPath.addEventListener('focus', function () {
+    // Typing a path is choosing it; the hint says what it must be.
+    $('other-hint').hidden = false;
   });
   other.addEventListener('change', function () {
     mainTouched = true;
+    otherHint();
   });
   folder.addEventListener('input', function () {
     mainTouched = true;
@@ -544,7 +843,7 @@
       args: args,
       ext: $('lang-ext').value.trim()
     };
-    var button = event.target.querySelector('button');
+    var button = event.target.querySelector('button[type="submit"]');
     var after = answeredIf({ lang: id });
     change(what, $('add-lang-error'), button, function () {
       if (after() === 'closed') return 'closed';
@@ -552,6 +851,7 @@
         $(field).value = '';
       });
       $('lang-args').value = '{file}';
+      closeAddLanguage();
     });
   });
 
@@ -567,7 +867,18 @@
 
   $('cancel').addEventListener('click', close);
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') close();
+    if (event.key !== 'Escape') return;
+    // Escape closes what is open over the window first: a menu, then the dialog.
+    if (menuOwner) {
+      closeRowMenu(true);
+      return;
+    }
+    if (dialogOpen()) {
+      event.preventDefault();
+      closeAddLanguage();
+      return;
+    }
+    close();
   });
 
   $('forget').addEventListener('click', function () {
