@@ -7,156 +7,195 @@
     <link rel="stylesheet" href="setup.css" />
   </head>
   <body>
-    <header class="brand">
-      <svg class="mark" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-        <g transform="rotate(-12 12 12)">
-          <circle cx="12" cy="12" r="6.6" fill="#000" stroke="#ffd98f" stroke-width="2.2" />
-          <path class="mark-cut" d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke-width="3.8" stroke-linecap="round" />
-          <path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke="#f2a03d" stroke-width="1.7" stroke-linecap="round" />
-        </g>
-      </svg>
-      <span class="brand-name">Infall</span>
-    </header>
+    <h1 class="visually-hidden">Open a Workspace</h1>
+    <p id="live" class="visually-hidden" role="status" aria-live="polite"></p>
 
-    <main class="start">
-      <h1 class="visually-hidden">Open a Workspace</h1>
-      <p id="live" class="visually-hidden" role="status" aria-live="polite"></p>
+    <div class="layout">
+      <!-- A narrow room (a small window at a large scale): the side panel folds into this bar. -->
+      <header class="narrow-bar">
+        <span class="brand">
+          <svg class="mark" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+            <g transform="rotate(-12 12 12)">
+              <circle cx="12" cy="12" r="6.6" fill="#000" stroke="#ffd98f" stroke-width="2.2" />
+              <path class="mark-cut mark-cut-canvas" d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke-width="3.8" stroke-linecap="round" />
+              <path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke="#f2a03d" stroke-width="1.7" stroke-linecap="round" />
+            </g>
+          </svg>
+          <span class="brand-name">Infall</span>
+        </span>
+        <span class="narrow-actions">
+          <button id="create-menu-btn" type="button" class="btn sm soft" aria-haspopup="menu" aria-expanded="false"
+            aria-controls="create-menu">Create a workspace <span aria-hidden="true">▾</span></button>
+          <button id="signin-narrow" type="button" class="btn sm" aria-expanded="false" aria-controls="side">Sign in…</button>
+        </span>
+        <div id="create-menu" class="menu" role="menu" aria-label="Create a workspace" hidden>
+          <button type="button" role="menuitem" tabindex="-1" class="mi" data-for="tutorial">Tutorial</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi" data-for="blank">Blank</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi" data-for="literature-review">Literature review</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi" data-for="research-project">Research project</button>
+          <div role="separator" class="menu-sep"></div>
+          <button type="button" role="menuitem" tabindex="-1" class="mi" data-for="import">Import a workspace…</button>
+        </div>
+      </header>
 
-      <div id="notice" class="notice" role="alert" hidden>
-        <p id="notice-text"></p>
-        <button id="notice-dismiss" type="button" class="quiet">Dismiss</button>
-      </div>
+      <aside id="side" class="side">
+        <span class="brand side-brand">
+          <svg class="mark" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+            <g transform="rotate(-12 12 12)">
+              <circle cx="12" cy="12" r="6.6" fill="#000" stroke="#ffd98f" stroke-width="2.2" />
+              <path class="mark-cut" d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke-width="3.8" stroke-linecap="round" />
+              <path d="M1.2 12 A10.8 2.6 0 0 0 22.8 12" stroke="#f2a03d" stroke-width="1.7" stroke-linecap="round" />
+            </g>
+          </svg>
+          <span class="brand-name">Infall</span>
+        </span>
 
-      <div id="update" class="update" role="status" hidden>
-        <p id="update-text"></p>
-        <button id="update-go" type="button" class="accent">Restart to update</button>
-      </div>
-      <p id="update-error" class="error update-error" role="alert" hidden></p>
-
-      <div class="columns">
-        <div class="primary-column">
-          <section id="recent" class="section recent" aria-labelledby="recent-heading" hidden>
-            <div class="section-head">
-              <h2 id="recent-heading" tabindex="-1">Your workspaces</h2>
-              <span id="recent-count" class="count"></span>
-            </div>
-            <p id="recent-error" class="recent-error" role="alert" hidden>
-              <span id="recent-error-text"></span>
-              <button id="recent-retry" type="button" class="quiet">Try again</button>
-            </p>
-            <ul id="recent-list" class="recent-list" aria-labelledby="recent-heading"></ul>
-            <div id="import-slot-recent" class="import-slot"></div>
-          </section>
-
-          <section class="section create" aria-labelledby="create-heading">
-            <div class="section-head">
-              <h2 id="create-heading">Create a workspace</h2>
-            </div>
-            <ul class="tiles" aria-labelledby="create-heading">
-              <li>
-                <button type="button" class="tile tile-first" data-preset="tutorial" data-name="Tutorial"
-                  aria-label="Create a Tutorial workspace" aria-describedby="tile-tutorial-desc">
-                  <span class="tile-top">
-                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
-                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
-                      <rect x="6" y="6" width="11" height="7" rx="1.5" class="g-card" />
-                      <rect x="23" y="15" width="11" height="7" rx="1.5" class="g-card" />
-                      <path d="M17 9.5 C21 9.5 19 18.5 23 18.5" class="g-line" />
-                      <circle cx="11.5" cy="19" r="2.2" class="g-accent" />
-                    </svg>
+        <section class="create" aria-labelledby="create-heading">
+          <h2 id="create-heading" class="label side-label">Create a workspace</h2>
+          <ul class="presets" aria-labelledby="create-heading">
+            <li>
+              <button type="button" class="preset" data-preset="tutorial" data-name="Tutorial"
+                aria-label="Create a Tutorial workspace" aria-describedby="preset-tutorial-desc">
+                <svg class="glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                  <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                  <rect x="6" y="6" width="11" height="7" rx="1.5" class="g-card" />
+                  <rect x="23" y="15" width="11" height="7" rx="1.5" class="g-card" />
+                  <path d="M17 9.5 C21 9.5 19 18.5 23 18.5" class="g-line" />
+                  <circle cx="11.5" cy="19" r="2.2" class="g-mark" />
+                </svg>
+                <span class="preset-text">
+                  <span class="preset-top">
+                    <span class="preset-name">Tutorial</span>
                     <span class="chip">New to Infall</span>
                   </span>
-                  <span class="tile-name">Tutorial</span>
-                  <span id="tile-tutorial-desc" class="tile-desc">A sample Board and a hands-on Tutorial through every part of Infall.</span>
-                </button>
-              </li>
-              <li>
-                <button type="button" class="tile" data-preset="blank" data-name="Blank"
-                  aria-label="Create a Blank workspace" aria-describedby="tile-blank-desc">
-                  <span class="tile-top">
-                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
-                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame g-dashed" />
-                    </svg>
-                  </span>
-                  <span class="tile-name">Blank</span>
-                  <span id="tile-blank-desc" class="tile-desc">An empty Board, ready for your own Cards.</span>
-                </button>
-              </li>
-              <li>
-                <button type="button" class="tile" data-preset="literature-review" data-name="Literature review"
-                  aria-label="Create a Literature review workspace" aria-describedby="tile-lit-desc">
-                  <span class="tile-top">
-                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
-                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
-                      <rect x="5" y="5" width="6" height="18" rx="1" class="g-card" />
-                      <rect x="13" y="5" width="6" height="18" rx="1" class="g-card" />
-                      <rect x="21" y="5" width="6" height="18" rx="1" class="g-card" />
-                      <rect x="29" y="5" width="6" height="18" rx="1" class="g-card" />
-                    </svg>
-                  </span>
-                  <span class="tile-name">Literature review</span>
-                  <span id="tile-lit-desc" class="tile-desc">Frames for To read, Reading, Key findings and Open questions.</span>
-                </button>
-              </li>
-              <li>
-                <button type="button" class="tile" data-preset="research-project" data-name="Research project"
-                  aria-label="Create a Research project workspace" aria-describedby="tile-research-desc">
-                  <span class="tile-top">
-                    <svg class="tile-glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
-                      <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
-                      <rect x="5" y="5" width="13" height="8" rx="1" class="g-card" />
-                      <rect x="22" y="5" width="13" height="8" rx="1" class="g-card" />
-                      <rect x="5" y="15" width="13" height="8" rx="1" class="g-card" />
-                      <rect x="22" y="15" width="13" height="8" rx="1" class="g-card" />
-                      <path d="M26 18 L31 19 L26 20 Z" class="g-accent" />
-                    </svg>
-                  </span>
-                  <span class="tile-name">Research project</span>
-                  <span id="tile-research-desc" class="tile-desc">Frames for Questions, Hypotheses, Experiments and Results, with an example Run.</span>
-                </button>
-              </li>
-            </ul>
-            <p id="create-status" class="visually-hidden" role="status"></p>
-            <p id="create-error" class="error" role="alert" hidden></p>
-            <p class="quiet-line">A Local Workspace stays on this computer. It needs no server and no sign-in.</p>
-            <div id="import-slot-create" class="import-slot">
-              <div id="import" class="import">
-                <div class="import-line">
-                  <button id="import-btn" type="button" class="quiet" aria-describedby="import-hint import-error">Import a workspace…</button>
-                  <span id="import-hint" class="import-hint">Opens a Workspace file (.infall) as a new Local Workspace.</span>
-                </div>
-                <p id="import-error" class="error" role="alert" hidden></p>
-              </div>
+                  <span id="preset-tutorial-desc" class="preset-desc">A sample Board and eighteen hands-on steps through every part of Infall.</span>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="preset" data-preset="blank" data-name="Blank"
+                aria-label="Create a Blank workspace" aria-describedby="preset-blank-desc">
+                <svg class="glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                  <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-dashed" />
+                </svg>
+                <span class="preset-text">
+                  <span class="preset-top"><span class="preset-name">Blank</span></span>
+                  <span id="preset-blank-desc" class="preset-desc">An empty Board, ready for your own Cards.</span>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="preset" data-preset="literature-review" data-name="Literature review"
+                aria-label="Create a Literature review workspace" aria-describedby="preset-lit-desc">
+                <svg class="glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                  <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                  <rect x="5" y="5" width="6" height="18" rx="1" class="g-card" />
+                  <rect x="13" y="5" width="6" height="18" rx="1" class="g-card" />
+                  <rect x="21" y="5" width="6" height="18" rx="1" class="g-card" />
+                  <rect x="29" y="5" width="6" height="18" rx="1" class="g-card" />
+                </svg>
+                <span class="preset-text">
+                  <span class="preset-top"><span class="preset-name">Literature review</span></span>
+                  <span id="preset-lit-desc" class="preset-desc">Frames for To read, Reading, Key findings and Open questions.</span>
+                </span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="preset" data-preset="research-project" data-name="Research project"
+                aria-label="Create a Research project workspace" aria-describedby="preset-research-desc">
+                <svg class="glyph" viewBox="0 0 40 28" aria-hidden="true" focusable="false">
+                  <rect x="1.5" y="1.5" width="37" height="25" rx="3" class="g-frame" />
+                  <rect x="5" y="5" width="13" height="8" rx="1" class="g-card" />
+                  <rect x="22" y="5" width="13" height="8" rx="1" class="g-card" />
+                  <rect x="5" y="15" width="13" height="8" rx="1" class="g-card" />
+                  <rect x="22" y="15" width="13" height="8" rx="1" class="g-card" />
+                  <path d="M26 18 L31 19 L26 20 Z" class="g-mark" />
+                </svg>
+                <span class="preset-text">
+                  <span class="preset-top"><span class="preset-name">Research project</span></span>
+                  <span id="preset-research-desc" class="preset-desc">Frames for Questions, Hypotheses, Experiments and Results, with an example Run.</span>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <p id="create-status" class="visually-hidden" role="status"></p>
+          <p id="create-error" class="error side-error" role="alert" hidden></p>
+          <div class="import">
+            <div class="import-line">
+              <button id="import-btn" type="button" class="btn sm soft" aria-describedby="import-hint import-error">Import a workspace…</button>
+              <span id="import-hint" class="hint import-hint">from a .infall file</span>
             </div>
-          </section>
+            <p id="import-error" class="error" role="alert" hidden></p>
+          </div>
+        </section>
+
+        <section id="signin-box" class="signin" aria-labelledby="signin-heading">
+          <!-- A short window: Sign in is one button until it is pressed. -->
+          <button id="signin-toggle" type="button" class="btn soft signin-toggle" aria-expanded="false"
+            aria-controls="signin-form">Sign in to a Team Workspace…</button>
+          <h2 id="signin-heading" class="signin-heading">Sign in to a Team Workspace</h2>
+          <form id="signin-form" class="signin-form" novalidate>
+            <label for="address">Server address</label>
+            <input
+              id="address"
+              name="address"
+              class="field"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="https://infall.example.org"
+              aria-describedby="address-hint address-error"
+              required
+            />
+            <p id="address-hint" class="hint">Ask whoever runs your team’s server for its address. It starts with https://.</p>
+            <p id="address-error" class="error" role="alert" hidden></p>
+            <button id="signin" type="submit" class="btn lg soft wide">Sign in</button>
+          </form>
+        </section>
+      </aside>
+
+      <main class="main">
+        <div id="notice" class="notice warn" role="alert" hidden>
+          <p id="notice-text" class="notice-text"></p>
+          <button id="notice-dismiss" type="button" class="btn sm">Dismiss</button>
         </div>
 
-        <aside class="side-column" aria-labelledby="signin-heading">
-          <section class="panel">
-            <h2 id="signin-heading">Sign in to a Team Workspace</h2>
-            <p class="panel-lead">A Team Workspace lives on a server someone on your team runs. Ask them for its address.</p>
-            <form id="signin-form" novalidate>
-              <label for="address">Server address</label>
-              <input
-                id="address"
-                name="address"
-                type="url"
-                inputmode="url"
-                autocomplete="off"
-                autocapitalize="off"
-                spellcheck="false"
-                placeholder="https://infall.example.org"
-                aria-describedby="address-hint address-error"
-                required
-              />
-              <p id="address-hint" class="hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
-              <p id="address-error" class="error" role="alert" hidden></p>
-              <button id="signin" type="submit" class="primary">Sign in</button>
-            </form>
-          </section>
-        </aside>
-      </div>
-    </main>
+        <div id="update" class="notice" role="status" hidden>
+          <p id="update-text" class="notice-text"></p>
+          <button id="update-go" type="button" class="btn sm soft">Restart to update</button>
+        </div>
+        <p id="update-error" class="error update-error" role="alert" hidden></p>
+
+        <!-- In a narrow room the side panel is folded away: its errors are said here. -->
+        <p id="narrow-error" class="error narrow-only" role="alert" hidden></p>
+
+        <!-- A first start: one way in, and the rest beside it. -->
+        <section id="first" class="first" aria-labelledby="first-heading" hidden>
+          <p class="label">Your workspaces</p>
+          <h2 id="first-heading" class="title first-heading">No workspaces yet</h2>
+          <p class="first-lead">The Tutorial is the quickest way in: a sample Board about random walks, and eighteen short steps that each ask you to try one part of Infall.</p>
+          <div class="first-go">
+            <button id="first-tutorial" type="button" class="btn lg primary" aria-describedby="first-hint">Create the Tutorial Workspace</button>
+            <span id="first-hint" class="hint">Stays on this computer. Nothing to install.</span>
+          </div>
+          <p id="first-error" class="error" role="alert" hidden></p>
+        </section>
+
+        <section id="recent" class="recent" aria-labelledby="recent-heading" hidden>
+          <div class="recent-head">
+            <h2 id="recent-heading" class="title" tabindex="-1">Your workspaces</h2>
+            <span id="recent-count" class="count"></span>
+          </div>
+          <div id="recent-error" class="notice warn" role="alert" hidden>
+            <p id="recent-error-text" class="notice-text"></p>
+            <button id="recent-retry" type="button" class="btn sm soft">Try again</button>
+          </div>
+          <ul id="recent-list" class="recent-list" aria-labelledby="recent-heading"></ul>
+        </section>
+      </main>
+    </div>
 
     <template id="entry-template">
       <li class="entry">
@@ -165,23 +204,25 @@
             <span class="entry-text">
               <span class="entry-name"></span>
               <span class="entry-meta">
-                <span class="kind"></span>
+                <span class="chip kind"></span>
                 <span class="entry-where"></span>
                 <span class="entry-moved" hidden></span>
-                <span class="entry-when"></span>
                 <span class="entry-backup" hidden></span>
               </span>
             </span>
-            <span class="entry-cta" aria-hidden="true" hidden>Open on the server</span>
+            <span class="entry-when"></span>
+            <span class="entry-cta btn sm soft" aria-hidden="true" hidden>Open on the server</span>
           </button>
           <form class="entry-rename" novalidate hidden>
             <label class="visually-hidden"></label>
-            <input type="text" class="entry-input" autocomplete="off" spellcheck="false" maxlength="200" />
-            <button type="submit" class="quiet commit">Rename</button>
-            <button type="button" class="quiet cancel">Cancel</button>
+            <input type="text" class="field entry-input" autocomplete="off" spellcheck="false" maxlength="200" />
+            <span class="entry-rename-buttons">
+              <button type="submit" class="btn sm soft commit">Rename</button>
+              <button type="button" class="btn sm cancel">Cancel</button>
+            </span>
           </form>
           <div class="entry-actions">
-            <button type="button" class="quiet more" aria-haspopup="menu" aria-expanded="false">
+            <button type="button" class="btn sm ico more" aria-haspopup="menu" aria-expanded="false">
               <svg class="more-glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                 <circle cx="3.5" cy="8" r="1.4" />
                 <circle cx="8" cy="8" r="1.4" />
@@ -197,42 +238,52 @@
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-reveal" data-local>Show in folder</button>
           <button type="button" role="menuitem" tabindex="-1" class="mi mi-move" data-local>Move to a Team server…</button>
           <div role="separator" class="menu-sep"></div>
-          <button type="button" role="menuitem" tabindex="-1" class="mi mi-remove">Remove…</button>
+          <button type="button" role="menuitem" tabindex="-1" class="mi mi-remove danger-text"></button>
+        </div>
+        <div class="progress entry-progress" hidden>
+          <span class="progress-text"></span>
+          <span class="track" aria-hidden="true"></span>
         </div>
         <p class="entry-status" hidden></p>
         <p class="error entry-error" role="alert" hidden></p>
-        <form class="move" novalidate hidden>
-          <p class="move-title"></p>
-          <p class="move-body">It is copied to the server, and this copy becomes read-only once the server has it.</p>
-          <label class="move-label">Team server address</label>
-          <div class="move-line">
-            <input type="url" class="move-input" inputmode="url" autocomplete="off" autocapitalize="off"
+        <form class="panel move" novalidate hidden>
+          <p class="panel-title move-title"></p>
+          <p class="panel-body move-body">It is copied to the server, and this copy becomes read-only once the server has it.</p>
+          <div class="move-fields">
+            <label class="move-label">Team server address</label>
+            <input type="url" class="field move-input" inputmode="url" autocomplete="off" autocapitalize="off"
               spellcheck="false" placeholder="https://infall.example.org" />
-            <button type="submit" class="accent move-go">Move to server</button>
-            <button type="button" class="quiet move-cancel">Cancel</button>
+            <p class="hint move-hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
           </div>
-          <p class="hint move-hint">Starts with https://. On this computer, http://localhost:8787 also works.</p>
+          <div class="progress move-progress" tabindex="-1" hidden>
+            <span class="progress-text"></span>
+            <span class="track" aria-hidden="true"></span>
+          </div>
           <p class="error move-error" role="alert" hidden></p>
+          <div class="panel-buttons">
+            <button type="button" class="btn sm move-cancel">Cancel</button>
+            <button type="submit" class="btn sm primary move-go">Move to server</button>
+          </div>
         </form>
-        <form class="export" novalidate hidden>
-          <p class="export-title"></p>
-          <label class="export-choice">
+        <form class="panel export" novalidate hidden>
+          <p class="panel-title export-title"></p>
+          <label class="check">
             <input type="checkbox" class="export-files" checked />
             <span class="export-files-label"></span>
           </label>
           <p class="hint export-hint">Without them the file is smaller, and a copy made from it has its Sources without their PDFs.</p>
-          <div class="confirm-buttons">
-            <button type="button" class="quiet export-cancel">Cancel</button>
-            <button type="submit" class="accent export-go">Export…</button>
+          <div class="panel-buttons">
+            <button type="button" class="btn sm export-cancel">Cancel</button>
+            <button type="submit" class="btn sm soft export-go">Export…</button>
           </div>
         </form>
-        <div class="confirm" role="alertdialog" hidden>
-          <p class="confirm-title"></p>
-          <p class="confirm-body"></p>
-          <div class="confirm-buttons">
-            <button type="button" class="quiet keep">Keep it</button>
-            <button type="button" class="quiet export-first" hidden>Export first…</button>
-            <button type="button" class="danger go"></button>
+        <div class="panel confirm" role="alertdialog" hidden>
+          <p class="panel-title confirm-title"></p>
+          <p class="panel-body confirm-body"></p>
+          <div class="panel-buttons">
+            <button type="button" class="btn sm export-first" hidden>Export first…</button>
+            <button type="button" class="btn sm soft keep">Keep it</button>
+            <button type="button" class="btn sm danger go"></button>
           </div>
         </div>
       </li>
