@@ -105,7 +105,7 @@ maintainer="${INFALL_PACKAGE_MAINTAINER:-Infall <nobody@example.invalid>}"
 stay_up=10
 # The keys that create a Tutorial Workspace on a fresh start screen, for xdotool (see
 # open_tutorial in the check below). With no Workspaces yet, the start screen puts the focus on
-# its first tile, Tutorial (desktop/ui/setup.js, focusStart), and Return presses it.
+# its first button, Create the Tutorial Workspace (desktop/ui/setup.js, focusStart), and Return presses it.
 open_keys="Return"
 
 say() { printf '==> %s\n' "$*"; }

@@ -288,7 +288,7 @@ The backups are on the same computer, inside the Workspace's folder. **Remove…
 
 ## 13. Settings
 
-Open **Settings** from the menu under your name, or press ⌘, anywhere. The sections are listed on the left; every change applies at once, and a changed setting offers **Reset to default**.
+Open **Settings** from the menu under your name, or press ⌘, anywhere. The sections are listed on the left; every change applies at once, and a changed setting offers **Reset**.
 
 - **Appearance**, kept on this device only: **Theme** (Light, Dark, Match system); **Interface scale** (bars, panels, menus and Page text; not the Board); **Text size** (text only, on top of the interface scale; Visuals keep their own sizes); **Reduce motion** (Match system, On, Off).
 - **Board**, kept on this device only: **Board scale**, how large Cards, Frames and Connections are drawn at the Board's 100%. On the Board, when you are not typing in a field, ⇧+ makes it larger, ⇧− smaller, and ⇧0 puts it back to 100%.
@@ -309,7 +309,7 @@ A Team server takes a Workspace only while it is **empty**: `main` is its only B
 
 1. On the desktop app's start screen, open the **⋯** of the Local Workspace and choose **Move to a Team server…**.
 2. Under **Team server address**, enter the server's address (`https://…`) and press **Move to server**. The app checks the address, writes a Workspace file of this Workspace into a private folder of its own, and opens the server.
-3. Sign in as the server's Admin. The server greets you with "This Team server is empty". Press **Bring in <name> from this computer (<size>)**. A bar shows the file going up; **Stop** cancels.
+3. Sign in as the server's Admin. The server greets you with "Set up this Team Workspace". Press **Bring in this Workspace**. A bar shows the file going up; **Stop** cancels.
 4. The screen then says "The Workspace is in" and "Your earlier work as <name> is now yours.": every Change, Checkpoint, To-do, Pin and Comment you made alone now carries your name on the server. Press **Open the Board**.
 
 What happens to the copy on your computer: it stays, and nothing of it is deleted. Its row on the start screen says **Moved to <host>**, and clicking it opens the Workspace on the server (**Open on the server**). Its **⋯** has **Open this copy (read-only)**, **Rename**, **Export…**, **Show in folder** and **Remove…**; it cannot be moved a second time. Opened, the copy shows a bar "Moved to <host>. This copy is read-only." with **Open on the server**, which goes back to the start screen. You can read everything there, History included, and export it, but nothing can be changed and Undo has nothing to do. Remove it yourself once you are sure.
