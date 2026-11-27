@@ -96,6 +96,7 @@ export const DRAW_IN_VIEW_FROM = 400
  * separate SVGs either, which is what made panning and zooming slow.
  */
 export const OVERVIEW_FROM = 300
+const HIDE_ATTRIBUTION = { hideAttribution: true } as const
 const NO_EDGES: ConnectionEdgeType[] = []
 /** How many frames a focus waits for a Card that is coming into view to be drawn. */
 const FOCUS_FRAMES = 30
@@ -715,6 +716,9 @@ function BoardCanvas() {
       onDoubleClick={onDoubleClick}
     >
       <ReactFlow<BoardNode, ConnectionEdgeType>
+        // The library's own mark in the corner is not drawn; React Flow (MIT) is credited
+        // with the other licences under Settings › About.
+        proOptions={HIDE_ATTRIBUTION}
         nodes={nodes}
         edges={overview ? NO_EDGES : edges}
         nodeTypes={nodeTypes}
