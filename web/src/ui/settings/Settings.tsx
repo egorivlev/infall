@@ -15,7 +15,7 @@ import type { SettingsSection } from '../shell/router'
 import { clearSigningOut, noteSigningOut } from '../shell/sessionEnd'
 import { handsOn, startTour, tourBlock, tutorialHoldsTour, TUTORIAL_PRESET, useHandsOn } from '../tutorial'
 import { AiAccess } from './AiAccess'
-import { PercentSelect, SectionHead, Segmented, SettingRow } from './controls'
+import { ScalePic, ScaleSelect, SectionHead, Segmented, SettingRow } from './controls'
 import { BOARD_SCALES, DEFAULT_PREFS, INTERFACE_SCALES, prefs, TEXT_SIZES, usePrefs } from './prefs'
 import type { MotionPref, Prefs, ThemePref } from './prefs'
 import { SECTION_LABEL, sectionsFor } from './sections'
@@ -49,8 +49,10 @@ export function Settings({ member, section }: { member: Member; section: Setting
   return (
     <div className="q-set">
       <nav className="q-set-nav" aria-label="Settings">
-        <p className="q-set-nav__title">Settings</p>
-        <p className="q-set-nav__hint q-mono">{SETTINGS_KEYS}</p>
+        <p className="q-set-nav__head">
+          <span className="q-set-nav__title">Settings</span>
+          <span className="q-set-nav__hint">{SETTINGS_KEYS}</span>
+        </p>
         <ul className="q-set-nav__list">
           {shown.map((s) => (
             <li key={s}>
@@ -91,36 +93,37 @@ function Appearance({ headingRef }: HeadingProps) {
         canResetAll={differs(p, APPEARANCE)}
         onResetAll={() => prefs.reset(APPEARANCE)}
       />
-      <div className="q-settings__card q-set-card">
-        <SettingRow group label="Theme" description="Match system follows the light or dark setting of this computer." changed={p.theme !== DEFAULT_PREFS.theme} onReset={() => prefs.reset(['theme'])}>
+      <div className="q-card q-card--rows q-set-card">
+        <SettingRow label="Theme" description="Match system follows the light or dark setting of this computer." changed={p.theme !== DEFAULT_PREFS.theme} onReset={() => prefs.reset(['theme'])}>
           {({ labelId, descriptionId, controlId }) => (
             <Segmented id={controlId} labelId={labelId} descriptionId={descriptionId} value={p.theme} options={THEMES} onChange={(theme) => prefs.set({ theme })} />
           )}
         </SettingRow>
         <SettingRow
           label="Interface scale"
-          description="Bars, panels, menus and Page text. The Board keeps its own scale (Board settings)."
+          description="Bars, panels, menus and Page text. The Board has its own scale."
+          pic={<ScalePic part="interface" />}
           changed={p.interfaceScale !== DEFAULT_PREFS.interfaceScale}
           onReset={() => prefs.reset(['interfaceScale'])}
         >
-          {({ descriptionId, controlId }) => (
-            <PercentSelect id={controlId} descriptionId={descriptionId} value={p.interfaceScale} steps={INTERFACE_SCALES} defaultValue={DEFAULT_PREFS.interfaceScale} onChange={(interfaceScale) => prefs.set({ interfaceScale })} />
+          {({ labelId, descriptionId, controlId }) => (
+            <ScaleSelect id={controlId} labelId={labelId} descriptionId={descriptionId} name="Interface scale" value={p.interfaceScale} steps={INTERFACE_SCALES} onChange={(interfaceScale) => prefs.set({ interfaceScale })} />
           )}
         </SettingRow>
         <SettingRow
           label="Text size"
-          description="Text only — Page, Card and interface text — on top of the interface scale. Visuals keep their own sizes."
+          description="Text only, on top of the interface scale. Visuals keep their sizes."
+          pic={<ScalePic part="text" />}
           changed={p.textSize !== DEFAULT_PREFS.textSize}
           onReset={() => prefs.reset(['textSize'])}
         >
-          {({ descriptionId, controlId }) => (
-            <PercentSelect id={controlId} descriptionId={descriptionId} value={p.textSize} steps={TEXT_SIZES} defaultValue={DEFAULT_PREFS.textSize} onChange={(textSize) => prefs.set({ textSize })} />
+          {({ labelId, descriptionId, controlId }) => (
+            <ScaleSelect id={controlId} labelId={labelId} descriptionId={descriptionId} name="Text size" value={p.textSize} steps={TEXT_SIZES} onChange={(textSize) => prefs.set({ textSize })} />
           )}
         </SettingRow>
         <SettingRow
-          group
           label="Reduce motion"
-          description="On: menus, panels and messages appear without animation. Match system follows this computer's setting."
+          description="On: menus, panels and messages appear without animation."
           changed={p.reduceMotion !== DEFAULT_PREFS.reduceMotion}
           onReset={() => prefs.reset(['reduceMotion'])}
         >
@@ -144,17 +147,19 @@ function BoardSection({ headingRef }: HeadingProps) {
         canResetAll={boardScale !== DEFAULT_PREFS.boardScale}
         onResetAll={() => prefs.reset(['boardScale'])}
       />
-      <div className="q-settings__card q-set-card">
+      <div className="q-card q-card--rows q-set-card">
         <SettingRow
           label="Board scale"
-          description="How large Cards, Frames and Connections are drawn at the Board's 100%. Zooming with scroll, pinch or the zoom control starts from here."
+          description="How large Cards, Frames and Connections are drawn at the Board’s 100 %. Zooming starts from here."
+          pic={<ScalePic part="board" />}
           changed={boardScale !== DEFAULT_PREFS.boardScale}
           onReset={() => prefs.reset(['boardScale'])}
         >
-          {({ descriptionId, controlId }) => (
-            <PercentSelect id={controlId} descriptionId={descriptionId} value={boardScale} steps={BOARD_SCALES} defaultValue={DEFAULT_PREFS.boardScale} onChange={(v) => prefs.set({ boardScale: v })} />
+          {({ labelId, descriptionId, controlId }) => (
+            <ScaleSelect id={controlId} labelId={labelId} descriptionId={descriptionId} name="Board scale" value={boardScale} steps={BOARD_SCALES} onChange={(v) => prefs.set({ boardScale: v })} />
           )}
         </SettingRow>
+        <div className="q-set-keyrow">
         <dl className="q-set-keys">
           <div>
             <dt>
@@ -172,10 +177,11 @@ function BoardSection({ headingRef }: HeadingProps) {
             <dt>
               <kbd>Shift</kbd> + <kbd>0</kbd>
             </dt>
-            <dd>Back to 100%</dd>
+            <dd>Back to 100 %</dd>
           </div>
         </dl>
         <p className="q-hint">These keys work on the Board whenever you are not typing in a field.</p>
+        </div>
       </div>
     </section>
   )
@@ -186,7 +192,7 @@ function RunsSection({ headingRef }: HeadingProps) {
   return (
     <section className="q-settings__inner q-set-section">
       <SectionHead title="Runs" headingRef={headingRef} intro="Runs execute on your own computer, in the Infall desktop app, through its Runner." />
-      <div className="q-settings__card q-set-card q-set-runs">
+      <div className="q-card q-set-runs">
         {!runner.available && runner.reason === 'loading' && <p className="q-hint" role="status">Looking for the Runner…</p>}
         {!runner.available && runner.reason === 'browser' && (
           <p className="q-set-runs__line">Code can only run in the Infall desktop app. In the browser you can read every Run's captured output.</p>
@@ -200,7 +206,7 @@ function RunsSection({ headingRef }: HeadingProps) {
                 <dd>
                   {runner.python ? (
                     <>
-                      <span className="q-mono">{runner.python.version}</span> · <span className="q-mono q-set-path">{runner.python.path}</span>
+                      <span className="q-mono">{runner.python.version}</span> <span className="q-mono q-set-path">· {runner.python.path}</span>
                     </>
                   ) : (
                     'Not chosen yet'
@@ -239,9 +245,9 @@ function RunsSection({ headingRef }: HeadingProps) {
                     {(runner.environments ?? []).length === 0 ? (
                       'Only the default Python'
                     ) : (
-                      <ul className="q-set-runs__list" aria-label="Environments on this computer">
+                      <ul className="q-set-runs__list q-set-runs__chips" aria-label="Environments on this computer">
                         {(runner.environments ?? []).map((name) => (
-                          <li key={name} className="q-mono">
+                          <li key={name} className="q-chip q-chip--data">
                             {name}
                           </li>
                         ))}
@@ -252,7 +258,7 @@ function RunsSection({ headingRef }: HeadingProps) {
               )}
             </dl>
             <div>
-              <button type="button" className="q-btn" onClick={() => void runs.configure()}>
+              <button type="button" className="q-btn q-btn--md q-btn--soft" onClick={() => void runs.configure()}>
                 Open Runner settings
               </button>
             </div>
@@ -293,7 +299,7 @@ function WorkspaceSection({ member, headingRef }: { member: Member } & HeadingPr
   return (
     <section className="q-settings__inner q-set-section">
       <SectionHead title="Workspace" headingRef={headingRef} />
-      <div className="q-settings__card q-set-card">
+      <div className="q-card">
         <dl className="q-set-facts">
           <div>
             <dt>Kind</dt>
@@ -310,17 +316,17 @@ function WorkspaceSection({ member, headingRef }: { member: Member } & HeadingPr
         {local && !ws.readOnly && <ChangeName member={member} />}
         <div className="q-set-actions">
           {member.role === 'admin' && !local && (
-            <Link href="/members" className="q-btn">
+            <Link href="/members" className="q-btn q-btn--md q-btn--soft">
               Members
             </Link>
           )}
           {local && switchWorkspace && (
-            <button type="button" className="q-btn" onClick={() => void switchWorkspace().catch(() => {})}>
+            <button type="button" className="q-btn q-btn--md q-btn--soft" onClick={() => void switchWorkspace().catch(() => {})}>
               Switch workspace…
             </button>
           )}
           {!local && (
-            <button type="button" className="q-btn" aria-disabled={busy} onClick={signOut}>
+            <button type="button" className="q-btn q-btn--md q-btn--soft" aria-disabled={busy} onClick={signOut}>
               {busy ? 'Signing out…' : 'Sign out'}
             </button>
           )}
@@ -359,22 +365,29 @@ function ExportWorkspace() {
   }
 
   return (
-    <div className="q-settings__card q-set-card" aria-labelledby="q-set-export-h" role="group">
-      <h2 className="q-panel-title" id="q-set-export-h">
+    <div className="q-card" aria-labelledby="q-set-export-h" role="group">
+      <h2 className="q-subtitle" id="q-set-export-h">
         Workspace file
       </h2>
       <p className="q-hint">
-        One file with every Branch, the history, Checkpoints, To-dos and Comments. Members come as names only — no emails, passwords, invites, access tokens or AI keys. It can go onto
+        One file with every Branch, the history, Checkpoints, To-dos and Comments. Members come as names only: no emails, passwords, invites, access tokens or AI keys. It can go onto
         another empty Team server, or open in the desktop app as a Local Workspace.
       </p>
-      <div className="q-set-actions">
-        <button type="button" className="q-btn" aria-disabled={busy} aria-busy={busy} onClick={() => void run()}>
+      <div className="q-set-actions q-set-actions--line">
+        <button type="button" className="q-btn q-btn--md q-btn--soft" aria-disabled={busy} aria-busy={busy} onClick={() => void run()}>
           {busy ? 'Exporting…' : 'Export Workspace file…'}
         </button>
+        {state.kind !== 'failed' && (
+          <p className="q-hint" role="status">
+            {state.kind === 'done' ? state.text : ''}
+          </p>
+        )}
       </div>
-      <p className={state.kind === 'failed' ? 'q-error' : 'q-hint'} role={state.kind === 'failed' ? 'alert' : 'status'}>
-        {state.kind === 'done' || state.kind === 'failed' ? state.text : ''}
-      </p>
+      {state.kind === 'failed' && (
+        <p className="q-error" role="alert">
+          {state.text}
+        </p>
+      )}
     </div>
   )
 }
@@ -420,7 +433,7 @@ function ChangeName({ member }: { member: Member }) {
           if (error) setError(check(v))
         }}
       />
-      <button type="submit" className="q-btn q-settings__submit" aria-disabled={busy}>
+      <button type="submit" className="q-btn q-btn--lg q-btn--soft q-settings__submit" aria-disabled={busy}>
         {busy ? 'Changing…' : 'Change name'}
       </button>
     </form>
@@ -455,7 +468,7 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
   return (
     <section className="q-settings__inner q-set-section">
       <SectionHead title="About" headingRef={headingRef} />
-      <div className="q-settings__card q-set-card">
+      <div className="q-card">
         <dl className="q-set-facts">
           <div>
             <dt>Infall</dt>
@@ -464,14 +477,14 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
         </dl>
         <div className="q-set-actions">
           {tutorialWorkspace && (
-            <button type="button" className="q-btn" aria-disabled={lesson === 'off' || lesson === 'loading'} onClick={() => lesson !== 'off' && lesson !== 'loading' && handsOn.resume()}>
+            <button type="button" className="q-btn q-btn--md q-btn--soft" aria-disabled={lesson === 'off' || lesson === 'loading'} onClick={() => lesson !== 'off' && lesson !== 'loading' && handsOn.resume()}>
               Tutorial
             </button>
           )}
           {showTour && (
             <button
               type="button"
-              className="q-btn"
+              className="q-btn q-btn--md q-btn--soft"
               aria-disabled={blocked !== null}
               title={blocked === 'narrow' ? 'Make the window wider to take the tour' : undefined}
               onClick={() => blocked === null && startTour(member)}
@@ -481,8 +494,8 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
           )}
         </div>
       </div>
-      <div className="q-settings__card q-set-card">
-        <h2 className="q-panel-title">Font licences</h2>
+      <div className="q-card">
+        <h2 className="q-subtitle">Font licences</h2>
         <p className="q-hint">All three fonts are under the SIL Open Font License 1.1.</p>
         <ul className="q-settings__list">
           {LICENCES.map((l) => (
@@ -494,8 +507,8 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
           ))}
         </ul>
       </div>
-      <div className="q-settings__card q-set-card">
-        <h2 className="q-panel-title">Software licences</h2>
+      <div className="q-card">
+        <h2 className="q-subtitle">Software licences</h2>
         <p className="q-hint">PDFs are read with PDF.js, which comes with Infall: nothing is fetched from the internet to show them.</p>
         <ul className="q-settings__list">
           {SOFTWARE.map((l) => (
@@ -503,7 +516,7 @@ function About({ member, headingRef }: { member: Member } & HeadingProps) {
               <a href={l.file} target="_blank" rel="noreferrer noopener">
                 {l.name}
               </a>{' '}
-              <span className="q-hint">— {l.note}</span>
+              <span className="q-hint">· {l.note}</span>
             </li>
           ))}
         </ul>

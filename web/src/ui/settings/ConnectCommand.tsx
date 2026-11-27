@@ -29,7 +29,7 @@ export function ConnectCommand({ endpoint, secret }: { endpoint: string; secret:
 
   return (
     <section className="q-settings__card" aria-labelledby="q-connect-h">
-      <h2 className="q-panel-title" id="q-connect-h">
+      <h2 className="q-subtitle" id="q-connect-h">
         Connect Claude Code
       </h2>
       <p className="q-settings__text">
@@ -42,7 +42,7 @@ export function ConnectCommand({ endpoint, secret }: { endpoint: string; secret:
         <pre ref={codeRef} className="q-command__code" tabIndex={0} aria-label="Command to connect Claude Code" onFocus={(e) => selectContents(e.currentTarget)}>
           <code>{command}</code>
         </pre>
-        <button type="button" className="q-btn q-btn--sm q-command__copy" aria-label="Copy command" onClick={onCopy}>
+        <button type="button" className="q-btn q-btn--sm q-btn--soft q-command__copy" aria-label="Copy command" onClick={onCopy}>
           {state === 'copied' ? 'Copied' : 'Copy'}
         </button>
       </div>

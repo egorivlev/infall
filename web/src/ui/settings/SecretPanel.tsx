@@ -36,17 +36,17 @@ export function SecretPanel({ name, secret, onDone }: { name: string; secret: st
           spellCheck={false}
           onFocus={(e) => e.currentTarget.select()}
         />
-        <button type="button" className="q-btn" onClick={onCopy}>
+        <button type="button" className="q-btn q-btn--lg q-btn--soft" onClick={onCopy}>
           {state === 'copied' ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <p className="q-hint" role="status">
-        {state === 'failed'
-          ? "Couldn't copy automatically. The access token is selected — copy it with your keyboard."
-          : 'This is shown once. Store it in your AI app now.'}
-      </p>
       <div className="q-secret__done">
-        <button type="button" className="q-btn" onClick={onDone}>
+        <p className="q-hint" role="status">
+          {state === 'failed'
+            ? "Couldn't copy automatically. The access token is selected — copy it with your keyboard."
+            : 'This is shown once. Store it in your AI app now.'}
+        </p>
+        <button type="button" className="q-btn q-btn--sm q-btn--soft" onClick={onDone}>
           Done
         </button>
       </div>

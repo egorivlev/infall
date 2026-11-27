@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ai, useAi } from '../../lib'
 import type { AiSetup } from '../../lib'
-import { ConfirmDialog } from '../shell/ConfirmDialog'
+import { ConfirmRow } from '../kit'
 import { formatShortDate } from '../shell/dates'
 import { errorStatus } from '../shell/errorMessages'
 import { describeKeyError, describeRemoveError, KEY_REQUIRED, SERVER_OFF } from './aiErrors'
@@ -110,11 +110,11 @@ function KeyForm({ replacing, onStored, onCancel }: { replacing: boolean; onStor
         )}
       </div>
       <div className="q-ai__keybuttons">
-        <button type="submit" className="q-btn q-btn--primary q-settings__submit" aria-disabled={busy} aria-busy={busy}>
+        <button type="submit" className="q-btn q-btn--soft q-settings__submit" aria-disabled={busy} aria-busy={busy}>
           {busy ? (replacing ? 'Replacing key…' : 'Adding key…') : verb}
         </button>
         {onCancel && (
-          <button type="button" className="q-btn q-settings__submit q-ai__cancel" onClick={onCancel}>
+          <button type="button" className="q-btn q-btn--ghost q-settings__submit q-ai__cancel" onClick={onCancel}>
             Cancel
           </button>
         )}
@@ -139,12 +139,14 @@ export function AiSidebarCard() {
   const [replacing, setReplacing] = useState(false)
   const [note, setNote] = useState('')
   const [checking, setChecking] = useState(false)
-  const [target, setTarget] = useState<HTMLElement | null>(null)
+  // M17 (B3): Remove asks inside the key's row; `asking` is that question being shown.
+  const [asking, setAsking] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState('')
   const busyRef = useRef(false)
   const alive = useRef(true)
-  const refocus = useRef(false)
+  const refocus = useRef<'heading' | 'remove' | false>(false)
+  const removeRef = useRef<HTMLButtonElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -156,9 +158,11 @@ export function AiSidebarCard() {
 
   // After a key was stored or removed the control that had focus is gone: go to the section's heading.
   useEffect(() => {
-    if (!refocus.current || target) return
+    if (!refocus.current || asking) return
+    const to = refocus.current
     refocus.current = false
-    headingRef.current?.focus()
+    if (to === 'remove') removeRef.current?.focus()
+    else headingRef.current?.focus()
   })
 
   async function checkAgain() {
@@ -176,7 +180,7 @@ export function AiSidebarCard() {
   const stored = () => {
     setNote(replacing ? 'Key replaced.' : 'Key added.')
     setReplacing(false)
-    refocus.current = true
+    refocus.current = 'heading'
   }
 
   async function confirmRemove() {
@@ -193,8 +197,8 @@ export function AiSidebarCard() {
       if (!alive.current) return
       setNote('Key removed.')
       setReplacing(false)
-      refocus.current = true
-      setTarget(null)
+      refocus.current = 'heading'
+      setAsking(false)
     } catch (err) {
       if (alive.current) setRemoveError(describeRemoveError(err))
     } finally {
@@ -208,7 +212,7 @@ export function AiSidebarCard() {
 
   return (
     <section className="q-settings__card q-ai" aria-labelledby="q-aiside-h">
-      <h2 className="q-panel-title" id="q-aiside-h">
+      <h2 className="q-subtitle" id="q-aiside-h">
         AI sidebar
       </h2>
 
@@ -221,7 +225,7 @@ export function AiSidebarCard() {
       {view?.desktop && (
         <>
           <p className="q-settings__text">
-            This app runs the sidebar on your own Claude subscription through Claude Code — nothing to set here.
+            This app runs the sidebar on your own Claude subscription through Claude Code. There is nothing to set here.
           </p>
           <div className="q-ai__status">
             <p className={`q-ai__found${view.claude.found ? ' is-found' : ''}`} role="status">
@@ -235,7 +239,7 @@ export function AiSidebarCard() {
               )}
             </p>
             {!view.claude.found && (
-              <button type="button" className="q-btn q-btn--sm" aria-disabled={checking} aria-busy={checking} onClick={() => void checkAgain()}>
+              <button type="button" className="q-btn q-btn--sm q-btn--soft" aria-disabled={checking} aria-busy={checking} onClick={() => void checkAgain()}>
                 {checking ? 'Checking…' : 'Check again'}
               </button>
             )}
@@ -257,7 +261,22 @@ export function AiSidebarCard() {
             <p className="q-settings__text">{SERVER_OFF}</p>
           ) : (
             <>
-              {or.key && (
+              {or.key && asking && (
+                <ConfirmRow
+                  question="Remove your OpenRouter key?"
+                  detail={`The key is deleted from ${host}. In the browser the AI sidebar stops answering until you add a key again.`}
+                  confirmLabel="Remove"
+                  busyLabel="Removing…"
+                  busy={removing}
+                  error={removeError}
+                  onConfirm={() => void confirmRemove()}
+                  onKeep={() => {
+                    refocus.current = 'remove'
+                    setAsking(false)
+                  }}
+                />
+              )}
+              {or.key && !asking && (
                 <div className="q-ai__keyrow">
                   <span className="q-ai__keylabel">Key</span>
                   <span className="q-ai__mask">
@@ -268,7 +287,7 @@ export function AiSidebarCard() {
                   {!replacing && (
                     <button
                       type="button"
-                      className="q-btn q-btn--sm"
+                      className="q-btn q-btn--sm q-btn--soft"
                       aria-label="Replace OpenRouter key"
                       onClick={() => {
                         setNote('')
@@ -280,12 +299,13 @@ export function AiSidebarCard() {
                   )}
                   <button
                     type="button"
-                    className="q-btn q-btn--sm q-btn--danger"
+                    ref={removeRef}
+                    className="q-btn q-btn--sm q-btn--ghost q-btn--danger"
                     aria-label="Remove OpenRouter key"
-                    onClick={(e) => {
+                    onClick={() => {
                       setRemoveError('')
                       setNote('')
-                      setTarget(e.currentTarget)
+                      setAsking(true)
                     }}
                   >
                     Remove
@@ -308,19 +328,6 @@ export function AiSidebarCard() {
         </div>
       )}
 
-      {target && (
-        <ConfirmDialog
-          title="Remove your OpenRouter key?"
-          body={`The key is deleted from ${host}. In the browser the AI sidebar stops answering until you add a key again.`}
-          confirmLabel="Remove"
-          busyLabel="Removing…"
-          busy={removing}
-          error={removeError}
-          opener={target}
-          onConfirm={confirmRemove}
-          onCancel={() => setTarget(null)}
-        />
-      )}
     </section>
   )
 }

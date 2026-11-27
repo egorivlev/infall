@@ -29,7 +29,7 @@ export function InviteResult({ url, email }: { url: string; email: string }) {
       </label>
       <div className="q-result__row">
         <input id="q-invite-url" ref={inputRef} className="q-input q-mono" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
-        <button type="button" className="q-btn" onClick={copyUrl}>
+        <button type="button" className="q-btn q-btn--lg q-btn--soft" onClick={copyUrl}>
           {copy === 'copied' ? 'Copied' : 'Copy'}
         </button>
       </div>

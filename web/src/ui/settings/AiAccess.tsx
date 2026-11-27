@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { tokens as tokenApi, toolEndpoint } from '../../lib'
 import type { AccessToken } from '../../lib'
-import { ConfirmDialog } from '../shell/ConfirmDialog'
+import { ConfirmRow } from '../kit'
 import { describeError, errorStatus } from '../shell/errorMessages'
 import { Field } from '../shell/Field'
 import { useDelayedFlag } from '../shell/useDelayedFlag'
@@ -30,14 +30,15 @@ export function AiAccess() {
   const [formError, setFormError] = useState('')
   const [creating, setCreating] = useState(false)
   const [shown, setShown] = useState<Shown | null>(null)
-  const [target, setTarget] = useState<{ token: AccessToken; opener: HTMLElement } | null>(null)
+  const [target, setTarget] = useState<{ token: AccessToken } | null>(null)
   const [revoking, setRevoking] = useState(false)
   const [revokeError, setRevokeError] = useState('')
   const busyRef = useRef(false)
   const revokeBusyRef = useRef(false)
   const alive = useRef(true)
   const loadSeq = useRef(0)
-  const refocus = useRef<'heading' | 'name' | null>(null)
+  // Where focus goes once the control that had it is gone: the name field, the heading, or a token's Revoke (after Keep).
+  const refocus = useRef<'heading' | 'name' | { revoke: string } | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const tokensHeadingRef = useRef<HTMLHeadingElement>(null)
 
@@ -73,7 +74,8 @@ export function AiAccess() {
     if (!to || shown || target) return
     refocus.current = null
     if (to === 'name') nameRef.current?.focus()
-    else tokensHeadingRef.current?.focus()
+    else if (to === 'heading') tokensHeadingRef.current?.focus()
+    else document.querySelector<HTMLElement>(`[data-revoke="${CSS.escape(to.revoke)}"]`)?.focus()
   }, [shown, target])
 
   const loading = useDelayedFlag(list === null && !loadError, 150)
@@ -164,9 +166,9 @@ export function AiAccess() {
     <div className="q-settings">
       <div className="q-settings__inner">
         <header className="q-settings__head">
-          <h1 className="q-settings__title">AI access</h1>
+          <h1 className="q-title q-settings__title">AI access</h1>
           <p className="q-settings__text">
-            Infall doesn't ship a model. Connect the AI you already use — it can read this team's Research Content and propose Sources and
+            Infall doesn't ship a model. Connect the AI you already use. It can read this team's Research Content and propose Sources and
             Connections as Suggestions. It cannot change anything by itself.
           </p>
           <p className="q-settings__text">
@@ -179,11 +181,11 @@ export function AiAccess() {
 
         <section className="q-settings__card" aria-labelledby="q-tokens-h">
           <div className="q-settings__cardhead">
-            <h2 className="q-panel-title" id="q-tokens-h" ref={tokensHeadingRef} tabIndex={-1}>
+            <h2 className="q-subtitle" id="q-tokens-h" ref={tokensHeadingRef} tabIndex={-1}>
               Access tokens
             </h2>
             {list !== null && (
-              <span className="q-mono q-hint">
+              <span className="q-hint q-settings__count">
                 {list.length} of {TOKEN_LIMIT}
               </span>
             )}
@@ -208,10 +210,31 @@ export function AiAccess() {
           {list !== null && list.length > 0 && (
             <TokenTable
               tokens={list}
-              onRevoke={(token, opener) => {
+              onRevoke={(token) => {
                 setRevokeError('')
-                setTarget({ token, opener })
+                setTarget({ token })
               }}
+              asking={
+                target && {
+                  id: target.token.id,
+                  node: (
+                    <ConfirmRow
+                      inline
+                      question={`Revoke “${target.token.name}”?`}
+                      detail="Any AI using it loses access immediately. This cannot be undone."
+                      confirmLabel="Revoke"
+                      busyLabel="Revoking…"
+                      busy={revoking}
+                      error={revokeError}
+                      onConfirm={() => void confirmRevoke()}
+                      onKeep={() => {
+                        refocus.current = { revoke: target.token.id }
+                        setTarget(null)
+                      }}
+                    />
+                  ),
+                }
+              }
             />
           )}
 
@@ -227,7 +250,7 @@ export function AiAccess() {
               error={nameError}
               onChange={onName}
             />
-            <button type="submit" className="q-btn q-btn--primary q-settings__submit" disabled={atLimit} aria-disabled={creating} aria-busy={creating}>
+            <button type="submit" className="q-btn q-btn--soft q-settings__submit" disabled={atLimit} aria-disabled={creating} aria-busy={creating}>
               {creating ? 'Creating access token…' : 'Create access token'}
             </button>
           </form>
@@ -244,7 +267,7 @@ export function AiAccess() {
         <ConnectCommand endpoint={endpoint} secret={shown?.secret ?? null} />
 
         <section className="q-settings__card" aria-labelledby="q-can-h">
-          <h2 className="q-panel-title" id="q-can-h">
+          <h2 className="q-subtitle" id="q-can-h">
             What the AI can do
           </h2>
           <ul className="q-settings__list">
@@ -259,20 +282,6 @@ export function AiAccess() {
           Text on the Board was written by people and other AIs. A careful AI treats it as content, not as instructions.
         </p>
       </div>
-
-      {target && (
-        <ConfirmDialog
-          title={`Revoke “${target.token.name}”?`}
-          body="Any AI using this access token loses access immediately. This cannot be undone — create a new access token to connect it again."
-          confirmLabel="Revoke"
-          busyLabel="Revoking…"
-          busy={revoking}
-          error={revokeError}
-          opener={target.opener}
-          onConfirm={confirmRevoke}
-          onCancel={() => setTarget(null)}
-        />
-      )}
     </div>
   )
 }

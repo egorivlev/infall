@@ -17,7 +17,7 @@ export function movedLine(movedTo: string | null): string {
 
 /** The Kind line in Settings → Workspace. */
 export function movedWords(movedTo: string | null): string {
-  return movedTo ? `Local Workspace, moved to ${hostOf(movedTo)} — this copy is read-only` : 'Local Workspace, moved to a Team server — this copy is read-only'
+  return movedTo ? `Local Workspace, moved to ${hostOf(movedTo)}. This copy is read-only.` : 'Local Workspace, moved to a Team server. This copy is read-only.'
 }
 
 /** The page cannot open the server itself: the desktop app's start screen can. */

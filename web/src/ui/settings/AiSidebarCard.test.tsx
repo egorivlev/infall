@@ -130,7 +130,7 @@ describe('AI sidebar card: where it is', () => {
 describe('AI sidebar card: the environment', () => {
   it('in the desktop app with Claude Code: the wording and the version, nothing to set', () => {
     open({ provider: 'claude-code', label: 'Claude Code', version: '2.1.7', desktop: true, openrouter: { enabled: false } })
-    expect(card().getByText('This app runs the sidebar on your own Claude subscription through Claude Code — nothing to set here.')).toBeInTheDocument()
+    expect(card().getByText('This app runs the sidebar on your own Claude subscription through Claude Code. There is nothing to set here.')).toBeInTheDocument()
     expect(card().getAllByRole('status')[0]).toHaveTextContent('Claude Code 2.1.7 found')
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     expect(screen.queryByLabelText(/OpenRouter key/, { selector: 'input' })).toBeNull()
@@ -289,17 +289,21 @@ describe('AI sidebar card: the key', () => {
     expect(card().getByText(/added 14 Nov 2030/)).toBeInTheDocument()
   })
 
-  it('"Remove" asks first; Cancel changes nothing; confirming removes the key', async () => {
+  // M17 (B3): Remove asks inside the key's row, not in a dialog.
+  const asking = () => screen.getByRole('group', { name: /^Remove your OpenRouter key\?/ })
+
+  it('"Remove" asks first, in the row; Keep changes nothing and returns to Remove; confirming removes the key', async () => {
     const { user, show } = open(WITH_KEY)
     await user.click(screen.getByRole('button', { name: 'Remove OpenRouter key' }))
-    const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveAccessibleName('Remove your OpenRouter key?')
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(asking()).getByRole('button', { name: 'Keep' })).toHaveFocus()
+    await user.click(within(asking()).getByRole('button', { name: 'Keep' }))
     expect(h.calls.removeKey).toBe(0)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove OpenRouter key' })).toHaveFocus())
 
     await user.click(screen.getByRole('button', { name: 'Remove OpenRouter key' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(within(asking()).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /^Remove your OpenRouter key/ })).toBeNull())
     expect(h.calls.removeKey).toBe(1)
     expect(screen.getByText('Key removed.')).toBeInTheDocument()
 
@@ -308,17 +312,17 @@ describe('AI sidebar card: the key', () => {
     expect(screen.queryByText(/added 14 Nov/)).toBeNull()
   })
 
-  it('keeps the dialog open with a plain sentence when removing fails; a key already gone counts as removed', async () => {
+  it('keeps asking with a plain sentence when removing fails; a key already gone counts as removed', async () => {
     h.removeKey = fail(500, 'internal')
     const { user } = open(WITH_KEY)
     await user.click(screen.getByRole('button', { name: 'Remove OpenRouter key' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }))
-    expect(await within(screen.getByRole('dialog')).findByText('Something went wrong on our side. Try again.')).toBeInTheDocument()
+    await user.click(within(asking()).getByRole('button', { name: 'Remove' }))
+    expect(await within(asking()).findByText('Something went wrong on our side. Try again.')).toBeInTheDocument()
     expect(screen.queryByText('Key removed.')).toBeNull()
 
     h.removeKey = fail(404, 'not_found')
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(within(asking()).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: /^Remove your OpenRouter key/ })).toBeNull())
     expect(screen.getByText('Key removed.')).toBeInTheDocument()
   })
 

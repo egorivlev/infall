@@ -71,10 +71,10 @@ export function ConfirmDialog({ title, body, confirmLabel, busyLabel, busy, erro
           </p>
         )}
         <div className="q-dialog__actions">
-          <button type="button" ref={cancelRef} className="q-btn" onClick={onCancel}>
+          <button type="button" ref={cancelRef} className="q-btn q-btn--ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="q-btn q-btn--danger" aria-disabled={busy} onClick={onConfirm}>
+          <button type="button" className="q-btn q-btn--soft q-btn--danger" aria-disabled={busy} onClick={onConfirm}>
             {busy ? busyLabel : confirmLabel}
           </button>
         </div>

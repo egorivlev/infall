@@ -29,7 +29,7 @@ export function PendingInvites({ pending, loadError, onChanged }: Props) {
 
   return (
     <section className="q-pending" aria-labelledby="q-pending-h">
-      <h2 className="q-section-title" id="q-pending-h">
+      <h2 className="q-subtitle" id="q-pending-h">
         Pending invites
       </h2>
       {loadError && (
@@ -44,21 +44,21 @@ export function PendingInvites({ pending, loadError, onChanged }: Props) {
       )}
       {pending && pending.length === 0 && !loadError && <p className="q-hint">No pending invites.</p>}
       {pending && pending.length > 0 && (
-        <ul className="q-pending__list">
+        <ul className="q-card q-pending__list">
           {pending.map((inv) => (
             <li key={inv.id} className="q-pending__row">
               <span className="q-pending__email">{inv.email}</span>
-              <span className={`q-role q-role--${inv.role}`}>
+              <span className={`q-chip q-role q-role--${inv.role}`}>
                 {ROLE_LABEL[inv.role]}
                 {inv.role === 'guest' && inv.access_until != null ? ` · until ${formatShortDate(inv.access_until)}` : ''}
               </span>
-              {inv.claims && (
-                <span className="q-pending__meta">takes over {people.find((m) => m.id === inv.claims)?.name ?? 'a name from a Workspace file'}</span>
-              )}
-              <span className="q-pending__meta">expires {formatShortDate(inv.expires_at)}</span>
+              <span className="q-pending__meta">
+                {inv.claims && `takes over ${people.find((m) => m.id === inv.claims)?.name ?? 'a name from a Workspace file'} · `}
+                expires {formatShortDate(inv.expires_at)}
+              </span>
               <button
                 type="button"
-                className="q-btn q-btn--sm q-btn--danger q-btn--quiet"
+                className="q-btn q-btn--sm q-btn--danger q-btn--ghost"
                 aria-label={`Revoke invite for ${inv.email}`}
                 aria-disabled={busyId === inv.id}
                 onClick={() => revoke(inv)}

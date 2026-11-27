@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invites, members, useMembers } from '../../lib'
 import type { Invite, Member } from '../../lib'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmRow } from '../kit'
 import { describeError } from './errorMessages'
 import { InviteForm } from './InviteForm'
 import { MembersTable } from './MembersTable'
@@ -11,10 +11,11 @@ export function Members({ me }: { me: Member }) {
   const people = useMembers()
   const [pending, setPending] = useState<Invite[] | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [target, setTarget] = useState<{ member: Member; opener: HTMLElement } | null>(null)
+  const [target, setTarget] = useState<Member | null>(null)
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState('')
-  const refocus = useRef(false)
+  // After a removal the row is gone: the heading. After Keep: that Member's Remove again.
+  const refocus = useRef<'heading' | { remove: string } | null>(null)
   const busyRef = useRef(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   // M18: whose name the next invite takes over. From the Invite button, or `/members?claim=<id>` (the first screen).
@@ -37,11 +38,12 @@ export function Members({ me }: { me: Member }) {
     void loadInvites()
   }, [loadInvites])
 
-  // After a removal the row (and the opener) is gone; keep keyboard focus somewhere sensible.
   useEffect(() => {
-    if (target || !refocus.current) return
-    refocus.current = false
-    headingRef.current?.focus()
+    const to = refocus.current
+    if (target || !to) return
+    refocus.current = null
+    if (to === 'heading') headingRef.current?.focus()
+    else document.querySelector<HTMLElement>(`[data-remove="${CSS.escape(to.remove)}"]`)?.focus()
   }, [target])
 
   async function confirmRemove() {
@@ -50,9 +52,9 @@ export function Members({ me }: { me: Member }) {
     setRemoving(true)
     setRemoveError('')
     try {
-      await members.remove(target.member.id)
+      await members.remove(target.id)
+      refocus.current = 'heading'
       setTarget(null)
-      refocus.current = true
     } catch (e) {
       setRemoveError(describeError(e))
     } finally {
@@ -72,7 +74,7 @@ export function Members({ me }: { me: Member }) {
             <h1 className="q-screen-title" ref={headingRef} tabIndex={-1}>
               Members
             </h1>
-            <span className="q-mono q-hint">
+            <span className="q-hint q-members__count">
               {regular} {regular === 1 ? 'Member' : 'Members'}
               {guests > 0 && ` · ${guests} ${guests === 1 ? 'Guest' : 'Guests'}`}
             </span>
@@ -80,11 +82,32 @@ export function Members({ me }: { me: Member }) {
           <MembersTable
             people={people}
             meId={me.id}
-            onRemove={(m, opener) => {
+            onRemove={(m) => {
               setRemoveError('')
-              setTarget({ member: m, opener })
+              setTarget(m)
             }}
             onInvite={(m) => setClaimId(m.id)}
+            asking={
+              target && {
+                id: target.id,
+                node: (
+                  <ConfirmRow
+                    inline
+                    question={`Remove ${target.name}?`}
+                    detail="They lose access immediately. Their past Changes stay."
+                    confirmLabel="Remove"
+                    busyLabel="Removing…"
+                    busy={removing}
+                    error={removeError}
+                    onConfirm={() => void confirmRemove()}
+                    onKeep={() => {
+                      refocus.current = { remove: target.id }
+                      setTarget(null)
+                    }}
+                  />
+                ),
+              }
+            }
           />
           <PendingInvites pending={pending} loadError={loadError} onChanged={() => void loadInvites()} />
         </div>
@@ -97,19 +120,6 @@ export function Members({ me }: { me: Member }) {
           }}
         />
       </div>
-      {target && (
-        <ConfirmDialog
-          title={`Remove ${target.member.name}?`}
-          body="They lose access immediately. Their past Changes stay."
-          confirmLabel="Remove"
-          busyLabel="Removing…"
-          busy={removing}
-          error={removeError}
-          opener={target.opener}
-          onConfirm={confirmRemove}
-          onCancel={() => setTarget(null)}
-        />
-      )}
     </div>
   )
 }
