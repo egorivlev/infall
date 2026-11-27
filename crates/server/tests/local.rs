@@ -756,8 +756,10 @@ fn check_run(run: &Value, member: &str) {
     let file = dir.path().join("run.py");
     std::fs::write(&file, code).unwrap();
     // The time asked of the processor, which the other work on a busy machine does not
-    // stretch the way it stretches the time on the clock.
-    const TIMED: &str = "import runpy, sys, time; runpy.run_path(sys.argv[1], run_name='__main__'); print(time.process_time(), file=sys.stderr)";
+    // stretch the way it stretches the time on the clock. Python's stdout on Windows turns
+    // each `\n` into `\r\n`; the seeded output is the same on every system (`\n`), so the
+    // translation is switched off here, and what the code prints is compared byte for byte.
+    const TIMED: &str = "import runpy, sys, time; sys.stdout.reconfigure(newline='\\n'); runpy.run_path(sys.argv[1], run_name='__main__'); print(time.process_time(), file=sys.stderr)";
     match std::process::Command::new("python3")
         .args(["-I", "-c", TIMED])
         .arg(&file)

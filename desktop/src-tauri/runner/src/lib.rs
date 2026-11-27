@@ -1151,27 +1151,67 @@ impl Runner {
 
 /// Checks the folder the Member typed: the full path of an existing directory.
 fn check_folder(typed: &str, env: &EnvVars) -> Result<String, String> {
-    let path = match typed.strip_prefix("~/") {
-        Some(rest) => match python::home_dir(env) {
-            Some(home) => Path::new(home).join(rest),
-            None => PathBuf::from(typed),
-        },
-        None => PathBuf::from(typed),
-    };
-    if !path.is_absolute() || typed.contains('\0') {
-        return Err(if cfg!(windows) {
-            "Enter the full path of the folder, starting with the drive (C:\\…)."
-        } else {
-            "Enter the full path of the folder, starting with /."
-        }
-        .into());
+    let windows = cfg!(windows);
+    // The home folder (`USERPROFILE` on Windows, `HOME` elsewhere): one that is not UTF-8 is
+    // not put in front of anything, and the path is then refused below as not a full one.
+    let home = python::home_dir(env).and_then(|h| h.to_str());
+    let full = with_home(typed, home, windows);
+    if typed.contains('\0') || !is_full_path(&full, windows) {
+        return Err(not_full_path(windows).into());
     }
+    let path = PathBuf::from(full);
     if !path.is_dir() {
         return Err("There is no folder at that path.".into());
     }
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| "That folder's path cannot be used.".to_owned())
+}
+
+fn not_full_path(windows: bool) -> &'static str {
+    if windows {
+        "Enter the full path of the folder, starting with the drive (C:\\…)."
+    } else {
+        "Enter the full path of the folder, starting with /."
+    }
+}
+
+/// `typed` with a leading `~` (alone, or before `/`, or before `\` on Windows) taken for the
+/// home folder `home`. That is the only shorthand: a `~` anywhere else is part of a name
+/// (Windows' short names, `RUNNER~1`), and `~name` is left as it is. Without a home folder,
+/// `typed` is returned unchanged.
+fn with_home(typed: &str, home: Option<&str>, windows: bool) -> String {
+    let Some(home) = home.filter(|h| !h.is_empty()) else {
+        return typed.to_owned();
+    };
+    let is_sep = |c: char| c == '/' || (windows && c == '\\');
+    if typed == "~" {
+        return home.to_owned();
+    }
+    let Some(rest) = typed.strip_prefix('~').filter(|r| r.starts_with(is_sep)) else {
+        return typed.to_owned();
+    };
+    let sep = if windows { '\\' } else { '/' };
+    format!("{}{sep}{}", home.trim_end_matches(is_sep), &rest[1..])
+}
+
+/// Whether `path` is a full path on Windows (`windows`) or on another system, as the
+/// system's own `Path::is_absolute` decides it there — written out so that the rule for both
+/// is tested on every system. Windows: a drive and a separator (`C:\`, `C:/`), or two
+/// backslashes and a name (`\\server\share`, and the `\\?\C:\…` that `fs::canonicalize` and
+/// folders picked there give). `C:folder` and `\folder` depend on the current drive or folder,
+/// so they are not full paths. Elsewhere: a leading `/`.
+fn is_full_path(path: &str, windows: bool) -> bool {
+    if !windows {
+        return path.starts_with('/');
+    }
+    let b = path.as_bytes();
+    let drive =
+        b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/');
+    let network = path
+        .strip_prefix(r"\\")
+        .is_some_and(|rest| !rest.is_empty() && !rest.starts_with(['\\', '/']));
+    drive || network
 }
 
 #[cfg(test)]
@@ -1373,7 +1413,9 @@ mod tests {
     #[test]
     fn folders_must_exist() {
         let dir = tempfile::tempdir().unwrap();
-        let env: EnvVars = vec![("HOME".into(), dir.path().into())];
+        // The home folder, under the name this system gives it.
+        let home = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let env: EnvVars = vec![(home.into(), dir.path().into())];
         std::fs::create_dir(dir.path().join("research")).unwrap();
         std::fs::write(dir.path().join("file.txt"), "").unwrap();
         let ok = dir.path().join("research");
@@ -1387,12 +1429,94 @@ mod tests {
         );
         assert_eq!(
             check_folder("research", &env).unwrap_err(),
+            not_full_path(cfg!(windows))
+        );
+        assert_eq!(
+            not_full_path(false),
             "Enter the full path of the folder, starting with /."
         );
         for missing in [dir.path().join("nope"), dir.path().join("file.txt")] {
             assert_eq!(
                 check_folder(missing.to_str().unwrap(), &env).unwrap_err(),
                 "There is no folder at that path."
+            );
+        }
+        // Without a home folder, `~` is not a full path.
+        assert_eq!(
+            check_folder("~/research", &vec![]).unwrap_err(),
+            not_full_path(cfg!(windows))
+        );
+    }
+
+    /// (path, a full path on Windows, a full path elsewhere).
+    const FULL_PATHS: &[(&str, bool, bool)] = &[
+        ("/Users/me/research", false, true),
+        ("/", false, true),
+        ("research", false, false),
+        ("./research", false, false),
+        ("", false, false),
+        (r"C:\Users\me\research", true, false),
+        (
+            r"C:\Users\RUNNER~1\AppData\Local\Temp\.tmp493QqT\research",
+            true,
+            false,
+        ),
+        ("C:/Users/me/research", true, false),
+        (r"d:\data", true, false),
+        (r"C:\", true, false),
+        ("C:", false, false),
+        ("C:research", false, false),
+        (r"\Users\me", false, false),
+        (r"\\?\C:\Users\me\research", true, false),
+        (r"\\server\share\research", true, false),
+        (r"\\server\share", true, false),
+        (r"1:\x", false, false),
+    ];
+
+    #[test]
+    fn what_a_full_path_is_on_windows_and_elsewhere() {
+        for &(path, windows, elsewhere) in FULL_PATHS {
+            assert_eq!(is_full_path(path, true), windows, "{path:?} on Windows");
+            assert_eq!(is_full_path(path, false), elsewhere, "{path:?} elsewhere");
+        }
+    }
+
+    /// The rule written out agrees with the system's own, where it runs.
+    #[test]
+    fn the_rule_is_the_systems_own() {
+        for &(path, windows, elsewhere) in FULL_PATHS {
+            let ours = if cfg!(windows) { windows } else { elsewhere };
+            assert_eq!(Path::new(path).is_absolute(), ours, "{path:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_leading_tilde_is_the_home_folder() {
+        let unix = Some("/Users/me");
+        let win = Some(r"C:\Users\RUNNER~1");
+        let cases: &[(&str, Option<&str>, bool, &str)] = &[
+            ("~/research", unix, false, "/Users/me/research"),
+            ("~", unix, false, "/Users/me"),
+            ("~/", unix, false, "/Users/me/"),
+            ("~/a/b", Some("/Users/me/"), false, "/Users/me/a/b"),
+            ("~/x", Some("/"), false, "/x"),
+            // `\` is a character of a name elsewhere, not a separator.
+            (r"~\research", unix, false, r"~\research"),
+            ("~other/research", unix, false, "~other/research"),
+            ("/data/~/x", unix, false, "/data/~/x"),
+            ("~/research", None, false, "~/research"),
+            ("~/research", Some(""), false, "~/research"),
+            (r"~\research", win, true, r"C:\Users\RUNNER~1\research"),
+            ("~/research", win, true, r"C:\Users\RUNNER~1\research"),
+            ("~", win, true, r"C:\Users\RUNNER~1"),
+            (r"C:\Users\RUNNER~1\x", win, true, r"C:\Users\RUNNER~1\x"),
+            (r"~research", win, true, "~research"),
+        ];
+        for &(typed, home, windows, expected) in cases {
+            assert_eq!(
+                with_home(typed, home, windows),
+                expected,
+                "{typed:?} {home:?}"
             );
         }
     }

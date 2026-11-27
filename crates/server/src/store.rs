@@ -1021,10 +1021,19 @@ fn safety_copy(conn: &Connection, db: &Path, version: i64) -> StoreResult<PathBu
         .ok_or_else(|| failed("the folder's name cannot be used".to_string()))?;
     conn.execute("VACUUM INTO ?1", params![into])
         .map_err(|e| failed(e.to_string()))?;
-    std::fs::File::open(&copy)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| failed(e.to_string()))?;
+    sync_file(&copy).map_err(|e| failed(e.to_string()))?;
     Ok(copy)
+}
+
+/// Makes sure what was written to the file at `path` (by someone else, here SQLite) is on
+/// disk. The file is opened for writing: on Windows, `sync_all` (`FlushFileBuffers`) needs
+/// a handle with write access, and on a read-only one it fails with "Access is denied"
+/// (os error 5) — which, before this, stopped every migration of a database file there.
+fn sync_file(path: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
 }
 
 /// The Workspace in an open database file at schema `version` (`PRAGMA user_version`),
@@ -2955,5 +2964,43 @@ impl Store for MemoryStore {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_written_by_someone_else_is_synced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("written");
+        std::fs::write(&path, b"bytes").unwrap();
+        sync_file(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"bytes");
+        assert!(sync_file(&dir.path().join("not there")).is_err());
+    }
+
+    #[test]
+    fn the_safety_copy_is_made_beside_the_file_and_holds_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("infall.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (42); PRAGMA user_version = 3;",
+        )
+        .unwrap();
+        // A copy left by an attempt that did not finish is made again.
+        std::fs::write(migration_copy_path(&db, 3), b"left behind").unwrap();
+        let copy = safety_copy(&conn, &db, 3).unwrap();
+        assert_eq!(copy, migration_copy_path(&db, 3));
+        let copied = Connection::open(&copy).unwrap();
+        let version: i64 = copied
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        let x: i64 = copied
+            .query_row("SELECT x FROM t", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((version, x), (3, 42));
     }
 }
