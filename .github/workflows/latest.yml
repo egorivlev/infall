@@ -1,6 +1,7 @@
 # Latest build: on every push to main, the five installers go into one GitHub Release that
 # is replaced each time (tag `latest`, marked as a pre-release). It is the newest code, not
-# a version: versions are made by release.yml from a tag v1.2.3.
+# a version: versions are made by release.yml from a tag v1.2.3. An installed app whose menu
+# has "Get beta builds" ticked updates itself to this release (docs/specs/release.md, section 11).
 name: Latest build
 
 on:
@@ -23,6 +24,8 @@ jobs:
   packages:
     name: Packages
     uses: ./.github/workflows/package.yml
+    with:
+      updater: true
     permissions:
       contents: read
 
@@ -46,6 +49,21 @@ jobs:
           ls -l
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
+      # With the updater (the variable INFALL_UPDATE_PUBKEY): each file the updater installs
+      # is signed with the update key, and latest.json says where they are. This is the feed
+      # of beta builds: its version carries the commit's time as a build number, which is how
+      # an app with "Get beta builds" on tells a newer build of the same version.
+      - name: Sign the updates and write the feed
+        if: vars.INFALL_UPDATE_PUBKEY != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          REPO: ${{ github.repository }}
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("desktop/src-tauri/tauri.conf.json"))["version"])')"
+          build="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d%H%M)"
+          scripts/sign-updates.sh release "$version+$build" \
+            "https://github.com/$REPO/releases/download/latest" "$(git log -1 --format=%s)"
       - name: Notes
         env:
           REPO: ${{ github.repository }}

@@ -43,7 +43,10 @@
 # from `tauri signer generate`) and INFALL_UPDATE_URL (the address of the feed's latest.json)
 # are both set, the app is built with the `updater` feature and checks that feed; otherwise it
 # has no updater at all, as before. Signing what is built for the feed is the release
-# workflow's step (.github/workflows/package.yml), not this script's.
+# workflows' step (scripts/sign-updates.sh), not this script's.
+#   INFALL_UPDATE_BETA_URL (the feed of beta builds, optional) and INFALL_BUILD (this build's
+#   number; when not set, the time of the commit being built, YYYYMMDDHHMM in UTC) are built
+#   in too.
 #   With the updater, the script also writes dist/Infall-<version>.app.tar.gz: the signed app,
 #   as the updater installs it.
 set -euo pipefail
@@ -122,6 +125,9 @@ updater=0
 if [ -n "${INFALL_UPDATE_PUBKEY:-}" ] && [ -n "${INFALL_UPDATE_URL:-}" ]; then
     features="$features,updater"
     updater=1
+    # Which build of its version this is: the time of the commit being built.
+    : "${INFALL_BUILD:=$(TZ=UTC git -C "$root" log -1 --format=%cd --date=format-local:%Y%m%d%H%M 2>/dev/null || true)}"
+    export INFALL_BUILD
 fi
 say "$name $version ($identifier), macOS $min_macos or newer, $arch"
 

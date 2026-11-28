@@ -48,6 +48,8 @@ tokio = { version = "1", features = ["time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+# Comparing this version with the update feed's (src/update.rs); the updater plugin's own type.
+semver = "1"
 ureq = "3"
 getrandom = "0.3"
 base64 = "0.22"

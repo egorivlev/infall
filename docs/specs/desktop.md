@@ -642,7 +642,7 @@ Until the server crate has them, both ends are stubs in `src/shell.rs`, each one
 
 # Updates
 
-[release.md, section 11](release.md#11-updates-m20-groundwork). The start screen gets two commands (capability `setup`): `update_view(): { version: string, notice: string } | null` and `update_install(): void` (refused while a Workspace is open; backs up every Local Workspace first; on success the app starts again as the new version). A build without the updater answers `null` and refuses `update_install` with "This version of Infall does not update itself."; the start screen then shows nothing.
+[release.md, section 11](release.md#11-updates-m20-groundwork). The start screen gets two commands (capability `setup`): `update_view(): { version: string, notice: string } | null` and `update_install(): void` (refused while a Workspace is open; backs up every Local Workspace first; on success the app starts again as the new version). A build without the updater answers `null` and refuses `update_install` with "This version of Infall does not update itself."; the start screen then shows nothing. Since 28 November 2026 the app also asks by itself, in a message of the system's over the open Workspace, when a version becomes ready: **Restart to update** leaves the Workspace as **Switch Workspace…** does and then installs as `update_install` does; **Later** does nothing. The app menu has **Get beta builds** (a tick) in a build given a feed of them. No command of the bridge is added: a Workspace's page cannot ask about, start or redirect an update.
 
 # Names before the rename
 

@@ -22,7 +22,7 @@ Version **0.9.0, a pre-release.** Infall works and is used on macOS; it has not 
 | **Windows** 10 and 11, 64-bit | Compiles, its tests run in the continuous build, and its installer is built. **Infall has never been started on Windows.** |
 | **Team server** (Linux, container or systemd) | Rehearsed in containers on one Mac against `localhost`; not yet installed by someone outside the project from the docs alone. |
 
-The builds are **not signed** by Apple or Microsoft, and the apps **do not update themselves**: a new version is a new download. What is left before 1.0: [the plan](docs/plans/2026-11-24-road-to-1.0.md). What changed: [CHANGELOG.md](CHANGELOG.md).
+The builds are **not signed** by Apple or Microsoft, and the apps **update themselves** from this repository's releases (a version installed before 28 November 2026 does not: download it once more). They follow published versions; **Infall → Get beta builds** follows every change to `main` instead. What is left before 1.0: [the plan](docs/plans/2026-11-24-road-to-1.0.md). What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ## Install from a release
 
@@ -136,7 +136,7 @@ An AI can read Research Content and propose Sources and Connections as Suggestio
 
 ## What Infall talks to
 
-The Workspace's own server (in a Local Workspace, the one inside the app); the AI only once a Member has set it up and uses it; Crossref or arXiv only when **Look up** or **Fetch the PDF from arXiv** is pressed. No analytics, no crash reports, no update check in these builds. The full list: [docs/privacy.md](docs/privacy.md).
+The Workspace's own server (in a Local Workspace, the one inside the app); the AI only once a Member has set it up and uses it; Crossref or arXiv only when **Look up** or **Fetch the PDF from arXiv** is pressed. No analytics, no crash reports. The desktop app asks GitHub whether there is a newer release, at most once a day (hourly with beta builds). The full list: [docs/privacy.md](docs/privacy.md).
 
 ## Documentation
 

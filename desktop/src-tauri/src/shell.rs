@@ -46,6 +46,8 @@ const RUNNER_SETTINGS: &str = "runner-settings";
 const QUIT: &str = "quit";
 #[cfg(infall_updater)]
 const CHECK_UPDATES: &str = "check-updates";
+#[cfg(infall_updater)]
+const BETA_UPDATES: &str = "beta-updates";
 const UNDO: &str = "undo";
 const REDO: &str = "redo";
 
@@ -424,6 +426,8 @@ pub fn run() {
             }
             #[cfg(infall_updater)]
             CHECK_UPDATES => updating::check_from_menu(app),
+            #[cfg(infall_updater)]
+            BETA_UPDATES => updating::beta_toggled(app),
             UNDO => page_step(app, Step::Undo),
             REDO => page_step(app, Step::Redo),
             #[cfg(target_os = "linux")]
@@ -486,8 +490,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&switch)
         .item(&runner_settings);
     #[cfg(infall_updater)]
-    let app_menu =
-        app_menu.item(&MenuItemBuilder::with_id(CHECK_UPDATES, "Check for updates…").build(app)?);
+    let app_menu = updating::menu_items(app, app_menu)?;
     let app_menu = app_menu.separator().item(&quit).build()?;
     let edit = EditMenu::build(app, |edit| edit)?;
     app.set_menu(MenuBuilder::new(app).item(&app_menu).item(&edit).build()?)?;
@@ -501,8 +504,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         MenuItemBuilder::with_id(RUNNER_SETTINGS, "Runner settings…").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Infall").about(None);
     #[cfg(infall_updater)]
-    let app_menu =
-        app_menu.item(&MenuItemBuilder::with_id(CHECK_UPDATES, "Check for updates…").build(app)?);
+    let app_menu = updating::menu_items(app, app_menu)?;
     let app_menu = app_menu
         .separator()
         .item(&switch)
@@ -1980,7 +1982,7 @@ fn update_view(webview: Webview, state: State<'_, AppState>) -> Result<Option<Up
 
 /// "Restart to update": every Local Workspace is backed up, then the update is installed and
 /// the app starts again as the new version. Only from the start screen, never while a
-/// Workspace is open.
+/// Workspace is open (the app's own question, asked over an open Workspace, leaves it first).
 #[tauri::command]
 async fn update_install(
     webview: Webview,
@@ -2057,16 +2059,26 @@ async fn back_up_every_workspace(app: &AppHandle) -> Result<(), String> {
 #[cfg(infall_updater)]
 mod updating {
     use super::*;
+    use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder};
     use tauri_plugin_updater::{Update, UpdaterExt};
 
     /// The update downloaded and checked, with its bytes, until it is installed.
     #[derive(Default)]
     pub struct Pending(Mutex<Option<(Update, Vec<u8>)>>);
 
+    /// The app's config folder (where `updates.json` is), and the menu's "Get beta builds".
+    struct Settings {
+        config: PathBuf,
+        beta_item: Mutex<Option<CheckMenuItem<Wry>>>,
+    }
+
     /// One check at a time.
     static CHECKING: AtomicBool = AtomicBool::new(false);
 
-    /// The key and the feed this build was given, into the plugin's configuration.
+    /// How often the app looks whether a check is due, while it runs.
+    const LOOK_EVERY: Duration = Duration::from_secs(15 * 60);
+
+    /// The key and the feeds this build was given, into the plugin's configuration.
     pub fn configure(context: &mut tauri::Context<Wry>) {
         let plugins = &mut context.config_mut().plugins.0;
         let base = plugins.get("updater").cloned();
@@ -2074,24 +2086,86 @@ mod updating {
             base.as_ref(),
             update::PUBKEY.unwrap_or_default().trim(),
             update::URL.unwrap_or_default().trim(),
+            beta_url(),
         );
         plugins.insert("updater".to_owned(), config);
     }
 
-    /// When the app starts: a check, if the last one is a day old, in the background. Nothing
-    /// is said unless it finds a new version.
+    /// The feed of beta builds, if this build was given one.
+    fn beta_url() -> Option<&'static str> {
+        update::BETA_URL.map(str::trim).filter(|u| !u.is_empty())
+    }
+
+    /// The menu's items: "Check for updates…", and "Get beta builds" (ticked when on) in a
+    /// build that was given a feed of them.
+    pub fn menu_items<'m>(
+        app: &'m AppHandle,
+        menu: SubmenuBuilder<'m, Wry, AppHandle>,
+    ) -> tauri::Result<SubmenuBuilder<'m, Wry, AppHandle>> {
+        let menu =
+            menu.item(&MenuItemBuilder::with_id(CHECK_UPDATES, "Check for updates…").build(app)?);
+        if beta_url().is_none() {
+            return Ok(menu);
+        }
+        let settings = app.state::<Settings>();
+        let item = CheckMenuItemBuilder::with_id(BETA_UPDATES, "Get beta builds")
+            .checked(update::beta(&settings.config))
+            .build(app)?;
+        let menu = menu.item(&item);
+        *settings.beta_item.lock().unwrap() = Some(item);
+        Ok(menu)
+    }
+
+    /// "Get beta builds" was chosen: the menu has ticked or unticked it; that is kept, and
+    /// the feed now wanted is asked at once.
+    pub fn beta_toggled(app: &AppHandle) {
+        let settings = app.state::<Settings>();
+        let item = settings.beta_item.lock().unwrap().clone();
+        let Some(on) = item.and_then(|item| item.is_checked().ok()) else {
+            return;
+        };
+        update::set_beta(&settings.config, on);
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { automatic(&app).await });
+    }
+
+    /// When the app starts, and then for as long as it runs: a check in the background
+    /// whenever the last one is a day old (an hour, with beta builds). Nothing is said unless
+    /// it finds a new version.
     pub fn at_start(app: &AppHandle, config: PathBuf) {
         app.manage(Pending::default());
-        if !update::check_due(&config, now_ms() as i64) {
-            return;
-        }
+        app.manage(Settings {
+            config: config.clone(),
+            beta_item: Mutex::new(None),
+        });
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            // A failed check (no network) is tried again at the next start.
-            if check(&app).await != update::Checked::Failed {
-                update::record_check(&config, now_ms() as i64);
+            loop {
+                let every = update::check_every(update::beta(&config));
+                if update::check_due(&config, now_ms() as i64, every) {
+                    automatic(&app).await;
+                }
+                tokio::time::sleep(LOOK_EVERY).await;
             }
         });
+    }
+
+    /// A check nobody asked for. A failed one (no network) is not noted, so it is tried
+    /// again soon. A version that was not ready before is offered in the open Workspace; the
+    /// start screen shows its own line.
+    async fn automatic(app: &AppHandle) {
+        let before = app.state::<AppState>().update_ready.lock().unwrap().clone();
+        let checked = check(app).await;
+        if checked != update::Checked::Failed {
+            let config = app.state::<Settings>().config.clone();
+            update::record_check(&config, now_ms() as i64);
+        }
+        if let update::Checked::Ready(version) = checked
+            && before.as_deref() != Some(version.as_str())
+            && app.get_webview_window(MAIN_WINDOW).is_some()
+        {
+            offer(app, &version);
+        }
     }
 
     /// Asks the feed; a newer version is downloaded and its signature checked, then the start
@@ -2108,7 +2182,19 @@ mod updating {
             }
         }
         let _done = Done;
-        let Ok(updater) = app.updater() else {
+        let wants_beta = update::beta(&app.state::<Settings>().config);
+        let feed = update::feed(wants_beta, update::URL.unwrap_or_default(), beta_url());
+        let build = update::build_number(update::BUILD);
+        let updater = Url::parse(feed).ok().and_then(|feed| {
+            app.updater_builder()
+                .version_comparator(move |current, remote| {
+                    update::offers(&current, build, &remote.version)
+                })
+                .endpoints(vec![feed])
+                .and_then(|builder| builder.build())
+                .ok()
+        });
+        let Some(updater) = updater else {
             return Checked::Failed;
         };
         let found = match updater.check().await {
@@ -2142,32 +2228,89 @@ mod updating {
     }
 
     /// "Check for updates…": checks now, whenever the last check was, and says what it found
-    /// in a message of the system's (the Member asked).
+    /// in a message of the system's (the Member asked). A version that is ready is offered.
     pub fn check_from_menu(app: &AppHandle) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let checked = check(&app).await;
+            if let update::Checked::Ready(version) = &checked {
+                return offer(&app, version);
+            }
             let current = app.package_info().version.to_string();
             let (title, text) = checked.message(&current);
-            let parent = app
-                .get_webview_window(MAIN_WINDOW)
-                .or_else(|| app.get_webview_window(SETUP_WINDOW))
-                .map(|w| w.as_ref().window());
-            let _ = app.run_on_main_thread(move || {
-                let mut dialog = rfd::AsyncMessageDialog::new()
-                    .set_level(rfd::MessageLevel::Info)
-                    .set_title(title)
-                    .set_description(text)
-                    .set_buttons(rfd::MessageButtons::Ok);
-                if let Some(window) = &parent {
-                    dialog = dialog.set_parent(window);
-                }
-                let shown = dialog.show();
-                std::thread::spawn(move || {
-                    let _ = tauri::async_runtime::block_on(shown);
-                });
-            });
+            say(&app, title, text, rfd::MessageButtons::Ok, |_| {});
         });
+    }
+
+    /// Asks, in a message of the system's over the window in front: "Restart to update", or
+    /// later. Restarting leaves the open Workspace first.
+    fn offer(app: &AppHandle, version: &str) {
+        // One question at a time: a newer build found while it is showing is on the start
+        // screen's line, and is what "Restart to update" installs.
+        static ASKING: AtomicBool = AtomicBool::new(false);
+        if ASKING.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let (title, text, restart, later) = update::ready_question(version);
+        let buttons = rfd::MessageButtons::OkCancelCustom(restart.to_owned(), later.to_owned());
+        let asked = app.clone();
+        say(app, title, text, buttons, move |answer| {
+            ASKING.store(false, Ordering::Release);
+            let yes = match answer {
+                rfd::MessageDialogResult::Custom(chosen) => chosen == update::RESTART,
+                rfd::MessageDialogResult::Ok | rfd::MessageDialogResult::Yes => true,
+                _ => false,
+            };
+            if yes {
+                tauri::async_runtime::spawn(restart_to_update(asked));
+            }
+        });
+    }
+
+    /// A message of the system's, over the window in front; `then` hears the answer.
+    fn say(
+        app: &AppHandle,
+        title: &'static str,
+        text: String,
+        buttons: rfd::MessageButtons,
+        then: impl FnOnce(rfd::MessageDialogResult) + Send + 'static,
+    ) {
+        let parent = app
+            .get_webview_window(MAIN_WINDOW)
+            .or_else(|| app.get_webview_window(SETUP_WINDOW))
+            .map(|w| w.as_ref().window());
+        let _ = app.run_on_main_thread(move || {
+            let mut dialog = rfd::AsyncMessageDialog::new()
+                .set_level(rfd::MessageLevel::Info)
+                .set_title(title)
+                .set_description(text)
+                .set_buttons(buttons);
+            if let Some(window) = &parent {
+                dialog = dialog.set_parent(window);
+            }
+            let shown = dialog.show();
+            std::thread::spawn(move || then(tauri::async_runtime::block_on(shown)));
+        });
+    }
+
+    /// "Restart to update" from the message: the open Workspace is left as "Switch
+    /// Workspace…" leaves it, then the update is installed as from the start screen. If it
+    /// cannot be, the start screen says why and keeps its own line and button.
+    async fn restart_to_update(app: AppHandle) {
+        if app.get_webview_window(MAIN_WINDOW).is_some() {
+            leave_workspace(&app);
+            for _ in 0..100 {
+                if app.get_webview_window(MAIN_WINDOW).is_none() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+        let state = app.state::<AppState>();
+        if let Err(message) = install(&app, &state).await {
+            eprintln!("Infall: the update was not installed: {message}");
+            let _ = open_setup(&app, Some(message));
+        }
     }
 
     /// Backs every Local Workspace up, then installs the update and starts again.

@@ -84,10 +84,14 @@ fn main() {
 /// the `updater` feature and both `INFALL_UPDATE_PUBKEY` (the feed's public key, from `tauri
 /// signer generate`) and `INFALL_UPDATE_URL` (the address of its `latest.json`) are set; then
 /// `cfg(infall_updater)` is on. Otherwise the app has no updater and says nothing.
+/// `INFALL_UPDATE_BETA_URL` (the feed of beta builds) and `INFALL_BUILD` (this build's number)
+/// are optional: without the first the app offers no beta builds.
 fn updater() {
     println!("cargo::rustc-check-cfg=cfg(infall_updater)");
     println!("cargo:rerun-if-env-changed=INFALL_UPDATE_PUBKEY");
     println!("cargo:rerun-if-env-changed=INFALL_UPDATE_URL");
+    println!("cargo:rerun-if-env-changed=INFALL_UPDATE_BETA_URL");
+    println!("cargo:rerun-if-env-changed=INFALL_BUILD");
     let given = |name: &str| {
         std::env::var(name)
             .ok()
@@ -107,6 +111,20 @@ fn updater() {
                     "\n\nINFALL_UPDATE_URL must be an https:// address (or http:// to this \
                      computer, for a test): {url}\n\n"
                 );
+            }
+            // The feed of beta builds is optional; given, it is held to the same rule.
+            if let Some(beta) = given("INFALL_UPDATE_BETA_URL")
+                && !update_endpoint::endpoint_allowed(&beta)
+            {
+                panic!(
+                    "\n\nINFALL_UPDATE_BETA_URL must be an https:// address (or http:// to this \
+                     computer, for a test): {beta}\n\n"
+                );
+            }
+            if let Some(build) = given("INFALL_BUILD")
+                && build.parse::<u64>().is_err()
+            {
+                panic!("\n\nINFALL_BUILD must be a number (the commit's time): {build}\n\n");
             }
             if update_endpoint::is_loopback_http(&url) {
                 println!(

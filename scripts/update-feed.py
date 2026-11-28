@@ -3,6 +3,9 @@
 
     scripts/update-feed.py <folder> <version> <base-url> [notes] > latest.json
 
+<version> is what the feed says: a version (0.9.1), or for a beta build a version and its
+build number (0.9.1+202611281846); the files are named after the version alone.
+
 <folder> holds what the package jobs built and signed: each update bundle next to its `.sig`
 (made with `tauri signer sign`):
 
@@ -42,7 +45,7 @@ def main(argv):
     notes = argv[4] if len(argv) == 5 else f"Infall {version}"
     platforms = {}
     for name in sorted(os.listdir(folder)):
-        keys = platforms_for(name, version)
+        keys = platforms_for(name, version.split("+")[0])
         sig = os.path.join(folder, name + ".sig")
         if not keys:
             continue

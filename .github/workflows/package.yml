@@ -12,9 +12,12 @@
 #                            containers, started with no network under a virtual display, a
 #                            Tutorial Workspace created and its server asked on 127.0.0.1
 #
-# Not signed by Apple or Microsoft, and built without the updater: INFALL_UPDATE_PUBKEY and
-# INFALL_UPDATE_URL are never set here (docs/specs/release.md, section 11, says what switching
-# it on would take). An artifact of a branch build is for testing, not to hand out.
+# Not signed by Apple or Microsoft. Built without the updater, except when release.yml or
+# latest.yml call this workflow with `updater: true` and the repository has the variable
+# INFALL_UPDATE_PUBKEY (the update feed's public key; docs/specs/release.md, section 11): then
+# the apps check this repository's releases for a newer one, and the macOS jobs also keep the
+# `.app.tar.gz` the updater installs. Nothing is signed here: the release jobs do that. An
+# artifact of a branch build is for testing, not to hand out.
 name: Packages
 
 on:
@@ -24,6 +27,11 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      updater:
+        description: Build the apps with the updater (needs the variable INFALL_UPDATE_PUBKEY)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,6 +44,12 @@ env:
   RUST_TOOLCHAIN: "1.96.0"
   NODE_VERSION: "22"
   CARGO_TERM_COLOR: always
+  # The updater (see the top): the key, the feed of versions (the newest published release
+  # that is not a pre-release) and the feed of beta builds (the Latest build release). All
+  # three empty, and so no updater, unless a release workflow asked for it.
+  INFALL_UPDATE_PUBKEY: ${{ inputs.updater && vars.INFALL_UPDATE_PUBKEY || '' }}
+  INFALL_UPDATE_URL: ${{ inputs.updater && vars.INFALL_UPDATE_PUBKEY && format('https://github.com/{0}/releases/latest/download/latest.json', github.repository) || '' }}
+  INFALL_UPDATE_BETA_URL: ${{ inputs.updater && vars.INFALL_UPDATE_PUBKEY && format('https://github.com/{0}/releases/download/latest/latest.json', github.repository) || '' }}
 
 defaults:
   run:
@@ -81,11 +95,17 @@ jobs:
         run: |
           cd dist
           for dmg in *.dmg; do mv "$dmg" "${dmg%.dmg}-$ARCH.dmg"; done
+          # With the updater: what it installs, named the same way.
+          for bundle in *.app.tar.gz; do
+            [ -f "$bundle" ] && mv "$bundle" "${bundle%.app.tar.gz}-$ARCH.app.tar.gz"
+          done
           shasum -a 256 ./*.dmg
       - uses: actions/upload-artifact@v7
         with:
           name: infall-macos-${{ matrix.arch }}
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.app.tar.gz
           if-no-files-found: error
           retention-days: 14
 
