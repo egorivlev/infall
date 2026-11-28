@@ -2203,6 +2203,7 @@ dependencies = [
  "infall-runner",
  "infall-server",
  "rfd",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

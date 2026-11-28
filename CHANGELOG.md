@@ -4,7 +4,13 @@ What changed in Infall, newest first. The format follows [Keep a Changelog](http
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The desktop app updates itself.** A build from this repository's releases looks for a newer one (at start and while it runs, at most once a day, and from **Infall → Check for updates…**), downloads it, checks it against the update key built into the app, and asks **Restart to update** or **Later**; the start screen keeps the line. Restarting backs up every Local Workspace first. **Infall → Get beta builds** follows the build of every change to `main` (the Latest build release, looked for hourly) instead of published versions. An app installed before this has no updater and is downloaded once more by hand. *Seen: the check, the download and the signature check against a feed on the same Mac. Not seen: an update installed on any system, the question over an open Workspace, the beta switch in a packaged app, the workflows that sign and publish the feed.* ([release.md §11](docs/specs/release.md#11-updates-m20-groundwork))
+
+### Changed
+
+- A 0.x release on GitHub is no longer marked as a pre-release (a version like `1.2.0-rc.1` still is): installed apps update to the newest release that is not one.
 
 ## [0.9.0] — not yet released
 
@@ -66,7 +72,7 @@ The first version of Infall published as open source, under the Apache License 2
 ### Not in this version
 
 - **Signed builds.** The macOS app is signed ad hoc and not notarised; the Windows installer and the Ubuntu package are unsigned. [README.md](README.md#install-from-a-release) says how to open them and how to check a download against its SHA-256.
-- **Updates.** The app does not look for a new version; a new version is a new download. (The updater exists in the code and is off in every build: [release.md §11](docs/specs/release.md#11-updates-m20-groundwork).)
+- **Updates** were not in the builds of 0.9.0 made before 28 November 2026; see [Unreleased](#unreleased).
 
 ## Before 0.9.0
 

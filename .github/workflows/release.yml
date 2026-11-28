@@ -9,7 +9,11 @@
 #
 # The release is left as a draft: a person runs the hand checks of docs/specs/release.md,
 # section 8, and then presses Publish. The container image is built by image.yml on the same tag.
-# Nothing is signed by Apple or Microsoft, and the apps have no updater. Only GITHUB_TOKEN is used.
+# Nothing is signed by Apple or Microsoft. When the repository has the variable
+# INFALL_UPDATE_PUBKEY, the apps are built with the updater and the release also carries what it
+# reads: latest.json, the macOS `.app.tar.gz` files and a `.sig` per file, signed with the update
+# key in the secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (given to
+# that one step). Installed apps hear of the version once the draft is published.
 # To try again after a failure, re-run the failed jobs of the tag's run (a draft that exists is
 # updated, its files replaced).
 name: Release
@@ -70,6 +74,8 @@ jobs:
     name: Packages
     needs: check
     uses: ./.github/workflows/package.yml
+    with:
+      updater: true
     permissions:
       contents: read
 
@@ -93,6 +99,21 @@ jobs:
           ls -l
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
+      # With the updater (the variable INFALL_UPDATE_PUBKEY): each file the updater installs
+      # is signed with the update key, and latest.json says where they are. Installed apps
+      # read it from the newest published release that is not a pre-release, so they hear of
+      # this version when the draft is published.
+      - name: Sign the updates and write the feed
+        if: vars.INFALL_UPDATE_PUBKEY != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          scripts/sign-updates.sh release "$VERSION" \
+            "https://github.com/$REPO/releases/download/$TAG" "Infall $VERSION"
       - name: Release notes
         env:
           VERSION: ${{ needs.check.outputs.version }}
@@ -122,9 +143,10 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
           TAG: ${{ needs.check.outputs.tag }}
         run: |
-          # Before 1.0, and for a tag like v1.2.0-rc.1, the release is marked as a pre-release.
+          # A tag like v1.2.0-rc.1 is marked as a pre-release. A 0.x version is not: installed
+          # apps update to the newest release that is not a pre-release.
           pre=()
-          case "$VERSION" in 0.* | *-*) pre=(--prerelease) ;; esac
+          case "$VERSION" in *-*) pre=(--prerelease) ;; esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes-file notes.md
             gh release upload "$TAG" --clobber release/*

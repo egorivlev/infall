@@ -23,7 +23,7 @@ What the Workspace's server sends out goes from the team's server in a Team Work
 
 ## The update check
 
-Only a desktop app built with an update feed checks for updates; the builds handed out so far have none, so they never check and say nothing about updates. A build with a feed asks the feed's address for its list of versions at most once a day, and when you choose **Check for updates…**; if there is a newer version it downloads it from the address the list gives. These are plain downloads: they send what any download sends (the address asked for, and a client name), and nothing from any Workspace. The download is installed only when you press **Restart to update**, after every Local Workspace has been backed up ([release.md §11](specs/release.md#11-updates-m20-groundwork)).
+Only a desktop app built with an update feed checks for updates: the builds in the project's GitHub releases since 28 November 2026 (earlier ones, and a build you make yourself, never check). Such a build asks the feed (a file of the project's releases on `github.com`) for the newest version at most once a day, or once an hour if you ticked **Get beta builds**, and when you choose **Check for updates…**; if there is a newer version it downloads it from the address the feed gives, also a GitHub release. These are plain downloads: they send what any download sends (the address asked for, and a client name), and nothing from any Workspace. The download is checked against a key built into the app and installed only when you press **Restart to update**, after every Local Workspace has been backed up ([release.md §11](specs/release.md#11-updates-m20-groundwork)).
 
 ## Not Infall, but worth knowing
 

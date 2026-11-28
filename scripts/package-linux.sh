@@ -71,7 +71,10 @@
 # from `tauri signer generate`) and INFALL_UPDATE_URL (the address of the feed's latest.json)
 # are both set, the app is built with the `updater` feature and checks that feed; otherwise it
 # has no updater at all, as before. Signing what is built for the feed is the release
-# workflow's step (.github/workflows/package.yml), not this script's.
+# workflows' step (scripts/sign-updates.sh), not this script's.
+#   INFALL_UPDATE_BETA_URL (the feed of beta builds, optional) and INFALL_BUILD (this build's
+#   number; when not set, the time of the commit being built, YYYYMMDDHHMM in UTC) are built
+#   in too.
 #   With the updater, the program is marked as installed from a .deb (as Tauri's own bundler
 #   marks it), so that the updater installs the next .deb with dpkg instead of treating the
 #   program as an AppImage.
@@ -320,13 +323,19 @@ build_package() { # <arch>
     builder="$prefix-build-$arch"
     deb="${package}_${version}_${arch}.deb"
     say "Building $deb (release, custom-protocol, $triple$([ "$arch" = "$native" ] || echo ', cross-compiled'))"
+    if [ -n "${INFALL_UPDATE_PUBKEY:-}" ] && [ -n "${INFALL_UPDATE_URL:-}" ]; then
+        # Which build of its version this is: the time of the commit being built (the
+        # container has no git and sees the source read-only).
+        : "${INFALL_BUILD:=$(TZ=UTC git -C "$root" log -1 --format=%cd --date=format-local:%Y%m%d%H%M 2>/dev/null || true)}"
+        export INFALL_BUILD
+    fi
     docker rm -f "$builder" >/dev/null 2>&1 || true
     containers+=("$builder")
     docker run -i --quiet --name "$builder" --platform "linux/$native" \
         -v "$cache":/cargo -v "$root":/src:ro \
         -e ARCH="$arch" -e TRIPLE="$triple" -e CRATE="$crate" -e PACKAGE="$package" \
         -e NAME="$name" -e VERSION="$version" -e MAINTAINER="$maintainer" -e DEB="$deb" \
-        -e INFALL_UPDATE_PUBKEY -e INFALL_UPDATE_URL \
+        -e INFALL_UPDATE_PUBKEY -e INFALL_UPDATE_URL -e INFALL_UPDATE_BETA_URL -e INFALL_BUILD \
         "$prefix:$base_release-$arch" bash -s <<'BUILD'
 set -euo pipefail
 export CARGO_HOME=/cargo/home CARGO_TARGET_DIR=/cargo/target CARGO_INCREMENTAL=0
