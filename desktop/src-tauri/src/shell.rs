@@ -2075,8 +2075,9 @@ mod updating {
     /// One check at a time.
     static CHECKING: AtomicBool = AtomicBool::new(false);
 
-    /// How often the app looks whether a check is due, while it runs.
-    const LOOK_EVERY: Duration = Duration::from_secs(15 * 60);
+    /// How often the app looks whether a check is due, while it runs (it reads one small
+    /// file; the feed is asked only when a check is due).
+    const LOOK_EVERY: Duration = Duration::from_secs(60);
 
     /// The key and the feeds this build was given, into the plugin's configuration.
     pub fn configure(context: &mut tauri::Context<Wry>) {
@@ -2130,7 +2131,7 @@ mod updating {
     }
 
     /// When the app starts, and then for as long as it runs: a check in the background
-    /// whenever the last one is a day old (an hour, with beta builds). Nothing is said unless
+    /// whenever the last one is a day old (five minutes, with beta builds). Nothing is said unless
     /// it finds a new version.
     pub fn at_start(app: &AppHandle, config: PathBuf) {
         app.manage(Pending::default());

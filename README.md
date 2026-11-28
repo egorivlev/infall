@@ -136,7 +136,7 @@ An AI can read Research Content and propose Sources and Connections as Suggestio
 
 ## What Infall talks to
 
-The Workspace's own server (in a Local Workspace, the one inside the app); the AI only once a Member has set it up and uses it; Crossref or arXiv only when **Look up** or **Fetch the PDF from arXiv** is pressed. No analytics, no crash reports. The desktop app asks GitHub whether there is a newer release, at most once a day (hourly with beta builds). The full list: [docs/privacy.md](docs/privacy.md).
+The Workspace's own server (in a Local Workspace, the one inside the app); the AI only once a Member has set it up and uses it; Crossref or arXiv only when **Look up** or **Fetch the PDF from arXiv** is pressed. No analytics, no crash reports. The desktop app asks GitHub whether there is a newer release, at most once a day (every five minutes with beta builds). The full list: [docs/privacy.md](docs/privacy.md).
 
 ## Documentation
 
