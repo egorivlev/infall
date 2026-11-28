@@ -111,7 +111,7 @@ Fields per kind (see core.md §1): Card `title`, `summary`, `status` (`idea` | `
 All under `/api`. All require a session except where marked *public*.
 
 ### Health
-`GET /api/health` *public* → `200 { "ok": true }` once the database has been opened. Reveals nothing else.
+`GET /api/health` *public* → `200 { "ok": true, "version": "0.9.0" }` once the database has been opened: `version` is the server's own version (added 28 November 2026; an older server answers `{ "ok": true }` alone, and a client must not rely on `version` being there). The desktop app reads it to say that a Team server is outdated (desktop.md, "An outdated Team server"). Reveals nothing else: nothing of the Workspace, its Members or its settings. *The version of an open-source server is visible to anyone who can reach it; decided by the owner that day.*
 
 ### Auth
 | Method, path | Body | 200 response |

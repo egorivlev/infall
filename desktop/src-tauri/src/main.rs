@@ -10,6 +10,7 @@ mod datadir;
 mod files;
 mod portable;
 mod rename;
+mod server_version;
 mod shell;
 mod transfer;
 mod update;

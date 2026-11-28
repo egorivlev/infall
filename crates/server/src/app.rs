@@ -249,8 +249,10 @@ pub fn router(st: Shared) -> Router {
         .with_state(st)
 }
 
+/// `GET /api/health`: public. That it answers, and which version of Infall answers (so that
+/// a newer desktop app can say the server is outdated). Nothing of the Workspace.
 async fn health(State(_): State<Shared>) -> impl IntoResponse {
-    axum::Json(json!({ "ok": true }))
+    axum::Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") }))
 }
 
 /// `GET /visual-frame`: public and static, with its own headers instead of the app's CSP.

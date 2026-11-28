@@ -654,3 +654,21 @@ Until 0.9.0 was renamed in its code (CHANGELOG, 0.9.0), its builds used the work
 - **The Run contract** (`runner/src/exec.rs`, `monitor.rs`, `runner.py`): every Run gets both `INFALL_RUN_DIR` and `QOOP_RUN_DIR`; figures are read as `infall-figure-N.png`, else `qoop-figure-N.png`; progress from `infall-progress.json`, else `qoop-progress.json`; the description from `infall-env.json`, else `qoop-env.json`; in Python the module `infall` is also importable as `qoop` (the same module object). `runner.py` and `qsharp_runner.py` write only the new names.
 - **Environment variables** of the app (`infall_proc::env_var_os`): `INFALL_PYTHON_BIN`, `INFALL_CLAUDE_BIN`; when unset, `QOOP_PYTHON_BIN` / `QOOP_CLAUDE_BIN` are used, with one warning line on standard error.
 - Not kept: the bridge (`window.qoopDesktop`, now `window.infallDesktop`; the page and the app ship together), the MCP server's name in the Claude Code config (`mcp__infall__*`, made anew for every turn), the session cookies and the request header (people sign in again).
+
+## An outdated Team server (built 2026-11-28)
+
+Since the app updates itself (release.md, section 11) and a Team server is updated by its Admin (`deploy/update.sh`, deliberately by hand), an app is often newer than the server it opens.
+
+**What that means.** A Team Workspace's page comes from its server, so the page is exactly as old as the server; the app adds only the bridge. The page asks the bridge for what it knows and checks that each newer method exists, so a newer app with an older server works as that older version did. It breaks only if the app drops or changes something an older page calls. Until now the bridge has only grown, so nothing breaks.
+
+**How the app learns the server's version.** `GET /api/health` names it (`version`, api.md; servers before this named none). Read in `address::check_health` each time a Team Workspace is opened; a value that is not a short semantic version counts as none.
+
+**What the app does** (`src/server_version.rs`), when a Team Workspace is opened:
+
+- **The server is as new as the app, or newer:** nothing. (A newer page says itself what an older app lacks: "Update the app.")
+- **The server is older, or names no version:** the Workspace opens, and a message of the system's says once: "This workspace's server is outdated", "“<name>” is on a server that runs Infall <version>; this app is <version>. Everything that server has still works. What is newer in the app appears once an Admin updates the server." (without a version: "runs an older version of Infall"). It is said once for each pair of server version and app version, remembered in the list of Workspaces (`outdatedSaid`), so again only after the app or the server changes.
+- **The server is older than the oldest this app works with** (`OLDEST_SERVER`): the Workspace is not opened, and the start screen says "“<name>” is on a server that runs Infall <version>, which this version of the app (<version>) no longer works with. Ask an Admin of that server to update it, then open the workspace again." `OLDEST_SERVER` is not set today (no server is refused). **Whoever removes or changes a bridge method, or anything else an older server's page relies on, sets it in the same change** to the first server version that does not need it; a server that names no version is then refused too.
+
+Versions are compared, not builds: a server has no build number, so a beta build of the app with the same version as the server counts as the same. A change to `main` that needs a newer server is therefore only noticed once the version number is raised. A Local Workspace's server is inside the app and is never outdated. Adding a Team Workspace and moving a Local one onto a server check that the server answers, not its version; opening it does.
+
+Seen as tests only (`server_version`, `address`, `workspaces`, the server's `auth` test); the message and the refusal were not seen in a running app against a real older server.

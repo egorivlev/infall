@@ -11,11 +11,14 @@ use infall_server::{AccountError, create_admin, reset_password};
 use serde_json::json;
 
 #[tokio::test]
-async fn health_is_public_and_says_only_ok() {
+async fn health_is_public_and_says_only_ok_and_the_version() {
     let app = TestApp::new();
     let res = app.get("/api/health", None).await;
     assert_eq!(res.status, StatusCode::OK);
-    assert_eq!(res.body, json!({ "ok": true }));
+    assert_eq!(
+        res.body,
+        json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") })
+    );
 }
 
 #[tokio::test]

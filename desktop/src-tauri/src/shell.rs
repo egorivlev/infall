@@ -35,6 +35,7 @@ use crate::datadir;
 use crate::files;
 use crate::portable::{self, MAX_SAVE_BYTES, WORKSPACE_EXTENSION};
 use crate::rename;
+use crate::server_version::{self, Standing};
 use crate::transfer::{self, Upload};
 use crate::update;
 use crate::webui;
@@ -917,15 +918,28 @@ async fn open_workspace(app: &AppHandle, entry: Entry) -> Result<(), String> {
                 .clone()
                 .ok_or("That workspace has no address.")?;
             let checked = origin.clone();
-            let answered =
+            let health =
                 tauri::async_runtime::spawn_blocking(move || address::check_health(&checked))
                     .await
-                    .map(|r| r.is_ok())
-                    .unwrap_or(false);
-            if !answered {
+                    .ok()
+                    .and_then(Result::ok);
+            let Some(health) = health else {
                 return Err(format!(
                     "“{}” did not answer; check that its server is running and try again.",
                     entry.name
+                ));
+            };
+            // A server older than this app: refused if this app no longer works with it,
+            // otherwise opened, and said once (desktop.md, "An outdated Team server").
+            let version = app.package_info().version.clone();
+            let oldest = server_version::OLDEST_SERVER.and_then(server_version::parse);
+            let standing =
+                server_version::standing(&version, oldest.as_ref(), health.version.as_ref());
+            if standing == Standing::TooOld {
+                return Err(server_version::too_old(
+                    &entry.name,
+                    health.version.as_ref(),
+                    &version,
                 ));
             }
             if granted.is_some_and(|g| g != origin) {
@@ -933,6 +947,19 @@ async fn open_workspace(app: &AppHandle, entry: Entry) -> Result<(), String> {
             }
             open_main(app, &entry, &origin, &origin)
                 .map_err(|_| "The window could not be opened.".to_owned())?;
+            if standing == Standing::Outdated {
+                let key = server_version::said_key(health.version.as_ref(), &version);
+                let first = workspaces(app)
+                    .registry
+                    .lock()
+                    .unwrap()
+                    .say_outdated_once(&entry.id, &key);
+                if first {
+                    let (title, text) =
+                        server_version::outdated(&entry.name, health.version.as_ref(), &version);
+                    say(app, title, text, rfd::MessageButtons::Ok, |_| {});
+                }
+            }
         }
         Kind::Local => {
             // The embedded server's port is new at every start, so its origin is never the
@@ -1956,6 +1983,32 @@ async fn open_external_finish(
         .map_err(|_| "No program on this computer opened the PDF.".to_owned())
 }
 
+/// A message of the system's, over the window in front; `then` hears the answer.
+fn say(
+    app: &AppHandle,
+    title: &'static str,
+    text: String,
+    buttons: rfd::MessageButtons,
+    then: impl FnOnce(rfd::MessageDialogResult) + Send + 'static,
+) {
+    let parent = app
+        .get_webview_window(MAIN_WINDOW)
+        .or_else(|| app.get_webview_window(SETUP_WINDOW))
+        .map(|w| w.as_ref().window());
+    let _ = app.run_on_main_thread(move || {
+        let mut dialog = rfd::AsyncMessageDialog::new()
+            .set_level(rfd::MessageLevel::Info)
+            .set_title(title)
+            .set_description(text)
+            .set_buttons(buttons);
+        if let Some(window) = &parent {
+            dialog = dialog.set_parent(window);
+        }
+        let shown = dialog.show();
+        std::thread::spawn(move || then(tauri::async_runtime::block_on(shown)));
+    });
+}
+
 // ---- updates (docs/specs/release.md, section 11) -----------------------------------------
 
 /// What the start screen says about an update: the version downloaded and ready, if any.
@@ -2265,32 +2318,6 @@ mod updating {
             if yes {
                 tauri::async_runtime::spawn(restart_to_update(asked));
             }
-        });
-    }
-
-    /// A message of the system's, over the window in front; `then` hears the answer.
-    fn say(
-        app: &AppHandle,
-        title: &'static str,
-        text: String,
-        buttons: rfd::MessageButtons,
-        then: impl FnOnce(rfd::MessageDialogResult) + Send + 'static,
-    ) {
-        let parent = app
-            .get_webview_window(MAIN_WINDOW)
-            .or_else(|| app.get_webview_window(SETUP_WINDOW))
-            .map(|w| w.as_ref().window());
-        let _ = app.run_on_main_thread(move || {
-            let mut dialog = rfd::AsyncMessageDialog::new()
-                .set_level(rfd::MessageLevel::Info)
-                .set_title(title)
-                .set_description(text)
-                .set_buttons(buttons);
-            if let Some(window) = &parent {
-                dialog = dialog.set_parent(window);
-            }
-            let shown = dialog.show();
-            std::thread::spawn(move || then(tauri::async_runtime::block_on(shown)));
         });
     }
 

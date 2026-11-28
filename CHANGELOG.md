@@ -7,10 +7,12 @@ What changed in Infall, newest first. The format follows [Keep a Changelog](http
 ### Added
 
 - **The desktop app updates itself.** A build from this repository's releases looks for a newer one (at start and while it runs, at most once a day, and from **Infall → Check for updates…**), downloads it, checks it against the update key built into the app, and asks **Restart to update** or **Later**; the start screen keeps the line. Restarting backs up every Local Workspace first. **Infall → Get beta builds** follows the build of every change to `main` (the Latest build release, looked for every five minutes) instead of published versions. An app installed before this has no updater and is downloaded once more by hand. *Seen: the check, the download and the signature check against a feed on the same Mac. Not seen: an update installed on any system, the question over an open Workspace, the beta switch in a packaged app, the workflows that sign and publish the feed.* ([release.md §11](docs/specs/release.md#11-updates-m20-groundwork))
+- **An outdated Team server is said.** A Team server's health check names its version, and the desktop app, when it opens a Team Workspace whose server is older than the app, says so once ("This workspace's server is outdated": everything that server has still works; what is newer appears once an Admin updates the server). A server too old for the app to work with is not opened, with a sentence asking for an Admin to update it; no server is that old today. *Seen as tests only.* ([desktop.md](docs/specs/desktop.md#an-outdated-team-server-built-2026-11-28))
 
 ### Changed
 
 - A 0.x release on GitHub is no longer marked as a pre-release (a version like `1.2.0-rc.1` still is): installed apps update to the newest release that is not one.
+- `GET /api/health` also answers the server's `version`. It is public, as the health check always was: anyone who can reach a Team server can read which version it runs.
 
 ## [0.9.0] — not yet released
 
