@@ -33,8 +33,8 @@ pub const BUILD: Option<&str> = option_env!("INFALL_BUILD");
 
 /// The automatic check runs at most this often (ms): once a day.
 pub const CHECK_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
-/// With beta builds: once an hour.
-pub const BETA_CHECK_EVERY_MS: i64 = 60 * 60 * 1000;
+/// With beta builds: every five minutes.
+pub const BETA_CHECK_EVERY_MS: i64 = 5 * 60 * 1000;
 /// In the app's config folder: when the last automatic check was made, and whether beta
 /// builds are wanted.
 const FILE: &str = "updates.json";
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn beta_builds_are_off_until_switched_on_and_checked_every_hour() {
+    fn beta_builds_are_off_until_switched_on_and_checked_every_five_minutes() {
         let tmp = tempfile::tempdir().unwrap();
         let config = tmp.path().join("config");
         assert!(!beta(&config));

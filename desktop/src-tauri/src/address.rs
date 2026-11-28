@@ -98,12 +98,21 @@ pub fn may_open_externally(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https" | "mailto")
 }
 
-/// `GET <origin>/api/health` must answer `{ "ok": true }`. Redirects are not followed.
-pub fn check_health(origin: &str) -> Result<(), String> {
+/// What a server's health check said beyond "ok".
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Health {
+    /// The server's version, if it named one that reads as a version (servers before 0.9.2
+    /// name none).
+    pub version: Option<semver::Version>,
+}
+
+/// `GET <origin>/api/health` must answer `{ "ok": true }` (and may name its `version`).
+/// Redirects are not followed.
+pub fn check_health(origin: &str) -> Result<Health, String> {
     check_health_within(origin, Duration::from_secs(8))
 }
 
-fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
+fn check_health_within(origin: &str, timeout: Duration) -> Result<Health, String> {
     const NOT_INFALL: &str = "That address answered, but not as an Infall server.";
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
@@ -124,11 +133,19 @@ fn check_health_within(origin: &str, timeout: Duration) -> Result<(), String> {
         .limit(4096)
         .read_to_string()
         .map_err(|_| NOT_INFALL.to_owned())?;
-    let ok = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
+    let answer = serde_json::from_str::<serde_json::Value>(&body).ok();
+    let ok = answer
+        .as_ref()
         .and_then(|v| v.get("ok").and_then(serde_json::Value::as_bool))
         .unwrap_or(false);
-    if ok { Ok(()) } else { Err(NOT_INFALL.into()) }
+    if !ok {
+        return Err(NOT_INFALL.into());
+    }
+    let version = answer
+        .as_ref()
+        .and_then(|v| v.get("version")?.as_str())
+        .and_then(crate::server_version::parse);
+    Ok(Health { version })
 }
 
 #[cfg(test)]
@@ -325,7 +342,20 @@ mod tests {
     fn health_check() {
         let timeout = Duration::from_secs(5);
         let ok = serve(http("200 OK", "", r#"{"ok":true}"#));
-        assert_eq!(check_health_within(&ok, timeout), Ok(()));
+        assert_eq!(check_health_within(&ok, timeout), Ok(Health::default()));
+        // A server since 0.9.2 names its version; one that names nonsense names none.
+        let named = serve(http("200 OK", "", r#"{"ok":true,"version":"0.9.2"}"#));
+        assert_eq!(
+            check_health_within(&named, timeout).unwrap().version,
+            Some(semver::Version::new(0, 9, 2))
+        );
+        for nonsense in [
+            http("200 OK", "", r#"{"ok":true,"version":"<b>new</b>"}"#),
+            http("200 OK", "", r#"{"ok":true,"version":7}"#),
+        ] {
+            let origin = serve(nonsense);
+            assert_eq!(check_health_within(&origin, timeout), Ok(Health::default()));
+        }
 
         for response in [
             http("200 OK", "", r#"{"ok":false}"#),

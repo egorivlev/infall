@@ -74,6 +74,10 @@ pub struct Entry {
     /// Such a Workspace stays on this computer and opens read-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moved_to: Option<String>,
+    /// Team: what the "server is outdated" message was last shown for (the server's version
+    /// and the app's, `server_version::said_key`), so it is shown once per pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outdated_said: Option<String>,
 }
 
 /// A move of a Local Workspace onto a Team server that the server's page has not taken yet
@@ -271,6 +275,7 @@ impl Registry {
                 port: choose_port(&ports_in_use(&stored.workspaces, ""), candidates()),
                 last_backup: None,
                 moved_to: None,
+                outdated_said: None,
             };
             create_private_dir(&self.local_dir(&entry.id))
                 .map_err(|_| "The workspace could not be made on this computer.".to_owned())?;
@@ -301,6 +306,7 @@ impl Registry {
                 port: None,
                 last_backup: None,
                 moved_to: None,
+                outdated_said: None,
             };
             stored.workspaces.insert(0, entry.clone());
             Ok(entry)
@@ -329,6 +335,7 @@ impl Registry {
                 port: choose_port(&ports_in_use(&stored.workspaces, ""), candidates()),
                 last_backup: None,
                 moved_to: None,
+                outdated_said: None,
             };
             let dir = self.local_dir(&entry.id);
             create_private_dir(&dir)
@@ -354,6 +361,19 @@ impl Registry {
             }
             Ok(())
         })
+    }
+
+    /// Notes that the "server is outdated" message was shown for `key`. `false` when it was
+    /// already shown for that key (or the Workspace is not there): then it is not shown again.
+    pub fn say_outdated_once(&self, id: &str, key: &str) -> bool {
+        let mut first = false;
+        let noted = self.update(|stored| {
+            let entry = find(stored, id)?;
+            first = entry.outdated_said.as_deref() != Some(key);
+            entry.outdated_said = Some(key.to_owned());
+            Ok(())
+        });
+        noted.is_ok() && first
     }
 
     pub fn rename(&self, id: &str, name: &str) -> Result<(), String> {
@@ -712,6 +732,7 @@ impl Registry {
                 port: None,
                 last_backup: None,
                 moved_to: None,
+                outdated_said: None,
             });
             let _ = self.save(&stored);
         }
@@ -1102,6 +1123,7 @@ mod tests {
             port: Some(24680),
             last_backup: Some(7),
             moved_to: None,
+            outdated_said: None,
         };
         // The start screen does not see the port.
         assert_eq!(
@@ -1220,6 +1242,21 @@ mod tests {
         assert_eq!(local.name, "localhost:8787");
         assert_eq!(r.list().len(), 2);
         assert!(r.remember_team("http://evil.example").is_err());
+    }
+
+    #[test]
+    fn an_outdated_server_is_said_once_for_each_pair_of_versions() {
+        let d = dirs();
+        let r = registry(&d);
+        let team = r.remember_team("https://infall.example.org").unwrap();
+        assert!(r.say_outdated_once(&team.id, "0.9.1/0.9.2"));
+        assert!(!r.say_outdated_once(&team.id, "0.9.1/0.9.2"));
+        // Not again in another run of the app; again once the app or the server is newer.
+        let again = registry(&d);
+        assert!(!again.say_outdated_once(&team.id, "0.9.1/0.9.2"));
+        assert!(again.say_outdated_once(&team.id, "0.9.1/0.9.3"));
+        assert!(again.say_outdated_once(&team.id, "0.9.2/0.9.3"));
+        assert!(!again.say_outdated_once("missing", "0.9.1/0.9.2"));
     }
 
     #[test]
@@ -1603,6 +1640,7 @@ mod tests {
         assert_eq!(
             Entry {
                 moved_to: None,
+                outdated_said: None,
                 ..moved.clone()
             },
             local
